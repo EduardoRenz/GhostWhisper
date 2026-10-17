@@ -1,0 +1,14 @@
+# Node
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Modelos baixados em runtime
+/assets/models/
+
+# Sistema
+.DS_Store

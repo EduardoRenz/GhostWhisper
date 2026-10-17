@@ -1,0 +1,329 @@
+//! Estado compartilhado da aplicação (`AppState`).
+//!
+//! Guarda apenas **portas** (traits) já resolvidas no composition root
+//! (`lib.rs`). Nenhum adaptador concreto é armazenado aqui.
+
+use std::sync::Arc;
+
+use crate::ports::audio_source::AudioSource;
+use crate::ports::click_through::ClickThroughController;
+use crate::ports::event_publisher::EventPublisher;
+use crate::ports::insight_generator::InsightGenerator;
+use crate::ports::llm_controller::LlmController;
+use crate::ports::overlay_window::OverlayWindowController;
+use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
+use crate::ports::secret_store::SecretStore;
+use crate::ports::session_controller::SessionController;
+use crate::ports::settings_store::SettingsStore;
+use crate::ports::shortcut_registry::GlobalShortcutRegistry;
+use crate::ports::translator::Translator;
+use crate::ports::virtual_sink::VirtualSinkManager;
+
+/// Estado injetado nas janelas e comandos Tauri.
+#[derive(Clone)]
+pub struct AppState {
+    /// Controle da janela overlay.
+    pub overlay: Arc<dyn OverlayWindowController>,
+    /// Coordenação do click-through.
+    pub click_through: Arc<dyn ClickThroughController>,
+    /// Captura de microfone.
+    pub audio: Arc<dyn AudioSource>,
+    /// Captura de áudio do sistema (monitor de saída).
+    pub system_audio: Arc<dyn AudioSource>,
+    /// Gerenciamento do sink virtual.
+    pub virtual_sink: Arc<dyn VirtualSinkManager>,
+    /// Controle de sessões de transcrição.
+    pub session: Arc<dyn SessionController>,
+    /// Repositório de sessões (histórico).
+    pub sessions: Arc<dyn SessionRepository>,
+    /// Repositório de transcrições (histórico e busca).
+    pub transcriptions: Arc<dyn TranscriptionsRepository>,
+    /// Configurações do usuário (sem segredos).
+    pub settings: Arc<dyn SettingsStore>,
+    /// Chaves de API (keyring ou fallback de sessão).
+    pub secrets: Arc<dyn SecretStore>,
+    /// Roteador de LLM (validar chave/completudes).
+    pub llm: Arc<dyn LlmController>,
+    /// Tradução ao vivo.
+    pub translator: Arc<dyn Translator>,
+    /// Insights/sugestões contextuais.
+    pub insight: Arc<dyn InsightGenerator>,
+    /// Publicação de eventos para a UI.
+    pub publisher: Arc<dyn EventPublisher>,
+    /// Registro de atalhos globais.
+    pub shortcuts: Arc<dyn GlobalShortcutRegistry>,
+}
+
+impl AppState {
+    /// Monta o estado a partir das portas já resolvidas.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        overlay: Arc<dyn OverlayWindowController>,
+        click_through: Arc<dyn ClickThroughController>,
+        audio: Arc<dyn AudioSource>,
+        system_audio: Arc<dyn AudioSource>,
+        virtual_sink: Arc<dyn VirtualSinkManager>,
+        session: Arc<dyn SessionController>,
+        sessions: Arc<dyn SessionRepository>,
+        transcriptions: Arc<dyn TranscriptionsRepository>,
+        settings: Arc<dyn SettingsStore>,
+        secrets: Arc<dyn SecretStore>,
+        llm: Arc<dyn LlmController>,
+        translator: Arc<dyn Translator>,
+        insight: Arc<dyn InsightGenerator>,
+        publisher: Arc<dyn EventPublisher>,
+        shortcuts: Arc<dyn GlobalShortcutRegistry>,
+    ) -> Self {
+        Self {
+            overlay,
+            click_through,
+            audio,
+            system_audio,
+            virtual_sink,
+            session,
+            sessions,
+            transcriptions,
+            settings,
+            secrets,
+            llm,
+            translator,
+            insight,
+            publisher,
+            shortcuts,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    use crate::domain::audio::AudioDevice;
+    use crate::domain::geometry::{Point, Rect};
+    use crate::error::Result;
+    use crate::ports::audio_consumer::AudioConsumer;
+    use crate::ports::overlay_window::Surface;
+    use crate::ports::session_controller::AudioChannel;
+
+    struct FakeOverlayWindow {
+        visible: AtomicBool,
+    }
+    impl FakeOverlayWindow {
+        fn new() -> Self {
+            Self {
+                visible: AtomicBool::new(true),
+            }
+        }
+    }
+    impl OverlayWindowController for FakeOverlayWindow {
+        fn show(&self) {
+            self.visible.store(true, Ordering::Relaxed);
+        }
+        fn hide(&self) {
+            self.visible.store(false, Ordering::Relaxed);
+        }
+        fn toggle(&self) -> bool {
+            let next = !self.visible.load(Ordering::Relaxed);
+            self.visible.store(next, Ordering::Relaxed);
+            next
+        }
+        fn is_visible(&self) -> bool {
+            self.visible.load(Ordering::Relaxed)
+        }
+        fn set_click_through(&self, _enabled: bool) {}
+        fn set_stealth(&self, _enabled: bool) {}
+        fn set_surface(&self, _surface: Surface) {}
+        fn set_anchor_bottom(&self, _anchored: bool) {}
+        fn anchor_bottom(&self) -> bool {
+            true
+        }
+        fn outer_position(&self) -> Option<Point> {
+            Some(Point { x: 0, y: 0 })
+        }
+        fn outer_size(&self) -> Option<(i32, i32)> {
+            Some((100, 100))
+        }
+        fn scale_factor(&self) -> f64 {
+            1.0
+        }
+    }
+
+    struct FakeClickThrough {
+        regions: Mutex<Vec<Rect>>,
+    }
+    impl Default for FakeClickThrough {
+        fn default() -> Self {
+            Self {
+                regions: Mutex::new(Vec::new()),
+            }
+        }
+    }
+    impl ClickThroughController for FakeClickThrough {
+        fn set_enabled(&self, _enabled: bool) {}
+        fn set_interactive_regions(&self, regions: Vec<Rect>) {
+            if let Ok(mut guard) = self.regions.lock() {
+                *guard = regions;
+            }
+        }
+    }
+
+    struct FakeAudioSource;
+    impl AudioSource for FakeAudioSource {
+        fn list_devices(&self) -> Result<Vec<AudioDevice>> {
+            Ok(vec![AudioDevice {
+                id: "fake".into(),
+                name: "Fake".into(),
+                is_default: true,
+            }])
+        }
+        fn start(
+            &self,
+            _device_id: Option<String>,
+            _consumer: Arc<dyn AudioConsumer>,
+        ) -> Result<()> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<()> {
+            Ok(())
+        }
+        fn is_running(&self) -> bool {
+            false
+        }
+    }
+
+    struct FakeVirtualSink;
+    impl VirtualSinkManager for FakeVirtualSink {
+        fn create(&self, _name: &str) -> Result<u32> {
+            Ok(7)
+        }
+        fn remove(&self, _module_index: u32) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FakeSessionController;
+    impl SessionController for FakeSessionController {
+        fn start(&self, _channels: &[AudioChannel]) -> Result<String> {
+            Ok("s1".into())
+        }
+        fn stop(&self) -> Result<()> {
+            Ok(())
+        }
+        fn current_session_id(&self) -> Option<String> {
+            Some("s1".into())
+        }
+    }
+
+    struct FakeLlm;
+    impl LlmController for FakeLlm {
+        fn provider_label(&self) -> Result<String> {
+            Ok("fake:test".into())
+        }
+        fn validate(&self) -> Result<String> {
+            Ok("ok".into())
+        }
+        fn complete(
+            &self,
+            _request: &crate::domain::llm::CompletionRequest,
+        ) -> Result<crate::domain::llm::Completion> {
+            Ok(crate::domain::llm::Completion {
+                text: "ok".into(),
+                model: "fake".into(),
+            })
+        }
+    }
+
+    struct FakeTranslator;
+    impl Translator for FakeTranslator {
+        fn translate(&self, text: &str) -> Result<String> {
+            Ok(format!("[{text}]"))
+        }
+    }
+
+    struct FakeInsight;
+    impl InsightGenerator for FakeInsight {
+        fn generate(&self, _session_id: Option<String>) -> Result<String> {
+            Ok("insight".into())
+        }
+    }
+
+    struct FakePublisher;
+    impl EventPublisher for FakePublisher {
+        fn emit_segment(&self, _segment: &crate::domain::transcription::TranscriptSegment) {}
+        fn emit_audio_level(
+            &self,
+            _channel: AudioChannel,
+            _level: crate::domain::audio::AudioLevel,
+        ) {
+        }
+        fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
+        fn emit_insight(&self, _text: &str) {}
+        fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
+    }
+
+    struct FakeShortcutRegistry;
+    impl GlobalShortcutRegistry for FakeShortcutRegistry {
+        fn apply(
+            &self,
+            _bindings: &[crate::domain::shortcuts::ShortcutBinding],
+        ) -> Vec<crate::domain::shortcuts::ShortcutConflict> {
+            Vec::new()
+        }
+        fn active(&self) -> Vec<crate::domain::shortcuts::ShortcutBinding> {
+            Vec::new()
+        }
+    }
+
+    fn build_state() -> AppState {
+        use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
+        use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
+        use crate::adapters::secrets::in_memory_secret_store::InMemorySecretStore;
+        use crate::adapters::settings::memory::InMemorySettingsStore;
+
+        AppState::new(
+            Arc::new(FakeOverlayWindow::new()),
+            Arc::new(FakeClickThrough::default()),
+            Arc::new(FakeAudioSource),
+            Arc::new(FakeAudioSource),
+            Arc::new(FakeVirtualSink),
+            Arc::new(FakeSessionController),
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(InMemoryTranscriptionsRepository::new()),
+            Arc::new(InMemorySettingsStore::new()),
+            Arc::new(InMemorySecretStore::new()),
+            Arc::new(FakeLlm),
+            Arc::new(FakeTranslator),
+            Arc::new(FakeInsight),
+            Arc::new(FakePublisher),
+            Arc::new(FakeShortcutRegistry),
+        )
+    }
+
+    #[test]
+    fn shares_ports_across_clones() {
+        let state = build_state();
+        let clone = state.clone();
+
+        assert!(!clone.overlay.toggle());
+        assert!(!state.overlay.is_visible());
+        assert_eq!(state.audio.list_devices().expect("devices").len(), 1);
+        assert_eq!(state.system_audio.list_devices().expect("devices").len(), 1);
+        assert_eq!(
+            state.virtual_sink.create("ghostwhisper").expect("create"),
+            7
+        );
+        assert_eq!(state.session.current_session_id().as_deref(), Some("s1"));
+        assert!(state.sessions.list_recent(10).expect("sessions").is_empty());
+        assert!(state
+            .transcriptions
+            .search("x", 10)
+            .expect("search")
+            .is_empty());
+        assert_eq!(state.llm.validate().expect("validate"), "ok");
+        assert!(!state.secrets.is_persistent());
+        assert_eq!(state.translator.translate("x").expect("translate"), "[x]");
+        assert_eq!(state.insight.generate(None).expect("insight"), "insight");
+    }
+}
