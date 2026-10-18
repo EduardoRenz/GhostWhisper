@@ -1581,6 +1581,7 @@ mod tests {
             Arc::clone(&models),
             "tiny",
             "auto",
+            "",
             None,
         ));
         whisper.preload();
@@ -1632,6 +1633,7 @@ mod tests {
             Arc::clone(&models),
             "tiny",
             "auto",
+            "",
             None,
         ));
         whisper.preload();
@@ -1706,6 +1708,7 @@ mod tests {
             Arc::clone(&models),
             &model,
             "auto",
+            "",
             None,
         ));
         whisper.preload();
@@ -1815,6 +1818,7 @@ mod tests {
                 Arc::clone(&models),
                 "tiny",
                 "auto",
+                "",
                 None,
             ));
             whisper.preload();

@@ -56,6 +56,23 @@ pub fn whisper_spec(name: &str) -> Option<ModelSpec> {
                 "ggml-medium.bin"
             ),
         ),
+        // Modelos que o Perssua usa para transcrição local (BR-015/BR-027): só
+        // `large-v3` e `large-v3-turbo`. Exigem GPU para tempo real; em CPU ficam
+        // inviáveis (por isso o default continua `tiny`).
+        "large-v3" => (
+            "ggml-large-v3.bin",
+            concat!(
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/",
+                "ggml-large-v3.bin"
+            ),
+        ),
+        "large-v3-turbo" => (
+            "ggml-large-v3-turbo.bin",
+            concat!(
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/",
+                "ggml-large-v3-turbo.bin"
+            ),
+        ),
         _ => return None,
     };
 
@@ -172,10 +189,32 @@ mod tests {
 
     #[test]
     fn known_whisper_models_resolve() {
-        for name in ["tiny", "base", "small", "medium"] {
+        for name in [
+            "tiny",
+            "base",
+            "small",
+            "medium",
+            "large-v3",
+            "large-v3-turbo",
+        ] {
             assert!(whisper_spec(name).is_some(), "modelo {name}");
         }
         assert!(whisper_spec("huge").is_none());
+    }
+
+    #[test]
+    fn large_models_use_the_whisper_cpp_repository_names() {
+        // BR-027: os dois modelos grandes do Perssua (para GPU).
+        assert_eq!(
+            whisper_spec("large-v3").expect("large-v3").file_name,
+            "ggml-large-v3.bin"
+        );
+        assert_eq!(
+            whisper_spec("large-v3-turbo")
+                .expect("large-v3-turbo")
+                .file_name,
+            "ggml-large-v3-turbo.bin"
+        );
     }
 
     #[test]

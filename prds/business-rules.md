@@ -312,3 +312,25 @@ uma nota de revisão.
   compartilhamento de tela (BR-006); o limite está documentado.
 - **Detalhes:** [`assistant/architecture/assistant-windows.md`](assistant/architecture/assistant-windows.md) §5-§6.
 - **Data:** 2026-10-18 · **Status:** Ativa
+
+## BR-027 — Precisão do ASR: prompt de decodificação, anti-alias e modelo por GPU
+- **Decisão:** toda decodificação local envia um `initial_prompt`
+  (`whisper_prompt`, default `"Only transcribe what is clearly spoken. If
+  uncertain, transcribe nothing."`) acrescido da **regra de idioma**
+  (`pt-br` → `pt`, com "Transcribe it in <idioma>. Do not translate it to
+  English."); prompt **vazio desliga** o recurso. A decimação do microfone aplica
+  **passa-baixa antes de reduzir a taxa** (anti-aliasing). O catálogo ganha
+  `large-v3` e `large-v3-turbo` (recomendados **com GPU**; o default do modelo
+  continua `tiny`). O app **detecta GPU** (Vulkan/DRM no Linux-first) e **sugere**
+  o modelo adequado na tela de configurações, **sem trocar sozinho**. Os limiares
+  de gate/VAD **permanecem os do BR-018**.
+- **Motivo:** paridade com o Perssua (BR-015) e o pedido do usuário ("mais
+  acertivo na transcrição"); o prompt e o anti-alias são ganhos baratos e o
+  modelo grande só faz sentido junto com GPU.
+- **Consequência:** as features de GPU (`cuda`/`hipblas`/`metal`) são declaradas
+  agora e a **aceleração real** é o entregável E3
+  ([`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md));
+  a sugestão de GPU é informativa e não altera `Settings`.
+- **Detalhes:** [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md)
+  §2/§5; [`precision-and-performance/tasks/01-task.md`](precision-and-performance/tasks/01-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 01, aguardando teste manual)

@@ -44,3 +44,17 @@ export const keyPreview = (): Promise<string | undefined> =>
 /** Indica se as chaves são persistidas no keyring ou só na sessão. */
 export const secretsPersistent = (): Promise<boolean | undefined> =>
   invokeSafe<boolean>("settings_secrets_persistent");
+
+/** GPU detectada e modelo local sugerido para este hardware (BR-027). */
+export interface GpuInfo {
+  available: boolean;
+  backend: string;
+  detail: string;
+  /** O build atual acelera por GPU? (chega no entregável E3). */
+  acceleration_enabled: boolean;
+  recommended_model: string;
+}
+
+/** Detecta a GPU local (sugestão de modelo; não altera configurações). */
+export const gpuInfo = (): Promise<GpuInfo | undefined> =>
+  invokeSafe<GpuInfo>("settings_gpu_info");

@@ -6,6 +6,7 @@ const settingsIpc = vi.hoisted(() => ({
   clearProviderKey: vi.fn(async () => undefined),
   getProviders: vi.fn(async () => ["openai", "gemini", "openrouter", "custom"]),
   getSettings: vi.fn(async () => undefined),
+  gpuInfo: vi.fn(async () => undefined),
   hasProviderKey: vi.fn(async () => false),
   keyPreview: vi.fn(async () => ""),
   providerLabel: vi.fn(async () => "OpenAI · gpt-4o-mini"),
@@ -42,6 +43,7 @@ describe("SettingsPage", () => {
   beforeEach(() => {
     settingsIpc.hasProviderKey.mockResolvedValue(false);
     settingsIpc.keyPreview.mockResolvedValue("");
+    settingsIpc.gpuInfo.mockResolvedValue(undefined);
   });
 
   it("renderiza as abas e mostra a seção de IA por padrão", async () => {
@@ -105,5 +107,28 @@ describe("SettingsPage", () => {
     fireEvent.change(slider, { target: { value: "12" } });
     expect(screen.getByText("12.0×")).toBeDefined();
     expect(slider.value).toBe("12");
+  });
+
+  it("sugere o modelo quando detecta GPU (sem trocar sozinho)", async () => {
+    settingsIpc.gpuInfo.mockResolvedValue({
+      available: true,
+      backend: "vulkan",
+      detail: "AMD (RADV · radeon_icd.x86_64.json)",
+      acceleration_enabled: true,
+      recommended_model: "large-v3-turbo",
+    } as never);
+
+    render(<SettingsPage />);
+    await act(async () => {
+      screen.getByRole("tab", { name: "Transcrição & Áudio" }).click();
+    });
+
+    const hint = await screen.findByTestId("gpu-hint");
+    expect(hint.textContent).toContain("AMD (RADV");
+    expect(hint.textContent).toContain("large-v3-turbo");
+    // Nada é trocado automaticamente: o default continua tiny.
+    expect(
+      (screen.getByLabelText("Modelo whisper (local)") as HTMLSelectElement).value,
+    ).toBe("tiny");
   });
 });

@@ -13,6 +13,7 @@ pub mod chat_bot_provider;
 pub mod click_through;
 pub mod clock;
 pub mod event_publisher;
+pub mod gpu_probe;
 pub mod llm_controller;
 pub mod llm_provider_factory;
 pub mod meeting_summaries_repository;

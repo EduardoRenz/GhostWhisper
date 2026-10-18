@@ -82,6 +82,12 @@ pnpm test           # testes do frontend (vitest)
 cargo test --manifest-path src-tauri/Cargo.toml   # testes do core
 ```
 
+> **Terminal do VS Code via snap:** o ambiente exporta `GTK_PATH`/`GIO_MODULE_DIR`/
+> `LOCPATH`/`XDG_DATA_DIRS` apontando para `/snap/code` e `/snap/core20`, e o
+> binário quebra ao carregar libs do snap
+> (`undefined symbol: __libc_pthread_init, version GLIBC_PRIVATE`). Use
+> `pnpm tauri:dev:clean` (ou rode de um terminal nativo, sem o sandbox do snap).
+
 ### Empacotamento
 
 ```bash

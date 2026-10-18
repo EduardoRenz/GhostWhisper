@@ -79,6 +79,7 @@ pub fn run() {
             ipc::settings_commands::settings_provider_label,
             ipc::settings_commands::settings_key_preview,
             ipc::settings_commands::settings_secrets_persistent,
+            ipc::settings_commands::settings_gpu_info,
             ipc::llm_commands::llm_translate,
             ipc::suggestion_commands::assistant_modes_list,
             ipc::suggestion_commands::suggestion_generate,
@@ -163,6 +164,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::speech::whisper_model_store::FileModelStore;
     use adapters::speech::whisper_speech_engine_factory::WhisperSpeechEngineFactory;
     use adapters::system::system_clock::SystemClock;
+    use adapters::system::vulkan_gpu_probe::VulkanGpuProbe;
     use adapters::system::x11_pointer_source::{NullPointerSource, X11PointerSource};
     use application::llm_router::LlmRouter;
     use application::session_service::SessionService;
@@ -174,6 +176,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::click_through::ClickThroughController;
     use ports::clock::Clock;
     use ports::event_publisher::EventPublisher;
+    use ports::gpu_probe::GpuProbe;
     use ports::llm_controller::LlmController;
     use ports::llm_provider_factory::ChatBotProviderFactory;
     use ports::meeting_summaries_repository::MeetingSummariesRepository;
@@ -250,6 +253,18 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(data_dir.join("models")));
     let publisher: Arc<dyn EventPublisher> =
         Arc::new(TauriEventPublisher::new(app.handle().clone()));
+
+    // Detecção de GPU (BR-027): informa a UI para sugerir o modelo local. Loga
+    // uma vez no boot para facilitar o diagnóstico.
+    let gpu: Arc<dyn GpuProbe> = Arc::new(VulkanGpuProbe::new());
+    let gpu_info = gpu.probe();
+    tracing::info!(
+        available = gpu_info.available,
+        backend = %gpu_info.backend,
+        acceleration_enabled = gpu_info.acceleration_enabled,
+        recommended_model = %gpu_info.recommended_model,
+        "detecção de GPU"
+    );
 
     // Banco de dados (SQLite) e repositórios.
     let connection = db_connection::shared(db_connection::open(&data_dir.join("ghostwhisper.db"))?);
@@ -388,6 +403,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         clock,
         settings,
         secrets,
+        gpu,
         llm,
         translator,
         summary,

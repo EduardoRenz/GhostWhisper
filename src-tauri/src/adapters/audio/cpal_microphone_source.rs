@@ -160,12 +160,16 @@ where
     f32: FromSample<T>,
 {
     let error_consumer = Arc::clone(&consumer);
+    // Reamostrador **com estado**: o filtro anti-alias e a fase precisam
+    // atravessar os blocos do callback (ISS-025).
+    let mut resampler =
+        pcm_resampler::Resampler::new(channels, rate, crate::domain::audio::TARGET_SAMPLE_RATE);
     let stream = device
         .build_input_stream(
             config,
             move |data: &[T], _info: &cpal::InputCallbackInfo| {
                 let interleaved: Vec<f32> = data.iter().map(|&s| f32::from_sample(s)).collect();
-                let mono_16k = pcm_resampler::to_target_mono(&interleaved, channels, rate);
+                let mono_16k = resampler.process(&interleaved);
                 if !mono_16k.is_empty() {
                     consumer.consume(&mono_16k);
                 }

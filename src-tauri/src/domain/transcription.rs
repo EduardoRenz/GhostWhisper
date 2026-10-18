@@ -319,6 +319,50 @@ fn normalize_token(word: &str) -> String {
         .collect()
 }
 
+// --- Prompt de decodificação (`initial_prompt`) ------------------------------
+
+/// Nome do idioma em inglês, como o Perssua usa no `initial_prompt`.
+fn whisper_language_name(code: &str) -> Option<&'static str> {
+    match code.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "pt" | "pt-br" => Some("Portuguese"),
+        "en" => Some("English"),
+        _ => None,
+    }
+}
+
+/// Mapeia o código de idioma do app para o aceito pelo whisper.cpp.
+///
+/// `pt-br`/`pt_br` viram `pt` (como o Perssua faz); `auto` fica `auto`.
+pub fn map_whisper_language(code: &str) -> String {
+    match code.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "" | "auto" => "auto".to_string(),
+        "pt-br" => "pt".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Monta o `initial_prompt`: base + regra de idioma (Perssua `pt()`).
+///
+/// Transposto do Perssua 0.27.5 (`build/static/js/310.8def3e52.chunk.js`):
+/// reduz alucinação e impede a tradução. Regras:
+/// - Base vazia/só espaços ⇒ string vazia (nenhum prompt é aplicado).
+/// - Idioma `auto`/desconhecido ⇒ devolve só a base.
+/// - NUL é removido: `set_initial_prompt` do `whisper-rs` entra em pânico com
+///   NUL e o prompt vem de um campo editável (BR-027).
+pub fn decode_prompt(base: &str, language: &str) -> String {
+    let base = base.trim().replace('\0', "");
+    if base.is_empty() {
+        return String::new();
+    }
+    match whisper_language_name(language) {
+        Some(name) => format!(
+            "{base} The audio is spoken in {name}. Transcribe it in {name}. \
+             Do not translate it to English."
+        ),
+        None => base,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,6 +371,35 @@ mod tests {
     fn speech_quality_variants() {
         assert_eq!(SpeechQuality::Preview, SpeechQuality::Preview);
         assert_ne!(SpeechQuality::Preview, SpeechQuality::Final);
+    }
+
+    #[test]
+    fn decode_prompt_adds_the_language_rule() {
+        let prompt = decode_prompt(crate::domain::settings::DEFAULT_WHISPER_PROMPT, "pt");
+        assert!(prompt.starts_with(crate::domain::settings::DEFAULT_WHISPER_PROMPT));
+        assert!(prompt.contains("The audio is spoken in Portuguese."));
+        assert!(prompt.contains("Transcribe it in Portuguese."));
+        assert!(prompt.contains("Do not translate it to English."));
+    }
+
+    #[test]
+    fn decode_prompt_handles_auto_empty_and_null_bytes() {
+        assert_eq!(decode_prompt("base", "auto"), "base");
+        assert_eq!(decode_prompt("base", ""), "base");
+        assert_eq!(decode_prompt("base", "xx"), "base");
+        assert_eq!(decode_prompt("", "pt"), "");
+        assert_eq!(decode_prompt("   ", "pt"), "");
+        assert_eq!(decode_prompt("ba\0se", "auto"), "base");
+    }
+
+    #[test]
+    fn maps_language_codes_for_the_whisper_adapter() {
+        assert_eq!(map_whisper_language("auto"), "auto");
+        assert_eq!(map_whisper_language(""), "auto");
+        assert_eq!(map_whisper_language("pt-br"), "pt");
+        assert_eq!(map_whisper_language("pt_BR"), "pt");
+        assert_eq!(map_whisper_language("en"), "en");
+        assert_eq!(map_whisper_language("pt"), "pt");
     }
 
     #[test]

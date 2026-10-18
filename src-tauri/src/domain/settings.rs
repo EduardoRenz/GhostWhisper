@@ -25,6 +25,17 @@ pub fn language_name(code: &str) -> &'static str {
     }
 }
 
+/// Prompt base de decodificação do whisper (Perssua: remote config `whisper_prompt`).
+///
+/// Reduz alucinação: instrui o modelo a não inventar quando não tem certeza. A
+/// regra de idioma é acrescentada pela camada de aplicação
+/// (`domain::transcription::decode_prompt`).
+pub const DEFAULT_WHISPER_PROMPT: &str =
+    "Only transcribe what is clearly spoken. If uncertain, transcribe nothing.";
+
+/// Teto de caracteres do prompt de decodificação.
+pub const MAX_WHISPER_PROMPT_CHARS: usize = 1_000;
+
 /// Provider de LLM suportado (BYO key).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -100,6 +111,12 @@ pub struct Settings {
     pub translation_enabled: bool,
     /// Modelo whisper.cpp local (`tiny`, `base`, ...).
     pub whisper_model: String,
+    /// Prompt de decodificação (`initial_prompt`) do whisper.
+    ///
+    /// Vazio desliga o prompt (comportamento antigo). Ver
+    /// [`DEFAULT_WHISPER_PROMPT`] e BR-027.
+    #[serde(default = "default_whisper_prompt")]
+    pub whisper_prompt: String,
     /// Ganho aplicado ao microfone antes da transcrição (1×–16×).
     ///
     /// O áudio do sistema nunca é amplificado. Ver BR-018 e
@@ -166,6 +183,7 @@ impl Default for Settings {
             target_language: "pt".to_string(),
             translation_enabled: false,
             whisper_model: "tiny".to_string(),
+            whisper_prompt: default_whisper_prompt(),
             mic_gain: default_mic_gain(),
             stealth: false,
             shortcuts: crate::domain::shortcuts::default_bindings(),
@@ -210,6 +228,11 @@ fn default_mic_gain() -> f32 {
     crate::domain::audio::DEFAULT_MIC_GAIN
 }
 
+/// Prompt de decodificação padrão (Perssua: `whisper_prompt`).
+fn default_whisper_prompt() -> String {
+    DEFAULT_WHISPER_PROMPT.to_string()
+}
+
 impl Settings {
     /// Valida invariantes antes de persistir/usar.
     pub fn validate(&self) -> Result<()> {
@@ -217,6 +240,16 @@ impl Settings {
             return Err(GhostWhisperError::Config(
                 "modelo não pode ser vazio".into(),
             ));
+        }
+        if self.whisper_prompt.contains('\0') {
+            return Err(GhostWhisperError::Config(
+                "prompt de decodificação contém caractere nulo".into(),
+            ));
+        }
+        if self.whisper_prompt.chars().count() > MAX_WHISPER_PROMPT_CHARS {
+            return Err(GhostWhisperError::Config(format!(
+                "prompt de decodificação deve ter no máximo {MAX_WHISPER_PROMPT_CHARS} caracteres"
+            )));
         }
         if self.provider.requires_base_url() {
             match self.base_url.as_deref().map(str::trim) {
@@ -286,6 +319,13 @@ impl Settings {
             self.target_language = "pt".to_string();
         }
         self.mic_gain = crate::domain::audio::clamp_mic_gain(self.mic_gain);
+        // Prompt de decodificação: sem NUL (o `whisper-rs` entra em pânico) e no teto.
+        self.whisper_prompt = self
+            .whisper_prompt
+            .replace('\0', "")
+            .chars()
+            .take(MAX_WHISPER_PROMPT_CHARS)
+            .collect();
         // Agentes inválidos são descartados ao carregar um arquivo antigo/Manual;
         // no save, `validate` recusa em vez de descartar.
         self.custom_assistant_modes
@@ -512,6 +552,49 @@ mod tests {
         );
         assert_eq!(dirty.suggestions_size, Some((900, 700)));
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn whisper_prompt_defaults_to_the_perssua_contract() {
+        assert_eq!(Settings::default().whisper_prompt, DEFAULT_WHISPER_PROMPT);
+        let json = serde_json::to_string(&Settings::default()).expect("serializa");
+        let legacy = json.replace(
+            &format!("\"whisper_prompt\":\"{DEFAULT_WHISPER_PROMPT}\","),
+            "",
+        );
+        assert!(!legacy.contains("whisper_prompt"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert_eq!(parsed.whisper_prompt, DEFAULT_WHISPER_PROMPT);
+    }
+
+    #[test]
+    fn whisper_prompt_can_be_disabled_and_is_bounded() {
+        let disabled = Settings {
+            whisper_prompt: String::new(),
+            ..Settings::default()
+        };
+        assert!(disabled.validate().is_ok());
+
+        let huge = Settings {
+            whisper_prompt: "a".repeat(MAX_WHISPER_PROMPT_CHARS + 1),
+            ..Settings::default()
+        };
+        assert!(huge.validate().is_err());
+        let clamped = huge.sanitized();
+        assert_eq!(
+            clamped.whisper_prompt.chars().count(),
+            MAX_WHISPER_PROMPT_CHARS
+        );
+    }
+
+    #[test]
+    fn whisper_prompt_rejects_null_bytes_and_sanitizes_them() {
+        let dirty = Settings {
+            whisper_prompt: "a\0b".into(),
+            ..Settings::default()
+        };
+        assert!(dirty.validate().is_err());
+        assert_eq!(dirty.sanitized().whisper_prompt, "ab");
     }
 
     #[test]

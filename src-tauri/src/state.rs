@@ -10,6 +10,7 @@ use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::EventPublisher;
+use crate::ports::gpu_probe::GpuProbe;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::overlay_window::OverlayWindowController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
@@ -51,6 +52,8 @@ pub struct AppState {
     pub settings: Arc<dyn SettingsStore>,
     /// Chaves de API (keyring ou fallback de sessão).
     pub secrets: Arc<dyn SecretStore>,
+    /// Detecção de GPU (sugestão de modelo local).
+    pub gpu: Arc<dyn GpuProbe>,
     /// Roteador de LLM (validar chave/completudes).
     pub llm: Arc<dyn LlmController>,
     /// Tradução ao vivo.
@@ -82,6 +85,7 @@ impl AppState {
         clock: Arc<dyn Clock>,
         settings: Arc<dyn SettingsStore>,
         secrets: Arc<dyn SecretStore>,
+        gpu: Arc<dyn GpuProbe>,
         llm: Arc<dyn LlmController>,
         translator: Arc<dyn Translator>,
         summary: Arc<dyn SummaryGenerator>,
@@ -103,6 +107,7 @@ impl AppState {
             clock,
             settings,
             secrets,
+            gpu,
             llm,
             translator,
             summary,
@@ -266,6 +271,13 @@ mod tests {
         }
     }
 
+    struct FakeGpuProbe;
+    impl crate::ports::gpu_probe::GpuProbe for FakeGpuProbe {
+        fn probe(&self) -> crate::ports::gpu_probe::GpuInfo {
+            crate::ports::gpu_probe::GpuInfo::none("fake", false)
+        }
+    }
+
     struct FakeLlm;
     impl LlmController for FakeLlm {
         fn provider_label(&self) -> Result<String> {
@@ -392,6 +404,7 @@ mod tests {
             Arc::new(crate::adapters::system::system_clock::FixedClock(1_000_000)),
             Arc::new(InMemorySettingsStore::new()),
             Arc::new(InMemorySecretStore::new()),
+            Arc::new(FakeGpuProbe),
             Arc::new(FakeLlm),
             Arc::new(FakeTranslator),
             Arc::new(FakeSummary),

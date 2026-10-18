@@ -40,7 +40,9 @@ fn model_download_hint(model: &str) -> &'static str {
         "base" => "142 MB",
         "small" => "466 MB",
         "medium" => "1,5 GB",
-        _ => "1,5 GB",
+        "large-v3-turbo" => "1,6 GB",
+        "large-v3" => "3,1 GB",
+        _ => "3,1 GB",
     }
 }
 
@@ -192,6 +194,11 @@ pub struct WhisperSpeechToText {
     model_name: String,
     /// Idioma fixado (`auto` = detecção pelo whisper).
     language: String,
+    /// Prompt de decodificação (`initial_prompt`), vazio para desligar.
+    ///
+    /// Fica atrás de um `Mutex` para poder trocar **sem recarregar o modelo**: o
+    /// contexto carregado é caro e o prompt é só um parâmetro de cada passe.
+    prompt: Mutex<String>,
     threads: i32,
     /// Publicador opcional para o status de download/carga (feedback da UI).
     publisher: Option<Arc<dyn EventPublisher>>,
@@ -204,16 +211,39 @@ impl WhisperSpeechToText {
         models: Arc<dyn ModelStore>,
         model_name: impl Into<String>,
         language: impl Into<String>,
+        prompt: impl Into<String>,
         publisher: Option<Arc<dyn EventPublisher>>,
     ) -> Self {
         Self {
             models,
             model_name: model_name.into(),
             language: language.into(),
+            prompt: Mutex::new(prompt.into()),
             threads: asr_threads(),
             publisher,
             state: Mutex::new(WorkerState::NotStarted),
         }
+    }
+
+    /// Troca o prompt de decodificação dos próximos passes (sem recarregar).
+    pub fn update_prompt(&self, prompt: impl Into<String>) {
+        if let Ok(mut slot) = self.prompt.lock() {
+            *slot = prompt.into();
+        }
+    }
+
+    /// Prompt de decodificação atual.
+    fn prompt_snapshot(&self) -> String {
+        self.prompt
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
+    }
+
+    /// Prompt atual (usado em testes).
+    #[cfg(test)]
+    pub fn prompt(&self) -> String {
+        self.prompt_snapshot()
     }
 
     /// Baixa/carrega o modelo em background e avisa a UI; em seguida atende os
@@ -419,6 +449,7 @@ fn run_worker(
                 &audio,
                 quality,
                 &this.language,
+                &this.prompt_snapshot(),
                 this.threads,
                 vad_model_path.as_deref(),
             );
@@ -450,6 +481,7 @@ fn decode_with(
     audio: &[f32],
     quality: SpeechQuality,
     language: &str,
+    prompt: &str,
     threads: i32,
     vad_model_path: Option<&str>,
 ) -> Result<Vec<TranscribedSpan>> {
@@ -475,6 +507,12 @@ fn decode_with(
     params.set_temperature_inc(DECODE_TEMPERATURE_INC);
     params.set_entropy_thold(DECODE_ENTROPY_THOLD);
     params.set_suppress_nst(true);
+    // Prompt de decodificação (Perssua: `whisper_prompt` + regra de idioma). Só
+    // é aplicado quando há texto: o método aloca e "vaza" um `CString` por
+    // chamada (comportamento do `whisper-rs`), então prompt vazio não custa nada.
+    if !prompt.is_empty() {
+        params.set_initial_prompt(prompt);
+    }
     // VAD Silero embutido do whisper.cpp (Perssua: `WhisperVad.js`): corta
     // silêncio e devolve segmentos apenas de fala.
     if let Some(vad) = vad_model_path {
@@ -579,7 +617,7 @@ mod tests {
                 dir.path().to_path_buf(),
             ),
         );
-        let asr = WhisperSpeechToText::new(models, "tiny", "auto", None);
+        let asr = WhisperSpeechToText::new(models, "tiny", "auto", "", None);
         match asr.transcribe(&[0.1; 100], SpeechQuality::Preview) {
             Err(GhostWhisperError::AsrNotReady) => {}
             other => panic!("esperava AsrNotReady, veio {other:?}"),
@@ -594,7 +632,7 @@ mod tests {
                 dir.path().to_path_buf(),
             ),
         );
-        let asr = WhisperSpeechToText::new(models, "tiny", "auto", None);
+        let asr = WhisperSpeechToText::new(models, "tiny", "auto", "", None);
         assert!(asr
             .transcribe(&[], SpeechQuality::Preview)
             .unwrap()

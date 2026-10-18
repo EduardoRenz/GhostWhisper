@@ -34,6 +34,13 @@ export interface Settings {
   target_language: Language;
   translation_enabled: boolean;
   whisper_model: string;
+  /**
+   * Prompt de decodificação (`initial_prompt`) do whisper; vazio desliga.
+   *
+   * Reduz alucinação e impede a tradução; a regra de idioma é acrescentada pelo
+   * core (BR-027).
+   */
+  whisper_prompt: string;
   /** Ganho do microfone (1×–12×); não afeta o áudio do sistema. */
   mic_gain: number;
   /** Modo stealth (sem barra de tarefas / sem título). */
@@ -73,7 +80,21 @@ export const PROVIDERS: ProviderKind[] = [
 ];
 
 /** Modelos whisper.cpp locais suportados (baixados sob demanda). */
-export const WHISPER_MODELS = ["tiny", "base", "small", "medium"] as const;
+export const WHISPER_MODELS = [
+  "tiny",
+  "base",
+  "small",
+  "medium",
+  "large-v3-turbo",
+  "large-v3",
+] as const;
+
+/**
+ * Modelos que exigem GPU para tempo real (BR-027).
+ *
+ * Em CPU eles são lentos demais para o streaming; a UI avisa.
+ */
+export const WHISPER_GPU_MODELS: string[] = ["large-v3-turbo", "large-v3"];
 
 /** Tamanhos aproximados dos modelos whisper (download sob demanda). */
 export const WHISPER_MODEL_SIZES: Record<string, string> = {
@@ -81,7 +102,13 @@ export const WHISPER_MODEL_SIZES: Record<string, string> = {
   base: "~140 MB",
   small: "~470 MB",
   medium: "~1.5 GB",
+  "large-v3-turbo": "~1.6 GB",
+  "large-v3": "~3.1 GB",
 };
+
+/** Prompt de decodificação padrão (Perssua: `whisper_prompt`). */
+export const DEFAULT_WHISPER_PROMPT =
+  "Only transcribe what is clearly spoken. If uncertain, transcribe nothing.";
 
 /**
  * Ganho de microfone (1×–12×). O padrão e o teto são os do Perssua
@@ -101,6 +128,7 @@ export const defaultSettings = (): Settings => ({
   target_language: "pt",
   translation_enabled: false,
   whisper_model: "tiny",
+  whisper_prompt: DEFAULT_WHISPER_PROMPT,
   mic_gain: DEFAULT_MIC_GAIN,
   stealth: false,
   shortcuts: defaultBindings(),

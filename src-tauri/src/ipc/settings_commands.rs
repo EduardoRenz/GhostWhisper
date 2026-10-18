@@ -113,3 +113,11 @@ pub fn settings_key_preview(state: State<'_, AppState>) -> Result<String> {
 pub fn settings_secrets_persistent(state: State<'_, AppState>) -> bool {
     state.secrets.is_persistent()
 }
+
+/// GPU detectada e modelo local sugerido para este hardware (BR-027).
+///
+/// Nunca troca configuração sozinho: a UI decide se mostra a sugestão.
+#[tauri::command(async)]
+pub fn settings_gpu_info(state: State<'_, AppState>) -> crate::ports::gpu_probe::GpuInfo {
+    state.gpu.probe()
+}

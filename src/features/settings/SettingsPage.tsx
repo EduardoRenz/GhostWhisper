@@ -3,6 +3,7 @@ import {
   clearProviderKey,
   getProviders,
   getSettings,
+  gpuInfo,
   hasProviderKey,
   keyPreview,
   providerLabel,
@@ -10,6 +11,7 @@ import {
   secretsPersistent,
   setProviderKey,
   validateKey,
+  type GpuInfo,
 } from "../../adapters/ipc/settings";
 import {
   getShortcutCatalog,
@@ -31,6 +33,7 @@ import {
   PROVIDERS,
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
+  WHISPER_GPU_MODELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
   DEFAULT_MIC_GAIN,
@@ -65,6 +68,7 @@ export function SettingsPage() {
   const [keyMasked, setKeyMasked] = useState("");
   const [persistent, setPersistent] = useState(true);
   const [label, setLabel] = useState("");
+  const [gpu, setGpu] = useState<GpuInfo | null>(null);
   const [catalog, setCatalog] = useState<ShortcutInfo[]>([]);
   const [conflicts, setConflicts] = useState<ShortcutConflict[]>([]);
   const [status, setStatus] = useState<Status>(null);
@@ -95,6 +99,7 @@ export function SettingsPage() {
         setCatalog(shortcutCatalog);
       }
       setPersistent((await secretsPersistent()) ?? true);
+      setGpu((await gpuInfo()) ?? null);
       await refreshKeyState();
     })();
   }, [refreshKeyState]);
@@ -377,6 +382,43 @@ export function SettingsPage() {
           </label>
           <p className="settings__hint">
             O modelo é baixado apenas ao iniciar a primeira sessão com ele.
+          </p>
+
+          {gpu && (
+            <p className="settings__hint" data-testid="gpu-hint">
+              {gpu.available
+                ? `GPU detectada: ${gpu.detail}. ${
+                    gpu.acceleration_enabled
+                      ? `Modelo sugerido: ${gpu.recommended_model}.`
+                      : "Este build ainda transcreve em CPU; a aceleração por GPU chega em uma próxima entrega."
+                  }`
+                : "Nenhuma GPU detectada: a transcrição roda em CPU (use tiny/small)."}
+            </p>
+          )}
+
+          {gpu &&
+            !gpu.acceleration_enabled &&
+            WHISPER_GPU_MODELS.includes(settings.whisper_model) && (
+              <p className="settings__hint">
+                {settings.whisper_model} exige GPU para acompanhar a fala em tempo
+                real; em CPU a transcrição fica lenta.
+              </p>
+            )}
+
+          <label className="settings__field">
+            <span>Prompt de decodificação (opcional)</span>
+            <textarea
+              rows={3}
+              placeholder="Only transcribe what is clearly spoken. If uncertain, transcribe nothing."
+              value={settings.whisper_prompt}
+              onChange={(event) =>
+                update("whisper_prompt", event.target.value)
+              }
+            />
+          </label>
+          <p className="settings__hint">
+            Instrui o Whisper a não inventar quando não tem certeza; a regra de
+            idioma é acrescentada automaticamente. Deixar vazio desliga o prompt.
           </p>
 
           <div className="settings__field">

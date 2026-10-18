@@ -9,6 +9,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::domain::settings::Settings;
+use crate::domain::transcription::{decode_prompt, map_whisper_language};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::model_store::ModelStore;
@@ -20,9 +21,14 @@ use super::serialising_speech_to_text::SerialisingSpeechToText;
 use super::whisper_speech_to_text::WhisperSpeechToText;
 
 /// Motor em cache, válido enquanto (modelo, idioma) não mudarem.
+///
+/// O **prompt** não invalida o cache: ele é um parâmetro de cada passe, então
+/// mudar o prompt só chama [`WhisperSpeechToText::update_prompt`] (sem recarregar
+/// o modelo).
 struct CachedEngine {
     model: String,
     language: String,
+    whisper: Arc<WhisperSpeechToText>,
     asr: Arc<dyn SpeechToText>,
 }
 
@@ -54,52 +60,66 @@ impl WhisperSpeechEngineFactory {
     }
 }
 
-/// Resolve (modelo, idioma) do whisper a partir das configurações.
-fn engine_params(settings: &Settings) -> (String, String) {
+/// Parâmetros do motor resolvidos das configurações.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EngineParams {
+    model: String,
+    language: String,
+    prompt: String,
+}
+
+/// Resolve (modelo, idioma, prompt) do whisper a partir das configurações.
+fn engine_params(settings: &Settings) -> EngineParams {
     let model = match settings.whisper_model.trim() {
         "" => "tiny".to_string(),
         value => value.to_string(),
     };
-    let language = match settings.source_language.trim() {
-        "" => "auto".to_string(),
-        value => value.to_string(),
-    };
-    (model, language)
+    let language = map_whisper_language(&settings.source_language);
+    let prompt = decode_prompt(&settings.whisper_prompt, &settings.source_language);
+    EngineParams {
+        model,
+        language,
+        prompt,
+    }
 }
 
 impl SpeechEngineFactory for WhisperSpeechEngineFactory {
     fn create(&self) -> Result<Arc<dyn SpeechToText>> {
         let settings = self.settings.load().unwrap_or_default();
-        let (model, language) = engine_params(&settings);
+        let params = engine_params(&settings);
 
         let mut cache = self
             .cached
             .lock()
             .map_err(|_| GhostWhisperError::Other("cache do ASR envenenado".into()))?;
 
-        // Mesmo modelo/idioma ⇒ devolve o mesmo contexto (uma carga só).
+        // Mesmo modelo/idioma ⇒ devolve o mesmo contexto (uma carga só). O prompt
+        // muda sem recarregar.
         if let Some(engine) = cache.as_ref() {
-            if engine.model == model && engine.language == language {
+            if engine.model == params.model && engine.language == params.language {
+                engine.whisper.update_prompt(params.prompt);
                 return Ok(Arc::clone(&engine.asr));
             }
         }
 
         let whisper = Arc::new(WhisperSpeechToText::new(
             Arc::clone(&self.models),
-            model.clone(),
-            language.clone(),
+            params.model.clone(),
+            params.language.clone(),
+            params.prompt,
             self.publisher.clone(),
         ));
         // Baixa/carrega o modelo em background e avisa a UI; enquanto isso o
         // pipeline apenas aguarda (ver `AsrNotReady`).
         whisper.preload();
         let asr: Arc<dyn SpeechToText> = Arc::new(SerialisingSpeechToText::new(
-            whisper,
+            Arc::clone(&whisper) as Arc<dyn SpeechToText>,
             Arc::clone(&self.gate),
         ));
         *cache = Some(CachedEngine {
-            model,
-            language,
+            model: params.model,
+            language: params.language,
+            whisper,
             asr: Arc::clone(&asr),
         });
         Ok(asr)
@@ -138,28 +158,40 @@ mod tests {
             source_language: "pt".into(),
             ..Settings::default()
         };
-        assert_eq!(
-            engine_params(&custom),
-            ("small".to_string(), "pt".to_string())
-        );
+        let params = engine_params(&custom);
+        assert_eq!(params.model, "small");
+        assert_eq!(params.language, "pt");
+        assert!(params.prompt.contains("Transcribe it in Portuguese."));
 
-        // Vazio cai nos padrões seguros.
+        // Vazio cai nos padrões seguros; `auto` não acrescenta a regra de idioma.
         let blank = Settings {
             whisper_model: "  ".into(),
             source_language: "  ".into(),
             ..Settings::default()
         };
-        assert_eq!(
-            engine_params(&blank),
-            ("tiny".to_string(), "auto".to_string())
-        );
+        let params = engine_params(&blank);
+        assert_eq!(params.model, "tiny");
+        assert_eq!(params.language, "auto");
+        assert_eq!(params.prompt, Settings::default().whisper_prompt);
+    }
+
+    #[test]
+    fn brazilian_portuguese_maps_to_pt_for_whisper() {
+        let settings = Settings {
+            source_language: "pt".into(),
+            ..Settings::default()
+        };
+        assert_eq!(engine_params(&settings).language, "pt");
     }
 
     #[test]
     fn whisper_asr_exposes_configured_language() {
         let dir = tempfile::tempdir().expect("tempdir");
         let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(dir.path().to_path_buf()));
-        let asr = WhisperSpeechToText::new(models, "tiny", "en", None);
+        let asr = WhisperSpeechToText::new(models, "tiny", "en", "prompt base", None);
         assert_eq!(asr.language(), "en");
+        assert_eq!(asr.prompt(), "prompt base");
+        asr.update_prompt("outro");
+        assert_eq!(asr.prompt(), "outro");
     }
 }
