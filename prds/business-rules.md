@@ -118,3 +118,26 @@ uma nota de revisão.
 - **Detalhes:** [`.agents/rules.md`](../.agents/rules.md) §6.1 (R11–R13).
 - **Data:** 2026-10-17
 - **Status:** Ativa
+
+## BR-016 — Documentação como fonte única (referência, não duplicação)
+- **Decisão:** nenhum conteúdo já documentado é duplicado; sempre que possível,
+  cite o arquivo (link relativo ao doc em que se está) ou o ID canônico
+  (`BR-NNN`, `ISS-NNN`, `NN-task`, doc de arquitetura/tech spec). Informação
+  nova é escrita **uma única vez** no doc dono e referenciada a partir dos
+  demais — inclusive entre PRDs.
+- **Motivo:** evitar divergência entre cópias; a documentação vira um grafo
+  navegável (`prd.md` ↔ `business-rules.md` ↔ `issues.md` ↔ `tasks/`).
+- **Detalhes:** [`.agents/rules.md`](../.agents/rules.md) §6 (R14).
+- **Data:** 2026-10-17
+- **Status:** Ativa
+
+## BR-017 — Histórico (`memory.md`) por PRD e buscável
+- **Decisão:** o `memory.md` vive **dentro do PRD** (`prds/<prd>/memory.md`;
+  hoje [`mvp/memory.md`](mvp/memory.md)); não há memory global. Formato:
+  entradas `## YYYY-MM-DD — Título` em ordem cronológica (append), linha de
+  `IDs:`/`Refs:` após o título, separadas por `---` — busca por palavra-chave,
+  ID e período via `rg`/`awk` (§6.2 de [`.agents/rules.md`](../.agents/rules.md)).
+- **Motivo:** delimitar e recuperar decisões por data/ID conforme o histórico
+  cresce; manter o contexto perto do PRD a que pertence.
+- **Data:** 2026-10-17
+- **Status:** Ativa

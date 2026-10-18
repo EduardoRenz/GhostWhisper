@@ -32,14 +32,17 @@ VAD Silero + ASR `whisper-rs` · LLM via HTTP (BYO key) · SQLite (`rusqlite`, F
 ```
 src-tauri/src/{domain,application,ports,adapters,ipc,lib.rs,state.rs}
 src/{core,adapters,features}
-prds/{business-rules.md,memory.md,mvp/{prd.md,architecture,tasks}}
+prds/{business-rules.md, mvp/{prd.md,memory.md,issues.md,architecture,tasks}}
 ```
 
 ## Fluxo de trabalho (spec-driven)
 1. Descreva a mudança em `prds/mvp/` (PRD/arquitetura/task) antes de codar.
 2. Implemente em uma única camada por vez, dependendo só de ports.
 3. Escreva/exécute testes (`cargo test`, `pnpm test`).
-4. Atualize a task (`CONCLUDED`) e `prds/memory.md`.
+4. Atualize a task (`CONCLUDED`) e o `memory.md` **do PRD**
+   ([`prds/mvp/memory.md`](prds/mvp/memory.md)).
+5. Referencie docs/IDs (`BR-015`, `ISS-011`, `12-task`) em vez de duplicar
+   conteúdo (R14, BR-016); histórico por PRD, formato buscável (R15, BR-017).
 
 ## Comandos
 ```bash
@@ -60,3 +63,7 @@ pnpm test             # testes do frontend
 - Não instanciar adaptadores fora de `lib.rs`.
 - Nunca logar segredos ou áudio.
 - Toda porta tem uma dobra de teste.
+- **Documentação é fonte única:** cite arquivos e IDs (`BR-015`, `ISS-011`,
+  `12-task`) em vez de duplicar conteúdo (R14, BR-016).
+- **Histórico por PRD:** `memory.md` vive em `prds/<prd>/memory.md`; entradas
+  `## YYYY-MM-DD — Título` cronológicas com linha `IDs:` (R15, BR-017).

@@ -1,8 +1,9 @@
 # Regras de Engenharia — GhostWhisper
 
 Regras vinculantes para todo código, PR e agente que atua neste repositório.
-Resumo humano em [`../AGENTS.md`](../AGENTS.md). Decisões registradas em
-[`../prds/business-rules.md`](../prds/business-rules.md) (BR-011..BR-014).
+Resumo humano em [`../AGENTS.md`](../AGENTS.md). Decisões de produto registradas
+em [`../prds/business-rules.md`](../prds/business-rules.md) — cite o `ID`
+(`BR-015`, …), não copie o texto (R14).
 
 ---
 
@@ -86,7 +87,19 @@ Convenções específicas:
 
 - Toda mudança relevante começa em `prds/`: PRD → arquitetura → task.
 - Atualize `prds/mvp/tasks/NN-task.md` e o status em `_tasks.md`.
-- Registre decisões em `prds/business-rules.md` e o histórico em `prds/memory.md`.
+- Registre decisões em `prds/business-rules.md` e o histórico no `memory.md`
+  **do PRD** (ver R15).
+- **R14.** Documentação é **fonte única de verdade**: não duplique conteúdo já
+  documentado. Referencie o arquivo com link relativo ou cite o ID canônico
+  (`BR-015`, `ISS-011`, `12-task`, doc de arquitetura) — sempre que julgar útil
+  para retomar contexto. Informação nova é escrita **uma vez** no doc dono e
+  referenciada a partir dos demais. IDs canônicos: `BR-NNN`
+  ([`business-rules.md`](../prds/business-rules.md)), `ISS-NNN`
+  (`prds/<prd>/issues.md`), `NN-task` (`prds/<prd>/tasks/NN-task.md`).
+- **R15.** O histórico (`memory.md`) é **por PRD**:
+  [`prds/mvp/memory.md`](../prds/mvp/memory.md); não existe memory global.
+  Novo PRD/tech spec ⇒ novo `memory.md` e `issues.md`.
+  [`business-rules.md`](../prds/business-rules.md) continua global.
 
 ## 6.1 Referência de produto: Perssua é a fonte de verdade
 
@@ -102,6 +115,28 @@ Convenções específicas:
 - **R13.** Ao transpor, mantenha **nomes e valores** observáveis do Perssua
   (constantes, limiares, ordem de etapas) para facilitar a auditoria, adaptando
   apenas o que não existe no Linux.
+
+## 6.2 Formato do `memory.md` (histórico por PRD, buscável)
+
+Layout fixo para permitir busca por palavra-chave, ID e **período** conforme o
+arquivo cresce (R15, BR-017):
+
+- Uma entrada = **um** título `## YYYY-MM-DD — Título curto`; nunca usar `##`
+  dentro de uma entrada (`###` para subseções). Entradas separadas por `---`.
+- Ordem **cronológica** (append; a entrada mais recente fica no fim).
+- Linhas de contexto logo após o título: `- **IDs:** ISS-011, T12` e
+  `- **Refs:** BR-015, prds/mvp/tasks/12-task.md`.
+- **Sem índice de títulos** no arquivo (duplicaria conteúdo — R14); a busca é
+  via `rg`.
+- Cada `memory.md` traz essa legenda de busca no topo do arquivo.
+
+| Objetivo | Comando |
+|----------|---------|
+| Palavra-chave | `rg -n -i 'whisper' prds/mvp/memory.md` |
+| Entrada do dia | `rg -n '^## 2026-10-17' prds/mvp/memory.md` |
+| Período | `rg -n '^## 2026-10-(1[0-9]\|2[0-9])' prds/mvp/memory.md` |
+| Entrada inteira | `awk '/^## 2026-10-17 —/,/^## /' prds/mvp/memory.md` |
+| Por ID | `rg -n 'ISS-011\|BR-015' prds/mvp/memory.md` |
 
 ## 7. Proibições
 
