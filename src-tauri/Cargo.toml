@@ -43,3 +43,9 @@ tempfile = "3"
 # Artefatos menores (o incremental chega a vários GB neste projeto).
 [profile.dev]
 incremental = false
+
+# `whisper-rs-sys` compila whisper.cpp/ggml em C/C++. Sem otimização o ASR fica
+# ~10x mais lento e o `tauri dev` parece travado (o `.deb`/AppImage usa release).
+# Otimiza apenas esse pacote; o resto do app continua com build rápido.
+[profile.dev.package.whisper-rs-sys]
+opt-level = 3

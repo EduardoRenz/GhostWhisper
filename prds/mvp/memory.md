@@ -493,3 +493,110 @@ documentado na Tarefa 00 e no README. Toolchain Rust instalada via rustup
   clippy/fmt/tsc limpos.
 - Pacotes reconstruídos (`scripts/package-linux.sh deb,appimage`).
 
+
+---
+
+## 2026-10-18 — Streaming em tempo real: decisão desacoplada e ASR robusto (T13)
+
+- **IDs:** ISS-013, ISS-014, T13, BR-018
+- **Refs:** `prds/mvp/architecture/transcription-streaming.md`,
+  `prds/mvp/tasks/13-task.md`, `src-tauri/src/application/turn_scheduler.rs`
+
+### Contexto
+O usuário reportou que o MVP "não está em tempo real o suficiente". A tarefa foi
+**medir antes de mexer** e comparar com o Perssua (BR-015).
+
+### REA (Perssua 0.27.5, `resources/app.asar`)
+- Captura do local-whisper no renderer: **AEC → ganho de mic 8× → noise gate
+  (RMS 0,025 · hangover 600 ms) → PCM16**; `whisper_prompt` padrão
+  ("Only transcribe what is clearly spoken…") é enviado em todo request.
+- VAD do main: RMS 500 (int16 ≈ 0,0153), `min_speech 160 ms`, `silence 1000 ms`,
+  todos com override por env (`runtimeConfig.js`).
+- Decodificação **assíncrona**: `isProcessing` + `pendingUtteranceComplete` +
+  `finishProcessing` re-agendam com o buffer mais novo; o áudio continua sendo
+  avaliado durante a inferência.
+- Constantes do streaming conferem com as nossas (0,75 s · 0,35 s · 1200 ms ·
+  1000 ms idle · 55 s teto · `-nf -sns -nt` · temperature 0 / entropy 2,2).
+
+### Medição (deste projeto, modelo `tiny`, CPU)
+- **~1,5–2 s por chamada, praticamente constante até 20 s de áudio**; **penhasco
+  de ~10× a partir de 30 s** (o encoder do whisper só enxerga 30 s).
+- O VAD Silero **não** é o custo; 4 threads ≈ 1,7× mais rápido que 2.
+- Consequências: **não** adotar janela deslizante de prévia (custo constante),
+  manter o turno inteiro e **baixar o teto do turno para 25 s** (abaixo do
+  penhasco; desvio consciente do `MAX_CONTEXT_MS = 55 s`).
+- `cargo test`/`tauri dev` rodam em perfil `dev`; com `whisper-rs-sys` sem
+  otimização o custo por chamada ia a ~4,5 s ⇒ `[profile.dev.package.whisper-rs-sys]
+  opt-level = 3` e medir sempre com `--release`.
+
+### Implementado
+- ISS-013: `TranscriptionPipeline::tick()` deixou de decodificar; decisão extraída
+  para `TurnScheduler` **puro**; thread de decodificação própria; resultado
+  aplicado por turno; cadência só avança em sucesso; após falha, só o relógio de
+  ociosidade re-arma; `stop`/`flush` aguardam o final (com teto).
+- ISS-014: `WhisperSpeechToText` com thread de trabalho única dona do estado,
+  fila que **coalesce prévias**, `deadline` descartando trabalho abandonado,
+  timeouts por qualidade (prévia 15–30 s; final 30–120 s) e
+  `min(4, núcleos)` threads (`GHOSTWHISPER_ASR_THREADS`).
+- Telemetria de RTF em `info`; env para todos os limiares de tempo.
+
+### Verificação
+- **143 testes Rust** (+11 do scheduler/streaming) · 7 `ignored`
+  (benchmarks + E2E) · clippy/fmt limpos · 22 frontend · `tsc`/`pnpm build` ✓.
+- E2E real em release: `end_to_end_transcribes_jfk_speech` e
+  `end_to_end_streams_preview_before_final` (prévia durante a fala + final "country").
+
+### Pendências registradas
+- **BR-018 / task 14:** front-end de áudio do Perssua (ganho 8×, noise gate, VAD
+  500/160/1000) como defaults configuráveis; sem AEC.
+- Fase 3: `initial_prompt` (`whisper_prompt`) e feature opcional `vulkan`.
+- REA: noise gate (`N.Kv`), AEC (`se.eo`) e `whisper_speed = 2`.
+
+---
+
+## 2026-10-18 — Sensibilidade do microfone: ganho e noise gate (T14, ISS-015)
+
+- **IDs:** ISS-015, T14, T15, BR-018
+- **Refs:** `prds/mvp/architecture/transcription-streaming.md` §6,
+  `prds/mvp/tasks/14-task.md`, `src-tauri/src/adapters/audio/microphone_front_end.rs`
+
+### Contexto
+Usuário: "meu mic acusa sensibilidade muito baixa". Diagnóstico: nenhum ganho de
+entrada e gate de fala com limiar **absoluto** no sinal cru — microfone quieto
+nunca dispara prévia e o turno é rejeitado.
+
+### REA (Perssua 0.27.5) — módulo 7125 de `build/static/js/main.f180d025.js`
+- **Ganho (`dy`)**: `clamp(cfg local_whisper_user_mic_gain, padrão 8, mín 1, máx 12)`,
+  aplicado só quando o falante é o mic do usuário.
+- **Gate (`Kv`)**: `rms >= threshold` passa; senão passa em *hangover*
+  (`speaking && Δ ≤ hangover_ms`); senão **mudo** (`muteInsteadOfDrop`), e depois
+  de `hangover + muteSilenceDurationMs` deixa de transmitir.
+- Defaults do local-whisper: `threshold 0.025`, `hangover 600 ms`,
+  `muteSilenceDurationMs 1200`; `user_mic_noise_gate_enabled` = true.
+- Ordem: ganho → gate (limiar pós-ganho) → ASR.
+
+### Implementado
+- `domain::audio`: `apply_gain` (satura ±1), `clamp_mic_gain` (1×–12×, padrão 8×),
+  `NoiseGate` (mudo + hangover) e `SPEECH_RMS_THRESHOLD` como **fonte única** do
+  limiar (o pipeline passou a usá-lo).
+- `adapters/audio/microphone_front_end.rs`: decorador sobre `AudioSource` com
+  ganho → gate, **só no microfone**; configurações lidas a cada `start()`.
+- `settings.mic_gain` persistido (padrão 8×); slider **“Sensibilidade do
+  microfone”** (1×–12×) na aba *Transcrição & Áudio*; painel de teste mostra o
+  ganho aplicado.
+- Desvios deliberados: (1) **nunca descartar** áudio, só silenciar — o pipeline
+  mede silêncio pelo comprimento do buffer e descartar impediria o turno de
+  fechar; (2) limiar do gate = o do app (0,008), não 0,025, que silenciaria fala
+  hoje transcrita. Ambos ajustáveis por ambiente
+  (`GHOSTWHISPER_MIC_NOISE_GATE_RMS`, `..._HANGOVER_MS`).
+
+### Verificação
+- **162 testes Rust** (+19) · 7 `ignored` · clippy/fmt limpos · 23 frontend ·
+  `tsc` ✓.
+- Teste-chave: ganho de 8× levanta uma fala de RMS 0,004 (que sozinha **não**
+  passa no gate) para acima do limiar de fala.
+
+### Pendente
+- Task 15: monitor atrasado ("ouvir minha voz") — porta
+  `ports/audio_player.rs` + adapter `cpal` de saída e ring buffer de ~300–600 ms,
+  com fone de ouvido obrigatório. Especificada, não implementada.

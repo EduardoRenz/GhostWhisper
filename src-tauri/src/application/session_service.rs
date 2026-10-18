@@ -16,6 +16,7 @@ use crate::ports::session_controller::{AudioChannel, SessionController};
 use crate::ports::speech_engine_factory::SpeechEngineFactory;
 
 use super::transcription_pipeline::TranscriptionPipeline;
+use super::turn_scheduler::TurnTimings;
 
 /// Orquestra a sessão: persiste, escolhe as fontes, monta os pipelines e inicia.
 pub struct SessionService {
@@ -121,14 +122,17 @@ impl SessionController for SessionService {
                 AudioChannel::System => Speaker::They,
             };
 
-            let pipeline = Arc::new(TranscriptionPipeline::new(
-                id.clone(),
-                speaker,
-                channel,
-                asr,
-                Arc::clone(&self.publisher),
-                Arc::clone(&self.transcriptions),
-            ))
+            let pipeline = Arc::new(
+                TranscriptionPipeline::new(
+                    id.clone(),
+                    speaker,
+                    channel,
+                    asr,
+                    Arc::clone(&self.publisher),
+                    Arc::clone(&self.transcriptions),
+                )
+                .with_timings(TurnTimings::from_env()),
+            )
             .start();
 
             let consumer: Arc<dyn AudioConsumer> = pipeline.clone();

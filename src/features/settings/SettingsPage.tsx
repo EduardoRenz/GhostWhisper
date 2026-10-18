@@ -25,11 +25,14 @@ import {
 import { AudioTestPanel } from "./AudioTestPanel";
 import {
   LANGUAGES,
+  MAX_MIC_GAIN,
+  MIN_MIC_GAIN,
   PROVIDERS,
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
+  DEFAULT_MIC_GAIN,
   defaultSettings,
   providerRequiresBaseUrl,
   type Language,
@@ -374,6 +377,32 @@ export function SettingsPage() {
             O modelo é baixado apenas ao iniciar a primeira sessão com ele.
           </p>
 
+          <div className="settings__field">
+            <span>Sensibilidade do microfone</span>
+            <input
+              type="range"
+              aria-label="Sensibilidade do microfone"
+              min={MIN_MIC_GAIN}
+              max={MAX_MIC_GAIN}
+              step={0.5}
+              value={settings.mic_gain}
+              onChange={(event) =>
+                update("mic_gain", Number(event.target.value))
+              }
+            />
+            <span className="settings__value">
+              {settings.mic_gain === DEFAULT_MIC_GAIN
+                ? `${settings.mic_gain.toFixed(1)}× (padrão)`
+                : `${settings.mic_gain.toFixed(1)}×`}
+            </span>
+          </div>
+          <p className="settings__hint">
+            Amplifica o microfone antes da transcrição — o áudio do sistema não é
+            alterado. Se a fala quase não aparece, aumente; se disparar com
+            ruído de fundo, diminua. Vale a partir da próxima captura: use o
+            “Teste de áudio” abaixo para conferir o nível.
+          </p>
+
           <label className="settings__field">
             <span>Idioma de origem</span>
             <select
@@ -432,7 +461,7 @@ export function SettingsPage() {
             </button>
           </div>
 
-          <AudioTestPanel />
+          <AudioTestPanel micGain={settings.mic_gain} />
         </section>
       )}
 

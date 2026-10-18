@@ -141,3 +141,18 @@ uma nota de revisão.
   cresce; manter o contexto perto do PRD a que pertence.
 - **Data:** 2026-10-17
 - **Status:** Ativa
+
+## BR-018 — Áudio do usuário: transpor os defaults do Perssua
+- **Decisão:** o front-end de captura do microfone segue o Perssua: **ganho de mic
+  8×** (faixa 1×–12×, configurável na aba *Transcrição & Áudio*) e **noise gate**
+  com *hangover* de 600 ms que **silencia** (não descarta) o que está abaixo do
+  limiar. O limiar do gate usa o limiar de fala do app, não os 0,025 do Perssua
+  (aquele valor silenciaria fala hoje transcrita). Sem AEC; AGC descartado.
+- **Motivo:** são o comportamento de produto observado no Perssua para o mesmo
+  `ggml-silero` de VAD e a mesma cadeia de streaming; sem o ganho, microfones
+  quietos nunca cruzam o gate de fala (limiar absoluto) e o app parece surdo.
+- **Consequência:** o áudio do sistema (loopback) **não** é amplificado nem
+  filtrado. Implementado na task 14; o monitor atrasado do microfone fica na 15.
+- **Detalhes:** [`mvp/architecture/transcription-streaming.md`](mvp/architecture/transcription-streaming.md) §6;
+  [`mvp/tasks/14-task.md`](mvp/tasks/14-task.md) e [`mvp/tasks/15-task.md`](mvp/tasks/15-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 14)

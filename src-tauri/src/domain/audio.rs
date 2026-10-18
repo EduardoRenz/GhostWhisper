@@ -38,6 +38,120 @@ impl AudioLevel {
 /// fala contínua, em vez de clique/ruído.
 pub const MIN_SPEECH_MS: i64 = 160;
 
+/// Ganho de microfone padrão (Perssua: `local_whisper_user_mic_gain = 8`).
+///
+/// Microfones de notebook costumam entregar fala bem abaixo de 1.0 de amplitude;
+/// sem este estágio o gate de fala quase nunca abre (BR-018).
+pub const DEFAULT_MIC_GAIN: f32 = 8.0;
+/// Menor ganho permitido (1× = sem amplificação).
+pub const MIN_MIC_GAIN: f32 = 1.0;
+/// Maior ganho permitido (o Perssua limita a 12×).
+pub const MAX_MIC_GAIN: f32 = 12.0;
+
+/// Limiar RMS que separa fala de ruído (sinal de trabalho, pós-ganho).
+///
+/// É a única fonte do valor: usado pelo gate de entrada do microfone e pelo
+/// pipeline (disparo de prévias e passe final), para que os dois nunca se
+/// contradigam.
+pub const SPEECH_RMS_THRESHOLD: f32 = 0.008;
+
+/// Silêncio mantido depois da última fala antes de silenciar (Perssua:
+/// `local_whisper_user_mic_noise_gate_hangover_ms = 600`).
+pub const DEFAULT_NOISE_GATE_HANGOVER_MS: u64 = 600;
+
+/// Aplica ganho ao sinal, saturando em `[-1, 1]`.
+///
+/// É o estágio de entrada do microfone (Perssua: `micGainNode` + `micGainBuffer`,
+/// aplicado **antes** do gate de fala). A saturação evita amostras fora de faixa
+/// no whisper quando o ganho é alto; `gain = 1` é identidade (e não satura nada).
+pub fn apply_gain(samples: &mut [f32], gain: f32) {
+    if !gain.is_finite() || gain <= 0.0 || (gain - 1.0).abs() < f32::EPSILON {
+        return;
+    }
+    for sample in samples.iter_mut() {
+        *sample = (*sample * gain).clamp(-1.0, 1.0);
+    }
+}
+
+/// Normaliza um ganho vindo da configuração para a faixa suportada.
+pub fn clamp_mic_gain(gain: f32) -> f32 {
+    if !gain.is_finite() {
+        return DEFAULT_MIC_GAIN;
+    }
+    gain.clamp(MIN_MIC_GAIN, MAX_MIC_GAIN)
+}
+
+/// Não há ruído abaixo deste RMS para silenciar (desliga o gate).
+pub const NOISE_GATE_DISABLED: f32 = 0.0;
+
+/// Noise gate do microfone: **silencia** (em vez de descartar) o que está abaixo
+/// do limiar, com *hangover*.
+///
+/// Transposto do Perssua (`Kv` em `main.f180d025.js`, opção `muteInsteadOfDrop`):
+/// - `rms >= threshold` ⇒ passa e marca fala;
+/// - ainda em fala até `hangover_ms` desde a última fala ⇒ passa (pausas curtas
+///   dentro da mesma frase não são cortadas);
+/// - caso contrário ⇒ zera o bloco.
+///
+/// **Diferença deliberada:** o Perssua, depois de um tempo mudo, *descarta* os
+/// blocos. Aqui nunca descartamos — o pipeline mede o silêncio pelo comprimento
+/// do buffer, então remover amostras impediria o turno de fechar. Zerar preserva
+/// a linha do tempo e tem o mesmo efeito para o ASR.
+///
+/// **Limiar padrão:** alinhado ao gate de fala do app
+/// ([`SPEECH_RMS_THRESHOLD`]), não aos 0,025 do Perssua — aquele valor é mais
+/// restritivo que o nosso gate e silenciaria fala que hoje é transcrita
+/// (justamente a sensibilidade que queremos preservar). Ajustável por ambiente.
+#[derive(Debug, Clone)]
+pub struct NoiseGate {
+    threshold: f32,
+    hangover_ms: u64,
+    speaking: bool,
+    last_loud_ms: u64,
+}
+
+impl NoiseGate {
+    /// Cria o gate; `threshold <= 0` o desliga.
+    pub fn new(threshold: f32, hangover_ms: u64) -> Self {
+        Self {
+            threshold: if threshold.is_finite() {
+                threshold.max(NOISE_GATE_DISABLED)
+            } else {
+                SPEECH_RMS_THRESHOLD
+            },
+            hangover_ms,
+            speaking: false,
+            last_loud_ms: 0,
+        }
+    }
+
+    /// Limiar configurado.
+    pub fn threshold(&self) -> f32 {
+        self.threshold
+    }
+
+    /// Processa um bloco **in place**: `true` quando passou, `false` quando foi
+    /// silenciado. `now_ms` vem de um relógio monotônico do chamador.
+    pub fn process(&mut self, samples: &mut [f32], now_ms: u64) -> bool {
+        if self.threshold <= NOISE_GATE_DISABLED {
+            return true;
+        }
+        let loud =
+            AudioLevel::from_samples(samples).is_some_and(|level| level.rms >= self.threshold);
+        if loud {
+            self.speaking = true;
+            self.last_loud_ms = now_ms;
+            return true;
+        }
+        if self.speaking && now_ms.saturating_sub(self.last_loud_ms) <= self.hangover_ms {
+            return true;
+        }
+        self.speaking = false;
+        samples.fill(0.0);
+        false
+    }
+}
+
 /// Janela de análise do gate de fala, em ms.
 const GATE_FRAME_MS: i64 = 20;
 
@@ -102,5 +216,114 @@ mod tests {
     fn sustained_speech_rejects_silence() {
         let silence = vec![0.0f32; TARGET_SAMPLE_RATE as usize];
         assert!(!has_sustained_speech(&silence, 0.01));
+    }
+
+    #[test]
+    fn gain_amplifies_and_saturates() {
+        let mut samples = [0.05f32, -0.05, 0.5];
+        apply_gain(&mut samples, 8.0);
+        assert!((samples[0] - 0.4).abs() < 1e-6);
+        assert!((samples[1] + 0.4).abs() < 1e-6);
+        // 0,5 × 8 = 4 → satura em 1,0 (nunca sai da faixa do whisper).
+        assert_eq!(samples[2], 1.0);
+    }
+
+    #[test]
+    fn gain_one_is_identity_and_never_saturates() {
+        let mut samples = [0.05f32, -1.5, 2.0];
+        apply_gain(&mut samples, 1.0);
+        // Sem mudança — inclusive para amostras já fora de faixa.
+        assert_eq!(samples, [0.05, -1.5, 2.0]);
+    }
+
+    #[test]
+    fn gain_ignores_invalid_values() {
+        let mut samples = [0.1f32];
+        apply_gain(&mut samples, f32::NAN);
+        apply_gain(&mut samples, 0.0);
+        apply_gain(&mut samples, -3.0);
+        assert_eq!(samples, [0.1]);
+    }
+
+    #[test]
+    fn mic_gain_is_clamped_or_falls_back_to_default() {
+        assert_eq!(clamp_mic_gain(0.2), MIN_MIC_GAIN);
+        assert_eq!(clamp_mic_gain(99.0), MAX_MIC_GAIN);
+        assert_eq!(clamp_mic_gain(4.0), 4.0);
+        assert_eq!(clamp_mic_gain(f32::NAN), DEFAULT_MIC_GAIN);
+    }
+
+    #[test]
+    fn gain_lifts_a_quiet_mic_above_the_speech_threshold() {
+        // Fala fraca (típica de microfone de notebook) não passaria no gate;
+        // depois do ganho padrão, passa.
+        let quiet = vec![0.004f32; TARGET_SAMPLE_RATE as usize / 2];
+        assert!(!has_sustained_speech(&quiet, SPEECH_RMS_THRESHOLD));
+
+        let mut boosted = quiet.clone();
+        apply_gain(&mut boosted, DEFAULT_MIC_GAIN);
+        assert!(has_sustained_speech(&boosted, SPEECH_RMS_THRESHOLD));
+    }
+
+    // --- Noise gate (Perssua: `Kv`, mute + hangover) -------------------------
+
+    fn loud(ms: i64) -> Vec<f32> {
+        vec![0.4f32; TARGET_SAMPLE_RATE as usize * ms as usize / 1000]
+    }
+    fn quiet(ms: i64) -> Vec<f32> {
+        vec![0.0005f32; TARGET_SAMPLE_RATE as usize * ms as usize / 1000]
+    }
+
+    #[test]
+    fn gate_passes_speech_and_mutes_noise() {
+        let mut gate = NoiseGate::new(SPEECH_RMS_THRESHOLD, DEFAULT_NOISE_GATE_HANGOVER_MS);
+
+        let mut speech = loud(100);
+        assert!(gate.process(&mut speech, 0));
+        assert!(speech.iter().any(|s| *s != 0.0), "fala passa intacta");
+
+        // 1 s depois do hangover, ruído é silenciado (não descartado).
+        let mut noise = quiet(100);
+        assert!(!gate.process(&mut noise, 2_000));
+        assert!(noise.iter().all(|s| *s == 0.0), "ruído vira silêncio");
+    }
+
+    #[test]
+    fn gate_keeps_short_pauses_inside_a_sentence() {
+        let mut gate = NoiseGate::new(SPEECH_RMS_THRESHOLD, DEFAULT_NOISE_GATE_HANGOVER_MS);
+        let mut speech = loud(100);
+        assert!(gate.process(&mut speech, 0));
+
+        // 300 ms de pausa (< hangover de 600 ms) ainda passa.
+        let mut pause = quiet(100);
+        assert!(gate.process(&mut pause, 300));
+        assert!(pause.iter().any(|s| *s != 0.0), "pausa curta não é cortada");
+
+        // Depois do hangover, silencia.
+        let mut late = quiet(100);
+        assert!(!gate.process(&mut late, 900));
+        assert!(late.iter().all(|s| *s == 0.0));
+    }
+
+    #[test]
+    fn gate_mutes_before_any_speech() {
+        let mut gate = NoiseGate::new(SPEECH_RMS_THRESHOLD, DEFAULT_NOISE_GATE_HANGOVER_MS);
+        let mut noise = quiet(100);
+        assert!(!gate.process(&mut noise, 10_000));
+        assert!(noise.iter().all(|s| *s == 0.0));
+    }
+
+    #[test]
+    fn gate_can_be_disabled_with_a_non_positive_threshold() {
+        let mut gate = NoiseGate::new(NOISE_GATE_DISABLED, DEFAULT_NOISE_GATE_HANGOVER_MS);
+        let mut noise = quiet(100);
+        assert!(gate.process(&mut noise, 0));
+        assert!(noise.iter().all(|s| *s != 0.0), "sem limiar, nada é mexido");
+    }
+
+    #[test]
+    fn gate_falls_back_to_the_default_threshold_on_garbage() {
+        let gate = NoiseGate::new(f32::NAN, DEFAULT_NOISE_GATE_HANGOVER_MS);
+        assert_eq!(gate.threshold(), SPEECH_RMS_THRESHOLD);
     }
 }

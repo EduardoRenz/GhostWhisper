@@ -20,8 +20,11 @@ import {
  * Teste de captura: escolhe o dispositivo, inicia a gravação e mostra o nível
  * em tempo real — para conferir se o microfone/áudio do sistema está bom antes
  * de abrir uma sessão.
+ *
+ * No microfone o nível exibido já inclui o **ganho de sensibilidade** e o
+ * **noise gate** (BR-018), ou seja, é o que o ASR vai receber.
  */
-export function AudioTestPanel() {
+export function AudioTestPanel({ micGain }: { micGain?: number }) {
   const [channel, setChannel] = useState<SessionChannel>("microphone");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -145,8 +148,18 @@ export function AudioTestPanel() {
         </div>
         <p className="settings__hint">
           RMS {level.rms.toFixed(3)} · pico {level.peak.toFixed(3)}
-          {silent && " — sem sinal: verifique o dispositivo ou o volume."}
+          {channel === "microphone" && micGain !== undefined && (
+            <> · ganho {micGain.toFixed(1)}× (aplica-se ao reiniciar o teste)</>
+          )}
         </p>
+        {silent && (
+          <p className="settings__hint">
+            Sem sinal: fale mais perto, aumente a “Sensibilidade do microfone”
+            acima ou o volume de entrada do sistema. O ruído de fundo abaixo da
+            sensibilidade é silenciado de propósito para não virar transcrição
+            falsa.
+          </p>
+        )}
       </div>
 
       <div className="settings__actions">

@@ -3,8 +3,8 @@
 //! Modelo de streaming transposto do **Perssua** (`electron/local-whisper`,
 //! `WhisperSession.js` / `WhisperSessionStreaming.js`), que é a referência de
 //! produto (BR-015):
-//! - **um buffer de turno** acumula o áudio do turno atual (teto rígido de 60 s
-//!   = `FINAL_UTTERANCE_MAX_SEC`);
+//! - **um buffer de turno** acumula o áudio do turno atual (teto rígido de 30 s
+//!   = `MAX_BUFFER_MS`, abaixo do penhasco de custo do whisper);
 //! - **prévias frequentes** decodificam o turno que cresce (~a cada 0,75 s de
 //!   áudio novo) e publicam um **texto rolante** revisável (`is_final = false`);
 //! - a primeira prévia espera `INITIAL_PREVIEW_MS` (1,2 s), como no Perssua;
@@ -13,53 +13,43 @@
 //! - **gate de fala sustentada** (RMS) evita decodificar ruído/clique;
 //! - **filtro de alucinação** no texto decodificado;
 //! - **telemetria de RTF** (tempo real) por passe.
+//!
+//! Arquitetura: a **decisão** é pura ([`turn_scheduler`]) e roda numa thread de
+//! agendamento (a cada 50 ms); a **decodificação** roda numa thread de trabalho
+//! própria e nunca bloqueia o agendamento. Sem isso, o fim do turno ficava preso
+//! atrás de uma prévia em voo e o texto só parava de crescer quando a
+//! decodificação terminava (o Perssua resolve o mesmo com `isProcessing` +
+//! `pendingUtteranceComplete`).
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::domain::audio::{has_sustained_speech, AudioLevel, TARGET_SAMPLE_RATE};
-use crate::domain::transcription::{
-    is_likely_hallucination, Speaker, SpeechQuality, TranscriptSegment,
+use crate::domain::audio::{
+    has_sustained_speech, AudioLevel, SPEECH_RMS_THRESHOLD, TARGET_SAMPLE_RATE,
 };
-use crate::error::GhostWhisperError;
+use crate::domain::transcription::{
+    is_likely_hallucination, Speaker, SpeechQuality, TranscribedSpan, TranscriptSegment,
+};
+use crate::error::{GhostWhisperError, Result};
 use crate::ports::audio_consumer::AudioConsumer;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::repositories::TranscriptionsRepository;
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::speech_to_text::SpeechToText;
 
+use super::turn_scheduler::{self, Decision, TurnState, TurnTimings};
+
 /// Tamanho mínimo do buffer para agir (ms).
 const MIN_BUFFER_MS: i64 = 250;
-/// Áudio mínimo do turno para valer uma decodificação (s).
-/// Perssua: `SERVER_MIN_AUDIO_DURATION_SEC = 0.35`.
-const MIN_WINDOW_MS: i64 = 350;
-/// Passo mínimo de áudio novo entre prévias.
-/// Perssua: `SERVER_WINDOW_DURATION_SEC = 0.75`.
-const PREVIEW_STEP_MS: i64 = 750;
-/// Primeira prévia só depois disto de turno.
-/// Perssua: `INITIAL_PREVIEW_MS = 1200`.
-const INITIAL_PREVIEW_MS: i64 = 1_200;
-/// Força uma prévia quando nada é processado por este tempo.
-/// Perssua: `SERVER_IDLE_FORCE_PROCESS_MS = 1000`.
-const IDLE_FORCE_MS: u64 = 1_000;
-/// Silêncio (ms) que encerra o turno.
-/// Perssua: `VAD_SILENCE_DURATION_MS = 1000`.
-const SILENCE_MS: i64 = 1_000;
-/// Fala mínima do turno para virar segmento final.
-/// Perssua: `FINAL_UTTERANCE_MIN_SEC = 0.8`.
-const MIN_SEGMENT_MS: i64 = 800;
-/// Teto do turno em fala contínua.
-/// Perssua: `MAX_CONTEXT_MS = 55000`.
-const MAX_TURN_MS: i64 = 55_000;
 /// Teto rígido do buffer de turno (backpressure).
-/// Perssua: `FINAL_UTTERANCE_MAX_SEC = 60`.
-const MAX_BUFFER_MS: i64 = 60_000;
-/// Limiar RMS do gate de fala.
-const SPEECH_RMS_THRESHOLD: f32 = 0.008;
-/// Intervalo de verificação da thread trabalhadora.
+///
+/// Mantém o áudio vivo abaixo do penhasco de custo do whisper (`max_turn_ms`),
+/// para que a próxima decodificação continue na faixa barata.
+const MAX_BUFFER_MS: i64 = 30_000;
+/// Intervalo de verificação da thread de agendamento.
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
 /// Intervalo mínimo entre eventos de nível de áudio.
 const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
@@ -67,6 +57,36 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
 const AUDIO_STARVATION: Duration = Duration::from_secs(3);
 /// Intervalo mínimo entre avisos de ausência de áudio.
 const STARVATION_LOG_INTERVAL: Duration = Duration::from_secs(5);
+/// Espera máxima pelo passe final em `stop`/`flush`.
+const FLUSH_WAIT: Duration = Duration::from_secs(20);
+
+/// Pedido de decodificação enviado à thread de trabalho.
+struct DecodeRequest {
+    /// Turno a que o áudio pertence (id estável do segmento).
+    turn: u64,
+    /// Base temporal do turno (ms) para timestamps monotônicos.
+    base_ms: i64,
+    quality: SpeechQuality,
+    /// Áudio do turno (já recortado em `cut_ms`).
+    audio: Vec<f32>,
+    /// Milissegundos do turno cobertos por `audio`.
+    cut_ms: i64,
+}
+
+/// Pedido concluído, com o contexto necessário para publicar.
+struct DecodeOutcome {
+    request: DecodeRequest,
+    result: Result<Vec<TranscribedSpan>>,
+    wall_ms: u128,
+}
+
+/// Como as decodificações são executadas.
+enum DecodeMode {
+    /// Testes: decodifica na própria thread (determinístico, sem corrida).
+    Inline,
+    /// Produção: thread de trabalho própria.
+    Worker(mpsc::Sender<DecodeRequest>),
+}
 
 /// Consome áudio de uma fonte e publica segmentos transcritos.
 pub struct TranscriptionPipeline {
@@ -76,6 +96,8 @@ pub struct TranscriptionPipeline {
     asr: Arc<dyn SpeechToText>,
     publisher: Arc<dyn EventPublisher>,
     transcriptions: Arc<dyn TranscriptionsRepository>,
+    /// Limiares de tempo do turno.
+    timings: TurnTimings,
     /// Buffer do turno atual (teto rígido).
     buffer: Mutex<VecDeque<f32>>,
     stop: AtomicBool,
@@ -83,18 +105,33 @@ pub struct TranscriptionPipeline {
     turn: AtomicU64,
     /// Deslocamento temporal acumulado dos turnos (para timestamps monotônicos).
     turn_base_ms: AtomicU64,
+    /// Decodificações em andamento.
+    in_flight: AtomicUsize,
     dropped_samples: AtomicU64,
     last_level: Mutex<Instant>,
     last_audio: Mutex<Instant>,
     last_starvation_log: Mutex<Instant>,
-    /// Comprimento do buffer (ms) na última decodificação — garante o passo.
+    /// Comprimento do buffer (ms) na última decodificação **bem-sucedida**.
     last_decode_ms: Mutex<i64>,
-    /// Instante da última decodificação (dispara a prévia por ociosidade).
-    last_decode_at: Mutex<Instant>,
+    /// Instante da última tentativa de decodificação.
+    last_attempt_at: Mutex<Instant>,
+    /// A última tentativa falhou (transitório): só o relógio de ociosidade
+    /// re-arma uma nova prévia (evita re-tentar a cada 50 ms).
+    last_attempt_failed: AtomicBool,
     /// Fim (ms, relativo ao turno) da última janela com fala.
     last_voiced_end_ms: Mutex<i64>,
     /// Houve fala no turno atual (desde o último fechamento).
     had_speech: AtomicBool,
+    /// Turnos com passe final pendente (aguardando o resultado).
+    ///
+    /// É um conjunto, não um único turno: o `tick` e o resultado da prévia podem
+    /// fechar turnos diferentes em paralelo, e um final nunca pode ser descartado
+    /// porque outro turno começou.
+    pending_finals: Mutex<Vec<u64>>,
+    /// Último texto de prévia publicado, por turno (fallback se o final falhar).
+    last_preview: Mutex<Option<(u64, String)>>,
+    /// Como executar as decodificações.
+    mode: Mutex<DecodeMode>,
 }
 
 impl TranscriptionPipeline {
@@ -107,6 +144,35 @@ impl TranscriptionPipeline {
         publisher: Arc<dyn EventPublisher>,
         transcriptions: Arc<dyn TranscriptionsRepository>,
     ) -> Self {
+        Self::with_timings_and_all(
+            session_id,
+            speaker,
+            channel,
+            asr,
+            publisher,
+            transcriptions,
+            TurnTimings::default(),
+        )
+    }
+
+    /// Substitui os limiares de tempo do turno (produção usa
+    /// [`TurnTimings::from_env`]).
+    pub fn with_timings(mut self, timings: TurnTimings) -> Self {
+        self.timings = timings;
+        self
+    }
+
+    /// Construtor completo.
+    #[allow(clippy::too_many_arguments)]
+    fn with_timings_and_all(
+        session_id: String,
+        speaker: Speaker,
+        channel: AudioChannel,
+        asr: Arc<dyn SpeechToText>,
+        publisher: Arc<dyn EventPublisher>,
+        transcriptions: Arc<dyn TranscriptionsRepository>,
+        timings: TurnTimings,
+    ) -> Self {
         let now = Instant::now();
         Self {
             session_id,
@@ -115,10 +181,12 @@ impl TranscriptionPipeline {
             asr,
             publisher,
             transcriptions,
+            timings,
             buffer: Mutex::new(VecDeque::new()),
             stop: AtomicBool::new(false),
             turn: AtomicU64::new(0),
             turn_base_ms: AtomicU64::new(0),
+            in_flight: AtomicUsize::new(0),
             dropped_samples: AtomicU64::new(0),
             last_level: Mutex::new(now.checked_sub(LEVEL_INTERVAL).unwrap_or(now)),
             last_audio: Mutex::new(now),
@@ -126,14 +194,34 @@ impl TranscriptionPipeline {
                 now.checked_sub(STARVATION_LOG_INTERVAL).unwrap_or(now),
             ),
             last_decode_ms: Mutex::new(0),
-            last_decode_at: Mutex::new(now),
+            last_attempt_at: Mutex::new(now),
+            last_attempt_failed: AtomicBool::new(false),
             last_voiced_end_ms: Mutex::new(0),
             had_speech: AtomicBool::new(false),
+            pending_finals: Mutex::new(Vec::new()),
+            last_preview: Mutex::new(None),
+            mode: Mutex::new(DecodeMode::Inline),
         }
     }
 
-    /// Inicia a thread trabalhadora.
+    /// Inicia as threads (decodificação + agendamento).
     pub fn start(self: &Arc<Self>) -> Arc<Self> {
+        let (tx, rx) = mpsc::channel::<DecodeRequest>();
+        if let Ok(mut guard) = self.mode.lock() {
+            *guard = DecodeMode::Worker(tx);
+        }
+
+        {
+            let this = Arc::clone(self);
+            let asr = Arc::clone(&self.asr);
+            let spawned = thread::Builder::new()
+                .name("whisper-decode".into())
+                .spawn(move || this.run_decode_worker(rx, asr));
+            if let Err(error) = spawned {
+                tracing::error!("falha ao iniciar thread de decodificação: {error}");
+            }
+        }
+
         let this = Arc::clone(self);
         thread::spawn(move || {
             while !this.stop.load(Ordering::Relaxed) {
@@ -145,7 +233,7 @@ impl TranscriptionPipeline {
         Arc::clone(self)
     }
 
-    /// Sinaliza a parada da thread trabalhadora.
+    /// Sinaliza a parada das threads.
     ///
     /// Antes de parar, fecha o turno em aberto: a última frase ficaria no
     /// buffer e seria descartada (o usuário perceberia "faltou o final").
@@ -159,121 +247,175 @@ impl TranscriptionPipeline {
         if !self.had_speech() {
             return;
         }
-        let snapshot: Vec<f32> = match self.buffer.lock() {
-            Ok(buffer) => buffer.iter().copied().collect(),
-            Err(_) => return,
+        let buffered_ms = self.buffered_ms();
+        if buffered_ms < MIN_BUFFER_MS {
+            return;
+        }
+        let turn = self.turn.load(Ordering::Relaxed);
+        let base_ms = self.turn_base_ms.load(Ordering::Relaxed) as i64;
+        let audio = self.snapshot_upto(buffered_ms);
+        self.begin_final(turn, base_ms, audio, buffered_ms);
+        self.wait_for_final(FLUSH_WAIT);
+    }
+
+    /// Aguarda os passes finais pendentes (usado em `stop`/`flush`).
+    fn wait_for_final(&self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self.pending_finals_empty() {
+                return;
+            }
+            if Instant::now() >= deadline {
+                tracing::warn!(
+                    "passe final não concluiu em {}s; seguindo",
+                    timeout.as_secs()
+                );
+                return;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Thread de trabalho: decodifica em série e publica o resultado.
+    fn run_decode_worker(
+        self: Arc<Self>,
+        rx: mpsc::Receiver<DecodeRequest>,
+        asr: Arc<dyn SpeechToText>,
+    ) {
+        while let Ok(request) = rx.recv() {
+            let started = Instant::now();
+            let result = asr.transcribe(&request.audio, request.quality);
+            let wall_ms = started.elapsed().as_millis();
+            // Libera o agendamento antes de publicar: `handle_outcome` pode
+            // enfileirar o passe final.
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            self.handle_outcome(DecodeOutcome {
+                request,
+                result,
+                wall_ms,
+            });
+        }
+    }
+
+    /// Enfileira uma decodificação (worker) ou a executa na hora (testes).
+    fn dispatch(&self, request: DecodeRequest) {
+        let sender = match self.mode.lock() {
+            Ok(guard) => match &*guard {
+                DecodeMode::Worker(tx) => Some(tx.clone()),
+                DecodeMode::Inline => None,
+            },
+            Err(_) => None,
         };
-        self.finalize_turn(&snapshot, samples_to_ms(snapshot.len()));
+
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        match sender {
+            Some(tx) => {
+                if tx.send(request).is_err() {
+                    self.in_flight.fetch_sub(1, Ordering::SeqCst);
+                    if let Ok(mut slot) = self.pending_finals.lock() {
+                        slot.clear();
+                    }
+                    tracing::warn!("thread de decodificação encerrada; pedido descartado");
+                }
+            }
+            None => {
+                let started = Instant::now();
+                let result = self.asr.transcribe(&request.audio, request.quality);
+                let wall_ms = started.elapsed().as_millis();
+                self.in_flight.fetch_sub(1, Ordering::SeqCst);
+                self.handle_outcome(DecodeOutcome {
+                    request,
+                    result,
+                    wall_ms,
+                });
+            }
+        }
     }
 
     /// Ingere um bloco de áudio e processa o turno uma vez.
     ///
     /// Atalho equivalente a [`consume`](AudioConsumer::consume) + [`tick`];
-    /// existe para testes determinísticos sem a thread trabalhadora.
+    /// existe para testes determinísticos sem a thread de agendamento.
     pub fn tick(&self) {
-        let snapshot: Vec<f32> = match self.buffer.lock() {
-            Ok(buffer) => {
-                if samples_to_ms(buffer.len()) < MIN_BUFFER_MS {
+        let buffered_ms = self.buffered_ms();
+        if buffered_ms < MIN_BUFFER_MS {
+            return;
+        }
+
+        let state = TurnState {
+            buffered_ms,
+            had_speech: self.had_speech(),
+            last_voiced_end_ms: self.last_voiced_end_ms(),
+            last_decode_ms: self.last_decode_ms(),
+            ms_since_last_attempt: self.ms_since_last_attempt(),
+            decode_in_flight: self.in_flight.load(Ordering::SeqCst) > 0,
+            final_requested: self.final_pending_for_current_turn(),
+            last_attempt_failed: self.last_attempt_failed.load(Ordering::Relaxed),
+        };
+
+        match turn_scheduler::decide(&state, &self.timings) {
+            Decision::Wait => {}
+            Decision::Preview { cut_ms } => {
+                let (turn, base_ms) = self.current_turn_context();
+                self.mark_attempt();
+                let audio = self.snapshot_upto(cut_ms);
+                self.dispatch(DecodeRequest {
+                    turn,
+                    base_ms,
+                    quality: SpeechQuality::Preview,
+                    audio,
+                    cut_ms,
+                });
+            }
+            Decision::Finalize { cut_ms } => {
+                let (turn, base_ms) = self.current_turn_context();
+                let audio = self.snapshot_upto(cut_ms);
+                self.begin_final(turn, base_ms, audio, cut_ms);
+            }
+        }
+    }
+
+    /// Fecha o turno: consome o áudio, enfileira o passe final autoritativo.
+    fn begin_final(&self, turn: u64, base_ms: i64, audio: Vec<f32>, cut_ms: i64) {
+        // O `tick` e o resultado da prévia podem disparar o fechamento do mesmo
+        // turno em paralelo; a checagem+registro sob o mesmo lock garante que
+        // só um fecha.
+        match self.pending_finals.lock() {
+            Ok(mut pending) => {
+                if pending.contains(&turn) {
                     return;
                 }
-                buffer.iter().copied().collect()
+                pending.push(turn);
             }
             Err(_) => return,
-        };
-        let buffered_ms = samples_to_ms(snapshot.len());
-        let had_speech = self.had_speech();
-        let silence_ms = buffered_ms - self.last_voiced_end_ms();
-
-        // 1) Encerra o turno: teto de fala contínua ou silêncio suficiente.
-        let forced = buffered_ms >= MAX_TURN_MS;
-        let ended = had_speech && silence_ms >= SILENCE_MS && buffered_ms >= MIN_SEGMENT_MS;
-        if forced || ended {
-            let cut_ms = if forced { MAX_TURN_MS } else { buffered_ms };
-            self.finalize_turn(&snapshot, cut_ms);
-            return;
         }
+        self.mark_attempt();
 
-        // 2) Prévias durante a fala (texto rolante do turno).
-        self.maybe_preview(&snapshot, buffered_ms, had_speech);
-    }
-
-    /// Decodifica o turno crescente e publica a prévia revisável.
-    fn maybe_preview(&self, snapshot: &[f32], buffered_ms: i64, had_speech: bool) {
-        if !had_speech || buffered_ms < INITIAL_PREVIEW_MS || buffered_ms < MIN_WINDOW_MS {
-            return;
-        }
-        let step_ready = buffered_ms - self.last_decode_ms() >= PREVIEW_STEP_MS;
-        let idle_ready = self
-            .last_decode_at
-            .lock()
-            .map(|last| last.elapsed() >= Duration::from_millis(IDLE_FORCE_MS))
-            .unwrap_or(false);
-        if !step_ready && !idle_ready {
-            return;
-        }
-
-        let quality = SpeechQuality::Preview;
-        let started = Instant::now();
-        let decoded = self.decode_turn(snapshot, quality);
-        let wall = started.elapsed().as_millis();
-        log_rtf(self.channel, quality, buffered_ms, wall);
-
-        let Some(decoded) = decoded else {
-            self.set_last_decode(buffered_ms);
-            return;
-        };
-        self.set_last_decode(buffered_ms);
-        self.publish_turn(&decoded.text, buffered_ms, false);
-
-        // Perssua (`applyRecognition`): se o VAD do whisper marcou o fim da
-        // fala há ≥ SILENCE_MS, o turno terminou — mesmo com ruído de fundo
-        // mantendo o RMS alto sem gerar silêncio real no buffer.
-        if decoded
-            .speech_end_ms
-            .is_some_and(|end| buffered_ms - end >= SILENCE_MS)
-        {
-            self.finalize_turn(snapshot, buffered_ms);
-        }
-    }
-
-    /// Fecha o turno: passe final autoritativo, persistência e limpeza.
-    fn finalize_turn(&self, snapshot: &[f32], cut_ms: i64) {
-        let end = ms_to_samples(cut_ms).min(snapshot.len());
-        let audio_ms = samples_to_ms(end);
-        let gate = audio_ms >= MIN_SEGMENT_MS
-            && has_sustained_speech(&snapshot[..end], SPEECH_RMS_THRESHOLD);
-
-        let produced = if gate {
-            let quality = SpeechQuality::Final;
-            let started = Instant::now();
-            let text = self.decode_turn(&snapshot[..end], quality);
-            let wall = started.elapsed().as_millis();
-            log_rtf(self.channel, quality, audio_ms, wall);
-            match text {
-                Some(decoded) => self.publish_turn(&decoded.text, audio_ms, true),
-                None => 0,
-            }
-        } else {
-            0
-        };
-
-        // Consome o turno (ou o trecho até o teto) e avança a base temporal.
-        let base = self.turn_base_ms.load(Ordering::Relaxed);
-        self.turn_base_ms
-            .store(base + audio_ms.max(0) as u64, Ordering::Relaxed);
-        let remaining = {
+        // Consome o turno imediatamente: o áudio já está no pedido e a captura
+        // segue para o próximo turno (Perssua: `prepareNextUtterance`).
+        let drained_ms = {
             let mut guard = match self.buffer.lock() {
                 Ok(guard) => guard,
-                Err(_) => return,
+                // Lock envenenado: não deixa o turno marcado como pendente.
+                Err(_) => {
+                    if let Ok(mut pending) = self.pending_finals.lock() {
+                        pending.retain(|pending_turn| *pending_turn != turn);
+                    }
+                    return;
+                }
             };
-            let take = end.min(guard.len());
+            let take = ms_to_samples(cut_ms).min(guard.len());
             guard.drain(0..take);
-            guard.len()
+            samples_to_ms(take)
         };
-        // Reposiciona o marcador de fala restante (caso o teto tenha cortado
-        // no meio de uma fala contínua).
-        let leftover = (self.last_voiced_end_ms() - audio_ms).max(0);
+        let _ = self
+            .turn_base_ms
+            .fetch_add(drained_ms.max(0) as u64, Ordering::Relaxed);
         self.set_last_decode(0);
+        self.last_attempt_failed.store(false, Ordering::Relaxed);
+
+        let remaining = self.buffered_ms();
+        let leftover = (self.last_voiced_end_ms() - drained_ms).max(0);
         if remaining == 0 {
             self.set_last_voiced_end_ms(0);
             self.had_speech.store(false, Ordering::Relaxed);
@@ -283,72 +425,169 @@ impl TranscriptionPipeline {
         }
         self.turn.fetch_add(1, Ordering::Relaxed);
 
-        tracing::debug!(
-            channel = ?self.channel,
-            buffered_ms = samples_to_ms(snapshot.len()),
+        // Gate: só gasta um passe final se há fala sustentada de verdade.
+        let audio_ms = samples_to_ms(audio.len());
+        let gate = audio_ms >= self.timings.min_segment_ms
+            && has_sustained_speech(&audio, SPEECH_RMS_THRESHOLD);
+        if !gate {
+            // Nada será decodificado: o turno não fica pendente.
+            if let Ok(mut pending) = self.pending_finals.lock() {
+                pending.retain(|pending_turn| *pending_turn != turn);
+            }
+            tracing::debug!(
+                channel = ?self.channel,
+                audio_ms,
+                cut_ms,
+                "turno descartado pelo gate de fala"
+            );
+            return;
+        }
+
+        self.dispatch(DecodeRequest {
+            turn,
+            base_ms,
+            quality: SpeechQuality::Final,
+            audio,
             cut_ms,
-            gate,
-            produced,
-            dropped = self.dropped_samples.load(Ordering::Relaxed),
-            "turno finalizado"
-        );
+        });
     }
 
-    /// Decodifica um trecho como um turno único; filtra alucinação/vazio.
-    ///
-    /// Retorna o texto e o fim da última fala reportado pelo VAD (ms, relativo
-    /// ao trecho) — usado para encerrar o turno quando a fala acaba antes do
-    /// buffer (Perssua: `applyRecognition`/`endedInNoise`).
-    fn decode_turn(&self, audio: &[f32], quality: SpeechQuality) -> Option<DecodedTurn> {
-        match self.asr.transcribe(audio, quality) {
-            Ok(spans) => {
-                let joined = spans
-                    .iter()
-                    .map(|span| span.text.trim())
-                    .filter(|text| !text.is_empty())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-                    .trim()
-                    .to_string();
-                if joined.is_empty() || is_likely_hallucination(&joined) {
-                    if !joined.is_empty() {
-                        tracing::debug!("texto descartado como alucinação: {joined:?}");
-                    }
-                    return None;
+    /// Aplica o resultado de uma decodificação (publica/texto/finaliza).
+    fn handle_outcome(&self, outcome: DecodeOutcome) {
+        if let Ok(mut slot) = self.last_attempt_at.lock() {
+            *slot = Instant::now();
+        }
+        let DecodeRequest {
+            turn,
+            base_ms,
+            quality,
+            audio,
+            cut_ms,
+        } = outcome.request;
+        log_rtf(self.channel, quality, cut_ms, cut_ms, outcome.wall_ms);
+
+        match quality {
+            SpeechQuality::Preview => {
+                if turn != self.turn.load(Ordering::Relaxed) {
+                    tracing::trace!(turn, "prévia de turno já fechado; descartada");
+                    return;
                 }
-                let speech_end_ms = spans.iter().map(|span| span.end_ms).max();
-                Some(DecodedTurn {
-                    text: joined,
-                    speech_end_ms,
-                })
+                match outcome.result {
+                    Ok(spans) => {
+                        // Só avança a cadência com decodificação bem-sucedida.
+                        self.set_last_decode(cut_ms);
+                        self.last_attempt_failed.store(false, Ordering::Relaxed);
+                        let Some(decoded) = self.clean(spans) else {
+                            return;
+                        };
+                        self.publish_turn(turn, &decoded.text, base_ms, cut_ms, false);
+                        if let Ok(mut slot) = self.last_preview.lock() {
+                            *slot = Some((turn, decoded.text.clone()));
+                        }
+                        // Perssua (`applyRecognition`): se o VAD do whisper marcou
+                        // o fim da fala há ≥ `silence_ms`, o turno terminou — mesmo
+                        // com ruído de fundo mantendo o RMS alto.
+                        if decoded
+                            .speech_end_ms
+                            .is_some_and(|end| cut_ms - end >= self.timings.silence_ms)
+                        {
+                            self.begin_final(turn, base_ms, audio, cut_ms);
+                        }
+                    }
+                    Err(error) => self.note_failure(quality, error),
+                }
             }
-            // Modelo ainda carregando ou decodificação anterior ainda em curso:
-            // estado normal e transitório (o próximo tick tenta de novo).
-            Err(GhostWhisperError::AsrNotReady) | Err(GhostWhisperError::AsrBusy) => {
-                tracing::trace!("ASR ainda indisponível; aguardando próxima janela");
-                None
-            }
-            Err(error) => {
-                tracing::warn!("ASR falhou: {error}");
-                None
+            SpeechQuality::Final => {
+                let was_pending = self
+                    .pending_finals
+                    .lock()
+                    .map(|mut pending| {
+                        let found = pending.contains(&turn);
+                        pending.retain(|pending_turn| *pending_turn != turn);
+                        found
+                    })
+                    .unwrap_or(false);
+                if !was_pending {
+                    tracing::trace!(turn, "passe final superado; descartado");
+                    return;
+                }
+                self.set_last_decode(0);
+                match outcome.result {
+                    Ok(spans) => {
+                        self.last_attempt_failed.store(false, Ordering::Relaxed);
+                        if let Some(decoded) = self.clean(spans) {
+                            self.publish_turn(turn, &decoded.text, base_ms, cut_ms, true);
+                        }
+                    }
+                    Err(error) => {
+                        self.note_failure(quality, error);
+                        self.persist_preview_fallback(turn, base_ms, cut_ms);
+                    }
+                }
             }
         }
     }
 
-    /// Publica o turno (interim ou final) com id estável por turno.
+    /// Registra falha de decodificação sem consumir a cadência de prévias.
+    fn note_failure(&self, quality: SpeechQuality, error: GhostWhisperError) {
+        self.last_attempt_failed.store(true, Ordering::Relaxed);
+        match error {
+            // Modelo carregando ou prévia superada: transitório e esperado.
+            GhostWhisperError::AsrNotReady | GhostWhisperError::AsrBusy => {
+                tracing::trace!(?quality, "ASR indisponível; aguardando próxima janela")
+            }
+            other => tracing::warn!(?quality, "ASR falhou: {other}"),
+        }
+    }
+
+    /// Se o passe final falhar, persiste o texto da prévia (não perde o turno).
+    fn persist_preview_fallback(&self, turn: u64, base_ms: i64, cut_ms: i64) {
+        let text = self.last_preview.lock().ok().and_then(|guard| {
+            guard
+                .as_ref()
+                .filter(|(t, _)| *t == turn)
+                .map(|(_, text)| text.clone())
+        });
+        let Some(text) = text else { return };
+        tracing::warn!(turn, "passe final falhou; persistindo a última prévia");
+        self.publish_turn(turn, &text, base_ms, cut_ms, true);
+    }
+
+    /// Junta os spans e filtra vazio/alucinação.
+    fn clean(&self, spans: Vec<TranscribedSpan>) -> Option<DecodedTurn> {
+        let joined = spans
+            .iter()
+            .map(|span| span.text.trim())
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string();
+        if joined.is_empty() || is_likely_hallucination(&joined) {
+            if !joined.is_empty() {
+                tracing::debug!("texto descartado como alucinação: {joined:?}");
+            }
+            return None;
+        }
+        let speech_end_ms = spans.iter().map(|span| span.end_ms).max();
+        Some(DecodedTurn {
+            text: joined,
+            speech_end_ms,
+        })
+    }
+
+    /// Publica o turno (prévia ou final) com id estável por turno.
     ///
     /// A prévia e o final compartilham o mesmo id, então a UI substitui o texto
     /// em vez de duplicar. Só o final é persistido.
-    fn publish_turn(&self, text: &str, audio_ms: i64, is_final: bool) -> usize {
-        let turn = self.turn.load(Ordering::Relaxed);
-        let base = self.turn_base_ms.load(Ordering::Relaxed) as i64;
+    fn publish_turn(&self, turn: u64, text: &str, base_ms: i64, cut_ms: i64, is_final: bool) {
         let segment = TranscriptSegment {
             id: format!("{}-t{turn}", self.session_id),
             session_id: self.session_id.clone(),
             speaker: self.speaker,
             text: text.to_string(),
-            start_ms: base,
-            end_ms: base + audio_ms,
+            start_ms: base_ms,
+            end_ms: base_ms + cut_ms,
             is_final,
         };
         if is_final {
@@ -357,7 +596,6 @@ impl TranscriptionPipeline {
             }
         }
         self.publisher.emit_segment(&segment);
-        1
     }
 
     /// Transcreve um buffer completo de uma vez (usado em testes/offline).
@@ -373,11 +611,47 @@ impl TranscriptionPipeline {
         self.buffer.lock().map(|buffer| buffer.len()).unwrap_or(0)
     }
 
+    /// Ancoragem da cadência de prévias (usado em testes de regressão).
+    #[cfg(test)]
+    pub fn decode_anchor_ms(&self) -> i64 {
+        self.last_decode_ms()
+    }
+
+    fn buffered_ms(&self) -> i64 {
+        self.buffer
+            .lock()
+            .map(|buffer| samples_to_ms(buffer.len()))
+            .unwrap_or(0)
+    }
+
+    fn snapshot_upto(&self, cut_ms: i64) -> Vec<f32> {
+        match self.buffer.lock() {
+            Ok(buffer) => {
+                let take = ms_to_samples(cut_ms).min(buffer.len());
+                buffer.iter().take(take).copied().collect()
+            }
+            Err(_) => Vec::new(),
+        }
+    }
+
+    fn current_turn_context(&self) -> (u64, i64) {
+        (
+            self.turn.load(Ordering::Relaxed),
+            self.turn_base_ms.load(Ordering::Relaxed) as i64,
+        )
+    }
+
     fn had_speech(&self) -> bool {
         self.had_speech.load(Ordering::Relaxed)
     }
     fn last_decode_ms(&self) -> i64 {
         self.last_decode_ms.lock().map(|v| *v).unwrap_or(0)
+    }
+    fn ms_since_last_attempt(&self) -> i64 {
+        self.last_attempt_at
+            .lock()
+            .map(|last| last.elapsed().as_millis() as i64)
+            .unwrap_or(i64::MAX)
     }
     fn last_voiced_end_ms(&self) -> i64 {
         self.last_voiced_end_ms.lock().map(|v| *v).unwrap_or(0)
@@ -391,9 +665,31 @@ impl TranscriptionPipeline {
         if let Ok(mut slot) = self.last_decode_ms.lock() {
             *slot = buffered_ms;
         }
-        if let Ok(mut slot) = self.last_decode_at.lock() {
+    }
+    /// Marca o instante da tentativa (re-arma o relógio de ociosidade).
+    fn mark_attempt(&self) {
+        if let Ok(mut slot) = self.last_attempt_at.lock() {
             *slot = Instant::now();
         }
+    }
+    /// Há um passe final pendente para o turno atual?
+    ///
+    /// Gate do scheduler: enquanto o final do turno atual está na fila, novas
+    /// prévias do mesmo turno não fazem sentido.
+    fn final_pending_for_current_turn(&self) -> bool {
+        let current = self.turn.load(Ordering::Relaxed);
+        self.pending_finals
+            .lock()
+            .map(|pending| pending.contains(&current))
+            .unwrap_or(false)
+    }
+
+    /// Não há nenhum passe final pendente.
+    fn pending_finals_empty(&self) -> bool {
+        self.pending_finals
+            .lock()
+            .map(|pending| pending.is_empty())
+            .unwrap_or(true)
     }
 
     /// Emite o nível de áudio (throttle por tempo).
@@ -501,22 +797,34 @@ struct DecodedTurn {
 }
 
 /// Registra telemetria de tempo real por passe.
-fn log_rtf(channel: AudioChannel, quality: SpeechQuality, audio_ms: i64, wall_ms: u128) {
+///
+/// Em `info` de propósito: é o número que diz se a transcrição acompanha a fala
+/// (RTF < 1 = atrasando). Perssua registra o mesmo RTF
+/// (`WhisperSession.js`: "completed in Xms (Yx realtime)").
+fn log_rtf(
+    channel: AudioChannel,
+    quality: SpeechQuality,
+    audio_ms: i64,
+    buffered_ms: i64,
+    wall_ms: u128,
+) {
     let label = match quality {
         SpeechQuality::Preview => "preview",
         SpeechQuality::Final => "final",
     };
     let rtf = if wall_ms > 0 {
-        format!("{:.2}x", audio_ms as f64 / wall_ms as f64)
+        audio_ms as f64 / wall_ms as f64
     } else {
-        "—".to_string()
+        f64::INFINITY
     };
-    tracing::debug!(
+    tracing::info!(
         channel = ?channel,
+        pass = label,
         audio_ms,
-        wall_ms,
-        rtf,
-        "passe de transcrição concluído ({label})"
+        buffered_ms,
+        wall_ms = wall_ms as u64,
+        rtf = format!("{rtf:.2}"),
+        "passe de transcrição concluído"
     );
 }
 
@@ -537,6 +845,19 @@ mod tests {
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
     use crate::domain::transcription::TranscribedSpan;
     use crate::error::Result as CoreResult;
+    use crate::ports::model_store::ModelStore;
+
+    /// Serializa os testes de integração pesados: cada um carrega o modelo e
+    /// disputa os núcleos; dois em paralelo num 4-núcleos falseiam o tempo real
+    /// e fazem o streaming parecer lento.
+    static HEAVY_E2E: Mutex<()> = Mutex::new(());
+
+    /// Trava dos testes pesados (tolera envenenamento por panic anterior).
+    fn heavy_e2e_lock() -> std::sync::MutexGuard<'static, ()> {
+        HEAVY_E2E
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     struct FakeAsr {
         text: String,
@@ -568,6 +889,37 @@ mod tests {
                 text: "fala".into(),
                 start_ms: 0,
                 end_ms: 500,
+            }])
+        }
+    }
+
+    /// ASR que sempre falha com um erro transitório.
+    struct BusyAsr;
+    impl SpeechToText for BusyAsr {
+        fn transcribe(
+            &self,
+            _samples: &[f32],
+            _quality: SpeechQuality,
+        ) -> CoreResult<Vec<TranscribedSpan>> {
+            Err(GhostWhisperError::AsrBusy)
+        }
+    }
+
+    /// ASR lento: simula uma decodificação que leva tempo real.
+    struct SlowAsr {
+        delay: Duration,
+    }
+    impl SpeechToText for SlowAsr {
+        fn transcribe(
+            &self,
+            samples: &[f32],
+            _quality: SpeechQuality,
+        ) -> CoreResult<Vec<TranscribedSpan>> {
+            std::thread::sleep(self.delay);
+            Ok(vec![TranscribedSpan {
+                text: "fala".into(),
+                start_ms: 0,
+                end_ms: samples_to_ms(samples.len()),
             }])
         }
     }
@@ -630,13 +982,13 @@ mod tests {
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 
-    fn pipeline(
-        asr: Arc<dyn SpeechToText>,
-    ) -> (
+    type Fixture = (
         TranscriptionPipeline,
         Arc<RecordingPublisher>,
         Arc<InMemoryTranscriptionsRepository>,
-    ) {
+    );
+
+    fn pipeline(asr: Arc<dyn SpeechToText>) -> Fixture {
         let publisher = Arc::new(RecordingPublisher::new());
         let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
         let pipeline = TranscriptionPipeline::new(
@@ -655,6 +1007,10 @@ mod tests {
             text: text.to_string(),
         }));
         (pipeline, publisher)
+    }
+
+    fn timings() -> TurnTimings {
+        TurnTimings::default()
     }
 
     fn speech(ms: i64) -> Vec<f32> {
@@ -735,8 +1091,9 @@ mod tests {
     #[test]
     fn continuous_speech_is_cut_at_max_turn() {
         let (pipeline, publisher) = fake_pipeline("longa");
-        // 55 s de fala contínua: fecha pela teto, cortando exatamente MAX_TURN_MS.
-        pipeline.consume(&speech(MAX_TURN_MS));
+        let cap = timings().max_turn_ms;
+        // Fala contínua no teto: fecha pela teto, cortando exatamente o teto.
+        pipeline.consume(&speech(cap));
         pipeline.tick();
         let segments = publisher.segments();
         assert_eq!(segments.len(), 1);
@@ -822,11 +1179,88 @@ mod tests {
         );
     }
 
+    // --- Regressões do streaming em tempo real -------------------------------
+
+    #[test]
+    fn finals_of_distinct_turns_are_tracked_independently() {
+        // Cada turno tem o seu passe final: um final não pode sumir porque o
+        // turno seguinte já começou.
+        let (pipeline, _publisher, rows) = pipeline(Arc::new(FakeAsr {
+            text: "fala".into(),
+        }));
+        for _ in 0..2 {
+            pipeline.consume(&speech(1_500));
+            pipeline.tick();
+            pipeline.consume(&silence(1_000));
+            pipeline.tick();
+        }
+        assert_eq!(rows.all().len(), 2, "cada turno persiste o seu final");
+    }
+
+    #[test]
+    fn failed_preview_does_not_consume_the_preview_step() {
+        // A2: uma falha transitória não pode ancorar a cadência — senão o
+        // próximo passe só acontece depois de mais 750 ms de áudio.
+        let (pipeline, publisher, _rows) = pipeline(Arc::new(BusyAsr));
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        assert!(publisher.segments().is_empty(), "AsrBusy não publica nada");
+        assert_eq!(
+            pipeline.decode_anchor_ms(),
+            0,
+            "a cadência não devia avançar numa falha"
+        );
+
+        // Com decodificação bem-sucedida, a âncora acompanha o buffer.
+        let (ok_pipeline, _publisher) = fake_pipeline("ok");
+        ok_pipeline.consume(&speech(1_500));
+        ok_pipeline.tick();
+        assert_eq!(ok_pipeline.decode_anchor_ms(), 1_500);
+    }
+
+    #[test]
+    fn tick_never_blocks_on_a_slow_decode() {
+        // A1: o agendamento não pode ficar preso atrás da decodificação.
+        let publisher = Arc::new(RecordingPublisher::new());
+        let pipeline = Arc::new(TranscriptionPipeline::new(
+            "s1".to_string(),
+            Speaker::Me,
+            AudioChannel::Microphone,
+            Arc::new(SlowAsr {
+                delay: Duration::from_millis(400),
+            }),
+            publisher.clone(),
+            Arc::new(InMemoryTranscriptionsRepository::new()),
+        ));
+        pipeline.start();
+
+        pipeline.consume(&speech(1_500));
+        let started = Instant::now();
+        pipeline.tick();
+        assert!(
+            started.elapsed() < Duration::from_millis(150),
+            "tick devia apenas enfileirar, levou {:?}",
+            started.elapsed()
+        );
+
+        // O texto ainda chega (na thread de trabalho).
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while publisher.segments().is_empty() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !publisher.segments().is_empty(),
+            "a prévia devia acabar sendo publicada"
+        );
+        pipeline.stop();
+    }
+
     // --- Integração real (baixa modelos + fala). Rode com `--ignored`. ---
 
     #[test]
     #[ignore = "baixa o modelo whisper tiny e a fala de exemplo (requer rede)"]
     fn end_to_end_transcribes_jfk_speech() {
+        let _heavy = heavy_e2e_lock();
         use crate::adapters::speech::whisper_model_store::FileModelStore;
         use crate::adapters::speech::whisper_speech_to_text::WhisperSpeechToText;
         use crate::ports::model_store::ModelStore;
@@ -871,6 +1305,228 @@ mod tests {
             .join(" ")
             .to_lowercase();
         assert!(text.contains("country"), "transcrição inesperada: {text:?}");
+    }
+
+    /// Percorre o caminho de **produção** (threads + worker de decodificação):
+    /// alimenta o áudio em blocos e exige que a prévia apareça antes do final.
+    #[test]
+    #[ignore = "baixa o modelo whisper tiny e a fala de exemplo (requer rede)"]
+    fn end_to_end_streams_preview_before_final() {
+        let _heavy = heavy_e2e_lock();
+        use crate::adapters::speech::whisper_model_store::FileModelStore;
+        use crate::adapters::speech::whisper_speech_to_text::WhisperSpeechToText;
+        use crate::ports::model_store::ModelStore;
+
+        let samples = download_jfk_wav();
+        assert!(samples.len() > 3 * TARGET_SAMPLE_RATE as usize);
+
+        let models_dir = std::env::temp_dir().join("ghostwhisper-models");
+        let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(models_dir));
+        models.vad_model_path().expect("vad model");
+        models.whisper_model_path("tiny").expect("whisper model");
+
+        let whisper = Arc::new(WhisperSpeechToText::new(
+            Arc::clone(&models),
+            "tiny",
+            "auto",
+            None,
+        ));
+        whisper.preload();
+        wait_until_asr_ready(&whisper);
+
+        let publisher = Arc::new(RecordingPublisher::new());
+        let pipeline = Arc::new(TranscriptionPipeline::new(
+            "jfk-stream".to_string(),
+            Speaker::Me,
+            AudioChannel::Microphone,
+            whisper,
+            publisher.clone(),
+            Arc::new(InMemoryTranscriptionsRepository::new()),
+        ))
+        .start();
+
+        // Fala completa em blocos de 1 s, como chega da captura.
+        let block = TARGET_SAMPLE_RATE as usize;
+        for chunk in samples.chunks(block) {
+            pipeline.consume(chunk);
+            std::thread::sleep(Duration::from_millis(250));
+        }
+
+        // A prévia precisa ter sido publicada **durante** a fala.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while publisher.segments().iter().all(|s| s.is_final) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let preview_seen = publisher.segments().iter().any(|s| !s.is_final);
+        assert!(preview_seen, "nenhuma prévia publicada durante a fala");
+
+        // `stop` fecha o turno e o final precisa sair.
+        pipeline.stop();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while publisher.segments().iter().all(|s| !s.is_final) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let text = publisher
+            .segments()
+            .iter()
+            .filter(|s| s.is_final)
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        assert!(text.contains("country"), "final inesperado: {text:?}");
+    }
+
+    /// Curva de RTF: parede por segundo de áudio em fatias de duração crescente.
+    ///
+    /// É o dado que decide se a prévia pode decodificar o turno inteiro (como o
+    /// Perssua) ou precisa de janela deslizante. Rode com
+    /// `cargo test --release --lib -- --ignored --nocapture benchmark_rtf`.
+    #[test]
+    #[ignore = "baixa o modelo whisper tiny e a fala de exemplo (requer rede)"]
+    fn benchmark_rtf_by_audio_duration() {
+        let _heavy = heavy_e2e_lock();
+        use crate::adapters::speech::whisper_model_store::FileModelStore;
+        use crate::adapters::speech::whisper_speech_to_text::WhisperSpeechToText;
+        use crate::ports::model_store::ModelStore;
+
+        let jfk = download_jfk_wav();
+        assert!(jfk.len() > 16_000, "amostra de fala muito curta");
+
+        let models_dir = std::env::temp_dir().join("ghostwhisper-models");
+        let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(models_dir));
+        models.vad_model_path().expect("vad model");
+        let model = std::env::var("GHOSTWHISPER_BENCH_MODEL").unwrap_or_else(|_| "tiny".into());
+        models.whisper_model_path(&model).expect("whisper model");
+
+        let whisper = Arc::new(WhisperSpeechToText::new(
+            Arc::clone(&models),
+            &model,
+            "auto",
+            None,
+        ));
+        whisper.preload();
+        wait_until_asr_ready(&whisper);
+
+        // Aquecimento: a primeira chamada paga alocação de buffers do ggml.
+        let _ = whisper.transcribe(&jfk[..TARGET_SAMPLE_RATE as usize], SpeechQuality::Preview);
+
+        println!("\n--- RTF por duracao (modelo {model}) ---");
+        println!(
+            "{:>7}  {:>8}  {:>8}  {:>8}  {:>8}  texto",
+            "audio_s", "prev_ms", "prev_rtf", "fin_ms", "fin_rtf"
+        );
+        for seconds in [1usize, 2, 4, 8, 11, 20, 30] {
+            let samples = tile(&jfk, seconds * TARGET_SAMPLE_RATE as usize);
+            let audio_ms = samples_to_ms(samples.len()) as f64;
+
+            // Mínimo de N repetições: sob ruído de máquina compartilhada o menor
+            // tempo é o estimador mais próximo do custo real da decodificação.
+            let repeats = if seconds <= 8 { 3 } else { 1 };
+            let mut preview_ms = f64::MAX;
+            let mut final_ms = f64::MAX;
+            let mut text = String::new();
+            for _ in 0..repeats {
+                let started = Instant::now();
+                let _ = whisper
+                    .transcribe(&samples, SpeechQuality::Preview)
+                    .expect("transcrever preview");
+                preview_ms = preview_ms.min(started.elapsed().as_millis().max(1) as f64);
+
+                let started = Instant::now();
+                let final_pass = whisper
+                    .transcribe(&samples, SpeechQuality::Final)
+                    .expect("transcrever final");
+                final_ms = final_ms.min(started.elapsed().as_millis().max(1) as f64);
+                text = final_pass
+                    .iter()
+                    .map(|span| span.text.trim())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            }
+
+            println!(
+                "{:>7.1}  {:>8.0}  {:>8.2}  {:>8.0}  {:>8.2}  {}",
+                audio_ms / 1000.0,
+                preview_ms,
+                audio_ms / preview_ms,
+                final_ms,
+                audio_ms / final_ms,
+                text.chars().take(40).collect::<String>()
+            );
+        }
+    }
+
+    /// Repete o áudio até atingir `total` amostras (mantém a duração pedida).
+    fn tile(samples: &[f32], total: usize) -> Vec<f32> {
+        let mut out = Vec::with_capacity(total);
+        while out.len() < total {
+            let remaining = total - out.len();
+            let take = remaining.min(samples.len());
+            out.extend_from_slice(&samples[..take]);
+        }
+        out
+    }
+
+    /// Store que delega o whisper mas nega o VAD (isola o custo do Silero).
+    struct NoVadStore {
+        inner: crate::adapters::speech::whisper_model_store::FileModelStore,
+    }
+    impl ModelStore for NoVadStore {
+        fn vad_model_path(&self) -> CoreResult<std::path::PathBuf> {
+            Err(GhostWhisperError::Other(
+                "VAD desabilitado (diagnóstico)".into(),
+            ))
+        }
+        fn whisper_model_path(&self, name: &str) -> CoreResult<std::path::PathBuf> {
+            self.inner.whisper_model_path(name)
+        }
+    }
+
+    /// Diagnóstico: separa o custo fixo por chamada (VAD × encode) do custo
+    /// proporcional ao áudio. Rode com `--ignored --nocapture`.
+    #[test]
+    #[ignore = "baixa o modelo whisper tiny e a fala de exemplo (requer rede)"]
+    fn benchmark_vad_overhead() {
+        let _heavy = heavy_e2e_lock();
+        use crate::adapters::speech::whisper_model_store::FileModelStore;
+        use crate::adapters::speech::whisper_speech_to_text::WhisperSpeechToText;
+
+        let jfk = download_jfk_wav();
+        let one_second = &jfk[..TARGET_SAMPLE_RATE as usize];
+
+        println!(
+            "\navailable_parallelism = {:?}",
+            std::thread::available_parallelism().map(|n| n.get())
+        );
+
+        for with_vad in [true, false] {
+            let models_dir = std::env::temp_dir().join("ghostwhisper-models");
+            let inner = FileModelStore::new(models_dir);
+            let models: Arc<dyn ModelStore> = if with_vad {
+                Arc::new(inner)
+            } else {
+                Arc::new(NoVadStore { inner })
+            };
+            let whisper = Arc::new(WhisperSpeechToText::new(
+                Arc::clone(&models),
+                "tiny",
+                "auto",
+                None,
+            ));
+            whisper.preload();
+            wait_until_asr_ready(&whisper);
+
+            // Aquecimento (compila/aloja buffers) para medir o regime.
+            let _ = whisper.transcribe(one_second, SpeechQuality::Preview);
+
+            let started = Instant::now();
+            let spans = whisper
+                .transcribe(one_second, SpeechQuality::Preview)
+                .expect("decodificar 1s");
+            let wall = started.elapsed().as_millis();
+            println!("vad={with_vad} 1s -> {wall}ms ({} spans)", spans.len());
+        }
     }
 
     /// Aguarda o pré-carregamento do modelo concluir (thread de background).

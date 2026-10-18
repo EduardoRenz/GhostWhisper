@@ -19,6 +19,9 @@
 | 10 | Empacotamento (.deb/AppImage) + spike Wayland/invisibilidade | CONCLUDED |
 | 11 | Streaming de transcrição estilo Perssua (whisper fluindo) | CONCLUDED |
 | 12 | Configurações em abas, chave redactada e compat com providers | CONCLUDED |
+| 13 | Streaming em tempo real: decisão desacoplada + ASR robusto | CONCLUDED |
+| 14 | Sensibilidade do microfone (ganho) e noise gate de entrada | CONCLUDED |
+| 15 | Monitor atrasado do microfone ("ouvir minha voz") | PENDING |
 
 ## Dependências entre tarefas
 
@@ -27,12 +30,15 @@
     ├─▶ 02 ─┼─▶ 04 ─▶ 05 ─▶ 06 ─▶ 07 ─▶ 08
     └─▶ 03 ─┘                   └─▶ 09
                                    └─▶ 10
+04,11 ─▶ 13 ─▶ 14 ─▶ 15
 ```
 
 - 00 é pré-requisito de tudo.
 - 04 depende de 02 e 03 (fontes de áudio).
 - 07 depende de 05 e 06 (dados e providers expostos).
 - 08 depende de 07; 09 e 10 dependem de 01/07.
+- 13 depende de 04/11 (ASR e streaming); 14 (BR-018) depende de 13; 15 (monitor
+  atrasado) depende da 14.
 
 ## Definição de pronto (geral)
 - Código compila (`pnpm tauri build` sem erros).

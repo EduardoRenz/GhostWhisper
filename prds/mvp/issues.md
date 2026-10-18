@@ -16,8 +16,109 @@ Registro de bugs e pendências observadas em uso. Legenda de status:
 | ISS-009 | Trocar para um modelo maior não dava nenhum retorno (silêncio durante o download) | Alta | FIXED |
 | ISS-010 | Transcrição não "flui" (turno longo, prévia de 2 s e VAD caro no buffer inteiro) | Alta | FIXED |
 | ISS-011 | ChatGPT/provider OpenAI recusa `temperature` (gpt-5/o1/o3 aceitam só o padrão) | Alta | FIXED |
+| ISS-013 | Fim de turno preso atrás da prévia (decodificação bloqueava o agendamento) | Alta | FIXED |
+| ISS-014 | ASR enroscava após timeout (`AsrBusy` em cascata) e threads subdimensionadas | Alta | FIXED |
+| ISS-015 | Sensibilidade do microfone muito baixa (nenhum ganho de entrada) | Alta | FIXED |
 
 ---
+
+## ISS-015 — Sensibilidade do microfone muito baixa
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma (relato do usuário):** "o meu mic acusa sensibilidade muito baixa";
+  a fala quase não aparecia e o nível exibido era baixo.
+- **Causa:** o GhostWhisper **não aplicava ganho** algum, e o gate de fala é um
+  limiar **absoluto** no sinal cru (`SPEECH_RMS_THRESHOLD`): microfones quietos
+  nunca cruzavam o limiar, então não havia prévia, o passe final era rejeitado e
+  o app parecia surdo. O Perssua aplica `local_whisper_user_mic_gain = 8` antes
+  do gate e do ASR (BR-018).
+- **Correção:** estágio de entrada do microfone
+  ([`adapters/audio/microphone_front_end.rs`](../../../src-tauri/src/adapters/audio/microphone_front_end.rs)):
+  **ganho** (1×–12×, padrão 8×, saturando em ±1) e **noise gate** (mudo + 600 ms
+  de hangover), ambos só no microfone; controle **“Sensibilidade do microfone”**
+  na aba *Transcrição & Áudio*; o painel de teste passa a mostrar o ganho
+  aplicado e explica o silêncio do gate.
+- **Referência (BR-015):** módulo 7125 de `build/static/js/main.f180d025.js`
+  (`dy` = ganho, `Kv` = gate) — ver §6 da tech spec, incluindo os dois desvios
+  deliberados (nunca descartar áudio; limiar = o do app).
+- **Arquivos:** `domain/audio.rs`, `domain/settings.rs`,
+  `adapters/audio/microphone_front_end.rs`, `lib.rs`,
+  `application/transcription_pipeline.rs` (limiar unificado),
+  `features/settings/{SettingsPage,AudioTestPanel}.tsx`,
+  `core/domain/settings.ts`, `styles/globals.css`.
+- **Evidência:** 162 testes Rust (+19) — ganho (saturação/identidade/inválidos),
+  ganho levanta fala fraca acima do limiar, gate (fala, ruído, hangover, mudo
+  inicial, desligável), front-end (ordem ganho→gate, delegação, leitura das
+  configurações a cada `start`), settings (padrão 8×, faixa, round-trip, config
+  antiga) — e 23 testes frontend (slider).
+- **Task:** [`14-task.md`](tasks/14-task.md) · **Pendente:** monitor atrasado
+  ([`15-task.md`](tasks/15-task.md)).
+
+---
+
+## ISS-013 — Fim de turno preso atrás da prévia em voo
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** o texto demora a estabilizar no fim da fala; parece que "faltou o
+  final" e a última frase aparece com atraso. Em fala contínua o texto fica
+  vários segundos atrás.
+- **Causa:** `TranscriptionPipeline::tick()` fazia a decodificação **na própria
+  thread de agendamento**. Enquanto uma prévia decodificava (~1,7 s por chamada,
+  medido em [`transcription-streaming.md`](architecture/transcription-streaming.md)),
+  o loop ficava parado: o silêncio não era avaliado, o passe final esperava a
+  prévia terminar e uma falha transitória **ainda avançava a cadência**
+  (`last_decode_ms`), "queimando" 750 ms de áudio novo.
+- **Referência (BR-015):** o Perssua resolve o mesmo com `isProcessing` +
+  `pendingUtteranceComplete` + `finishProcessing`
+  (`WhisperSessionStreaming.js`, `WhisperSessionCompletion.js`): o áudio continua
+  sendo avaliado durante a decodificação e o turno fecha assim que ela volta.
+- **Correção:**
+  - decisão extraída para **`TurnScheduler` puro** (`application/turn_scheduler.rs`):
+    `Wait | Preview{cut_ms} | Finalize{cut_ms}`, testável sem threads/relógio;
+  - decodificação movida para **thread de trabalho própria** (`dispatch`);
+    `tick()` apenas enfileira e segue avaliando o silêncio;
+  - **I1/I2/I3** da tech spec: resultado aplicado por turno, cadência só avança em
+    sucesso, e após falha só o relógio de ociosidade re-arma;
+  - `Final` tem prioridade e nunca é coalescido; `stop()`/`flush()` aguardam-no
+    com teto (`FLUSH_WAIT`);
+  - se o passe final falhar, persiste a última prévia do turno (não perde o texto).
+- **Arquivos:** `application/transcription_pipeline.rs`,
+  `application/turn_scheduler.rs`, `application/session_service.rs`,
+  `Cargo.toml` (perfil `dev` do `whisper-rs-sys`).
+- **Evidência:** `tick_never_blocks_on_a_slow_decode` (tick < 150 ms com ASR de
+  400 ms), `failed_preview_does_not_consume_the_preview_step`,
+  `final_job_is_never_superseded`, 10 testes do scheduler; E2E
+  `end_to_end_streams_preview_before_final` (prévia durante a fala + final).
+- **Docs:** [`architecture/transcription-streaming.md`](architecture/transcription-streaming.md).
+
+---
+
+## ISS-014 — ASR enroscava após timeout e threads subdimensionadas
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** depois de uma decodificação longa, o ASR passava um tempo sem
+  produzir nada (só `AsrBusy`), e em máquinas pequenas tudo era lento.
+- **Causa:**
+  1. cada `transcribe` criava uma **thread nova (8 MB de pilha)** e tentava
+     `try_lock` no estado; se o `full()` anterior estourou o timeout, o lock
+     seguia preso e os pedidos seguintes falhavam em cascata, desperdiçando
+     thread e log a cada 50 ms;
+  2. `n_threads = núcleos/2` (em 2 núcleos, **1** thread) — o whisper.cpp usa
+     `min(4, núcleos)`.
+- **Correção:**
+  - **thread de trabalho única** por contexto, dona do `WhisperState`, com fila:
+    prévias **coalescidas** (só a mais recente), trabalho com `deadline` vencido
+    é respondido sem decodificar, e o adaptador é descartado com segurança (a
+    thread morre quando o último `Sender` cai);
+  - `timeout_for(quality, audio_ms)`: prévia 15–30 s, final 30–120 s (a prévia é
+    descartável; não segura o turno por 2 minutos);
+  - `resolve_threads`: `min(4, núcleos)` com override `GHOSTWHISPER_ASR_THREADS`.
+- **Arquivos:** `adapters/speech/whisper_speech_to_text.rs`.
+- **Evidência:** `preview_timeout_is_shorter_than_final`,
+  `timeouts_scale_with_audio_and_respect_caps`, `threads_are_bounded_and_overridable`,
+  `transcribe_before_preload_is_not_ready`, `superseded_job_notifies_the_caller`,
+  `final_job_is_never_superseded`; `benchmark_vad_overhead` (VAD não é o custo;
+  4 threads ≈ 1,7× mais rápido que 2).---
 
 ## ISS-007 — Transcrição pouco confiável (streaming preview/final)
 

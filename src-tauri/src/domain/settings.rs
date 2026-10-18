@@ -99,6 +99,12 @@ pub struct Settings {
     pub translation_enabled: bool,
     /// Modelo whisper.cpp local (`tiny`, `base`, ...).
     pub whisper_model: String,
+    /// Ganho aplicado ao microfone antes da transcrição (1×–16×).
+    ///
+    /// O áudio do sistema nunca é amplificado. Ver BR-018 e
+    /// [`crate::domain::audio::apply_gain`].
+    #[serde(default = "default_mic_gain")]
+    pub mic_gain: f32,
     /// Modo stealth (sem barra de tarefas / sem título).
     #[serde(default)]
     pub stealth: bool,
@@ -120,11 +126,17 @@ impl Default for Settings {
             target_language: "pt".to_string(),
             translation_enabled: false,
             whisper_model: "tiny".to_string(),
+            mic_gain: default_mic_gain(),
             stealth: false,
             shortcuts: crate::domain::shortcuts::default_bindings(),
             overlay_position: None,
         }
     }
+}
+
+/// Ganho de microfone padrão (Perssua: `local_whisper_user_mic_gain = 8`).
+fn default_mic_gain() -> f32 {
+    crate::domain::audio::DEFAULT_MIC_GAIN
 }
 
 impl Settings {
@@ -173,6 +185,7 @@ impl Settings {
         if !is_supported_language(&self.target_language) {
             self.target_language = "pt".to_string();
         }
+        self.mic_gain = crate::domain::audio::clamp_mic_gain(self.mic_gain);
         self
     }
 
@@ -315,5 +328,48 @@ mod tests {
         assert_eq!(dirty.source_language, "auto");
         assert_eq!(dirty.target_language, "pt");
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn mic_gain_defaults_to_the_perssua_value() {
+        // BR-018: ganho padrão do Perssua (local_whisper_user_mic_gain = 8).
+        assert_eq!(Settings::default().mic_gain, 8.0);
+    }
+
+    #[test]
+    fn sanitized_clamps_mic_gain() {
+        let too_loud = Settings {
+            mic_gain: 99.0,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(too_loud.mic_gain, crate::domain::audio::MAX_MIC_GAIN);
+
+        let too_quiet = Settings {
+            mic_gain: 0.1,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(too_quiet.mic_gain, crate::domain::audio::MIN_MIC_GAIN);
+
+        let broken = Settings {
+            mic_gain: f32::NAN,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(broken.mic_gain, crate::domain::audio::DEFAULT_MIC_GAIN);
+    }
+
+    #[test]
+    fn mic_gain_survives_a_round_trip_and_old_settings_get_the_default() {
+        let json = serde_json::to_string(&Settings::default()).expect("serializa");
+        let parsed: Settings = serde_json::from_str(&json).expect("desserializa");
+        assert_eq!(parsed.mic_gain, 8.0);
+
+        // Config antiga (sem o campo) cai no padrão em vez de falhar.
+        let legacy = json.replace("\"mic_gain\":8.0,", "");
+        assert!(!legacy.contains("mic_gain"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert_eq!(parsed.mic_gain, 8.0);
     }
 }

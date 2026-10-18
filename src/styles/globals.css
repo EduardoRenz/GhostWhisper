@@ -371,6 +371,18 @@ body,
   gap: 0.5rem;
 }
 
+/* Sensibilidade do microfone: rótulo, controle e valor na mesma linha. */
+.settings__field input[type="range"] {
+  width: 100%;
+  accent-color: var(--ghostwhisper-accent, #6ee7b7);
+}
+
+.settings__value {
+  align-self: flex-end;
+  font-variant-numeric: tabular-nums;
+  color: var(--ghostwhisper-text);
+}
+
 .settings__field input[type="text"],
 .settings__field input[type="url"],
 .settings__field input[type="password"],

@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 
@@ -79,5 +79,26 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByText("Modelo whisper (local)")).toBeDefined();
     expect(screen.queryByText("Provider")).toBeNull();
+  });
+
+  it("expõe a sensibilidade do microfone com o padrão do Perssua", async () => {
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: "Transcrição & Áudio" }).click();
+    });
+
+    const slider = (await screen.findByLabelText(
+      "Sensibilidade do microfone",
+    )) as HTMLInputElement;
+    expect(slider.type).toBe("range");
+    expect(slider.value).toBe("8");
+    expect(slider.min).toBe("1");
+    expect(slider.max).toBe("12");
+    expect(screen.getByText("8.0× (padrão)")).toBeDefined();
+
+    fireEvent.change(slider, { target: { value: "12" } });
+    expect(screen.getByText("12.0×")).toBeDefined();
+    expect(slider.value).toBe("12");
   });
 });

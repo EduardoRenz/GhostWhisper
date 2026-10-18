@@ -33,6 +33,8 @@ export interface Settings {
   target_language: Language;
   translation_enabled: boolean;
   whisper_model: string;
+  /** Ganho do microfone (1×–12×); não afeta o áudio do sistema. */
+  mic_gain: number;
   /** Modo stealth (sem barra de tarefas / sem título). */
   stealth: boolean;
   /** Atalhos globais. */
@@ -60,6 +62,15 @@ export const WHISPER_MODEL_SIZES: Record<string, string> = {
   medium: "~1.5 GB",
 };
 
+/**
+ * Ganho de microfone (1×–12×). O padrão e o teto são os do Perssua
+ * (`local_whisper_user_mic_gain`, padrão 8, faixa 1–12) — microfones de notebook
+ * costumam entregar fala fraca demais para o gate de fala abrir (BR-018).
+ */
+export const DEFAULT_MIC_GAIN = 8;
+export const MIN_MIC_GAIN = 1;
+export const MAX_MIC_GAIN = 12;
+
 /** Configurações padrão (espelham `Settings::default`). */
 export const defaultSettings = (): Settings => ({
   provider: "openai",
@@ -69,6 +80,7 @@ export const defaultSettings = (): Settings => ({
   target_language: "pt",
   translation_enabled: false,
   whisper_model: "tiny",
+  mic_gain: DEFAULT_MIC_GAIN,
   stealth: false,
   shortcuts: defaultBindings(),
   overlay_position: null,

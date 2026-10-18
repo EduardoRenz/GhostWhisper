@@ -100,6 +100,7 @@ pub fn run() {
 fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::ai::default_chat_bot_provider_factory::DefaultChatBotProviderFactory;
     use adapters::audio::cpal_microphone_source::CpalMicrophoneSource;
+    use adapters::audio::microphone_front_end::MicrophoneFrontEnd;
     use adapters::audio::pactl_sink_helper::PactlVirtualSinkManager;
     use adapters::audio::pulse_system_audio_source::PulseSystemAudioSource;
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
@@ -173,16 +174,25 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             }
         };
 
-    let audio: Arc<dyn AudioSource> = Arc::new(CpalMicrophoneSource::new());
-    let system_audio: Arc<dyn AudioSource> = Arc::new(PulseSystemAudioSource::new());
-    let virtual_sink: Arc<dyn VirtualSinkManager> = Arc::new(PactlVirtualSinkManager);
-
     // Diretório de dados (banco + modelos + settings).
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| GhostWhisperError::Other(format!("diretório de dados indisponível: {e}")))?;
     migrate_legacy_data_dir(&data_dir)?;
+
+    // Configurações primeiro: o estágio de ganho do microfone as lê na captura.
+    let settings: Arc<dyn SettingsStore> =
+        Arc::new(FileSettingsStore::new(data_dir.join("settings.json")));
+
+    // Captura: o microfone passa pelo estágio de ganho (BR-018); o áudio do
+    // sistema (loopback) segue sem amplificação.
+    let audio: Arc<dyn AudioSource> = Arc::new(MicrophoneFrontEnd::new(
+        Arc::new(CpalMicrophoneSource::new()),
+        Arc::clone(&settings),
+    ));
+    let system_audio: Arc<dyn AudioSource> = Arc::new(PulseSystemAudioSource::new());
+    let virtual_sink: Arc<dyn VirtualSinkManager> = Arc::new(PactlVirtualSinkManager);
 
     let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(data_dir.join("models")));
     let publisher: Arc<dyn EventPublisher> =
@@ -196,10 +206,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::new(LocalTranscriptionsRepository::new(Arc::clone(&connection)));
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
-    // Configurações e segredos (BYO key). Sem Secret Service, a chave fica
-    // apenas em memória durante a execução (BR-003).
-    let settings: Arc<dyn SettingsStore> =
-        Arc::new(FileSettingsStore::new(data_dir.join("settings.json")));
+    // Segredos (BYO key). Sem Secret Service, a chave fica apenas em memória
+    // durante a execução (BR-003).
     let secrets: Arc<dyn SecretStore> = {
         let keyring = KeyringSecretStore::new();
         if keyring.is_available() {
