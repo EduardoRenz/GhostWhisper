@@ -138,12 +138,14 @@ impl SessionService {
         paused: bool,
         session_id: Option<String>,
         channels: Vec<String>,
+        started_at_ms: Option<i64>,
     ) {
         self.publisher.emit_session_state(&SessionStateEvent {
             listening,
             paused,
             session_id,
             channels,
+            started_at_ms,
         });
     }
 
@@ -154,12 +156,13 @@ impl SessionService {
             active.paused(),
             Some(active.id.clone()),
             active.labels(),
+            Some(active.started_at_ms),
         );
     }
 
     /// Publica o estado "sem sessão".
     fn emit_idle(&self) {
-        self.emit(false, false, None, Vec::new());
+        self.emit(false, false, None, Vec::new(), None);
     }
 
     /// Origem de tempo (ms) desta captura dentro da sessão.
@@ -298,7 +301,7 @@ impl SessionController for SessionService {
     }
 
     fn pause(&self) -> Result<()> {
-        let (id, channels, live) = {
+        let (id, started_at_ms, channels, live) = {
             let mut guard = self.lock()?;
             let Some(active) = guard.as_mut() else {
                 return Ok(());
@@ -308,6 +311,7 @@ impl SessionController for SessionService {
             }
             (
                 active.id.clone(),
+                active.started_at_ms,
                 active.channels.clone(),
                 std::mem::take(&mut active.live),
             )
@@ -324,7 +328,7 @@ impl SessionController for SessionService {
             .iter()
             .map(|channel| channel.as_str().to_string())
             .collect();
-        self.emit(true, true, Some(id), labels);
+        self.emit(true, true, Some(id), labels, Some(started_at_ms));
         Ok(())
     }
 
@@ -373,7 +377,7 @@ impl SessionController for SessionService {
             return Ok(());
         }
         tracing::info!(session_id = id, "sessão retomada");
-        self.emit(true, false, Some(id), labels);
+        self.emit(true, false, Some(id), labels, Some(started_at_ms));
         Ok(())
     }
 
@@ -400,7 +404,7 @@ impl SessionController for SessionService {
         if paused {
             // Pausada: só guarda a escolha; o retomar captura o novo conjunto.
             tracing::info!(session_id = id, channels = ?channels, "canais da sessão pausada atualizados");
-            self.emit(true, true, Some(id), labels);
+            self.emit(true, true, Some(id), labels, Some(started_at_ms));
             return Ok(());
         }
 
@@ -456,7 +460,7 @@ impl SessionController for SessionService {
             }
         };
         tracing::info!(session_id = id, channels = ?labels, "canais da sessão trocados");
-        self.emit(true, false, Some(id), labels);
+        self.emit(true, false, Some(id), labels, Some(started_at_ms));
         Ok(())
     }
 
@@ -720,6 +724,30 @@ mod tests {
         f.service.start(&[AudioChannel::System]).expect("system");
         assert!(!f.mic.is_running());
         assert!(f.system.is_running());
+    }
+
+    #[test]
+    fn state_event_carries_the_session_start_for_the_timer() {
+        // A UI mostra o tempo decorrido a partir de `started_at_ms` (T04).
+        let f = fixture(false, false);
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+        assert_eq!(
+            f.last_state().started_at_ms,
+            Some(1_000),
+            "início da sessão (relógio fixo)"
+        );
+
+        // Pausar e retomar não zeram o relógio da sessão.
+        f.service.pause().expect("pause");
+        assert_eq!(f.last_state().started_at_ms, Some(1_000));
+        f.service.resume().expect("resume");
+        assert_eq!(f.last_state().started_at_ms, Some(1_000));
+
+        f.service.stop().expect("stop");
+        let state = f.last_state();
+        assert!(!state.listening);
+        assert_eq!(state.session_id, None);
+        assert_eq!(state.started_at_ms, None, "sem sessão não há tempo");
     }
 
     // --- Sessão contínua (BR-019) -------------------------------------------

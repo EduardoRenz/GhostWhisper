@@ -435,6 +435,24 @@ fn spawn_overlay_position_tracker(app: tauri::AppHandle) {
 
 /// Executa a ação de um atalho global usando o estado gerenciado.
 fn dispatch_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
+    match action {
+        // Rápidos e ligados a janela/arquivo pequeno (alguns ms): seguem na thread
+        // que recebeu o evento, sem custo de thread nova.
+        ShortcutAction::ToggleOverlay | ShortcutAction::ToggleStealth => run_shortcut(app, action),
+        // Demorados: o menu da bandeja roda na **main thread** do GTK e o listener
+        // de atalhos do X11 na thread dele. Parar a sessão espera o passe final do
+        // turno (até 20 s) e pedir insight faz HTTP bloqueante (até 60 s) — na main
+        // thread isso congela a interface; no listener, engole os próximos atalhos
+        // (ISS-020). Thread própria para os dois.
+        ShortcutAction::ToggleSession | ShortcutAction::RequestInsight => {
+            let app = app.clone();
+            std::thread::spawn(move || run_shortcut(&app, action));
+        }
+    }
+}
+
+/// Executa a ação do atalho (pode demorar; chame pela thread certa).
+fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
     use crate::ports::session_controller::AudioChannel;
 
     let state = app.state::<state::AppState>();

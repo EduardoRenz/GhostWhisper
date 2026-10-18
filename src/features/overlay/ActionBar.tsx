@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import type { SessionChannel } from "../../core/domain/transcript";
 import { SessionControls } from "../session/SessionControls";
+import { SessionPill } from "../session/SessionPill";
 import type { Surface } from "../../adapters/ipc/overlay";
 
 interface ActionBarProps {
@@ -10,6 +12,8 @@ interface ActionBarProps {
   listening: boolean;
   paused: boolean;
   channels: SessionChannel[];
+  /** Início da sessão (ms) — tempo exibido na pílula de sessão. */
+  startedAtMs: number | null;
   busy: boolean;
   onStart: (channels: SessionChannel[]) => void;
   onPause: () => void;
@@ -29,6 +33,7 @@ export function ActionBar({
   listening,
   paused,
   channels,
+  startedAtMs,
   busy,
   onStart,
   onPause,
@@ -39,7 +44,16 @@ export function ActionBar({
   onStartDrag,
 }: ActionBarProps) {
   const expanded = surface !== "actionbar" && surface !== "hidden";
-  const status = !listening ? "○ parado" : paused ? "❚❚ pausado" : "● gravando";
+  const status = !listening ? "Parado" : paused ? "Pausado" : "Gravando";
+  const tone = !listening ? "idle" : paused ? "paused" : "live";
+  const [confirming, setConfirming] = useState(false);
+
+  // Sessão encerrada (por qualquer caminho): a confirmação não fica pendurada.
+  useEffect(() => {
+    if (!listening) {
+      setConfirming(false);
+    }
+  }, [listening]);
 
   return (
     <div className="overlay__bar" data-interactive>
@@ -54,11 +68,10 @@ export function ActionBar({
       </span>
       <span className="overlay__brand">GhostWhisper</span>
       <span
-        className={`overlay__status overlay__status--${
-          paused ? "paused" : listening ? "live" : "idle"
-        }`}
+        className={`overlay__status overlay__status--${tone}`}
         data-interactive
       >
+        <span className={`overlay__dot overlay__dot--${tone}`} aria-hidden="true" />
         {status}
       </span>
 
@@ -70,8 +83,20 @@ export function ActionBar({
         onStart={onStart}
         onPause={onPause}
         onResume={onResume}
-        onStop={onStop}
+        onRequestStop={() => setConfirming(true)}
         onChannelsChange={onChannelsChange}
+      />
+
+      <SessionPill
+        startedAtMs={listening ? startedAtMs : null}
+        confirming={confirming}
+        busy={busy}
+        onRequestStop={() => setConfirming(true)}
+        onCancelStop={() => setConfirming(false)}
+        onStop={() => {
+          setConfirming(false);
+          onStop();
+        }}
       />
 
       <button

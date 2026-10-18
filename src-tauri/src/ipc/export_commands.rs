@@ -23,7 +23,7 @@ fn build_markdown(state: &AppState, session_id: &str) -> Result<String> {
 }
 
 /// Exporta a sessão como Markdown e devolve o texto (para copiar).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_export_markdown(state: State<'_, AppState>, id: String) -> Result<String> {
     build_markdown(&state, &id)
 }
@@ -51,7 +51,7 @@ fn resolve_target(path: &str) -> Result<PathBuf> {
 /// Exporta a sessão e grava o Markdown no caminho escolhido.
 ///
 /// Retorna o caminho final (ganha sufixo `.md` quando faltar).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_save_markdown(
     state: State<'_, AppState>,
     id: String,

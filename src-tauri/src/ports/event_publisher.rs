@@ -18,6 +18,10 @@ pub struct SessionStateEvent {
     pub session_id: Option<String>,
     /// Canais ativos: `microphone` e/ou `system`.
     pub channels: Vec<String>,
+    /// Início da sessão (relógio de parede, ms) — a UI mostra o tempo decorrido.
+    ///
+    /// `None` quando não há sessão aberta.
+    pub started_at_ms: Option<i64>,
 }
 
 /// Publica eventos do domínio para a interface.

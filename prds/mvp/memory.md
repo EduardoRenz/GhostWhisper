@@ -773,3 +773,146 @@ O usuário pediu para fechar o MVP: (a) mensagens não podem sumir ao pausar/con
 ### Pendente
 - Escolha de **dispositivo** por canal dentro da sessão (hoje só no teste de áudio).
 - Atraso do monitor ajustável na UI (hoje 400 ms fixo + env).
+
+---
+
+## 2026-10-18 — Loop de frase do Whisper entrava na conversa (ISS-019, T21)
+
+- **IDs:** ISS-019, T21
+- **Refs:** `prds/mvp/tasks/21-task.md`, `prds/mvp/issues.md`,
+  `domain/transcription.rs`, `application/transcription_pipeline.rs`
+
+### Relato
+*"às vezes um chat fica com algumas frases repetidas, como 'O que eu quero fazer?
+O que eu quero fazer? …'"* — a mesma frase dezenas de vezes numa única fala.
+
+### Investigação (causa raiz)
+- A repetição nasce na própria janela de 30 s do Whisper (loop de decodificação).
+- A guarda do `whisper.cpp` só descarta a sequência repetitiva quando
+  `result_len > 32` **e** `entropy < entropy_thold` (verificado no fonte vendorizado
+  do `whisper-rs-sys`, `src/whisper.cpp:7527`). Com a configuração herdada do
+  Perssua (`temperature = 0`, `temperature_inc = 0`, `entropy_thold = 2.2`,
+  `suppress_nst = true` — `WhisperServerManager.js`), a repetição **confiante** morre
+  e a de **frase** com entropia acima do limiar passa inteira.
+- O nosso `is_likely_hallucination` só cobria **palavra** repetida ≥4× seguida
+  ("a a a a"); repetição de frase não era detectada. Comparado com o Perssua, o
+  detector `h` (frase repetida) existe (`22.75b118cd.chunk.js`) mas ele só o aplica
+  ao provider **Gemini**.
+- Fechar o `temperature_inc` (habilitar o fallback por temperatura, o remédio
+  canônico do whisper.py) custaria até ~5 decodificações extras por turno — por isso
+  a correção é **determinística e pós-decodificação**.
+
+### Correção
+- `has_repeated_phrase_loop`: transposição fiel do `h` do Perssua (frase ≤5 palavras,
+  ≥3 repetições a partir do início, ≥70% de cobertura, mínimo 6 palavras); entrou no
+  `is_likely_hallucination`.
+- `strip_phrase_loop`: **encolhe** o loop que termina o texto para **uma**
+  ocorrência, preservando a fala anterior ("bom dia pessoal" + "O que eu quero
+  fazer?" ×15 → "bom dia pessoal O que eu quero fazer?"); loop de **uma palavra só**
+  é descartado inteiro ("a a a a a" não vira "a"). Aplicado no `clean()` do pipeline
+  — vale para prévia e final.
+- **Desvios conscientes (R12):** aplicamos o detector a todos os providers (o
+  Perssua só ao Gemini) e **encolhemos em vez de descartar** (o Perssua devolve
+  `null`) — o turno passou pelo portão de fala sustentada, então houve fala real e
+  devolver vazio perderia a fala.
+- **Limite conhecido:** lista legitimamente repetida 3× ("primeiro segundo terceiro"
+  ×3) é encolhida para uma ocorrência — o conteúdo fica, a repetição sai.
+
+### Verificação
+- **225 testes Rust** (+8: 6 de domínio com a frase exata do relato, o loop puro
+  encolhido, o loop de uma palavra descartado e as ênfases naturais intactas; 2 de
+  pipeline cobrindo prévia e final) · 8 `ignored` · clippy/fmt limpos.
+- **Modelo real:** `end_to_end_transcribes_jfk_speech` (27 s) e
+  `end_to_end_streams_preview_before_final` (9,6 s) executados — o filtro não corta
+  fala legítima.
+
+---
+
+## 2026-10-18 — Main thread segurada: IPC demorado e IPC em excesso (ISS-020, T22)
+
+- **IDs:** ISS-020, T22
+- **Refs:** `prds/mvp/tasks/22-task.md`, `prds/mvp/issues.md`,
+  `prds/mvp/architecture/engineering-guidelines.md` §8
+
+### Relato
+*"a main-thread sendo segurada, não conseguia clicar nos botões, algumas vezes o app
+até congelava"*.
+
+### Investigação (três causas somadas, todas no código)
+1. **Comando IPC síncrono roda na main thread.** O IPC entra na main thread (loop
+   GTK) e `#[tauri::command]` sem `async` é chamado inline ali
+   (`tauri-macros`: `body_blocking`; com `(async)` → `respond_async_serialized` →
+   `async_runtime::spawn`). Comandos que demoram segundos: ciclo de sessão
+   (`pipeline.stop()` espera o passe final, `FLUSH_WAIT = 20 s`), LLM e validação de
+   chave (`ureq` **bloqueante**, timeout 60 s), áudio (`cpal`/`pactl`), keyring,
+   banco e export.
+2. **Tempestade de IPC:** `useInteractiveRegions` observava `class`/`style` do body
+   inteiro e a barra de nível muda de largura ~10×/s por canal ⇒ ~20 publicações/s de
+   input-shape no X11 (comando síncrono), sem nada clicável ter mudado.
+3. **Re-render a 20 Hz:** `useAudioLevel` vivia no `Overlay` ⇒ cada evento de nível
+   re-renderizava a conversa inteira (até 300 bolhas).
+4. **Atalhos/bandeja:** o menu da bandeja roda na main thread (GTK) e o listener de
+   atalhos do X11 na thread dele (`global-hotkey`, verificado no fonte); os dois
+   chamavam `session.stop()` (flush ≤20 s) e `insight.generate()` (HTTP ≤60 s).
+
+### Correção
+- **37 comandos** para `#[tauri::command(async)]` (sessão, áudio/sistema, LLM,
+  settings/chave, export, banco, `overlay_set_interactive_regions`); síncronos
+  apenas os instantâneos (`ping`, getters) e os que exigem a main thread
+  (`settings_open`, operações de janela).
+- `dispatch_shortcut` (bandeja + atalho): `ToggleSession` e `RequestInsight` numa
+  **thread própria**; `ToggleOverlay`/`ToggleStealth` seguem na thread do evento.
+- `useInteractiveRegions` ignora mutações dentro de `.levels-group`.
+- `LevelMeters` assina `audio_level` internamente (memoizado); `ChatView` e o
+  cabeçalho do chat memoizados; a conversão do histórico em bolhas memoizada.
+- Regra do IPC (sync × `(async)`) registrada em engineering-guidelines §8 (R14).
+
+### Verificação
+- `cargo check --all-targets` limpo · **225 testes Rust** · clippy/fmt limpos.
+- **80 testes frontend** (+6: `useInteractiveRegions` — publica, não republica com a
+  barra mudando, republica com região clicável; `LevelMeters` — nível por canal,
+  zerado parado, sem canais) · `tsc` limpo.
+
+### Pendências
+- Comandos longos concorrentes: migrar o corpo para `async_runtime::spawn_blocking`.
+- Confirmar o ganho percebido em uso real.
+
+---
+
+## 2026-10-18 — Bolha "em andamento" pendurada com o texto cru (ISS-021, T23)
+
+- **IDs:** ISS-021, T23
+- **Refs:** `prds/mvp/tasks/23-task.md`, `prds/mvp/issues.md`,
+  `application/transcription_pipeline.rs`, `core/domain/chat.ts`
+
+### Relato
+*"o balão da última frase processada vem bem certinho, porém ele cria um balão mais
+escuro (como se fosse loading ou processando) com uma frase que não faz sentido,
+acho que é a frase antes dele refinar. Por que fica esse balão estranho sempre como
+primeiro balão?"*
+
+### Diagnóstico
+- A bolha escura é a **prévia "em andamento"** (paridade com `.unified-message-current`
+  do Perssua): texto do parcial, opacidade reduzida, `…`. Por desenho ela aparece
+  antes do texto refinado e é substituída no lugar — isso não é o bug.
+- O bug: quando o **passe final não produz texto** (`clean` → `None` por
+  alucinação/loop/silêncio, gate de fala sustentada ou `flush` sem buffer), nada era
+  publicado para o id do turno ⇒ a prévia ficava **pendurada para sempre** com o
+  texto cru. Sendo a primeira fala da sessão, é literalmente a **primeira bolha** da
+  conversa. O filtro de loop (ISS-019) aumentou a frequência (mais finais
+  descartados).
+
+### Correção
+- `TranscriptionPipeline::retract_turn`: se uma prévia foi mostrada para o turno,
+  publica um **final de texto vazio** com o mesmo id (a UI substitui e a bolha sai);
+  vazio não vira bolha nem é persistido. Chamado nos três caminhos (gate, final
+  filtrado, `flush` sem buffer). `segment_id(turn)` extraído para os três usarem o
+  mesmo id.
+- `splitChatTimeline` ignora prévias em branco; `useTranslation` não traduz final
+  vazio; `ChatBubble` da prévia ganhou `title` "transcrevendo — o texto ainda pode
+  mudar" (não parecer erro/carregamento).
+- A prévia **durante** a fala continua (é o texto ao vivo pedido pelo usuário).
+
+### Verificação
+- **227 testes Rust** (+2) · 8 `ignored` · clippy/fmt limpos.
+- **83 testes frontend** (+2) · `tsc` limpo.

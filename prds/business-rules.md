@@ -210,3 +210,44 @@ uma nota de revisão.
   [`mvp/tasks/18-task.md`](mvp/tasks/18-task.md),
   [`mvp/architecture/session-history.md`](mvp/architecture/session-history.md).
 - **Data:** 2026-10-18 · **Status:** Ativa (tasks 17/18)
+
+## BR-021 — A conversa é uma linha temporal de bolhas intercaladas
+- **Decisão:** falas e sugestões da IA (BR-020) aparecem numa **única** conversa em
+  bolhas, ordenada pelo tempo desde o início da sessão. "Você" fica à direita (tom
+  azul), "Interlocutor" à esquerda (tom neutro) e "Sugestão da IA" à esquerda com
+  tonalidade própria; cada bolha mostra `mm:ss` e a sugestão tem "Copiar". A fala
+  **ainda em revisão** (prévia do ASR) é uma bolha "em andamento" exibida **depois**
+  da linha temporal, com indicador de digitação — nunca no meio dela. O detalhe do
+  histórico usa as mesmas bolhas. Valores visuais exatos (paridade com o Perssua) em
+  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §3.
+- **Motivo:** pedido do usuário — a referência de produto usa bolhas; e a linha de
+  texto plana permitia que uma fala em andamento "recebesse" o texto de outro canal
+  na posição antiga (ISS-018).
+- **Consequência:** o id do segmento carrega o **canal**
+  (`{session_id}-{channel}-{origin_ms}-t{turn}`); a separação entre linha temporal e
+  falas em andamento é uma função pura (`core/domain/chat.ts`). Sem mudança de
+  schema.
+- **Detalhes:** [`chat/issues.md`](chat/issues.md) (ISS-018),
+  [`chat/tasks/01-task.md`](chat/tasks/01-task.md),
+  [`chat/tasks/02-task.md`](chat/tasks/02-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (tasks 01/02)
+
+## BR-022 — Transporte da sessão em ícones, com encerramento confirmado
+- **Decisão:** o transporte da sessão são **ícones clássicos** numa pílula: play
+  (retomar), pause e stop, com o botão inativo esmaecido; com a sessão parada, a
+  pílula dá lugar a "Iniciar escuta" (play + rótulo). O **tempo desde o início da
+  sessão** aparece numa pílula vermelha e o encerramento — pelo ⏹ ou pela pílula —
+  pede confirmação inline ("Encerrar sessão? Sim / Não"). Uma bolinha de status
+  acompanha o estado (vermelha pulsando gravando, âmbar pausado, cinza parado). Os
+  ícones são SVG desenhados no projeto (não a fonte Material Icons do Perssua,
+  BR-008).
+- **Motivo:** pedido do usuário ("play e pause juntos, e o stop"), com a referência
+  de produto como base. **Desvios conscientes** do Perssua (R12): play e pause são
+  dois botões (o Perssua alterna num só) e o ⏹ também confirma o encerramento (no
+  Perssua a confirmação vive só na pílula de sessão) — assim não existe caminho que
+  encerre a sessão sem confirmação.
+- **Consequência:** `SessionStateEvent` carrega `started_at_ms` para a UI calcular o
+  tempo decorrido; pausar/retomar **não** zeram o relógio (BR-019).
+- **Detalhes:** [`chat/tasks/03-task.md`](chat/tasks/03-task.md),
+  [`chat/tasks/04-task.md`](chat/tasks/04-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (tasks 03/04)

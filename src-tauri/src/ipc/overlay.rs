@@ -93,7 +93,7 @@ pub fn overlay_start_drag(state: State<'_, AppState>, window: tauri::WebviewWind
 }
 
 /// Atualiza as regiões interativas usadas pelo click-through.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn overlay_set_interactive_regions(
     state: State<'_, AppState>,
     regions: Vec<InteractiveRegion>,

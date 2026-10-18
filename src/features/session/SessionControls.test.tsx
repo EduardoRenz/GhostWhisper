@@ -11,78 +11,82 @@ const base = {
   onStart: vi.fn(),
   onPause: vi.fn(),
   onResume: vi.fn(),
-  onStop: vi.fn(),
+  onRequestStop: vi.fn(),
   onChannelsChange: vi.fn(),
 };
+
+const button = (name: string): HTMLButtonElement =>
+  screen.getByRole("button", { name }) as HTMLButtonElement;
 
 const channelsSelect = (): HTMLSelectElement =>
   screen.getByRole("combobox") as HTMLSelectElement;
 
 describe("SessionControls", () => {
-  it("parado: só oferece iniciar", () => {
-    render(<SessionControls {...base} listening={false} paused={false} />);
-
-    expect(screen.getByRole("button", { name: "Iniciar" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Pausar" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Parar" })).toBeNull();
-  });
-
-  it("inicia com os canais escolhidos", () => {
+  it("parado: oferece 'Iniciar escuta' com os canais escolhidos", () => {
     const onStart = vi.fn();
     render(
-      <SessionControls
-        {...base}
-        onStart={onStart}
-        listening={false}
-        paused={false}
-      />,
+      <SessionControls {...base} onStart={onStart} listening={false} paused={false} />,
     );
 
+    expect(button("Iniciar escuta")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Pausar" })).toBeNull();
+
     fireEvent.change(channelsSelect(), { target: { value: "system" } });
-    fireEvent.click(screen.getByRole("button", { name: "Iniciar" }));
+    fireEvent.click(button("Iniciar escuta"));
 
     expect(onStart).toHaveBeenCalledWith(["system"]);
     // Sem sessão não há o que trocar ao vivo.
     expect(base.onChannelsChange).not.toHaveBeenCalled();
   });
 
-  it("gravando: pausar, nova sessão e parar", () => {
+  it("gravando: play esmaecido, pause e stop ativos", () => {
     const onPause = vi.fn();
+    const onRequestStop = vi.fn();
     render(
       <SessionControls
         {...base}
         onPause={onPause}
+        onRequestStop={onRequestStop}
         listening
         paused={false}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Pausar" }));
+    expect(button("Retomar").disabled).toBe(true);
+    expect(button("Pausar").disabled).toBe(false);
+    expect(button("Encerrar sessão").disabled).toBe(false);
+
+    fireEvent.click(button("Pausar"));
     expect(onPause).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(button("Encerrar sessão"));
+    expect(onRequestStop).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Nova sessão" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Parar" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Retomar" })).toBeNull();
   });
 
-  it("pausado: oferece retomar (e não pausar de novo)", () => {
+  it("pausado: play ativo e pause esmaecido (mesma sessão)", () => {
     const onResume = vi.fn();
     render(
       <SessionControls {...base} onResume={onResume} listening paused />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Retomar" }));
+    expect(button("Retomar").disabled).toBe(false);
+    expect(button("Pausar").disabled).toBe(true);
+    expect(button("Encerrar sessão").disabled).toBe(false);
+
+    fireEvent.click(button("Retomar"));
     expect(onResume).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Pausar" })).toBeNull();
-    // A sessão segue aberta enquanto pausada: dá para continuar ou encerrar.
-    expect(screen.getByRole("button", { name: "Nova sessão" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Parar" })).toBeDefined();
   });
 
-  // --- Troca de canais (sempre permitida) ---------------------------------
+  it("pílula de transporte não usa rótulo de texto (só ícone)", () => {
+    render(<SessionControls {...base} listening paused={false} />);
+    expect(button("Pausar").textContent).toBe("");
+    expect(button("Encerrar sessão").textContent).toBe("");
+  });
 
-  it("deixa trocar os canais com a sessão gravando", () => {
+  it("deixa trocar os canais com a sessão gravando ou pausada", () => {
     const onChannelsChange = vi.fn();
-    render(
+    const { rerender } = render(
       <SessionControls
         {...base}
         onChannelsChange={onChannelsChange}
@@ -91,17 +95,11 @@ describe("SessionControls", () => {
       />,
     );
 
-    const select = channelsSelect();
-    expect(select.disabled).toBe(false);
-
-    fireEvent.change(select, { target: { value: "system" } });
-
+    expect(channelsSelect().disabled).toBe(false);
+    fireEvent.change(channelsSelect(), { target: { value: "system" } });
     expect(onChannelsChange).toHaveBeenCalledWith(["system"]);
-  });
 
-  it("deixa trocar os canais com a sessão pausada", () => {
-    const onChannelsChange = vi.fn();
-    render(
+    rerender(
       <SessionControls
         {...base}
         onChannelsChange={onChannelsChange}
@@ -109,9 +107,7 @@ describe("SessionControls", () => {
         paused
       />,
     );
-
     fireEvent.change(channelsSelect(), { target: { value: "microphone" } });
-
     expect(onChannelsChange).toHaveBeenCalledWith(["microphone"]);
   });
 
@@ -140,7 +136,16 @@ describe("SessionControls", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Nova sessão" }));
-
     expect(onStart).toHaveBeenCalledWith(["system"]);
+  });
+
+  it("desabilita as ações durante uma operação em curso", () => {
+    render(<SessionControls {...base} busy listening paused={false} />);
+    expect(button("Pausar").disabled).toBe(true);
+    expect(button("Encerrar sessão").disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Nova sessão" })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 });

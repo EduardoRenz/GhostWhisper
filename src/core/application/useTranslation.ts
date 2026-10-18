@@ -60,6 +60,11 @@ export function useTranslation(
       if (!segment.final || translations[segment.id] || pending.current.has(segment.id)) {
         continue;
       }
+      // Final de texto vazio é retratação de prévia (ISS-021), não fala: não gasta
+      // uma chamada de tradução.
+      if (segment.text.trim().length === 0) {
+        continue;
+      }
       pending.current.add(segment.id);
       queue.current.push(segment);
     }

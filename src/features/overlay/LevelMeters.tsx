@@ -1,18 +1,29 @@
+import { memo } from "react";
+import { useAudioLevel } from "../../core/application/useAudioLevel";
 import {
   channelLabel,
   levelPercent,
-  type AudioLevel,
   type SessionChannel,
 } from "../../core/domain/transcript";
 
 interface LevelMetersProps {
-  levels: Record<SessionChannel, AudioLevel>;
   channels: SessionChannel[];
   listening: boolean;
 }
 
-/** Medidores de nível por canal ativo. */
-export function LevelMeters({ levels, channels, listening }: LevelMetersProps) {
+/**
+ * Medidores de nível por canal ativo.
+ *
+ * A assinatura de `audio_level` (~10 eventos/s por canal) fica **aqui dentro**: se
+ * o nível subisse até o `Overlay`, cada evento re-renderizaria a conversa inteira
+ * (ISS-020). O componente é memoizado pelo mesmo motivo.
+ */
+export const LevelMeters = memo(function LevelMeters({
+  channels,
+  listening,
+}: LevelMetersProps) {
+  const levels = useAudioLevel();
+
   if (channels.length === 0) {
     return (
       <div className="levels-group" data-interactive>
@@ -41,4 +52,4 @@ export function LevelMeters({ levels, channels, listening }: LevelMetersProps) {
       })}
     </div>
   );
-}
+});

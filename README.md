@@ -148,21 +148,30 @@ Remapeáveis na tela de configurações; conflitos são reportados sem derrubar 
   (input-shape por região no X11).
 - **Teste de áudio:** na tela de configurações, teste microfone/áudio do sistema
   e veja o nível em tempo real antes de iniciar uma sessão.
+- **Conversa em bolhas:** as falas aparecem como uma conversa — `Você` à direita
+  (azul) e `Interlocutor` à esquerda, **intercaladas pelo tempo da sessão**, com as
+  sugestões da IA na mesma linha do tempo. O que ainda está sendo transcrito
+  aparece no fim como bolha "em andamento" (com `…`) e, ao fechar o turno, entra na
+  posição certa da conversa.
+- **Controles:** pílula de ícones **play / pause / stop** (o ícone inativo fica
+  esmaecido), a pílula de **tempo da sessão** e a bolinha de status
+  (vermelha pulsando = gravando, âmbar = pausado). O ⏹ e a pílula de sessão pedem
+  confirmação (**"Encerrar sessão? Sim / Não"**).
 - **Pausar / Retomar:** "Pausar" suspende a captura **sem encerrar a sessão** — as
-  mensagens ficam na tela e o relógio continua de onde parou. "Nova sessão" encerra
-  e começa outra; "Parar" encerra (para voltar numa sessão encerrada, use
-  *Histórico → Continuar sessão*).
+  falas ficam na tela e o relógio continua de onde parou. "Nova sessão" encerra
+  e começa outra (na hora); o **⏹** encerra depois de confirmar (para voltar numa
+  sessão encerrada, use *Histórico → Continuar sessão*).
 - **Trocar de canal:** o seletor (Ambos / Microfone / Sistema) funciona **sempre**,
   inclusive com a sessão gravando ou pausada — a troca não encerra a sessão nem
   perde a linha temporal.
 - **Ouvir minha voz:** no teste de áudio (configurações), o toggle reproduz o
   microfone com ~0,4 s de atraso — use **fone de ouvido** (com caixa de som o
   retorno realimenta o microfone). Você ouve exatamente o que o ASR recebe.
-- **Linha temporal:** cada fala (e cada sugestão da IA) mostra o tempo desde o
-  início da sessão (`mm:ss`).
+- **Linha temporal:** cada fala e cada sugestão da IA mostram o tempo desde o
+  início da sessão (`mm:ss`) — inclusive no histórico e no export.
 - **Histórico:** na aba *Histórico* do painel expandido ficam as sessões
   anteriores (com título, data e duração). Dá para **continuar** uma sessão,
-  renomear, excluir, abrir a linha temporal completa (falas + sugestões) e
+  renomear, excluir, abrir a conversa completa (falas + sugestões em bolhas) e
   **exportar em Markdown** — pelo diálogo nativo "salvar como" ou copiando para a
   área de transferência.
 

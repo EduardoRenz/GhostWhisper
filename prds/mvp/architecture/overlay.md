@@ -84,16 +84,23 @@ janela, mas o **X11** expõe a extensão **SHAPE** (`ShapeRectangles` com
 
 ## 6. Alternância de superfície
 
-- **Estados:** `hidden`, `actionbar` (barra fina), `expanded` (transcrição/insights).
-- A UI alterna via evento; o core ajusta tamanho/posição da janela.
+- **Estados:** `hidden`, `actionbar` (barra fina), `expanded` (conversa em
+  bolhas/tradução), `expanded-tall` (histórico). A UI alterna via evento; o core
+  ajusta tamanho/posição da janela.
 - **Arraste:** a ActionBar tem um handle (`overlay_start_drag`) que chama
   `start_dragging()`; após o usuário mover, a janela **para de reancorar** pela
   base e a posição é **persistida** (`settings.overlay_position`) e restaurada no
   próximo boot.
 
+> Ver também: a conversa em bolhas, o transporte por ícones e a pílula de sessão
+> estão especificados em [`../../chat/architecture/chat-ui.md`](../../chat/architecture/chat-ui.md)
+> (BR-021, BR-022) — este documento cobre só a janela.
+
 ## 7. Arquivos envolvidos
 
 - Novos: `ports/overlay_window.rs`,
   `adapters/overlay/{tauri_overlay_window,cursor_click_through}.rs`.
-- UI: `src/features/overlay/{Overlay,ActionBar}.tsx`.
+- UI: `src/features/overlay/{Overlay,ActionBar}.tsx`,
+  `src/features/chat/{ChatView,ChatBubble}.tsx`,
+  `src/features/session/{SessionControls,SessionPill}.tsx`.
 - Modificados: `tauri.conf.json`, `lib.rs`, `ipc/mod.rs`, `state.rs`.

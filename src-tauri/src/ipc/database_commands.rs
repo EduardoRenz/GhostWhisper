@@ -10,19 +10,19 @@ use crate::error::Result;
 use crate::state::AppState;
 
 /// Lista as sessões mais recentes.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn db_list_sessions(state: State<'_, AppState>, limit: Option<usize>) -> Result<Vec<Session>> {
     state.sessions.list_recent(limit.unwrap_or(50))
 }
 
 /// Retorna uma sessão pelo id.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn db_get_session(state: State<'_, AppState>, id: String) -> Result<Option<Session>> {
     state.sessions.get(&id)
 }
 
 /// Lista as transcrições de uma sessão.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn db_session_transcriptions(
     state: State<'_, AppState>,
     session_id: String,
@@ -31,7 +31,7 @@ pub fn db_session_transcriptions(
 }
 
 /// Lista as mensagens (sugestões da IA) de uma sessão.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn db_session_messages(
     state: State<'_, AppState>,
     session_id: String,
@@ -40,7 +40,7 @@ pub fn db_session_messages(
 }
 
 /// Linha temporal da sessão: falas + sugestões, já ordenadas no tempo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn db_session_timeline(
     state: State<'_, AppState>,
     session_id: String,
@@ -51,7 +51,7 @@ pub fn db_session_timeline(
 }
 
 /// Busca transcrições por texto (FTS5).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn db_search_transcriptions(
     state: State<'_, AppState>,
     query: String,

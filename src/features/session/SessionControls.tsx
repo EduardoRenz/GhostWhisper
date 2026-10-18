@@ -1,5 +1,10 @@
 import { useState } from "react";
 import type { SessionChannel } from "../../core/domain/transcript";
+import {
+  PauseIcon,
+  PlayIcon,
+  StopIcon,
+} from "../../components/TransportIcons";
 
 type ChannelChoice = "both" | SessionChannel;
 
@@ -13,7 +18,8 @@ interface SessionControlsProps {
   onStart: (channels: SessionChannel[]) => void;
   onPause: () => void;
   onResume: () => void;
-  onStop: () => void;
+  /** Pede o encerramento — a confirmação ("Sim/Não") fica com o ActionBar. */
+  onRequestStop: () => void;
   /** Troca os canais **sem** encerrar a sessão. */
   onChannelsChange: (channels: SessionChannel[]) => void;
 }
@@ -36,11 +42,16 @@ const channelsOf = (choice: ChannelChoice): SessionChannel[] =>
   choice === "both" ? ["microphone", "system"] : [choice];
 
 /**
- * Seleção de canal(is) + ciclo de sessão: iniciar/pausar/retomar/nova/parar.
+ * Seletor de canais + transporte da sessão (paridade com o Perssua,
+ * `prds/chat/architecture/chat-ui.md` §3).
+ *
+ * O transporte é uma **pílula de ícones clássicos**: play (retomar), pause e stop
+ * — o inativo fica esmaecido. Parado, a pílula dá lugar a "Iniciar escuta"
+ * (cobre o "Start Listening"/"Restart" do Perssua).
  *
  * O seletor de canais fica **sempre habilitado**: com uma sessão aberta ele troca
  * a captura na hora (mantendo a sessão e a linha temporal), sem precisar pausar
- * ou parar.
+ * ou parar (BR-019).
  */
 export function SessionControls({
   listening,
@@ -50,7 +61,7 @@ export function SessionControls({
   onStart,
   onPause,
   onResume,
-  onStop,
+  onRequestStop,
   onChannelsChange,
 }: SessionControlsProps) {
   const [choice, setChoice] = useState<ChannelChoice>("both");
@@ -81,32 +92,51 @@ export function SessionControls({
         ))}
       </select>
 
-      {!listening && (
+      {!listening ? (
         <button
           type="button"
-          className="overlay__button overlay__button--start"
+          className="session-start"
           disabled={busy}
+          title="Começa a captura com os canais escolhidos"
           onClick={() => onStart(channelsOf(choice))}
         >
-          Iniciar
+          <PlayIcon className="session-start__icon" />
+          Iniciar escuta
         </button>
-      )}
-
-      {listening && (
+      ) : (
         <>
-          <button
-            type="button"
-            className="overlay__button"
-            title={
-              paused
-                ? "Volta a capturar na mesma sessão"
-                : "Suspende a captura; a sessão e as mensagens continuam"
-            }
-            disabled={busy}
-            onClick={paused ? onResume : onPause}
-          >
-            {paused ? "Retomar" : "Pausar"}
-          </button>
+          <div className="transport" role="group" aria-label="Controles da sessão">
+            <button
+              type="button"
+              className="transport__button"
+              aria-label="Retomar"
+              title="Retoma a captura na mesma sessão"
+              disabled={busy || !paused}
+              onClick={onResume}
+            >
+              <PlayIcon className="transport__icon" />
+            </button>
+            <button
+              type="button"
+              className="transport__button"
+              aria-label="Pausar"
+              title="Suspende a captura; a sessão e as falas continuam"
+              disabled={busy || paused}
+              onClick={onPause}
+            >
+              <PauseIcon className="transport__icon" />
+            </button>
+            <button
+              type="button"
+              className="transport__button transport__button--stop"
+              aria-label="Encerrar sessão"
+              title="Encerra a sessão (pede confirmação)"
+              disabled={busy}
+              onClick={onRequestStop}
+            >
+              <StopIcon className="transport__icon" />
+            </button>
+          </div>
           <button
             type="button"
             className="overlay__button"
@@ -115,15 +145,6 @@ export function SessionControls({
             onClick={() => onStart(channelsOf(effective))}
           >
             Nova sessão
-          </button>
-          <button
-            type="button"
-            className="overlay__button overlay__button--stop"
-            title="Encerra a sessão"
-            disabled={busy}
-            onClick={onStop}
-          >
-            Parar
           </button>
         </>
       )}

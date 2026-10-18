@@ -25,7 +25,7 @@ impl From<SessionChannelDto> for AudioChannel {
 }
 
 /// Inicia uma sessão capturando os canais dados; retorna o id da sessão.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_start(
     state: State<'_, AppState>,
     channels: Vec<SessionChannelDto>,
@@ -35,13 +35,13 @@ pub fn session_start(
 }
 
 /// Encerra a sessão atual.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_stop(state: State<'_, AppState>) -> Result<()> {
     state.session.stop()
 }
 
 /// Renomeia a sessão (título exibido no histórico).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_rename(state: State<'_, AppState>, id: String, subject: String) -> Result<()> {
     let subject = subject.trim();
     if subject.is_empty() {
@@ -53,7 +53,7 @@ pub fn session_rename(state: State<'_, AppState>, id: String, subject: String) -
 }
 
 /// Exclui a sessão e, junto, suas falas e sugestões.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_delete(state: State<'_, AppState>, id: String) -> Result<()> {
     // Se for a sessão em andamento, encerra a captura antes de apagar.
     if state.session.current_session_id().as_deref() == Some(id.as_str()) {
@@ -63,19 +63,19 @@ pub fn session_delete(state: State<'_, AppState>, id: String) -> Result<()> {
 }
 
 /// Suspende a captura mantendo a sessão aberta (BR-019).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_pause(state: State<'_, AppState>) -> Result<()> {
     state.session.pause()
 }
 
 /// Volta a capturar na sessão pausada (BR-019).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_resume(state: State<'_, AppState>) -> Result<()> {
     state.session.resume()
 }
 
 /// Troca os canais capturados sem encerrar a sessão.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_set_channels(
     state: State<'_, AppState>,
     channels: Vec<SessionChannelDto>,
@@ -85,7 +85,7 @@ pub fn session_set_channels(
 }
 
 /// Continua uma sessão existente (reativa se encerrada) e captura nela.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn session_continue(
     state: State<'_, AppState>,
     id: String,

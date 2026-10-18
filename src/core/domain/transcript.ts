@@ -30,6 +30,8 @@ export interface SessionState {
   paused: boolean;
   session_id: string | null;
   channels: SessionChannel[];
+  /** Início da sessão (relógio de parede, ms); `null` quando não há sessão. */
+  started_at_ms: number | null;
 }
 
 /** Máximo de segmentos mantidos em tela (evita re-render/reflow excessivo). */
@@ -118,7 +120,9 @@ export const formatClock = (ms: number): string => {
  * Insere ou substitui um segmento pelo id, mantendo a ordem de chegada.
  *
  * A prévia e o final do mesmo turno compartilham o id, então o final
- * **substitui** a prévia em vez de duplicar a linha.
+ * **substitui** a prévia em vez de duplicar a linha. O contrário não vale: uma
+ * prévia atrasada (que chegou depois do final) é **ignorada**, para o texto já
+ * fechado nunca ser reescrito (ISS-018).
  */
 export function mergeSegment(
   segments: TranscriptSegment[],
@@ -128,6 +132,10 @@ export function mergeSegment(
   const index = segments.findIndex((item) => item.id === segment.id);
   if (index === -1) {
     return [...segments, segment].slice(-cap);
+  }
+  const existing = segments[index];
+  if (existing && existing.final && !segment.final) {
+    return segments;
   }
   const next = [...segments];
   next[index] = segment;

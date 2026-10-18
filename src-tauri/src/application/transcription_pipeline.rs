@@ -31,7 +31,8 @@ use crate::domain::audio::{
     has_sustained_speech, AudioLevel, SPEECH_RMS_THRESHOLD, TARGET_SAMPLE_RATE,
 };
 use crate::domain::transcription::{
-    is_likely_hallucination, Speaker, SpeechQuality, TranscribedSpan, TranscriptSegment,
+    is_likely_hallucination, strip_phrase_loop, Speaker, SpeechQuality, TranscribedSpan,
+    TranscriptSegment,
 };
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::audio_consumer::AudioConsumer;
@@ -260,15 +261,14 @@ impl TranscriptionPipeline {
 
     /// Publica o áudio que sobrou no buffer como último segmento final.
     fn flush(&self) {
-        if !self.had_speech() {
-            return;
-        }
+        let (turn, base_ms) = self.current_turn_context();
         let buffered_ms = self.buffered_ms();
-        if buffered_ms < MIN_BUFFER_MS {
+        if !self.had_speech() || buffered_ms < MIN_BUFFER_MS {
+            // Nada será publicado: se uma prévia já foi mostrada, ela sai agora
+            // (ISS-021) — era o caso da bolha "em andamento" pendurada.
+            self.retract_turn(turn, base_ms, buffered_ms);
             return;
         }
-        let turn = self.turn.load(Ordering::Relaxed);
-        let base_ms = self.turn_base_ms.load(Ordering::Relaxed) as i64;
         let audio = self.snapshot_upto(buffered_ms);
         self.begin_final(turn, base_ms, audio, buffered_ms);
         self.wait_for_final(FLUSH_WAIT);
@@ -456,6 +456,8 @@ impl TranscriptionPipeline {
                 cut_ms,
                 "turno descartado pelo gate de fala"
             );
+            // A prévia já publicada não pode ficar pendurada (ISS-021).
+            self.retract_turn(turn, base_ms, cut_ms);
             return;
         }
 
@@ -531,8 +533,13 @@ impl TranscriptionPipeline {
                 match outcome.result {
                     Ok(spans) => {
                         self.last_attempt_failed.store(false, Ordering::Relaxed);
-                        if let Some(decoded) = self.clean(spans) {
-                            self.publish_turn(turn, &decoded.text, base_ms, cut_ms, true);
+                        match self.clean(spans) {
+                            Some(decoded) => {
+                                self.publish_turn(turn, &decoded.text, base_ms, cut_ms, true)
+                            }
+                            // Final sem texto (alucinação/loop/silêncio): a prévia
+                            // mostrada tem de sair da conversa (ISS-021).
+                            None => self.retract_turn(turn, base_ms, cut_ms),
                         }
                     }
                     Err(error) => {
@@ -579,10 +586,16 @@ impl TranscriptionPipeline {
             .join(" ")
             .trim()
             .to_string();
+        if joined.is_empty() {
+            return None;
+        }
+        // Loop do Whisper (ISS-019): o modelo repete a mesma frase sem parar e a
+        // guarda do whisper.cpp (`result_len > 32 && entropy < entropy_thold`) não
+        // pega a repetição com entropia acima do limiar. Corta o trecho repetido e
+        // fica com a fala real; se tudo era loop, o turno morre aqui.
+        let joined = strip_phrase_loop(&joined);
         if joined.is_empty() || is_likely_hallucination(&joined) {
-            if !joined.is_empty() {
-                tracing::debug!("texto descartado como alucinação: {joined:?}");
-            }
+            tracing::debug!("texto descartado (loop/alucinação)");
             return None;
         }
         let speech_end_ms = spans.iter().map(|span| span.end_ms).max();
@@ -592,19 +605,73 @@ impl TranscriptionPipeline {
         })
     }
 
+    /// Id estável do turno: prévia, final e retratação compartilham o mesmo id.
+    ///
+    /// Carrega o **canal** e a **origem de tempo**: os dois canais da mesma sessão
+    /// compartilham `session_id`, a origem e a numeração de turno (cada pipeline
+    /// começa em 0), então sem o canal os turnos colidiriam (ISS-018). Continuar uma
+    /// sessão cria pipelines novos com `turn` reiniciando em 0, e sem a origem dois
+    /// turnos de capturas diferentes também colidiriam.
+    fn segment_id(&self, turn: u64) -> String {
+        format!(
+            "{}-{}-{}-t{turn}",
+            self.session_id,
+            self.channel.as_str(),
+            self.time_origin_ms
+        )
+    }
+
+    /// Tira da conversa a prévia "em andamento" de um turno que terminou sem texto.
+    ///
+    /// Quando o passe final não produz texto — filtro de alucinação/loop, gate de
+    /// fala sustentada ou buffer insuficiente no `flush` — nada era publicado para o
+    /// id do turno e a prévia publicada antes ficava **pendurada** como bolha "em
+    /// andamento" com o texto cru do parcial, para sempre (ISS-021). Publicamos um
+    /// final de **texto vazio**, que a UI usa para retirar a bolha: o vazio não
+    /// vira bolha nem é persistido (quem grava é [`Self::publish_turn`]).
+    fn retract_turn(&self, turn: u64, base_ms: i64, cut_ms: i64) {
+        let showed_preview = self
+            .last_preview
+            .lock()
+            .map(|guard| {
+                guard
+                    .as_ref()
+                    .is_some_and(|(preview_turn, _)| *preview_turn == turn)
+            })
+            .unwrap_or(false);
+        if !showed_preview {
+            // Nada foi mostrado: não poluir a conversa com um item vazio.
+            return;
+        }
+        let start_ms = self.time_origin_ms + base_ms;
+        tracing::debug!(turn, channel = ?self.channel, "prévia retratada (turno sem texto)");
+        self.publisher.emit_segment(&TranscriptSegment {
+            id: self.segment_id(turn),
+            session_id: self.session_id.clone(),
+            speaker: self.speaker,
+            text: String::new(),
+            start_ms,
+            end_ms: start_ms + cut_ms,
+            is_final: true,
+        });
+    }
+
     /// Publica o turno (prévia ou final) com id estável por turno.
     ///
     /// A prévia e o final compartilham o mesmo id, então a UI substitui o texto
     /// em vez de duplicar. Só o final é persistido.
     ///
-    /// O id carrega a **origem de tempo** da captura: continuar uma sessão cria
+    /// O id carrega o **canal** e a **origem de tempo** da captura: os dois
+    /// canais da mesma sessão compartilham `session_id`, a origem e a numeração de
+    /// turno (cada pipeline começa em 0), então sem o canal os turnos colidiriam —
+    /// a UI substituiria a fala de um pelo texto do outro e o `INSERT` do segundo
+    /// final falharia na chave primária (ISS-018). Continuar uma sessão cria
     /// pipelines novos com `turn` reiniciando em 0, e sem a origem dois turnos de
-    /// capturas diferentes colidiriam (chave primária no banco e substituição
-    /// errada na UI).
+    /// capturas diferentes também colidiriam.
     fn publish_turn(&self, turn: u64, text: &str, base_ms: i64, cut_ms: i64, is_final: bool) {
         let start_ms = self.time_origin_ms + base_ms;
         let segment = TranscriptSegment {
-            id: format!("{}-{}-t{turn}", self.session_id, self.time_origin_ms),
+            id: self.segment_id(turn),
             session_id: self.session_id.clone(),
             speaker: self.speaker,
             text: text.to_string(),
@@ -614,7 +681,14 @@ impl TranscriptionPipeline {
         };
         if is_final {
             if let Err(error) = self.transcriptions.insert(&segment) {
-                tracing::warn!("falha ao persistir segmento: {error}");
+                // Falha aqui significa segmento perdido (histórico/export): o id
+                // carrega canal/origem/turno justamente para não haver colisão
+                // (ISS-018), então isso é bug — nada de descer para `warn`.
+                tracing::error!(
+                    segment_id = %segment.id,
+                    channel = ?self.channel,
+                    "falha ao persistir segmento: {error}"
+                );
             }
         }
         self.publisher.emit_segment(&segment);
@@ -981,6 +1055,29 @@ mod tests {
         }
     }
 
+    /// ASR que devolve textos diferentes para prévia e para o passe final.
+    struct QualityAsr {
+        preview: String,
+        r#final: String,
+    }
+    impl SpeechToText for QualityAsr {
+        fn transcribe(
+            &self,
+            _samples: &[f32],
+            quality: SpeechQuality,
+        ) -> CoreResult<Vec<TranscribedSpan>> {
+            let text = match quality {
+                SpeechQuality::Preview => &self.preview,
+                SpeechQuality::Final => &self.r#final,
+            };
+            Ok(vec![TranscribedSpan {
+                text: text.clone(),
+                start_ms: 0,
+                end_ms: 1_000,
+            }])
+        }
+    }
+
     struct RecordingPublisher {
         segments: Mutex<Vec<TranscriptSegment>>,
     }
@@ -1069,7 +1166,7 @@ mod tests {
         let segments = publisher.segments();
         assert_eq!(segments.len(), 1, "esperava a primeira prévia");
         assert!(!segments[0].is_final);
-        assert_eq!(segments[0].id, "s1-0-t0");
+        assert_eq!(segments[0].id, "s1-microphone-0-t0");
     }
 
     #[test]
@@ -1145,6 +1242,68 @@ mod tests {
     }
 
     #[test]
+    fn the_two_channels_of_a_session_never_share_a_turn_id() {
+        // ISS-018: microfone e sistema compartilham sessão, origem de tempo e
+        // numeração de turno (cada pipeline começa em 0). Sem o canal no id, o
+        // texto de um substituiria o do outro na UI e o segundo final falharia na
+        // chave primária do banco — os dois finais têm de conviver.
+        let transcripts = Arc::new(InMemoryTranscriptionsRepository::new());
+        let mic_publisher = Arc::new(RecordingPublisher::new());
+        let system_publisher = Arc::new(RecordingPublisher::new());
+
+        let mic = TranscriptionPipeline::new(
+            "s1".to_string(),
+            Speaker::Me,
+            AudioChannel::Microphone,
+            Arc::new(FakeAsr {
+                text: "eu falo".into(),
+            }),
+            mic_publisher.clone(),
+            transcripts.clone(),
+        );
+        let system = TranscriptionPipeline::new(
+            "s1".to_string(),
+            Speaker::They,
+            AudioChannel::System,
+            Arc::new(FakeAsr {
+                text: "ele fala".into(),
+            }),
+            system_publisher.clone(),
+            transcripts.clone(),
+        );
+
+        // O mesmo turno (primeiro de cada canal) fecha e persiste nos dois.
+        for pipeline in [&mic, &system] {
+            pipeline.consume(&speech(1_500));
+            pipeline.tick();
+            pipeline.consume(&silence(1_000));
+            pipeline.tick();
+        }
+
+        let mic_segments = mic_publisher.segments();
+        let system_segments = system_publisher.segments();
+        assert_eq!(mic_segments[0].id, "s1-microphone-0-t0");
+        assert_eq!(system_segments[0].id, "s1-system-0-t0");
+
+        let stored = transcripts.all();
+        assert_eq!(stored.len(), 2, "os dois canais persistem: {stored:?}");
+        assert_eq!(
+            stored
+                .iter()
+                .filter(|segment| segment.speaker == Speaker::Me)
+                .count(),
+            1
+        );
+        assert_eq!(
+            stored
+                .iter()
+                .filter(|segment| segment.speaker == Speaker::They)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn continuous_speech_is_cut_at_max_turn() {
         let (pipeline, publisher) = fake_pipeline("longa");
         let cap = timings().max_turn_ms;
@@ -1167,6 +1326,94 @@ mod tests {
 
     #[test]
     fn hallucination_is_dropped() {
+        let (pipeline, publisher) = fake_pipeline("Thanks for watching!");
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+        assert!(publisher.segments().is_empty());
+    }
+
+    #[test]
+    fn repeated_phrase_loop_is_collapsed_to_one_occurrence() {
+        // ISS-019: o modelo repete a mesma frase e a guarda do whisper.cpp não
+        // pega; a conversa fica com **uma** ocorrência, nunca com o loop.
+        let looped = "O que eu quero fazer? ".repeat(15);
+        let (pipeline, publisher) = fake_pipeline(looped.trim());
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+        let segments = publisher.segments();
+        assert_eq!(segments.len(), 2, "prévia + final");
+        for segment in &segments {
+            assert_eq!(
+                segment.text, "O que eu quero fazer?",
+                "loop encolhido para uma ocorrência"
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_phrase_loop_is_cut_keeping_the_speech() {
+        // Fala real seguida do loop: a fala fica e a frase repetida uma vez.
+        let (pipeline, publisher) = fake_pipeline(
+            "bom dia pessoal O que eu quero fazer? O que eu quero fazer? O que eu quero fazer?",
+        );
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        let preview = publisher.segments();
+        assert_eq!(preview.len(), 1);
+        assert_eq!(
+            preview[0].text, "bom dia pessoal O que eu quero fazer?",
+            "loop cortado na prévia"
+        );
+
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+        let segments = publisher.segments();
+        assert_eq!(segments.len(), 2);
+        assert!(segments[1].is_final);
+        assert_eq!(
+            segments[1].text, "bom dia pessoal O que eu quero fazer?",
+            "e no final"
+        );
+    }
+
+    #[test]
+    fn discarded_final_retracts_the_pending_preview() {
+        // ISS-021: a prévia aparece "em andamento" com o texto cru; se o passe final
+        // for descartado (alucinação), a bolha **não** pode ficar pendurada.
+        let (pipeline, publisher, rows) = pipeline(Arc::new(QualityAsr {
+            preview: "bom dia pessoal".into(),
+            r#final: "Thanks for watching!".into(),
+        }));
+
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        let preview = publisher.segments();
+        assert_eq!(preview.len(), 1);
+        assert_eq!(preview[0].text, "bom dia pessoal");
+        assert!(!preview[0].is_final, "a prévia fica em andamento");
+
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+
+        let segments = publisher.segments();
+        assert_eq!(segments.len(), 2, "prévia + retratação");
+        assert!(segments[1].is_final);
+        assert_eq!(segments[1].text, "", "texto vazio retira a bolha");
+        assert_eq!(
+            segments[1].id, segments[0].id,
+            "mesmo id: substitui a prévia na conversa"
+        );
+        assert!(rows.all().is_empty(), "nada é persistido");
+    }
+
+    #[test]
+    fn discarded_final_without_preview_does_not_publish_anything() {
+        // O texto já nasce descartável: nenhuma prévia foi mostrada, então não há o
+        // que retratar (nada de item vazio na conversa).
         let (pipeline, publisher) = fake_pipeline("Thanks for watching!");
         pipeline.consume(&speech(1_500));
         pipeline.tick();

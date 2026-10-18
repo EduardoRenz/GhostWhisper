@@ -98,3 +98,30 @@ um provider React (composition root do frontend).
 | Frontend | `vitest` + Testing Library | `IpcPort` fake |
 
 Cobertura mínima: `domain`/`application` > 80%.
+
+## 8. IPC: main thread vs thread de bloqueio (ISS-020)
+
+O IPC do Tauri chega na **main thread** (o loop GTK, no Linux) e um comando
+`#[tauri::command]` **síncrono é chamado inline ali** — qualquer demora congela a
+interface inteira: sem repaint, sem clique, sem arrastar. (`tauri-macros`: comando
+`(async)` usa `respond_async_serialized` → `async_runtime::spawn`; sem o atributo,
+`body_blocking` chama a função na própria thread do IPC.)
+
+Regra:
+
+- **`#[tauri::command(async)]`** em todo comando que possa demorar: áudio (abrir
+  stream, listar dispositivos, `pactl`), rede (LLM, validação de chave — `ureq` com
+  timeout de **60 s**), banco (leitura concorrente com o ASR), keyring (DBus),
+  arquivos (export) e o **ciclo de sessão** (pausar/parar espera o passe final do
+  turno, até 20 s: `FLUSH_WAIT`).
+- **Síncrono** só para o que é instantâneo (getters de estado, `ping`) ou que
+  **exige a main thread** (criação de janela em `settings_open`; operações de janela
+  em `overlay_*`, que o Tauri despacha para a main thread de qualquer forma).
+- O corpo de um comando `(async)` é síncrono e bloqueia **um worker** do runtime; se
+  algum dia houver comandos longos concorrentes, usar `async_runtime::spawn_blocking`
+  (pool dedicada) em vez de `async fn` direto.
+
+No frontend, a regra equivalente: **estado de alta frequência não pode subir para o
+`Overlay`** (o nível de áudio chega a ~10 eventos/s por canal e re-renderizaria a
+conversa inteira) e nenhuma mutação que não mova regiões clicáveis pode republicar o
+input-shape do X11 (ver `useInteractiveRegions`).

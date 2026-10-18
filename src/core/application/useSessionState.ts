@@ -15,6 +15,7 @@ const IDLE: SessionState = {
   paused: false,
   session_id: null,
   channels: [],
+  started_at_ms: null,
 };
 
 /** Assina `session_state` e expõe os controles do ciclo de sessão (BR-019). */

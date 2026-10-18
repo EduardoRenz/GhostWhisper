@@ -27,6 +27,9 @@
 | 18 | Exportar a sessão em Markdown (com sugestão da IA e tempo) | CONCLUDED |
 | 19 | Revisão do modo stealth (limite real no Linux) | CONCLUDED |
 | 20 | Trocar os canais ouvidos a qualquer momento | CONCLUDED |
+| 21 | Filtro de loop de frase do Whisper (ISS-019) | CONCLUDED |
+| 22 | Interface responsiva: IPC fora da main thread e menos re-render (ISS-020) | CONCLUDED |
+| 23 | Retratação da prévia "em andamento" pendurada (ISS-021) | CONCLUDED |
 
 ## Dependências entre tarefas
 
@@ -39,6 +42,9 @@
 05 ─▶ 16 ─▶ 17 ─▶ 18
 09,10 ─▶ 19
 16 ─▶ 20
+11,13 ─▶ 21
+01,07,11 ─▶ 22
+11,13 ─▶ 23
 ```
 
 - 00 é pré-requisito de tudo.
@@ -51,6 +57,9 @@
   18 (export Markdown) dependem da 16.
 - 19 (revisão do stealth) depende de 09/10 e é independente das demais.
 - 20 (troca de canais na sessão) depende da 16 (conceito de sessão).
+- 21 (filtro de loop de frase, ISS-019) depende de 11/13 (streaming e ASR).
+- 22 (interface responsiva, ISS-020) depende de 01/07/11 (overlay, UI e streaming).
+- 23 (retratação da prévia, ISS-021) depende de 11/13 (streaming e ASR).
 
 ## Definição de pronto (geral)
 - Código compila (`pnpm tauri build` sem erros).

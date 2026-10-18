@@ -1,18 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { copyText } from "../../core/application/clipboard";
 import { exportSessionMarkdown, pickMarkdownPath, saveSessionMarkdown } from "../../adapters/ipc/export";
 import {
   useSessionHistory,
   useSessionTimeline,
 } from "../../core/application/useSessionHistory";
+import { bubblesFromTimeline } from "../../core/domain/chat";
 import {
-  formatClock,
   formatDateTime,
   sessionDuration,
   sessionTitle,
-  timelineLabel,
   type SessionSummary,
 } from "../../core/domain/transcript";
+import { ChatView } from "../chat/ChatView";
 
 interface HistoryPanelProps {
   /** Sessão em andamento (para marcar a lista). */
@@ -53,6 +53,9 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
   const [notice, setNotice] = useState<string | null>(null);
 
   const current = sessions.find((session) => session.id === selected) ?? null;
+  // Converter a linha temporal em bolhas pode custar caro numa sessão longa e não
+  // pode rodar a cada render (ISS-020).
+  const bubbles = useMemo(() => bubblesFromTimeline(entries), [entries]);
 
   const startRename = (session: SessionSummary) => {
     setEditing(true);
@@ -172,29 +175,13 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
         {notice && <p className="settings__hint">{notice}</p>}
         {timelineError && <p className="overlay__error">{timelineError}</p>}
 
-        <div className="history__timeline">
-          {loadingTimeline && <p className="transcript__empty">Carregando…</p>}
-          {!loadingTimeline && entries.length === 0 && (
-            <p className="transcript__empty">Nada registrado nesta sessão.</p>
-          )}
-          {entries.map((entry, index) => (
-            <p
-              key={`${entry.kind}-${entry.at_ms}-${index}`}
-              className={
-                entry.kind === "suggestion"
-                  ? "history__entry history__entry--suggestion"
-                  : `transcript__line transcript__line--${entry.speaker.toLowerCase()}`
-              }
-            >
-              <span className="transcript__time">
-                {entry.kind === "suggestion" ? "🤖 " : ""}
-                {formatClock(entry.at_ms)}
-              </span>
-              <span className="transcript__speaker">{timelineLabel(entry)}</span>
-              <span className="transcript__text">{entry.text}</span>
-            </p>
-          ))}
-        </div>
+        {loadingTimeline ? (
+          <p className="chat__empty">Carregando…</p>
+        ) : entries.length === 0 ? (
+          <p className="chat__empty">Nada registrado nesta sessão.</p>
+        ) : (
+          <ChatView bubbles={bubbles} />
+        )}
       </div>
     );
   }
@@ -217,7 +204,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
 
       <div className="history__list">
         {!loading && sessions.length === 0 && (
-          <p className="transcript__empty">
+          <p className="overlay__empty">
             Nenhuma sessão ainda. Inicie a escuta para criar a primeira.
           </p>
         )}

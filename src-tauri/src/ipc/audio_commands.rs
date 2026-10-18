@@ -37,7 +37,7 @@ fn level_meter(app: AppHandle, channel: AudioChannel) -> Arc<dyn AudioConsumer> 
 // --- Microfone ---------------------------------------------------------------
 
 /// Lista os dispositivos de entrada de áudio.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_list_devices(state: State<'_, AppState>) -> Result<Vec<AudioDeviceDto>> {
     Ok(state
         .audio
@@ -48,7 +48,7 @@ pub fn audio_list_devices(state: State<'_, AppState>) -> Result<Vec<AudioDeviceD
 }
 
 /// Inicia a captura do microfone (`device_id` omitido = padrão).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_start(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -60,7 +60,7 @@ pub fn audio_start(
 }
 
 /// Interrompe a captura do microfone.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_stop(state: State<'_, AppState>) -> Result<()> {
     state.audio.stop()
 }
@@ -74,7 +74,7 @@ pub fn audio_is_running(state: State<'_, AppState>) -> Result<bool> {
 // --- Áudio do sistema --------------------------------------------------------
 
 /// Lista os monitores de saída disponíveis (áudio do sistema).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn system_audio_list_devices(state: State<'_, AppState>) -> Result<Vec<AudioDeviceDto>> {
     Ok(state
         .system_audio
@@ -85,7 +85,7 @@ pub fn system_audio_list_devices(state: State<'_, AppState>) -> Result<Vec<Audio
 }
 
 /// Inicia a captura do áudio do sistema (`device_id` omitido = monitor padrão).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn system_audio_start(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -97,7 +97,7 @@ pub fn system_audio_start(
 }
 
 /// Interrompe a captura do áudio do sistema.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn system_audio_stop(state: State<'_, AppState>) -> Result<()> {
     state.system_audio.stop()
 }
@@ -109,13 +109,13 @@ pub fn system_audio_is_running(state: State<'_, AppState>) -> Result<bool> {
 }
 
 /// Cria um sink virtual "GhostWhisper" (retorna o índice do módulo).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn system_sink_create(state: State<'_, AppState>, name: String) -> Result<u32> {
     state.virtual_sink.create(&name)
 }
 
 /// Remove o sink virtual pelo índice do módulo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn system_sink_remove(state: State<'_, AppState>, module_index: u32) -> Result<()> {
     state.virtual_sink.remove(module_index)
 }
@@ -129,7 +129,7 @@ pub fn audio_monitor_default_delay() -> Result<u64> {
 }
 
 /// Liga o monitor atrasado do microfone (o usuário se ouve).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_monitor_start(state: State<'_, AppState>, delay_ms: Option<u64>) -> Result<()> {
     let delay =
         delay_ms.unwrap_or_else(crate::adapters::audio::pulse_delayed_monitor::default_delay_ms);
@@ -137,7 +137,7 @@ pub fn audio_monitor_start(state: State<'_, AppState>, delay_ms: Option<u64>) ->
 }
 
 /// Desliga o monitor atrasado do microfone.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_monitor_stop(state: State<'_, AppState>) -> Result<()> {
     state.monitor.stop()
 }

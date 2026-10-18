@@ -134,6 +134,172 @@ body,
   gap: 0.35rem;
 }
 
+/* "Iniciar escuta": play + rótulo (cobre Start Listening/Restart do Perssua). */
+.session-start {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ghostwhisper-text);
+  background: rgba(52, 211, 153, 0.22);
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  border-radius: 999px;
+  padding: 0.26rem 0.7rem 0.26rem 0.55rem;
+  cursor: pointer;
+}
+
+.session-start:hover:not(:disabled) {
+  background: rgba(52, 211, 153, 0.32);
+}
+
+.session-start:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.session-start__icon {
+  color: currentColor;
+}
+
+/* Transporte: pílula de ícones play/pause/stop (paridade com o Perssua). */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.transport__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ghostwhisper-text);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.transport__button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.transport__button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.transport__button--stop:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+
+.transport__icon {
+  pointer-events: none;
+}
+
+/* Pílula de sessão: tempo decorrido + confirmação de encerramento. */
+.session-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: 50vh;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: rgba(239, 68, 68, 1);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-pill:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+.session-pill__icon {
+  color: inherit;
+}
+
+.session-pill__timer {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.session-pill--confirming {
+  cursor: default;
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--ghostwhisper-text);
+}
+
+.session-pill__text {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+}
+
+.session-pill__button {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.session-pill__button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.session-pill__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Bolinha de status (paridade com o Perssua). */
+.overlay__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.overlay__dot--live {
+  background: rgba(239, 68, 68, 0.9);
+  animation: overlay-dot-pulse 1.6s ease-in-out infinite;
+}
+
+.overlay__dot--paused {
+  background: #fbbf24;
+}
+
+@keyframes overlay-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .overlay__select {
   font: inherit;
   font-size: 0.72rem;
@@ -213,58 +379,153 @@ body,
   transition: width 90ms linear;
 }
 
-.transcript {
+/* Conversa em bolhas — paridade com o Perssua
+   (prds/chat/architecture/chat-ui.md §3). Sem `backdrop-filter` por bolha: N
+   camadas de blur re-renderizam a cada token de prévia. */
+
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.chat__list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.8rem;
+  gap: 12px;
+  padding: 8px 4px;
   user-select: text;
   -webkit-user-select: text;
 }
 
-.transcript__empty {
+.overlay__empty,
+.chat__empty {
   margin: 0;
   color: var(--ghostwhisper-text-muted);
 }
 
-.transcript__line {
-  margin: 0;
+.chat__row {
   display: flex;
-  gap: 0.4rem;
+  width: 100%;
 }
 
-.transcript__time {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--ghostwhisper-text-muted);
-  opacity: 0.75;
+.chat__row--me {
+  justify-content: flex-end;
 }
 
-.transcript__speaker {
-  flex: 0 0 auto;
+.chat__row--they,
+.chat__row--ai {
+  justify-content: flex-start;
+}
+
+.chat__bubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat__row--me .chat__bubble {
+  background-color: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-bottom-right-radius: 4px;
+}
+
+.chat__row--they .chat__bubble {
+  background-color: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom-left-radius: 4px;
+}
+
+/* Sugestão da IA: mesma linha temporal, tonalidade própria. */
+.chat__row--ai .chat__bubble {
+  background-color: rgba(167, 139, 250, 0.18);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-bottom-left-radius: 4px;
+}
+
+.chat__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--ghostwhisper-accent);
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.transcript__line--they .transcript__speaker {
-  color: #34d399;
+.chat__label-icon {
+  color: rgba(167, 139, 250, 0.9);
 }
 
-.transcript__text {
-  color: var(--ghostwhisper-text);
+.chat__typing {
+  font-size: 14px;
+  animation: chat-blink 1.4s infinite;
 }
 
-/* Preview: texto ainda revisável, exibido discreto até o passe final. */
-.transcript__line--interim .transcript__text {
-  color: var(--ghostwhisper-text-muted);
-  font-style: italic;
+.chat__text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
-.transcript__line--interim .transcript__speaker {
-  opacity: 0.6;
+.chat__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat__time {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.chat__copy {
+  font: inherit;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+/* Fala ainda em revisão (bolha "em andamento" do Perssua). */
+.chat__row--pending {
+  opacity: 0.7;
+}
+
+.chat__row--pending .chat__text {
+  opacity: 0.8;
+}
+
+@keyframes chat-blink {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .overlay__error {
@@ -439,8 +700,7 @@ body,
   gap: 0.3rem;
 }
 
-.history__list,
-.history__timeline {
+.history__list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -484,19 +744,6 @@ body,
 .history__row-meta {
   font-size: 0.7rem;
   color: var(--ghostwhisper-text-muted);
-}
-
-.history__entry {
-  margin: 0;
-  display: flex;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-}
-
-.history__entry--suggestion {
-  border-left: 2px solid var(--ghostwhisper-accent);
-  padding-left: 0.4rem;
-  color: var(--ghostwhisper-text);
 }
 
 /* Configurações --------------------------------------------------------- */

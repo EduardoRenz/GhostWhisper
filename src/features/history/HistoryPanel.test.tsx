@@ -84,10 +84,14 @@ describe("HistoryPanel", () => {
       expect(screen.getByText("podemos fechar?")).toBeDefined();
     });
     expect(screen.getByText("Confirme o prazo.")).toBeDefined();
-    expect(screen.getByText(/🤖 00:10/)).toBeDefined();
-    expect(screen.getByText("00:00")).toBeDefined();
-    expect(screen.getByText("00:30")).toBeDefined();
+    // Sugestão e falas são bolhas na mesma linha temporal, cada uma com seu tempo.
     expect(screen.getByText("Sugestão da IA")).toBeDefined();
+    expect(screen.getByText("00:00")).toBeDefined();
+    expect(screen.getByText("00:10")).toBeDefined();
+    expect(screen.getByText("00:30")).toBeDefined();
+    expect(
+      screen.getByText("Confirme o prazo.").closest(".chat__row")?.className,
+    ).toContain("chat__row--ai");
   });
 
   it("continua uma sessão encerrada", async () => {

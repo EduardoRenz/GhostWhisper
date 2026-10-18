@@ -38,7 +38,7 @@ pub fn settings_providers() -> Vec<&'static str> {
 }
 
 /// Retorna as configurações atuais (sem segredos).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_get(state: State<'_, AppState>) -> Result<Settings> {
     state.settings.load()
 }
@@ -46,7 +46,7 @@ pub fn settings_get(state: State<'_, AppState>) -> Result<Settings> {
 /// Persiste as configurações (validadas antes de gravar).
 ///
 /// Reaplica atalhos/stealth e devolve os conflitos de atalho encontrados.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_set(
     state: State<'_, AppState>,
     settings: Settings,
@@ -57,14 +57,14 @@ pub fn settings_set(
 }
 
 /// Grava a chave do provider ativo no armazenamento de segredos.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_set_provider_key(state: State<'_, AppState>, key: String) -> Result<()> {
     let settings = state.settings.load()?;
     state.secrets.set(&settings.provider.secret_key(), &key)
 }
 
 /// Indica se há chave configurada para o provider ativo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_has_provider_key(state: State<'_, AppState>) -> Result<bool> {
     let settings = state.settings.load()?;
     let present = state
@@ -75,20 +75,20 @@ pub fn settings_has_provider_key(state: State<'_, AppState>) -> Result<bool> {
 }
 
 /// Remove a chave do provider ativo.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_clear_provider_key(state: State<'_, AppState>) -> Result<()> {
     let settings = state.settings.load()?;
     state.secrets.delete(&settings.provider.secret_key())
 }
 
 /// Testa a conexão com o provider (validar chave).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_validate_key(state: State<'_, AppState>) -> Result<String> {
     state.llm.validate()
 }
 
 /// Rótulo do provider/modelo ativo (sem segredos).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_provider_label(state: State<'_, AppState>) -> Result<String> {
     state.llm.provider_label()
 }
@@ -97,7 +97,7 @@ pub fn settings_provider_label(state: State<'_, AppState>) -> Result<String> {
 ///
 /// Nunca devolve o valor bruto: só os últimos 4 caracteres, mesma regra do
 /// OpenAI/OpenRouter quando exibem chaves salvas.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_key_preview(state: State<'_, AppState>) -> Result<String> {
     let settings = state.settings.load()?;
     let masked = state
