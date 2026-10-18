@@ -1,5 +1,6 @@
 import { formatClock } from "../../core/domain/transcript";
 import { SparkIcon } from "../../components/TransportIcons";
+import { MarkdownView } from "../../components/MarkdownView";
 
 /** Lado/tonalidade da bolha. */
 export type BubbleSide = "me" | "they" | "ai";
@@ -13,6 +14,8 @@ interface ChatBubbleProps {
   atMs: number;
   /** Fala ainda em revisão (bolha "em andamento", com indicador `…`). */
   pending?: boolean;
+  /** Renderiza o texto como Markdown (sugestões da IA — BR-025). */
+  markdown?: boolean;
   /** Copiar o texto (só a sugestão da IA usa). */
   onCopy?: () => void;
   copied?: boolean;
@@ -29,6 +32,7 @@ export function ChatBubble({
   side,
   atMs,
   pending = false,
+  markdown = false,
   onCopy,
   copied = false,
 }: ChatBubbleProps) {
@@ -49,7 +53,11 @@ export function ChatBubble({
             </span>
           )}
         </div>
-        <div className="chat__text">{text}</div>
+        {markdown ? (
+          <MarkdownView markdown={text} compact />
+        ) : (
+          <div className="chat__text">{text}</div>
+        )}
         <div className="chat__foot">
           <span className="chat__time" title="tempo desde o início da sessão">
             {formatClock(atMs)}

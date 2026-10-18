@@ -2,10 +2,12 @@
 //!
 //! Nesta camada não existe I/O, framework, rede ou acesso a disco.
 
+pub mod assistant;
 pub mod audio;
 pub mod geometry;
 pub mod llm;
 pub mod message;
+pub mod overview;
 pub mod session;
 pub mod settings;
 pub mod shortcuts;

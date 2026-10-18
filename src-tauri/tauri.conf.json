@@ -34,6 +34,36 @@
       "visible": false,
       "alwaysOnTop": true,
       "center": true
+    },
+    {
+      "label": "summary",
+      "title": "GhostWhisper — Resumo",
+      "width": 520,
+      "height": 640,
+      "resizable": false,
+      "decorations": false,
+      "transparent": true,
+      "alwaysOnTop": true,
+      "skipTaskbar": true,
+      "shadow": false,
+      "focus": false,
+      "visible": false,
+      "center": true
+    },
+    {
+      "label": "suggestions",
+      "title": "GhostWhisper — Sugestões",
+      "width": 540,
+      "height": 680,
+      "resizable": false,
+      "decorations": false,
+      "transparent": true,
+      "alwaysOnTop": true,
+      "skipTaskbar": true,
+      "shadow": false,
+      "focus": false,
+      "visible": false,
+      "center": true
     }
     ],
     "security": {

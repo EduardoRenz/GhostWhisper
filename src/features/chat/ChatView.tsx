@@ -93,9 +93,10 @@ export const ChatView = memo(function ChatView({
             <Bubble
               key={`suggestion-${bubble.id}`}
               text={bubble.text}
-              label="Sugestão da IA"
+              label={bubble.mode_name ? `Sugestão · ${bubble.mode_name}` : "Sugestão da IA"}
               side="ai"
               atMs={bubble.at_ms}
+              markdown
               copied={copied === bubble.id}
               onCopy={() => void onCopy(bubble.id, bubble.text)}
             />

@@ -6,6 +6,7 @@ import {
   startDrag as startDragIpc,
   type Surface,
 } from "../../adapters/ipc/overlay";
+import { panelOpen } from "../../adapters/ipc/panels";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
 import { useInsight } from "../../core/application/useInsight";
 import { useInsightFeed } from "../../core/application/useInsightFeed";
@@ -64,16 +65,36 @@ export function Overlay() {
   // render anularia a memoização (o overlay re-renderiza com frequência).
   const chatHeader = useMemo(
     () => (
-      <button
-        type="button"
-        className="overlay__button"
-        data-interactive
-        disabled={insightLoading || !state.session_id}
-        title="Pede uma sugestão da IA com base na conversa"
-        onClick={() => void requestInsight()}
-      >
-        {insightLoading ? "Gerando…" : "Sugerir"}
-      </button>
+      <div className="chat__head-actions">
+        <button
+          type="button"
+          className="overlay__button"
+          data-interactive
+          disabled={insightLoading || !state.session_id}
+          title="Pede uma sugestão da IA com base na conversa"
+          onClick={() => void requestInsight()}
+        >
+          {insightLoading ? "Gerando…" : "Sugerir"}
+        </button>
+        <button
+          type="button"
+          className="overlay__button"
+          data-interactive
+          title="Abre a janela de resumo da sessão"
+          onClick={() => void panelOpen("summary")}
+        >
+          Resumo
+        </button>
+        <button
+          type="button"
+          className="overlay__button"
+          data-interactive
+          title="Abre a janela de sugestões por agente"
+          onClick={() => void panelOpen("suggestions")}
+        >
+          Sugestões
+        </button>
+      </div>
     ),
     [insightLoading, requestInsight, state.session_id],
   );

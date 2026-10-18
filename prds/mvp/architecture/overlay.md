@@ -95,6 +95,10 @@ janela, mas o **X11** expõe a extensão **SHAPE** (`ShapeRectangles` com
 > Ver também: a conversa em bolhas, o transporte por ícones e a pílula de sessão
 > estão especificados em [`../../chat/architecture/chat-ui.md`](../../chat/architecture/chat-ui.md)
 > (BR-021, BR-022) — este documento cobre só a janela.
+>
+> As **janelas de resumo e sugestões** (BR-023 a BR-026) são outra superfície:
+> [`../../assistant/architecture/assistant-windows.md`](../../assistant/architecture/assistant-windows.md).
+> Elas não usam click-through e vivem em janelas próprias, sempre no topo.
 
 ## 7. Arquivos envolvidos
 

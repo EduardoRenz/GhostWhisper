@@ -58,11 +58,11 @@ mod tests {
         // As tabelas principais existem.
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE name IN ('sessions','messages','transcriptions','transcriptions_fts')",
+                "SELECT count(*) FROM sqlite_master WHERE name IN ('sessions','messages','transcriptions','transcriptions_fts','meeting_summaries')",
                 [],
                 |row| row.get(0),
             )
             .expect("consulta");
-        assert_eq!(count, 4);
+        assert_eq!(count, 5);
     }
 }

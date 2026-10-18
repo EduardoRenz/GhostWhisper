@@ -175,6 +175,30 @@ Remapeáveis na tela de configurações; conflitos são reportados sem derrubar 
   **exportar em Markdown** — pelo diálogo nativo "salvar como" ou copiando para a
   área de transferência.
 
+### Resumo e sugestões (agentes)
+
+Duas **janelas próprias** (movíveis e sempre no topo) complementam o overlay:
+
+- **Resumo** (botão *Resumo* no painel/tray): resume a conversa em Markdown e se
+  atualiza **a cada 30 s** enquanto a janela está aberta — sempre de forma
+  **incremental**, sem chamar a IA quando não há fala nova. "Atualizar" regenera
+  do zero e "Copiar" leva o Markdown. O resumo também aparece no histórico e no
+  export da sessão.
+- **Sugestões** (botão *Sugestões* no painel/tray): olha os **últimos momentos**
+  da conversa e sugere a próxima fala, no **agente** escolhido — **Reunião**,
+  **Entrevista Técnica**, **LeetCode** e **System Design**, além dos seus
+  **agentes personalizados**. A atualização automática (20 s, configurável) só
+  chama a IA quando há fala nova; **Sugerir agora** força uma nova análise e
+  **Fixar** grava a sugestão na conversa/export. A caixa **Contexto extra** aceita
+  um enunciado ou trecho de código (útil no modo LeetCode, já que o app é
+  áudio-only).
+- **Código e Markdown:** as respostas são renderizadas com títulos, listas,
+  tabelas e **código colorido** (com botão copiar); HTML bruto não é executado.
+- **Custo:** o automático só roda com a janela aberta e a sessão gravando; dá para
+  pausar cada janela no cabeçalho e ajustar a cadência em *Configurações →
+  Assistente*. Os agentes personalizados (nome, prompts e contexto) também ficam
+  nessa aba.
+
 ## Privacidade
 
 - Sem login, sem telemetria, sem conta.

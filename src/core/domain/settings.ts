@@ -1,6 +1,7 @@
 /** Tipos de configuração do GhostWhisper (espelham `domain::settings` no core). */
 
 import { defaultBindings, type ShortcutBinding } from "./shortcuts";
+import type { AssistantMode } from "./assistant";
 
 export type ProviderKind = "openai" | "gemini" | "openrouter" | "custom";
 
@@ -41,6 +42,22 @@ export interface Settings {
   shortcuts: ShortcutBinding[];
   /** Posição do overlay na tela (lembrada após o usuário mover). */
   overlay_position: [number, number] | null;
+  /** Agente/modo selecionado para sugestões (`meeting` por padrão). */
+  assistant_mode_id: string;
+  /** Agentes personalizados criados pelo usuário. */
+  custom_assistant_modes: AssistantMode[];
+  /** Atualização automática do resumo enquanto a janela está aberta. */
+  summary_auto_refresh: boolean;
+  /** Intervalo do resumo automático (segundos). */
+  summary_interval_secs: number;
+  /** Atualização automática da janela de sugestões. */
+  suggestion_auto_refresh: boolean;
+  /** Intervalo das sugestões automáticas (segundos). */
+  suggestion_interval_secs: number;
+  /** Posição da janela de resumo. */
+  summary_position: [number, number] | null;
+  /** Posição da janela de sugestões. */
+  suggestions_position: [number, number] | null;
 }
 
 /** Providers na ordem de exibição. */
@@ -84,7 +101,24 @@ export const defaultSettings = (): Settings => ({
   stealth: false,
   shortcuts: defaultBindings(),
   overlay_position: null,
+  assistant_mode_id: "meeting",
+  custom_assistant_modes: [],
+  summary_auto_refresh: true,
+  summary_interval_secs: 30,
+  suggestion_auto_refresh: true,
+  suggestion_interval_secs: 20,
+  summary_position: null,
+  suggestions_position: null,
 });
+
+/** Intervalos aceitos pelas atualizações automáticas (segundos). */
+export const MIN_AUTO_INTERVAL_SECS = 10;
+export const MAX_AUTO_INTERVAL_SECS = 120;
+
+/** Opções de cadência do resumo automático. */
+export const SUMMARY_INTERVALS = [15, 30, 60, 120] as const;
+/** Opções de cadência das sugestões automáticas. */
+export const SUGGESTION_INTERVALS = [10, 20, 30, 60] as const;
 
 /** `base_url` é obrigatória apenas para endpoints custom. */
 export const providerRequiresBaseUrl = (provider: ProviderKind): boolean =>

@@ -44,11 +44,15 @@ export type TimelineEntry =
 
 /** Sugestão da IA persistida (`ports::insight_generator::InsightSuggestion`). */
 export interface InsightSuggestion {
-  message_id: string;
+  message_id: string | null;
   session_id: string;
   text: string;
   /** Milissegundos desde o início da sessão. */
   at_ms: number;
+  /** Agente que gerou a sugestão (quando veio do evento ao vivo). */
+  mode_id?: string;
+  /** Nome do agente (rótulo). */
+  mode_name?: string;
 }
 
 /** Mensagem persistida da sessão (`domain::message::ConversationMessage`). */
@@ -76,6 +80,8 @@ export interface SessionSummary {
   started_at_ms: number;
   ended_at_ms: number | null;
   subject: string | null;
+  /** Resumo vivo persistido (`sessions.overview`), quando existe. */
+  overview?: string | null;
   status: "active" | "ended";
 }
 

@@ -80,6 +80,15 @@ impl SessionRepository for LocalSessionRepository {
         Ok(())
     }
 
+    fn set_overview(&self, id: &str, overview: &str) -> Result<()> {
+        let conn = lock(&self.conn)?;
+        conn.execute(
+            "UPDATE sessions SET overview = ?2 WHERE id = ?1",
+            params![id, overview],
+        )?;
+        Ok(())
+    }
+
     fn delete(&self, id: &str) -> Result<()> {
         let conn = lock(&self.conn)?;
         // O `ON DELETE CASCADE` do schema já resolve, mas removemos os filhos
@@ -210,6 +219,21 @@ mod tests {
         assert_eq!(
             repo.get("a").unwrap().unwrap().subject.as_deref(),
             Some("Reunião de sexta")
+        );
+    }
+
+    #[test]
+    fn set_overview_stores_the_summary_mirror() {
+        let repo = LocalSessionRepository::new(tests_support::in_memory());
+        repo.create(&tests_support::session("a", 100))
+            .expect("create");
+
+        repo.set_overview("a", "## Visão geral\n\nok")
+            .expect("overview");
+
+        assert_eq!(
+            repo.get("a").unwrap().unwrap().overview.as_deref(),
+            Some("## Visão geral\n\nok")
         );
     }
 

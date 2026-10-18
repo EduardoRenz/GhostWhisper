@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { subscribe } from "../../adapters/ipc/events";
 import {
   sessionContinue,
+  sessionCurrent,
   sessionPause,
   sessionResume,
   sessionSetChannels,
@@ -49,6 +50,25 @@ export function useSessionState(): {
     return () => {
       cancelled = true;
       unlisten?.();
+    };
+  }, []);
+
+  // Semeia o estado atual: as janelas de painel podem abrir no meio da sessão e
+  // não viram o último evento `session_state`. Se o evento já chegou, não mexe.
+  useEffect(() => {
+    let cancelled = false;
+    void sessionCurrent().then((id) => {
+      if (cancelled || !id) {
+        return;
+      }
+      setState((previous) =>
+        previous.session_id
+          ? previous
+          : { ...previous, listening: true, session_id: id },
+      );
+    });
+    return () => {
+      cancelled = true;
     };
   }, []);
 

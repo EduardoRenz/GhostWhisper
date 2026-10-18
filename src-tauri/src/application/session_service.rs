@@ -594,7 +594,7 @@ mod tests {
         fn emit_session_state(&self, state: &SessionStateEvent) {
             self.states.lock().unwrap().push(state.clone());
         }
-        fn emit_insight(&self, _suggestion: &crate::ports::insight_generator::InsightSuggestion) {}
+        fn emit_insight(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 

@@ -14,7 +14,7 @@ mod state;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use domain::shortcuts::ShortcutAction;
 
@@ -80,7 +80,16 @@ pub fn run() {
             ipc::settings_commands::settings_key_preview,
             ipc::settings_commands::settings_secrets_persistent,
             ipc::llm_commands::llm_translate,
-            ipc::llm_commands::llm_insight,
+            ipc::suggestion_commands::assistant_modes_list,
+            ipc::suggestion_commands::suggestion_generate,
+            ipc::suggestion_commands::suggestion_pin,
+            ipc::suggestion_commands::llm_insight,
+            ipc::summary_commands::summary_get,
+            ipc::summary_commands::summary_generate,
+            ipc::panel_commands::panel_open,
+            ipc::panel_commands::panel_hide,
+            ipc::panel_commands::panel_start_drag,
+            ipc::panel_commands::panel_is_open,
             ipc::shortcuts_commands::shortcuts_get,
             ipc::shortcuts_commands::shortcuts_active,
             ipc::shortcuts_commands::shortcuts_set,
@@ -100,11 +109,27 @@ pub fn run() {
                     }
                 });
             }
+            // Painéis de resumo/sugestões: fechar esconde e avisa a UI.
+            for label in ["summary", "suggestions"] {
+                if let Some(panel) = app.get_webview_window(label) {
+                    let window = panel.clone();
+                    panel.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            let _ = window.hide();
+                            let _ = window
+                                .emit(ipc::panel_commands::PANEL_HIDDEN_EVENT, label.to_string());
+                        }
+                    });
+                }
+            }
             // O tray é opcional: não derruba o app se o indicador faltar.
             if let Err(error) = build_tray(app) {
                 tracing::warn!("bandeja indisponível: {error}");
             }
             spawn_overlay_position_tracker(app.handle().clone());
+            spawn_panel_position_tracker(app.handle().clone(), "summary");
+            spawn_panel_position_tracker(app.handle().clone(), "suggestions");
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -125,6 +150,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
     use adapters::persistence::sqlite::connection as db_connection;
+    use adapters::persistence::sqlite::local_meeting_summaries_repository::LocalMeetingSummariesRepository;
     use adapters::persistence::sqlite::local_messages_repository::LocalMessagesRepository;
     use adapters::persistence::sqlite::local_session_repository::LocalSessionRepository;
     use adapters::persistence::sqlite::local_transcriptions_repository::LocalTranscriptionsRepository;
@@ -138,18 +164,19 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::speech::whisper_speech_engine_factory::WhisperSpeechEngineFactory;
     use adapters::system::system_clock::SystemClock;
     use adapters::system::x11_pointer_source::{NullPointerSource, X11PointerSource};
-    use application::insight_service::InsightService;
     use application::llm_router::LlmRouter;
     use application::session_service::SessionService;
+    use application::suggestion_service::SuggestionService;
+    use application::summary_service::SummaryService;
     use application::translation_service::TranslationService;
     use ports::audio_monitor::AudioMonitor;
     use ports::audio_source::AudioSource;
     use ports::click_through::ClickThroughController;
     use ports::clock::Clock;
     use ports::event_publisher::EventPublisher;
-    use ports::insight_generator::InsightGenerator;
     use ports::llm_controller::LlmController;
     use ports::llm_provider_factory::ChatBotProviderFactory;
+    use ports::meeting_summaries_repository::MeetingSummariesRepository;
     use ports::model_store::ModelStore;
     use ports::overlay_window::OverlayWindowController;
     use ports::pointer_source::PointerSource;
@@ -159,6 +186,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::settings_store::SettingsStore;
     use ports::shortcut_registry::GlobalShortcutRegistry;
     use ports::speech_engine_factory::SpeechEngineFactory;
+    use ports::suggestion_generator::SuggestionGenerator;
+    use ports::summary_generator::SummaryGenerator;
     use ports::translator::Translator;
     use ports::virtual_sink::VirtualSinkManager;
 
@@ -230,6 +259,9 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::new(LocalTranscriptionsRepository::new(Arc::clone(&connection)));
     let messages: Arc<dyn MessagesRepository> =
         Arc::new(LocalMessagesRepository::new(Arc::clone(&connection)));
+    let summaries: Arc<dyn MeetingSummariesRepository> = Arc::new(
+        LocalMeetingSummariesRepository::new(Arc::clone(&connection)),
+    );
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
     // Sessões órfãs: app fechado durante uma gravação deixa a sessão `active` no
@@ -260,12 +292,20 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&secrets),
     ));
 
-    // Casos de uso de LLM (tradução e insights).
+    // Casos de uso de LLM (tradução, resumo e sugestões).
     let translator: Arc<dyn Translator> = Arc::new(TranslationService::new(
         Arc::clone(&llm),
         Arc::clone(&settings),
     ));
-    let insight: Arc<dyn InsightGenerator> = Arc::new(InsightService::new(
+    let summary: Arc<dyn SummaryGenerator> = Arc::new(SummaryService::new(
+        Arc::clone(&llm),
+        Arc::clone(&settings),
+        Arc::clone(&sessions),
+        Arc::clone(&transcriptions),
+        Arc::clone(&summaries),
+        Arc::clone(&clock),
+    ));
+    let suggestions: Arc<dyn SuggestionGenerator> = Arc::new(SuggestionService::new(
         Arc::clone(&llm),
         Arc::clone(&settings),
         Arc::clone(&sessions),
@@ -297,6 +337,15 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         let _ = overlay_window.set_position(tauri::PhysicalPosition::new(x, y));
         // Posição escolhida pelo usuário: não reancorar pela base.
         overlay.set_anchor_bottom(false);
+    }
+    // Painéis (resumo/sugestões): reaplica a última posição conhecida.
+    for (label, position) in [
+        ("summary", current_settings.summary_position),
+        ("suggestions", current_settings.suggestions_position),
+    ] {
+        if let (Some(window), Some((x, y))) = (app.get_webview_window(label), position) {
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+        }
     }
 
     // Motor de fala por canal: cada pipeline recebe seu próprio contexto.
@@ -332,7 +381,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         secrets,
         llm,
         translator,
-        insight,
+        summary,
+        suggestions,
         publisher,
         shortcuts,
     ))
@@ -363,9 +413,17 @@ fn build_tray(app: &tauri::App) -> Result<()> {
     .map_err(to_err)?;
     let settings =
         MenuItem::with_id(app, "settings", "Configurações", true, None::<&str>).map_err(to_err)?;
+    let summary =
+        MenuItem::with_id(app, "summary", "Abrir resumo", true, None::<&str>).map_err(to_err)?;
+    let suggestions = MenuItem::with_id(app, "suggestions", "Abrir sugestões", true, None::<&str>)
+        .map_err(to_err)?;
     let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>).map_err(to_err)?;
 
-    let menu = Menu::with_items(app, &[&toggle, &session, &settings, &quit]).map_err(to_err)?;
+    let menu = Menu::with_items(
+        app,
+        &[&toggle, &session, &summary, &suggestions, &settings, &quit],
+    )
+    .map_err(to_err)?;
 
     let mut builder = TrayIconBuilder::with_id("ghostwhisper-tray")
         .menu(&menu)
@@ -375,6 +433,8 @@ fn build_tray(app: &tauri::App) -> Result<()> {
             "toggle_overlay" => dispatch_shortcut(app, ShortcutAction::ToggleOverlay),
             "toggle_session" => dispatch_shortcut(app, ShortcutAction::ToggleSession),
             "settings" => open_settings(app),
+            "summary" => open_panel(app, "summary"),
+            "suggestions" => open_panel(app, "suggestions"),
             "quit" => app.exit(0),
             _ => {}
         });
@@ -400,6 +460,45 @@ fn open_settings(app: &tauri::AppHandle) {
     if let Err(error) = window.set_focus() {
         tracing::warn!("falha ao focar configurações: {error}");
     }
+}
+
+/// Abre (ou foca) uma janela de painel a partir do tray.
+fn open_panel(app: &tauri::AppHandle, label: &str) {
+    if let Err(error) = ipc::panel_commands::panel_open(app.clone(), label.to_string()) {
+        tracing::warn!("falha ao abrir painel {label}: {error}");
+    }
+}
+
+/// Persiste a posição das janelas de painel enquanto o usuário as move.
+fn spawn_panel_position_tracker(app: tauri::AppHandle, label: &'static str) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(900));
+
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        if !window.is_visible().unwrap_or(false) {
+            continue;
+        }
+        let Ok(position) = window.outer_position() else {
+            continue;
+        };
+
+        let state = app.state::<state::AppState>();
+        let Ok(mut settings) = state.settings.load() else {
+            continue;
+        };
+        let current = (position.x, position.y);
+        let slot = match label {
+            "summary" => &mut settings.summary_position,
+            "suggestions" => &mut settings.suggestions_position,
+            _ => continue,
+        };
+        if *slot != Some(current) {
+            *slot = Some(current);
+            let _ = state.settings.save(&settings);
+        }
+    });
 }
 
 /// Persiste a posição do overlay enquanto o usuário a controla.
@@ -479,10 +578,13 @@ fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
                 tracing::warn!("falha ao iniciar sessão pelo atalho: {error}");
             }
         }
-        ShortcutAction::RequestInsight => match state.insight.generate(None) {
-            Ok(suggestion) => state.publisher.emit_insight(&suggestion),
-            Err(error) => tracing::warn!("falha ao gerar insight pelo atalho: {error}"),
-        },
+        ShortcutAction::RequestInsight => {
+            let request = crate::ports::suggestion_generator::SuggestionRequest::persist(None);
+            match state.suggestions.generate(request) {
+                Ok(suggestion) => state.publisher.emit_insight(&suggestion),
+                Err(error) => tracing::warn!("falha ao gerar sugestão pelo atalho: {error}"),
+            }
+        }
     }
 }
 

@@ -1097,7 +1097,7 @@ mod tests {
         }
         fn emit_audio_level(&self, _channel: AudioChannel, _level: AudioLevel) {}
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
-        fn emit_insight(&self, _suggestion: &crate::ports::insight_generator::InsightSuggestion) {}
+        fn emit_insight(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 

@@ -251,3 +251,64 @@ uma nota de revisão.
 - **Detalhes:** [`chat/tasks/03-task.md`](chat/tasks/03-task.md),
   [`chat/tasks/04-task.md`](chat/tasks/04-task.md).
 - **Data:** 2026-10-18 · **Status:** Ativa (tasks 03/04)
+
+## BR-023 — Resumo vivo, incremental e em janela separada
+- **Decisão:** o resumo da sessão vive numa **janela própria e móvel**
+  (`summary`) e é atualizado de tempos em tempos (30 s por padrão, configurável)
+  enquanto a janela está aberta. A atualização é **incremental**: parte do resumo
+  anterior e incorpora apenas as falas novas, com um cursor
+  (`summarized_until_ms`); sessões longas são processadas em chunks, sem perder o
+  começo. "Atualizar agora" regenera do zero. O resumo é um **Markdown** com o
+  contrato adaptado do Perssua (`notetakerSummaryPrompt.js`) e é persistido em
+  `meeting_summaries`, espelhado em `sessions.overview` (entra no export e no
+  detalhe do histórico).
+- **Motivo:** pedido do usuário — acompanhar uma reunião longa com um resumo que
+  se atualiza sozinho, numa janela posicionável ao lado da reunião.
+- **Consequência:** tick sem fala nova **não** chama o LLM; `subject` só preenche
+  `sessions.subject` quando ele está vazio (o título do usuário vence).
+- **Detalhes:** [`assistant/tasks/02-task.md`](assistant/tasks/02-task.md),
+  [`assistant/tasks/03-task.md`](assistant/tasks/03-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa
+
+## BR-024 — Sugestões por agentes, com modos personalizados
+- **Decisão:** a sugestão ao vivo tem **agentes** selecionáveis — embutidos
+  (Reunião, Entrevista Técnica, LeetCode, System Design) e **personalizados**
+  (nome, prompt de sistema, prompt de sugestão e contexto fixo). O contexto são os
+  **últimos momentos** da conversa (≈3 min, até 40 falas, teto de 6 k caracteres),
+  com a última sugestão para evitar repetição. O agente **sempre tenta** produzir
+  algo útil; `...` só sem transcrição/ininteligível. Sugestões automáticas são
+  **efêmeras**; "Fixar" grava em `messages` (linha temporal/export).
+- **Motivo:** pedido do usuário ("modos sugestores personalizados, para dar mais
+  contexto") e a referência do Perssua (Cody/Note Taker).
+- **Consequência:** sem captura de tela, o modo LeetCode trabalha com o enunciado
+  falado e com a caixa "Contexto extra"; personalizar prompts é diferente de
+  copiar o Perssua (prompts **adaptados**, BR-008).
+- **Detalhes:** [`assistant/tasks/02-task.md`](assistant/tasks/02-task.md),
+  [`assistant/tasks/04-task.md`](assistant/tasks/04-task.md),
+  [`assistant/tasks/05-task.md`](assistant/tasks/05-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa
+
+## BR-025 — Markdown renderizado com código colorido
+- **Decisão:** resumo e sugestões são Markdown e são renderizados pelo mesmo
+  componente (`MarkdownView`): títulos, listas, tabelas GFM, citações, código
+  inline e blocos cercados com realce (highlight.js) e botão **Copiar**. **HTML
+  bruto não é renderizado** e links abrem no navegador externo. As bolhas de
+  sugestão da IA no chat também renderizam Markdown.
+- **Motivo:** pedido do usuário — "código tem que ser formatado e colorizado".
+- **Consequência:** os prompts não usam HTML inline (Big O em **negrito** em vez
+  de `<span style="color: green">`), o que também é mais seguro.
+- **Detalhes:** [`assistant/tasks/03-task.md`](assistant/tasks/03-task.md),
+  [`assistant/architecture/assistant-windows.md`](assistant/architecture/assistant-windows.md).
+- **Data:** 2026-10-18 · **Status:** Ativa
+
+## BR-026 — Janelas de assistente separadas e móveis
+- **Decisão:** resumo e sugestões vivem em **janelas próprias**, sem moldura,
+  sempre no topo, arrastáveis pelo cabeçalho e com a posição lembrada. O automático
+  só roda com a janela **aberta** (eventos `panel_opened`/`panel_hidden`) e a
+  sessão gravando; pausar/ocultar interrompe as chamadas.
+- **Motivo:** pedido do usuário; o Perssua usa um modal/Notch interno (R12), então
+  este é um desvio consciente.
+- **Consequência:** como qualquer janela no Linux, elas **aparecem** no
+  compartilhamento de tela (BR-006); o limite está documentado.
+- **Detalhes:** [`assistant/architecture/assistant-windows.md`](assistant/architecture/assistant-windows.md) §5-§6.
+- **Data:** 2026-10-18 · **Status:** Ativa

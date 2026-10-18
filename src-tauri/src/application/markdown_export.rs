@@ -75,6 +75,18 @@ pub fn render_markdown(session: &Session, entries: &[TimelineEntry], now_ms: i64
     ));
     out.push_str("\n---\n\n");
 
+    // Resumo vivo (BR-023): entra antes da linha temporal, quando existe.
+    if let Some(overview) = session
+        .overview
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        out.push_str("## Resumo\n\n");
+        out.push_str(overview);
+        out.push_str("\n\n---\n\n");
+    }
+
     if entries.is_empty() {
         out.push_str("_Sem falas ou sugestões._\n");
         return out;
@@ -206,6 +218,32 @@ mod tests {
         assert!(markdown.contains("- **[00:30] Você:** sim, vou enviar hoje"));
         // A sugestão é um bloco especial, com o tempo em que foi pedida.
         assert!(markdown.contains("> 🤖 **Sugestão [00:10]** — Você pode confirmar o prazo."));
+    }
+
+    #[test]
+    fn renders_the_summary_before_the_timeline() {
+        let mut session = session(Some("Sprint"), Some(1_700_000_060_000));
+        session.overview = Some("## Visão geral\n\nDecidimos priorizar o login.".to_string());
+        let entries = timeline(&[speech(0, Speaker::They, "podemos fechar?")], &[]);
+
+        let markdown = render_markdown(&session, &entries, 1_700_000_060_000);
+
+        assert!(markdown.contains("## Resumo"));
+        assert!(markdown.contains("Decidimos priorizar o login."));
+        // O resumo vem antes da linha temporal.
+        let summary_at = markdown.find("## Resumo").expect("resumo");
+        let speech_at = markdown.find("Interlocutor").expect("fala");
+        assert!(summary_at < speech_at);
+    }
+
+    #[test]
+    fn omits_an_empty_summary() {
+        let markdown = render_markdown(
+            &session(Some("Sprint"), Some(1_700_000_060_000)),
+            &[],
+            1_700_000_060_000,
+        );
+        assert!(!markdown.contains("## Resumo"));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::assistant::{is_builtin_id, validate_custom_modes, AssistantMode};
 use crate::domain::shortcuts::ShortcutBinding;
 use crate::error::{GhostWhisperError, Result};
 
@@ -114,7 +115,36 @@ pub struct Settings {
     /// Posição do overlay na tela (lembrada após o usuário mover).
     #[serde(default)]
     pub overlay_position: Option<(i32, i32)>,
+    /// Agente/modo selecionado para sugestões (`meeting` por padrão).
+    #[serde(default = "default_assistant_mode")]
+    pub assistant_mode_id: String,
+    /// Agentes personalizados criados pelo usuário.
+    #[serde(default)]
+    pub custom_assistant_modes: Vec<AssistantMode>,
+    /// Atualização automática do resumo enquanto a janela está aberta.
+    #[serde(default = "default_enabled")]
+    pub summary_auto_refresh: bool,
+    /// Intervalo do resumo automático (segundos).
+    #[serde(default = "default_summary_interval")]
+    pub summary_interval_secs: u32,
+    /// Atualização automática da janela de sugestões.
+    #[serde(default = "default_enabled")]
+    pub suggestion_auto_refresh: bool,
+    /// Intervalo das sugestões automáticas (segundos).
+    #[serde(default = "default_suggestion_interval")]
+    pub suggestion_interval_secs: u32,
+    /// Posição da janela de resumo.
+    #[serde(default)]
+    pub summary_position: Option<(i32, i32)>,
+    /// Posição da janela de sugestões.
+    #[serde(default)]
+    pub suggestions_position: Option<(i32, i32)>,
 }
+
+/// Intervalo mínimo aceito para atualizações automáticas (segundos).
+pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
+/// Intervalo máximo aceito para atualizações automáticas (segundos).
+pub const MAX_AUTO_INTERVAL_SECS: u32 = 120;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -130,8 +160,32 @@ impl Default for Settings {
             stealth: false,
             shortcuts: crate::domain::shortcuts::default_bindings(),
             overlay_position: None,
+            assistant_mode_id: default_assistant_mode(),
+            custom_assistant_modes: Vec::new(),
+            summary_auto_refresh: true,
+            summary_interval_secs: default_summary_interval(),
+            suggestion_auto_refresh: true,
+            suggestion_interval_secs: default_suggestion_interval(),
+            summary_position: None,
+            suggestions_position: None,
         }
     }
+}
+
+fn default_assistant_mode() -> String {
+    "meeting".to_string()
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+fn default_summary_interval() -> u32 {
+    30
+}
+
+fn default_suggestion_interval() -> u32 {
+    20
 }
 
 /// Ganho de microfone padrão (Perssua: `local_whisper_user_mic_gain = 8`).
@@ -174,7 +228,36 @@ impl Settings {
                 self.target_language
             )));
         }
+        validate_custom_modes(&self.custom_assistant_modes)?;
+        if !self.selected_mode_exists() {
+            return Err(GhostWhisperError::Config(format!(
+                "agente selecionado não existe: {}",
+                self.assistant_mode_id
+            )));
+        }
+        if !(MIN_AUTO_INTERVAL_SECS..=MAX_AUTO_INTERVAL_SECS).contains(&self.summary_interval_secs)
+        {
+            return Err(GhostWhisperError::Config(format!(
+                "intervalo do resumo deve ficar entre {MIN_AUTO_INTERVAL_SECS} e {MAX_AUTO_INTERVAL_SECS} s"
+            )));
+        }
+        if !(MIN_AUTO_INTERVAL_SECS..=MAX_AUTO_INTERVAL_SECS)
+            .contains(&self.suggestion_interval_secs)
+        {
+            return Err(GhostWhisperError::Config(format!(
+                "intervalo das sugestões deve ficar entre {MIN_AUTO_INTERVAL_SECS} e {MAX_AUTO_INTERVAL_SECS} s"
+            )));
+        }
         Ok(())
+    }
+
+    /// Indica se o agente selecionado existe (embutido ou personalizado).
+    pub fn selected_mode_exists(&self) -> bool {
+        is_builtin_id(&self.assistant_mode_id)
+            || self
+                .custom_assistant_modes
+                .iter()
+                .any(|mode| mode.id == self.assistant_mode_id)
     }
 
     /// Corrige valores fora do contrato (ex.: settings antigas com idioma livre).
@@ -186,6 +269,19 @@ impl Settings {
             self.target_language = "pt".to_string();
         }
         self.mic_gain = crate::domain::audio::clamp_mic_gain(self.mic_gain);
+        // Agentes inválidos são descartados ao carregar um arquivo antigo/Manual;
+        // no save, `validate` recusa em vez de descartar.
+        self.custom_assistant_modes
+            .retain(|mode| crate::domain::assistant::validate_mode(mode).is_ok());
+        if !self.selected_mode_exists() {
+            self.assistant_mode_id = default_assistant_mode();
+        }
+        self.summary_interval_secs = self
+            .summary_interval_secs
+            .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
+        self.suggestion_interval_secs = self
+            .suggestion_interval_secs
+            .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
         self
     }
 
@@ -328,6 +424,104 @@ mod tests {
         assert_eq!(dirty.source_language, "auto");
         assert_eq!(dirty.target_language, "pt");
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn default_assistant_settings_are_valid() {
+        let settings = Settings::default();
+        assert_eq!(settings.assistant_mode_id, "meeting");
+        assert_eq!(settings.summary_interval_secs, 30);
+        assert_eq!(settings.suggestion_interval_secs, 20);
+        assert!(settings.custom_assistant_modes.is_empty());
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_settings_get_assistant_defaults() {
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json
+            .replace("\"assistant_mode_id\":\"meeting\",", "")
+            .replace("\"custom_assistant_modes\":[],", "")
+            .replace("\"summary_auto_refresh\":true,", "")
+            .replace("\"summary_interval_secs\":30,", "")
+            .replace("\"suggestion_auto_refresh\":true,", "")
+            .replace("\"suggestion_interval_secs\":20,", "")
+            .replace("\"summary_position\":null,", "")
+            .replace("\"suggestions_position\":null,", "");
+        assert!(!legacy.contains("assistant_mode_id"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert_eq!(parsed.assistant_mode_id, "meeting");
+        assert_eq!(parsed.summary_interval_secs, 30);
+        assert!(parsed.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_falls_back_when_the_selected_mode_is_missing() {
+        let dirty = Settings {
+            assistant_mode_id: "custom-removido".into(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(dirty.assistant_mode_id, "meeting");
+        assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_clamps_auto_intervals() {
+        let dirty = Settings {
+            summary_interval_secs: 1,
+            suggestion_interval_secs: 9_999,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(dirty.summary_interval_secs, MIN_AUTO_INTERVAL_SECS);
+        assert_eq!(dirty.suggestion_interval_secs, MAX_AUTO_INTERVAL_SECS);
+        assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_invalid_custom_mode_and_unknown_selection() {
+        use crate::domain::assistant::AssistantMode;
+
+        let invalid = Settings {
+            custom_assistant_modes: vec![AssistantMode {
+                id: "custom-x".into(),
+                name: "  ".into(),
+                category: String::new(),
+                system_prompt: "p".into(),
+                suggestion_prompt: String::new(),
+                context: String::new(),
+            }],
+            ..Settings::default()
+        };
+        assert!(invalid.validate().is_err());
+
+        let unknown = Settings {
+            assistant_mode_id: "custom-nao-existe".into(),
+            ..Settings::default()
+        };
+        assert!(unknown.validate().is_err());
+    }
+
+    #[test]
+    fn sanitized_keeps_valid_custom_mode_selected() {
+        use crate::domain::assistant::AssistantMode;
+
+        let settings = Settings {
+            assistant_mode_id: "custom-vendas".into(),
+            custom_assistant_modes: vec![AssistantMode {
+                id: "custom-vendas".into(),
+                name: "Vendas".into(),
+                category: "custom".into(),
+                system_prompt: "Você ajuda em vendas.".into(),
+                suggestion_prompt: "Sugira a próxima fala.".into(),
+                context: String::new(),
+            }],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(settings.assistant_mode_id, "custom-vendas");
+        assert!(settings.validate().is_ok());
     }
 
     #[test]

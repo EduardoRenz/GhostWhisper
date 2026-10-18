@@ -85,6 +85,15 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(())
     }
 
+    fn set_overview(&self, id: &str, overview: &str) -> Result<()> {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            if let Some(session) = sessions.iter_mut().find(|session| session.id == id) {
+                session.overview = Some(overview.to_string());
+            }
+        }
+        Ok(())
+    }
+
     fn delete(&self, id: &str) -> Result<()> {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.retain(|session| session.id != id);

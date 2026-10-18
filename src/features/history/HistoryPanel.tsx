@@ -13,6 +13,7 @@ import {
   type SessionSummary,
 } from "../../core/domain/transcript";
 import { ChatView } from "../chat/ChatView";
+import { MarkdownView } from "../../components/MarkdownView";
 
 interface HistoryPanelProps {
   /** Sessão em andamento (para marcar a lista). */
@@ -174,6 +175,15 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
 
         {notice && <p className="settings__hint">{notice}</p>}
         {timelineError && <p className="overlay__error">{timelineError}</p>}
+
+        {current.overview && current.overview.trim() !== "" && (
+          <details className="history__summary" open>
+            <summary>Resumo da sessão</summary>
+            <div className="history__summary-body">
+              <MarkdownView markdown={current.overview} />
+            </div>
+          </details>
+        )}
 
         {loadingTimeline ? (
           <p className="chat__empty">Carregando…</p>

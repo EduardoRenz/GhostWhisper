@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS transcriptions (
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- Resumo vivo da sessão (documento Markdown + cursor incremental). O conteúdo
+-- também é espelhado em `sessions.overview` para o export/histórico.
+CREATE TABLE IF NOT EXISTS meeting_summaries (
+  session_id TEXT PRIMARY KEY,
+  subject TEXT,
+  content TEXT NOT NULL,
+  summarized_from_ms INTEGER NOT NULL DEFAULT 0,
+  summarized_until_ms INTEGER NOT NULL DEFAULT 0,
+  updated_at_ms INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
   id UNINDEXED,
   session_id UNINDEXED,

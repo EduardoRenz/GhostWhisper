@@ -22,6 +22,10 @@ pub trait SessionRepository: Send + Sync {
     fn end_all_active(&self, ended_at_ms: i64) -> Result<usize>;
     /// Define o título (`subject`) da sessão.
     fn rename(&self, id: &str, subject: &str) -> Result<()>;
+    /// Define o resumo (`overview`) da sessão.
+    ///
+    /// Espelho do resumo gerado, para o export/histórico que já leem a coluna.
+    fn set_overview(&self, id: &str, overview: &str) -> Result<()>;
     /// Remove a sessão e, em cascata, as transcrições/mensagens dela.
     fn delete(&self, id: &str) -> Result<()>;
 }

@@ -2,21 +2,37 @@
 
 use crate::domain::settings::language_name;
 
-/// Prompt de sistema para geração de sugestões/insights.
-pub fn insight_system_prompt(source_language: &str, target_language: &str) -> String {
-    let source = language_name(source_language);
-    let target = language_name(target_language);
-    format!(
-        "Você é o GhostWhisper, um copiloto de reunião. Com base na transcrição recente \
-         (idioma de origem: {source}), sugira de forma concisa e acionável o \
-         que o usuário deveria dizer ou fazer a seguir. Responda em {target}, \
-         em no máximo 3 tópicos curtos. Não invente fatos ausentes da transcrição."
-    )
+pub mod assistant;
+pub mod summary;
+
+/// Normaliza um Markdown vindo do modelo: `trim` e remoção de cerca externa
+/// (```markdown … ```) quando ela envolve **todo** o texto.
+pub fn normalize_markdown(text: &str) -> String {
+    let trimmed = text.trim();
+    if !trimmed.starts_with("```") || !trimmed.trim_end().ends_with("```") {
+        return trimmed.to_string();
+    }
+    let mut lines: Vec<&str> = trimmed.lines().collect();
+    if lines.len() < 2 {
+        return trimmed.to_string();
+    }
+    lines.remove(0);
+    lines.pop();
+    lines.join("\n").trim().to_string()
 }
 
-/// Prompt de usuário com o contexto da transcrição.
-pub fn insight_user_prompt(context: &str) -> String {
-    format!("Transcrição recente:\n{context}\n\nSugira os próximos passos.")
+/// Regra de idioma para as respostas do assistente.
+///
+/// `Some("pt")`/`Some("en")` fixa o idioma; `None`/`auto` pede para detectar o
+/// idioma dominante e traduzir os títulos de seção.
+pub fn output_language_rule(language: Option<&str>) -> String {
+    match language
+        .map(str::trim)
+        .filter(|code| !code.is_empty() && *code != "auto")
+    {
+        Some(code) => format!("Write your entire response in {}.", language_name(code)),
+        None => "Detect the dominant language of the conversation and write your entire response in that language; translate section titles into it.".to_string(),
+    }
 }
 
 /// Prompt de sistema para tradução de um segmento.
@@ -36,20 +52,6 @@ pub fn translation_user_prompt(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn insight_prompts_mention_languages_and_context() {
-        let system = insight_system_prompt("pt", "en");
-        assert!(system.contains("português"));
-        assert!(system.contains("inglês"));
-
-        // Origem/destino "auto" → mesmo idioma da transcrição.
-        let auto = insight_system_prompt("auto", "auto");
-        assert!(auto.contains("o mesmo idioma da transcrição"));
-
-        let user = insight_user_prompt("olá mundo");
-        assert!(user.contains("olá mundo"));
-    }
 
     #[test]
     fn translation_prompt_targets_language() {

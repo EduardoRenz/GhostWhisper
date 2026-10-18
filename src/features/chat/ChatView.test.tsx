@@ -116,4 +116,24 @@ describe("ChatView", () => {
     expect(screen.getByRole("button", { name: "Sugerir" })).toBeDefined();
     expect(screen.getByText("Sem falas")).toBeDefined();
   });
+
+  it("renderiza a sugestão da IA como Markdown, com código colorido", () => {
+    render(
+      <ChatView
+        bubbles={[
+          {
+            kind: "suggestion",
+            id: "ai",
+            text: "## Solução\n\n```rust\nfn main() {}\n```",
+            at_ms: 3_000,
+            mode_name: "LeetCode",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Sugestão · LeetCode")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Solução" })).toBeDefined();
+    expect(screen.getByText("rust")).toBeDefined();
+  });
 });

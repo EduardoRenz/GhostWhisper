@@ -28,7 +28,12 @@ export function useInsight(sessionId: string | null): {
 
   const append = useCallback((suggestion: InsightSuggestion) => {
     setSuggestions((prev) =>
-      prev.some((item) => item.message_id === suggestion.message_id)
+      prev.some(
+        (item) =>
+          suggestion.message_id !== null &&
+          item.message_id !== null &&
+          item.message_id === suggestion.message_id,
+      )
         ? prev
         : [...prev, suggestion].sort((a, b) => a.at_ms - b.at_ms),
     );

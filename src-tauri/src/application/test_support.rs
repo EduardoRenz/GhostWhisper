@@ -101,11 +101,12 @@ pub fn spawn_openai_sequence_mock(
     (format!("http://{addr}"), seen)
 }
 
-/// `LlmController` de teste: resposta fixa, falha opcional e captura do pedido.
+/// `LlmController` de teste: resposta fixa, fila opcional, falha e captura dos pedidos.
 pub struct FakeLlmController {
     response: Mutex<String>,
+    responses: Mutex<Vec<String>>,
     failure: Mutex<Option<String>>,
-    last_request: Mutex<Option<CompletionRequest>>,
+    requests: Mutex<Vec<CompletionRequest>>,
 }
 
 impl FakeLlmController {
@@ -113,14 +114,21 @@ impl FakeLlmController {
     pub fn new() -> Self {
         Self {
             response: Mutex::new("ok".to_string()),
+            responses: Mutex::new(Vec::new()),
             failure: Mutex::new(None),
-            last_request: Mutex::new(None),
+            requests: Mutex::new(Vec::new()),
         }
     }
 
-    /// Define a resposta devolvida.
+    /// Define a resposta devolvida (enquanto a fila estiver vazia).
     pub fn with_response(self, response: impl Into<String>) -> Self {
         *self.response.lock().unwrap() = response.into();
+        self
+    }
+
+    /// Define uma fila de respostas, consumida uma por chamada.
+    pub fn with_responses(self, responses: Vec<String>) -> Self {
+        *self.responses.lock().unwrap() = responses;
         self
     }
 
@@ -132,7 +140,12 @@ impl FakeLlmController {
 
     /// Último pedido recebido (para inspeção em testes).
     pub fn last_request(&self) -> Option<CompletionRequest> {
-        self.last_request.lock().unwrap().clone()
+        self.requests.lock().unwrap().last().cloned()
+    }
+
+    /// Quantidade de chamadas.
+    pub fn call_count(&self) -> usize {
+        self.requests.lock().unwrap().len()
     }
 }
 
@@ -152,12 +165,21 @@ impl LlmController for FakeLlmController {
     }
 
     fn complete(&self, request: &CompletionRequest) -> Result<Completion> {
-        *self.last_request.lock().unwrap() = Some(request.clone());
+        self.requests.lock().unwrap().push(request.clone());
         if let Some(message) = self.failure.lock().unwrap().clone() {
             return Err(GhostWhisperError::Other(message));
         }
+        let queued = {
+            let mut responses = self.responses.lock().unwrap();
+            if responses.is_empty() {
+                None
+            } else {
+                Some(responses.remove(0))
+            }
+        };
+        let text = queued.unwrap_or_else(|| self.response.lock().unwrap().clone());
         Ok(Completion {
-            text: self.response.lock().unwrap().clone(),
+            text,
             model: "fake".into(),
         })
     }

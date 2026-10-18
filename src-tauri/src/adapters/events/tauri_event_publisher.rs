@@ -6,8 +6,8 @@ use tauri::{AppHandle, Emitter};
 use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{EventPublisher, SessionStateEvent};
-use crate::ports::insight_generator::InsightSuggestion;
 use crate::ports::session_controller::AudioChannel;
+use crate::ports::suggestion_generator::Suggestion;
 
 /// Nome do evento emitido para cada segmento de transcrição.
 pub const TRANSCRIPT_SEGMENT_EVENT: &str = "transcript_segment";
@@ -60,7 +60,7 @@ impl EventPublisher for TauriEventPublisher {
         let _ = self.app.emit(SESSION_STATE_EVENT, state);
     }
 
-    fn emit_insight(&self, suggestion: &InsightSuggestion) {
+    fn emit_insight(&self, suggestion: &Suggestion) {
         let _ = self.app.emit(INSIGHT_EVENT, suggestion);
     }
 

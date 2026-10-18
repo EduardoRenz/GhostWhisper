@@ -33,6 +33,8 @@ export interface SuggestionBubble {
   id: string;
   text: string;
   at_ms: number;
+  /** Nome do agente (quando conhecido). */
+  mode_name?: string;
 }
 
 export type ChatBubble = SpeechBubble | SuggestionBubble;
@@ -137,16 +139,19 @@ export function buildChatTimeline(
   const seenSuggestions = new Set<string>();
   for (const suggestion of suggestions) {
     // O atalho e o banco devolvem a mesma sugestão: uma bolha só.
-    if (seenSuggestions.has(suggestion.message_id)) {
+    const key =
+      suggestion.message_id ?? `suggestion-${suggestion.at_ms}-${suggestion.text}`;
+    if (seenSuggestions.has(key)) {
       continue;
     }
-    seenSuggestions.add(suggestion.message_id);
+    seenSuggestions.add(key);
     if (hasContent(suggestion.text)) {
       bubbles.push({
         kind: "suggestion",
-        id: suggestion.message_id,
+        id: key,
         text: suggestion.text.trim(),
         at_ms: suggestion.at_ms,
+        mode_name: suggestion.mode_name,
       });
     }
   }

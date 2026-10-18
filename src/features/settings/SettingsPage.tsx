@@ -23,6 +23,7 @@ import {
   type ShortcutInfo,
 } from "../../core/domain/shortcuts";
 import { AudioTestPanel } from "./AudioTestPanel";
+import { AssistantSettings } from "./AssistantSettings";
 import {
   LANGUAGES,
   MAX_MIC_GAIN,
@@ -46,6 +47,7 @@ type Status = { kind: "info" | "ok" | "error"; text: string } | null;
 const TABS = [
   { id: "sources", label: "Fontes de IA" },
   { id: "transcription", label: "Transcrição & Áudio" },
+  { id: "assistant", label: "Assistente" },
   { id: "general", label: "Ajustes" },
   { id: "shortcuts", label: "Atalhos" },
 ] as const;
@@ -462,6 +464,22 @@ export function SettingsPage() {
           </div>
 
           <AudioTestPanel micGain={settings.mic_gain} />
+        </section>
+      )}
+
+      {tab === "assistant" && (
+        <section className="settings__group">
+          <AssistantSettings settings={settings} update={update} />
+          <div className="settings__actions">
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={onSave}
+            >
+              Salvar configurações
+            </button>
+          </div>
         </section>
       )}
 

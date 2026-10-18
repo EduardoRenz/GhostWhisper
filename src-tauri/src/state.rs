@@ -10,7 +10,6 @@ use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::EventPublisher;
-use crate::ports::insight_generator::InsightGenerator;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::overlay_window::OverlayWindowController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
@@ -18,6 +17,8 @@ use crate::ports::secret_store::SecretStore;
 use crate::ports::session_controller::SessionController;
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::shortcut_registry::GlobalShortcutRegistry;
+use crate::ports::suggestion_generator::SuggestionGenerator;
+use crate::ports::summary_generator::SummaryGenerator;
 use crate::ports::translator::Translator;
 use crate::ports::virtual_sink::VirtualSinkManager;
 
@@ -54,8 +55,10 @@ pub struct AppState {
     pub llm: Arc<dyn LlmController>,
     /// Tradução ao vivo.
     pub translator: Arc<dyn Translator>,
-    /// Insights/sugestões contextuais.
-    pub insight: Arc<dyn InsightGenerator>,
+    /// Resumo incremental da sessão.
+    pub summary: Arc<dyn SummaryGenerator>,
+    /// Sugestões contextuais por agente.
+    pub suggestions: Arc<dyn SuggestionGenerator>,
     /// Publicação de eventos para a UI.
     pub publisher: Arc<dyn EventPublisher>,
     /// Registro de atalhos globais.
@@ -81,7 +84,8 @@ impl AppState {
         secrets: Arc<dyn SecretStore>,
         llm: Arc<dyn LlmController>,
         translator: Arc<dyn Translator>,
-        insight: Arc<dyn InsightGenerator>,
+        summary: Arc<dyn SummaryGenerator>,
+        suggestions: Arc<dyn SuggestionGenerator>,
         publisher: Arc<dyn EventPublisher>,
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
     ) -> Self {
@@ -101,7 +105,8 @@ impl AppState {
             secrets,
             llm,
             translator,
-            insight,
+            summary,
+            suggestions,
             publisher,
             shortcuts,
         }
@@ -119,9 +124,12 @@ mod tests {
     use crate::error::Result;
     use crate::ports::audio_consumer::AudioConsumer;
     use crate::ports::audio_monitor::AudioMonitor;
-    use crate::ports::insight_generator::InsightSuggestion;
     use crate::ports::overlay_window::Surface;
     use crate::ports::session_controller::AudioChannel;
+    use crate::ports::suggestion_generator::{
+        PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionRequest,
+    };
+    use crate::ports::summary_generator::{SummaryGenerator, SummaryRequest, SummaryResult};
 
     struct FakeOverlayWindow {
         visible: AtomicBool,
@@ -284,14 +292,54 @@ mod tests {
         }
     }
 
-    struct FakeInsight;
-    impl InsightGenerator for FakeInsight {
-        fn generate(&self, _session_id: Option<String>) -> Result<InsightSuggestion> {
-            Ok(InsightSuggestion {
-                message_id: "m1".into(),
+    struct FakeSummary;
+    impl SummaryGenerator for FakeSummary {
+        fn get(
+            &self,
+            _session_id: Option<String>,
+        ) -> Result<Option<crate::domain::overview::MeetingSummary>> {
+            Ok(None)
+        }
+        fn generate(&self, _request: SummaryRequest) -> Result<SummaryResult> {
+            Ok(SummaryResult {
+                summary: crate::domain::overview::MeetingSummary {
+                    session_id: "s1".into(),
+                    subject: Some("T".into()),
+                    markdown: "## A".into(),
+                    summarized_from_ms: 0,
+                    summarized_until_ms: 0,
+                    updated_at_ms: 0,
+                },
+                updated: true,
+                has_more: false,
+            })
+        }
+    }
+
+    struct FakeSuggestions;
+    impl SuggestionGenerator for FakeSuggestions {
+        fn generate(&self, _request: SuggestionRequest) -> Result<Suggestion> {
+            Ok(Suggestion {
                 session_id: "s1".into(),
-                text: "insight".into(),
+                mode_id: "meeting".into(),
+                mode_name: "Reunião".into(),
+                text: "sugestão".into(),
                 at_ms: 0,
+                context_until_ms: 0,
+                message_id: Some("m1".into()),
+                skipped: false,
+            })
+        }
+        fn pin(&self, request: PinSuggestionRequest) -> Result<Suggestion> {
+            Ok(Suggestion {
+                session_id: request.session_id,
+                mode_id: request.mode_id,
+                mode_name: "Reunião".into(),
+                text: request.text,
+                at_ms: request.at_ms,
+                context_until_ms: request.at_ms,
+                message_id: Some("m1".into()),
+                skipped: false,
             })
         }
     }
@@ -306,7 +354,7 @@ mod tests {
         ) {
         }
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
-        fn emit_insight(&self, _suggestion: &InsightSuggestion) {}
+        fn emit_insight(&self, _suggestion: &Suggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 
@@ -346,7 +394,8 @@ mod tests {
             Arc::new(InMemorySecretStore::new()),
             Arc::new(FakeLlm),
             Arc::new(FakeTranslator),
-            Arc::new(FakeInsight),
+            Arc::new(FakeSummary),
+            Arc::new(FakeSuggestions),
             Arc::new(FakePublisher),
             Arc::new(FakeShortcutRegistry),
         )
@@ -377,8 +426,22 @@ mod tests {
         assert!(!state.monitor.is_running(), "monitor desligado por padrão");
         assert_eq!(state.translator.translate("x").expect("translate"), "[x]");
         assert_eq!(
-            state.insight.generate(None).expect("insight").text,
-            "insight"
+            state
+                .suggestions
+                .generate(SuggestionRequest::persist(None))
+                .expect("sugestão")
+                .text,
+            "sugestão"
+        );
+        assert!(
+            state
+                .summary
+                .generate(SummaryRequest {
+                    session_id: None,
+                    mode: crate::ports::summary_generator::SummaryMode::Auto,
+                })
+                .expect("resumo")
+                .updated
         );
         assert!(state
             .messages

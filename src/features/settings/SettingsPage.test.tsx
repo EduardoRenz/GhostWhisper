@@ -48,7 +48,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     expect(await screen.findByRole("tab", { name: "Fontes de IA" })).toBeDefined();
-    expect(screen.getByRole("tablist").children.length).toBe(4);
+    expect(screen.getByRole("tablist").children.length).toBe(5);
+    expect(screen.getByRole("tab", { name: "Assistente" })).toBeDefined();
     expect(await screen.findByText("Provider")).toBeDefined();
   });
 

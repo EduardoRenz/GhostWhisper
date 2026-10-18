@@ -122,5 +122,10 @@ Extração: `/tmp/opencode/perssua/asar` (asar de `Perssua-0.27.5-x86_64.AppImag
 | CSS da pílula de sessão, confirmação e bolinha de status | `build/static/css/3558.e4862c6d.css` | `.actionbar-session-*`, `.actionbar-end-*` |
 | Bolhas do histórico | `build/static/css/2748.65782e3f.chunk.css` | `.transcript-message`, `.message-bubble` |
 
+> As **sugestões da IA** nas bolhas agora renderizam **Markdown** com código
+> colorido (BR-025), pelo `MarkdownView`; os contratos de resumo/agente e as
+> janelas separadas estão em
+> [`../../assistant/architecture/assistant-windows.md`](../../assistant/architecture/assistant-windows.md).
+
 Reproduzir: `python3 /tmp/opencode/asar.py cat <caminho>` ou ler os arquivos já
 extraídos nesse diretório.
