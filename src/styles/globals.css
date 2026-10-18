@@ -1233,6 +1233,9 @@ body,
 }
 
 .panel__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.35rem 0.6rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1311,6 +1314,23 @@ body,
 .panel__history-time {
   color: var(--ghostwhisper-text);
   font-variant-numeric: tabular-nums;
+}
+
+.panel__history-item--active {
+  border-color: rgba(0, 122, 255, 0.6);
+  background: rgba(0, 122, 255, 0.12);
+}
+
+.panel__history-meta {
+  margin-left: auto;
+  color: var(--ghostwhisper-text-muted);
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+
+.panel__button--small {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.68rem;
 }
 
 .panel__history-text {

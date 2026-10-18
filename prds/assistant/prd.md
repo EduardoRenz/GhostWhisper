@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–06 `CONCLUDED`)
+- **Status:** Implementado (tasks 01–07 `CONCLUDED`)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/assistant-windows.md`](architecture/assistant-windows.md),
@@ -84,6 +84,12 @@ outro monitor.
 - **CA-01.9** Esconder a janela para o automático; reabrir retoma.
 - **CA-01.10** Sem chave configurada, mostra erro amigável com atalho para as
   configurações.
+- **CA-01.11** A janela guarda um **histórico de versões em memória** (teto 20),
+  no estilo do histórico de sugestões: cada item mostra a **hora** e o **título do
+  tópico** (`subject` ou o primeiro heading). Clicar numa versão **congela** a
+  leitura — as atualizações continuam entrando na lista sem trocar o que está na
+  tela — e **Voltar ao atual** retorna ao resumo ao vivo. Trocar de sessão limpa o
+  histórico.
 
 ### US-02 — Janela de Sugestões com seleção de agentes
 

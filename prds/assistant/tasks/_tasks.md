@@ -12,11 +12,13 @@
 | 04 | Janela de sugestões, agentes e “Fixar” | CONCLUDED |
 | 05 | Settings: agentes personalizados e cadências | CONCLUDED |
 | 06 | Export/histórico, documentação, verificação e pacotes | CONCLUDED |
+| 07 | Histórico de versões do resumo (em memória) | CONCLUDED |
 
 ## Ordem e dependências
 
 ```
-01 ─▶ 02 ─┬─▶ 03 ─▶ 05 ─▶ 06
+01 ─▶ 02 ─┬─▶ 03 ─┬─▶ 05 ─▶ 06
+          │       └─▶ 07
           └─▶ 04 ─▶ 05
 ```
 

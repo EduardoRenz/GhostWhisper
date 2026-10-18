@@ -13,7 +13,7 @@ Histórico deste PRD no formato fixo do
 
 ## 2026-10-18 — PRD Assistant: resumo vivo e sugestões por agentes
 
-- **IDs:** BR-023, BR-024, BR-025, BR-026, T01–T06
+- **IDs:** BR-023, BR-024, BR-025, BR-026, T01–T07
 - **Refs:** [`prd.md`](prd.md), [`issues.md`](issues.md),
   [`architecture/assistant-windows.md`](architecture/assistant-windows.md),
   [`tasks/_tasks.md`](tasks/_tasks.md)
@@ -64,16 +64,22 @@ As duas devem gerar e renderizar Markdown, com código formatado e colorido.
   completo de agentes personalizados (criar/editar/duplicar/excluir).
 - **T06** resumo no export Markdown e no detalhe do histórico; BR-023 a BR-026;
   README e ponteiros em `mvp/overlay.md` e `chat/chat-ui.md`.
+- **T07** histórico de versões do resumo **em memória** (teto 20) na janela:
+  hora + título do tópico, leitura congelada com “Voltar ao atual”; `summaryTopic`
+  como fallback de título.
 
 ### Verificação
 - **280 testes Rust** (+63; 8 `ignored`) · `cargo clippy --all-targets` e
   `cargo fmt --check` limpos · `cargo build` ok.
-- **104 testes frontend** (+30) · `tsc --noEmit` limpo · `pnpm build` ok.
+- **115 testes frontend** (+41) · `tsc --noEmit` limpo · `pnpm build` ok.
 - Pacotes: `pnpm tauri build` gerou `.deb` (8,65 MiB) e AppImage (86,44 MiB) em
   `src-tauri/target/release/bundle/`.
+
 ### Pendências
 - Captura de tela/OCR continua fora de escopo: no modo LeetCode o enunciado vem
   da fala ou da caixa “Contexto extra”.
 - Streaming token a token nas janelas e edição manual do resumo ficam para depois.
+- O histórico de versões do resumo é **em memória** (não sobrevive a reinícios);
+  versões persistidas por sessão ficam para uma PRD/tarefa futura (T07).
 - `metadata` da tabela `messages` ainda não guarda o modo — no histórico a
   sugestão fixada aparece com o rótulo genérico.

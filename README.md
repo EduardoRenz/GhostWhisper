@@ -181,9 +181,11 @@ Duas **janelas próprias** (movíveis e sempre no topo) complementam o overlay:
 
 - **Resumo** (botão *Resumo* no painel/tray): resume a conversa em Markdown e se
   atualiza **a cada 30 s** enquanto a janela está aberta — sempre de forma
-  **incremental**, sem chamar a IA quando não há fala nova. "Atualizar" regenera
-  do zero e "Copiar" leva o Markdown. O resumo também aparece no histórico e no
-  export da sessão.
+  **incremental**, sem chamar a IA quando não há fala nova. “Atualizar” regenera
+  do zero e “Copiar” leva o Markdown. A janela guarda um **histórico de versões**
+  (hora + título do tópico): clique numa anterior para ler **congelado** e use
+  “Voltar ao atual” para retomar o ao vivo. O resumo também aparece no histórico e
+  no export da sessão.
 - **Sugestões** (botão *Sugestões* no painel/tray): olha os **últimos momentos**
   da conversa e sugere a próxima fala, no **agente** escolhido — **Reunião**,
   **Entrevista Técnica**, **LeetCode** e **System Design**, além dos seus

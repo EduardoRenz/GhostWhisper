@@ -5,10 +5,12 @@ import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useSummary } from "../../core/application/useSummary";
+import { summaryTopic } from "../../core/domain/assistant";
+import { formatClock } from "../../core/domain/transcript";
 import { MarkdownView } from "../../components/MarkdownView";
 import { PanelFrame } from "../panels/PanelFrame";
 
-/** Formata o relógio de parede da última atualização. */
+/** Formata o relógio de parede de uma versão do resumo. */
 function formatUpdatedAt(ms: number): string {
   try {
     return new Date(ms).toLocaleTimeString("pt-BR");
@@ -17,7 +19,7 @@ function formatUpdatedAt(ms: number): string {
   }
 }
 
-/** Janela do resumo vivo da sessão. */
+/** Janela do resumo vivo da sessão, com histórico de versões em memória. */
 export function SummaryWindow() {
   const opened = usePanelOpen("summary");
   const { state } = useSessionState();
@@ -31,7 +33,17 @@ export function SummaryWindow() {
     setAuto(settings.summary_auto_refresh);
   }, [settings.summary_auto_refresh]);
 
-  const { summary, loading, error, hasMore, regenerate } = useSummary({
+  const {
+    summary,
+    history,
+    viewing,
+    loading,
+    error,
+    hasMore,
+    regenerate,
+    select,
+    showLatest,
+  } = useSummary({
     sessionId: state.session_id,
     opened,
     auto,
@@ -39,15 +51,26 @@ export function SummaryWindow() {
     active: state.listening && !state.paused,
   });
 
-  // Preserva a posição de rolagem quando o resumo cresce.
+  // A versão exibida é a selecionada no histórico (congelada) ou a atual.
+  const displayed = viewing ?? summary;
+
+  // Preserva a rolagem quando o resumo ao vivo cresce; ao trocar de versão,
+  // volta ao topo.
   useLayoutEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollTop.current;
     }
-  }, [summary?.markdown]);
+  }, [displayed?.markdown]);
+
+  useLayoutEffect(() => {
+    scrollTop.current = 0;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [viewing?.updated_at_ms]);
 
   const onCopy = async () => {
-    if (summary && (await copyText(summary.markdown))) {
+    if (displayed && (await copyText(displayed.markdown))) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1_500);
     }
@@ -58,9 +81,11 @@ export function SummaryWindow() {
     : state.paused
       ? "Pausado"
       : "Gravando";
-  const subtitle = state.session_id
-    ? `${state.session_id.slice(0, 8)} · ${status}`
-    : status;
+  const subtitle = displayed
+    ? `${summaryTopic(displayed)} · ${status}`
+    : state.session_id
+      ? `${state.session_id.slice(0, 8)} · ${status}`
+      : status;
 
   const actions = (
     <>
@@ -84,7 +109,7 @@ export function SummaryWindow() {
       <button
         type="button"
         className="panel__button"
-        disabled={!summary}
+        disabled={!displayed}
         onClick={() => void onCopy()}
       >
         {copied ? "Copiado" : "Copiar"}
@@ -92,14 +117,29 @@ export function SummaryWindow() {
     </>
   );
 
-  const footer = summary && (
-    <span className="panel__meta">
-      Atualizado às {formatUpdatedAt(summary.updated_at_ms)}
-      {summary.summarized_from_ms > 0
-        ? " · resumo a partir do meio da sessão"
-        : ""}
-      {hasMore ? " · processando o restante…" : ""}
-    </span>
+  const footer = viewing ? (
+    <>
+      <span className="panel__meta">
+        Vendo versão de {formatUpdatedAt(viewing.updated_at_ms)}
+      </span>
+      <button
+        type="button"
+        className="panel__button panel__button--small"
+        onClick={showLatest}
+      >
+        Voltar ao atual
+      </button>
+    </>
+  ) : (
+    summary && (
+      <span className="panel__meta">
+        Atualizado às {formatUpdatedAt(summary.updated_at_ms)}
+        {summary.summarized_from_ms > 0
+          ? " · resumo a partir do meio da sessão"
+          : ""}
+        {hasMore ? " · processando o restante…" : ""}
+      </span>
+    )
   );
 
   return (
@@ -134,8 +174,40 @@ export function SummaryWindow() {
           <p className="panel__empty">
             Inicie uma escuta para gerar o resumo da conversa.
           </p>
-        ) : summary ? (
-          <MarkdownView markdown={summary.markdown} />
+        ) : displayed ? (
+          <>
+            <MarkdownView markdown={displayed.markdown} />
+            {history.length > 1 && (
+              <details className="panel__history">
+                <summary>Resumos anteriores ({history.length - 1})</summary>
+                <ul>
+                  {history.slice(1).map((version) => (
+                    <li key={version.updated_at_ms}>
+                      <button
+                        type="button"
+                        className={`panel__history-item${
+                          viewing?.updated_at_ms === version.updated_at_ms
+                            ? " panel__history-item--active"
+                            : ""
+                        }`}
+                        onClick={() => select(version)}
+                      >
+                        <span className="panel__history-time">
+                          {formatUpdatedAt(version.updated_at_ms)}
+                        </span>
+                        <span className="panel__history-text">
+                          {summaryTopic(version)}
+                        </span>
+                        <span className="panel__history-meta">
+                          cobre até {formatClock(version.summarized_until_ms)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         ) : loading ? (
           <p className="panel__empty">Gerando o resumo…</p>
         ) : (

@@ -66,3 +66,15 @@ export const modeLabel = (
   mode: Pick<AssistantMode, "name"> | null | undefined,
   fallback = "Sugestão da IA",
 ): string => mode?.name ?? fallback;
+
+/** Título do tópico de um resumo: `subject` do modelo ou o primeiro heading. */
+export function summaryTopic(
+  summary: MeetingSummary | null | undefined,
+): string {
+  const subject = summary?.subject?.trim();
+  if (subject) {
+    return subject;
+  }
+  const heading = summary?.markdown.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim();
+  return heading || "Resumo sem título";
+}

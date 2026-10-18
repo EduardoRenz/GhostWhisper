@@ -120,6 +120,10 @@ a cada 30 s (aberta, sessão ativa, auto on):
   respeitando o limite de uma requisição em voo.
 - O prompt inicial usa o envelope `SUBJECT:`/`CONTENT:`; o incremental devolve
   só o Markdown atualizado. `normalize_summary_markdown` remove cercas externas.
+- A janela mantém um **histórico de versões em memória** (teto 20, mais recente
+  primeiro): só entram resultados com `updated = true`; selecionar uma versão
+  **congela** a leitura e `showLatest()` volta ao ao vivo. É efêmero — a versão
+  persistida continua sendo a atual em `meeting_summaries` (T07).
 
 ### 4.2 Sugestão
 
