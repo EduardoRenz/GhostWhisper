@@ -14,6 +14,8 @@ Registro de bugs e pendências observadas em uso. Legenda de status:
 | ISS-007 | Transcrição pouco confiável (texto que "gruda"/some, alucinações, lenta) | Alta | FIXED |
 | ISS-008 | Só aparecia **uma** linha de transcrição e depois parava | Crítica | FIXED |
 | ISS-009 | Trocar para um modelo maior não dava nenhum retorno (silêncio durante o download) | Alta | FIXED |
+| ISS-010 | Transcrição não "flui" (turno longo, prévia de 2 s e VAD caro no buffer inteiro) | Alta | FIXED |
+| ISS-011 | ChatGPT/provider OpenAI recusa `temperature` (gpt-5/o1/o3 aceitam só o padrão) | Alta | FIXED |
 
 ---
 
@@ -215,3 +217,102 @@ permanece apenas como **fallback** (Wayland/sem SHAPE).
   - **`try_lock`** no worker do Whisper: se uma decodificação estourou o timeout
     e ainda roda, a próxima retorna `AsrBusy` em vez de **deadlock permanente**
     do ASR (o `lock()` ficava preso enquanto segurava a fila global).
+
+---
+
+## ISS-010 — Transcrição não "flui" (turno longo, prévia de 2 s e VAD caro)
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** a transcrição demora a aparecer, sai em pedaços esparsos e o texto
+  do turno parece "piscar"/sumir durante uma fala contínua.
+- **Referência:** análise (REA) do `Perssua 0.27.5` (AppImage), módulo
+  `electron/local-whisper` (`WhisperSession.js`, `WhisperSessionStreaming.js`,
+  `WhisperSessionSupport.js`, `WhisperVad.js`, `WhisperServerManager.js`).
+  Regra do projeto: **BR-015 / R11–R13** (Perssua é a fonte de decisão).
+- **Causas (no GhostWhisper):**
+  1. **VAD Silero separado sobre o buffer inteiro** a cada ~250 ms — custo O(n)
+     que cresce com a fala e trava o worker.
+  2. **Prévia decodificava só os últimos 2 s** e reaproveitava o id do turno: o
+     texto exibido era substituído por um trecho curto, em vez de crescer.
+  3. **Cadência/turno longos:** prévia a cada 900 ms e teto de 10 s; faltava o
+     comportamento "fluido" do Perssua.
+  4. **Parâmetros de decode sem os controles do Perssua** (`temperature_inc = 0.2`
+     → fallback por temperatura, até ~5 decodificações extras; sem
+     `suppress_nst`/`entropy_thold`).
+  5. **Dois contextos whisper** (um por canal) carregavam o modelo duas vezes.
+- **Correção (transposição do Perssua para Rust):**
+  - `WhisperSpeechToText`: **VAD nativo do whisper.cpp** (`set_vad_model_path` +
+    `enable_vad` + `WhisperVadParams` com `threshold 0.5`,
+    `min_speech 250`, `min_silence 300`, `speech_pad 200`); modelo Silero
+    resolvido no `preload()`;
+  - decode com `temperature 0`, `temperature_inc 0`, `entropy_thold 2.2`,
+    `suppress_nst true`;
+  - `TranscriptionPipeline` reescrito: buffer de turno (teto 60 s), **prévias
+    frequentes sobre o turno que cresce** (áudio mínimo 0,35 s, passo 0,75 s,
+    primeira prévia em 1,2 s, ociosidade 1 s) publicando **texto rolante**;
+    **fechamento por 1 s de silêncio** (ou teto de 55 s) com passe final (beam),
+    além do encerramento pelo **fim de fala do VAD do whisper**
+    (`endedInNoise`, cobre ruído de fundo);
+  - removido o VAD Silero separado (porta `VoiceActivityDetector` + adapter) e o
+    gate passou a ser RMS barato + VAD do whisper;
+  - `WhisperSpeechEngineFactory` passa a **compartilhar um único contexto** entre
+    os canais (uma carga de modelo), mantendo a fila global de decodificação.
+- **Arquivos:** `adapters/speech/whisper_speech_to_text.rs`,
+  `application/transcription_pipeline.rs`, `adapters/speech/whisper_speech_engine_factory.rs`,
+  `ports/speech_engine_factory.rs`, `application/session_service.rs`,
+  `domain/transcription.rs`, `ports/voice_activity.rs` (removido),
+  `adapters/speech/silero_voice_activity.rs` (removido).
+
+---
+
+## ISS-011 — Provider OpenAI recusa `temperature` nos modelos novos (400)
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Erro reportado:** `400 unsupported_value` — "Unsupported value: 'temperature'
+  does not support 0.3 with this model. Only the default (1) value is
+  supported." (modelos gpt-5/o1/o3/o4).
+- **Referência (BR-015):** Perssua `electron/utils/providerParameterErrors.js` +
+  `providerParameterContracts.js` — classifica `unsupported_parameter` **e**
+  `unsupported_value`, resolve o parâmetro contra um contrato de campos
+  opcionais e **omiti + reenvia**; `builtInOmissions` não envia `temperature`
+  para modelos que não suportam.
+- **Correção (transposta para Rust):**
+  - `adapters/ai/openai_compatible.rs`: `rejected_param` reconhece os códigos
+    `unsupported_value`/`invalid_value` e as mensagens "Unsupported value"
+    /"Only the default"/"does not support";
+  - `apply_rejected_param_fallback` só omiti parâmetros **opcionais** da lista
+    de amostragem (`temperature`, `top_p`, `seed`, `penalties`,
+    `max_tokens`/`max_completion_tokens`) — `model`/`messages` nunca;
+  - `temperature_supported(model)`: `gpt-5*`/`o1*`/`o3*`/`o4*` não recebem
+    `temperature` (primeiro envio já correto, sem desperdiçar uma chamada).
+- **Evidência:** testes com o JSON exato do erro do usuário; mock de sequência
+  400→200 sem `temperature`; 122 testes Rust.
+
+---
+
+## ISS-012 — Configurações em abas + chave de API redactada
+
+- **Severidade:** Média · **Status:** FIXED
+- **Pedido do usuário:** janela de configurações em estilo **abas** (Perssua:
+  `settings.tabs` → "API tab", "Audio & Screen", "Shortcuts"…) e a chave de API
+  exibida **redactada** para indicar que está configurada.
+- **Referência (BR-015):** Perssua mostra status "Connected"/"Add API Key" nos
+  cards de provider e organiza as configurações em abas.
+- **Correção:**
+  - `SettingsPage.tsx`: tablist com 4 abas — **Fontes de IA** (provider, modelo,
+    base URL, chave, ações), **Transcrição & Áudio** (whisper, idiomas,
+    tradução, teste de captura), **Ajustes** (stealth), **Atalhos**; status
+    global no rodapé;
+  - chave configurada é exibida mascarada (`•••••••·abcd`, somente leitura,
+    estilo "dashed"); Hidden: form de nova chave só aparece quando não há chave
+    ou em "Trocar chave";
+  - `domain::settings::redact_secret` (regra pura, testada) + novo comando
+    `settings_key_preview` que devolve **apenas** a máscara — o segredo
+    inteiro nunca sai do backend.
+- **Arquivos:** `features/settings/SettingsPage.tsx` (+ teste),
+  `styles/globals.css`, `adapters/ipc/settings.ts`, `ipc/settings_commands.rs`,
+  `domain/settings.rs`, `lib.rs`.
+- **Evidência:** 4 testes do componente (abas, chave mascarada, nova chave,
+    troca de aba); 22 testes frontend.
+- **Evidência:** 114 testes Rust (10 novos/reescritos de streaming) + 18 frontend;
+  clippy/fmt/tsc limpos; E2E JFK (`--ignored`) mantido.

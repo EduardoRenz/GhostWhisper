@@ -185,6 +185,23 @@ impl Settings {
     }
 }
 
+/// Mascara um segredo para exibição na UI (nunca devolve o valor bruto).
+///
+/// Regra de produto: o campo mostra `••••••••·abcd` (8 balas + últimos 4
+/// caracteres) para indicar que a chave **está lá**; chaves curtas (< 8) não
+/// expõem o sufixo, e chaves vazias viram string vazia.
+pub fn redact_secret(key: &str) -> String {
+    let trimmed = key.trim();
+    if trimmed.chars().count() < 8 {
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        return "••••••••".to_string();
+    }
+    let tail: String = trimmed.chars().skip(trimmed.chars().count() - 4).collect();
+    format!("••••••••·{tail}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +255,22 @@ mod tests {
         let json = serde_json::to_string(&Settings::default()).expect("serializa");
         assert!(!json.contains("key"));
         assert!(!json.contains("secret"));
+    }
+
+    #[test]
+    fn redact_secret_hides_value_but_shows_tail() {
+        let masked = redact_secret("sk-proj-abcdefgh-1234");
+        assert_eq!(masked, "••••••••·1234");
+        // Nunca devolve o segredo inteiro nem a maior parte dele.
+        assert!(!masked.contains("sk-proj"));
+        assert!(!masked.contains("abcdefgh"));
+    }
+
+    #[test]
+    fn redact_secret_hides_short_keys_completely() {
+        assert_eq!(redact_secret("abc"), "••••••••");
+        assert_eq!(redact_secret("  "), "");
+        assert_eq!(redact_secret(""), "");
     }
 
     #[test]

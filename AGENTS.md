@@ -52,6 +52,9 @@ pnpm test             # testes do frontend
 ```
 
 ## Regras rápidas
+- **Perssua é a referência de produto:** ao decidir *como* resolver algo, priorize
+  a solução que o Perssua já usa (produto maduro); transpomos só a tecnologia
+  (Electron→Tauri, JS→Rust), não o comportamento (BR-015, R11–R13).
 - Não criar backend, login ou telemetria (BR-002, BR-004).
 - Não copiar código/assets/marca de terceiros (BR-008).
 - Não instanciar adaptadores fora de `lib.rs`.

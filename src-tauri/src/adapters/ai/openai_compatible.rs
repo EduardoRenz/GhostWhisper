@@ -16,11 +16,25 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
 /// Quantas vezes reenviamos após o provider rejeitar um parâmetro.
 const MAX_PARAM_RETRIES: usize = 3;
 
+/// Parâmetros **opcionais** que podemos remitir/reenviar sem quebrar a chamada
+/// (contrato de amostragem; `model`/`messages` são obrigatórios e nunca removidos).
+const REMOVABLE_PARAMS: [&str; 7] = [
+    "temperature",
+    "top_p",
+    "seed",
+    "frequency_penalty",
+    "presence_penalty",
+    "max_tokens",
+    "max_completion_tokens",
+];
+
 /// Executa `POST {base_url}/chat/completions`.
 ///
-/// Modelos novos rejeitam `max_tokens` (pedem `max_completion_tokens`) e alguns
-/// rejeitam `temperature`. Ao receber um `400 unsupported_parameter`, o
-/// parâmetro é renomeado/removido e a chamada é reenviada.
+/// Modelos novos rejeitam `max_tokens` (pedem `max_completion_tokens`) e **valores**
+/// de `temperature` (modelos de raciocínio só aceitam o padrão). Ao receber um
+/// `400` de parâmetro suportado, o campo é renomeado/removido e a chamada
+/// reenviada — mesmo tratamento do Perssua (`providerParameterErrors.js`), que
+/// classifica `unsupported_parameter` **e** `unsupported_value`.
 pub fn chat_completion(
     config: &ProviderConfig,
     base_url: &str,
@@ -60,13 +74,13 @@ pub fn chat_completion(
                 if code == 400 && retries < MAX_PARAM_RETRIES =>
             {
                 let detail = response.into_string().unwrap_or_default();
-                let Some(param) = unsupported_param(&detail) else {
+                let Some(param) = rejected_param(&detail) else {
                     return Err(GhostWhisperError::Other(format!(
                         "provider respondeu {code}: {}",
                         truncate(&detail, 300)
                     )));
                 };
-                if !apply_unsupported_param_fallback(&mut body, &param) {
+                if !apply_rejected_param_fallback(&mut body, &param) {
                     return Err(GhostWhisperError::Other(format!(
                         "provider respondeu {code}: {}",
                         truncate(&detail, 300)
@@ -92,8 +106,12 @@ fn build_body(config: &ProviderConfig, request: &CompletionRequest) -> Value {
     if let Some(max_tokens) = request.max_tokens {
         body["max_tokens"] = json!(max_tokens);
     }
+    // Perssua (`builtInOmissions`): modelos de racio cínio rejeitam `temperature`
+    // distinta do padrão — não enviamos o parâmetro para esses modelos.
     if let Some(temperature) = request.temperature {
-        body["temperature"] = json!(temperature);
+        if temperature_supported(&config.model) {
+            body["temperature"] = json!(temperature);
+        }
     }
     body
 }
@@ -108,33 +126,58 @@ fn extract_text(value: &Value) -> String {
         .to_string()
 }
 
-/// Descobre qual parâmetro o provider recusou, se a falha for desse tipo.
-fn unsupported_param(detail: &str) -> Option<String> {
+/// Descobre qual parâmetro o provider recusou, se a falha for de parâmetro/valor.
+///
+/// Transposto de `providerParameterErrors.js` (`rejectionCategory`): OpenAI
+/// devolve `unsupported_parameter` para parâmetros desconhecidos e
+/// `unsupported_value` para **valores** rejeitados (ex.: `temperature` não
+/// padrão em modelos gpt-5/o1/o3). Só classificamos erros de 400; quem decide
+/// remitir é [`rejected_param`] + [`apply_rejected_param_fallback`], que exigem
+/// o parâmetro presente no corpo e na lista de opcionais.
+fn rejected_param(detail: &str) -> Option<String> {
     let value: Value = serde_json::from_str(detail).ok()?;
-    let code = value["error"]["code"].as_str().unwrap_or_default();
-    let message = value["error"]["message"].as_str().unwrap_or_default();
-    let is_unsupported = code == "unsupported_parameter"
+    let error = &value["error"];
+    let code = error["code"].as_str().unwrap_or_default();
+    let message = error["message"].as_str().unwrap_or_default();
+    let param = error["param"].as_str().unwrap_or_default();
+
+    let unsupported_parameter = code == "unsupported_parameter"
+        || code == "unknown_parameter"
+        || code == "unrecognized_parameter"
         || message.contains("Unsupported parameter")
-        || message.contains("unsupported_parameter");
-    if !is_unsupported {
+        || message.contains("unknown parameter")
+        || message.contains("unrecognized parameter");
+    let unsupported_value = code == "unsupported_value"
+        || code == "invalid_value"
+        || message.contains("Unsupported value")
+        || message.contains("Only the default")
+        || message.contains("does not support");
+    if !unsupported_parameter && !unsupported_value {
         return None;
     }
-    if let Some(param) = value["error"]["param"].as_str() {
-        if !param.is_empty() {
-            return Some(param.to_string());
+
+    // 1) Campo estruturado (`param`), como o OpenAI devolve.
+    if !param.is_empty() {
+        return Some(param.to_string());
+    }
+    // 2) Mensagem em prosa: "Unsupported (parameter|value): 'x' …".
+    for marker in ["Unsupported parameter: '", "Unsupported value: '"] {
+        if let Some(start) = message.find(marker).map(|at| at + marker.len()) {
+            if let Some(end) = message[start..].find('\'') {
+                return Some(message[start..start + end].to_string());
+            }
         }
     }
-    let marker = "Unsupported parameter: '";
-    let start = message.find(marker)? + marker.len();
-    let rest = &message[start..];
-    let end = rest.find('\'')?;
-    Some(rest[..end].to_string())
+    None
 }
 
-/// Ajusta o corpo: renomeia `max_tokens` e remove os demais recusados.
-///
-/// Retorna `false` quando o parâmetro não estava presente (nada a ajustar).
-fn apply_unsupported_param_fallback(body: &mut Value, param: &str) -> bool {
+/// Ajusta o corpo após uma rejeição: renomeia `max_tokens` e remitir os demais.
+/// Só mexe em parâmetros **opcionais de amostragem/limite** que estavam no
+/// corpo; se não houver nada a remitir, a chamada não é reenviada.
+fn apply_rejected_param_fallback(body: &mut Value, param: &str) -> bool {
+    if !REMOVABLE_PARAMS.contains(&param) {
+        return false;
+    }
     let Some(object) = body.as_object_mut() else {
         return false;
     };
@@ -171,11 +214,26 @@ pub(crate) fn truncate(text: &str, max_chars: usize) -> String {
     out
 }
 
+/// Indica se o modelo aceita `temperature` diferente do padrão.
+///
+/// Modelos de raciocínio (perssua `builtInOmissions` para `codex`/gpt-5) só
+/// suportam o valor padrão (`1`); para eles o parâmetro nem é enviado.
+fn temperature_supported(model: &str) -> bool {
+    let name = model.trim().to_ascii_lowercase();
+    !(name.starts_with("gpt-5")
+        || name.starts_with("o1")
+        || name.starts_with("o3")
+        || name.starts_with("o4"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const MAX_TOKENS_400: &str = r#"{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.","type":"invalid_request_error","param":"max_tokens","code":"unsupported_parameter"}}"#;
+
+    /// Erro real devolvido pelo OpenAI para modelos gpt-5/o* (issue do usuário).
+    const TEMPERATURE_VALUE_400: &str = r#"{"error":{"message":"Unsupported value: 'temperature' does not support 0.30000000000000004 with this model. Only the default (1) value is supported.","type":"invalid_request_error","param":"temperature","code":"unsupported_value"}}"#;
 
     fn body_with_max_tokens() -> Value {
         json!({ "model": "m", "messages": [], "max_tokens": 16, "temperature": 0.0 })
@@ -184,7 +242,7 @@ mod tests {
     #[test]
     fn detects_unsupported_param_from_code_and_field() {
         assert_eq!(
-            unsupported_param(MAX_TOKENS_400).as_deref(),
+            rejected_param(MAX_TOKENS_400).as_deref(),
             Some("max_tokens")
         );
     }
@@ -193,33 +251,62 @@ mod tests {
     fn detects_unsupported_param_from_message_only() {
         let detail =
             r#"{"error":{"message":"Unsupported parameter: 'temperature' is not supported."}}"#;
-        assert_eq!(unsupported_param(detail).as_deref(), Some("temperature"));
+        assert_eq!(rejected_param(detail).as_deref(), Some("temperature"));
+    }
+
+    #[test]
+    fn detects_rejected_temperature_value() {
+        // Cenário do usuário: `unsupported_value` para models de raciocínio.
+        assert_eq!(
+            rejected_param(TEMPERATURE_VALUE_400).as_deref(),
+            Some("temperature")
+        );
+    }
+
+    #[test]
+    fn detects_unsupported_value_from_message_only() {
+        let detail = r#"{"error":{"message":"Unsupported value: 'temperature' does not support 0.3 with this model."}}"#;
+        assert_eq!(rejected_param(detail).as_deref(), Some("temperature"));
     }
 
     #[test]
     fn ignores_unrelated_errors() {
         let detail = r#"{"error":{"message":"The model 'x' does not exist","param":"model","code":"model_not_found"}}"#;
-        assert_eq!(unsupported_param(detail), None);
+        assert_eq!(rejected_param(detail), None);
+    }
+
+    #[test]
+    fn ignores_value_error_for_required_param() {
+        // `model` é obrigatório: não há retry possível.
+        let detail = r#"{"error":{"message":"Unsupported value: 'model' does not support 'x'.","param":"model","code":"unsupported_value"}}"#;
+        assert!(!apply_rejected_param_fallback(
+            &mut body_with_max_tokens(),
+            "model"
+        ));
+        assert!(rejected_param(detail).is_some());
+    }
+
+    #[test]
+    fn removes_unsupported_value_params() {
+        let mut body = body_with_max_tokens();
+        assert!(apply_rejected_param_fallback(&mut body, "temperature"));
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["max_tokens"], json!(16));
+
+        // Parâmetro ausente → nada a ajustar (chamada não reenviada).
+        let mut other = json!({ "model": "m", "messages": [] });
+        assert!(!apply_rejected_param_fallback(&mut other, "temperature"));
     }
 
     #[test]
     fn renames_max_tokens_to_max_completion_tokens() {
         let mut body = body_with_max_tokens();
-        assert!(apply_unsupported_param_fallback(&mut body, "max_tokens"));
+        assert!(apply_rejected_param_fallback(&mut body, "max_tokens"));
         assert!(body.get("max_tokens").is_none());
         assert_eq!(body["max_completion_tokens"], json!(16));
         // Idempotente: repetir não muda nada nem falha.
-        assert!(apply_unsupported_param_fallback(&mut body, "max_tokens"));
+        assert!(apply_rejected_param_fallback(&mut body, "max_tokens"));
         assert_eq!(body["max_completion_tokens"], json!(16));
-    }
-
-    #[test]
-    fn removes_other_unsupported_params() {
-        let mut body = body_with_max_tokens();
-        assert!(apply_unsupported_param_fallback(&mut body, "temperature"));
-        assert!(body.get("temperature").is_none());
-        // Parâmetro ausente → nada a ajustar.
-        assert!(!apply_unsupported_param_fallback(&mut body, "temperature"));
     }
 
     #[test]
@@ -227,6 +314,38 @@ mod tests {
         let value = json!({"choices":[{"message":{"content":"  ok  "}}]});
         assert_eq!(extract_text(&value), "ok");
         assert_eq!(extract_text(&json!({})), "");
+    }
+
+    #[test]
+    fn omits_temperature_for_reasoning_models() {
+        for model in ["gpt-5.1", "GPT-5", "o3-mini", "o1-preview"] {
+            let config = ProviderConfig {
+                kind: crate::domain::settings::ProviderKind::OpenAi,
+                model: model.into(),
+                base_url: None,
+                api_key: "k".into(),
+            };
+            let request = CompletionRequest::user("oi").with_temperature(0.3);
+            let body = build_body(&config, &request);
+            assert!(
+                body.get("temperature").is_none(),
+                "{model} leva temperature"
+            );
+        }
+
+        let config = ProviderConfig {
+            kind: crate::domain::settings::ProviderKind::OpenAi,
+            model: "gpt-4o-mini".into(),
+            base_url: None,
+            api_key: "k".into(),
+        };
+        let request = CompletionRequest::user("oi").with_temperature(0.3);
+        let body = build_body(&config, &request);
+        let sent = body["temperature"].as_f64().expect("temperature");
+        assert!(
+            (sent - 0.3).abs() < 1e-6,
+            "gpt-4o-mini deve manter temperature: {sent}"
+        );
     }
 
     #[test]
@@ -261,5 +380,53 @@ mod tests {
         assert!(!requests[0].contains("max_completion_tokens"));
         assert!(requests[1].contains("max_completion_tokens"));
         assert!(!requests[1].contains("\"max_tokens\":"));
+    }
+
+    #[test]
+    fn retries_after_rejected_temperature_value() {
+        use crate::adapters::ai::custom_chat_bot_provider::CustomChatBotProvider;
+        use crate::application::test_support::spawn_openai_sequence_mock;
+        use crate::domain::settings::ProviderKind;
+        use crate::ports::chat_bot_provider::ChatBotProvider;
+
+        let (base_url, seen) = spawn_openai_sequence_mock(vec![
+            (400, TEMPERATURE_VALUE_400.to_string()),
+            (
+                200,
+                r#"{"choices":[{"message":{"content":"ok"}}]}"#.to_string(),
+            ),
+        ]);
+        let provider = CustomChatBotProvider::new(ProviderConfig {
+            kind: ProviderKind::Custom,
+            model: "meu-modelo-local".into(),
+            base_url: Some(base_url),
+            api_key: "test-key".into(),
+        });
+
+        let request = CompletionRequest::user("oi").with_temperature(0.3);
+        assert_eq!(provider.complete(&request).expect("complete").text, "ok");
+
+        let requests = seen.lock().expect("lock").clone();
+        assert_eq!(requests.len(), 2, "deve reenviar sem temperature");
+        assert!(requests[0].contains("\"temperature\":0.3"));
+        assert!(!requests[1].contains("temperature"));
+    }
+
+    #[test]
+    fn keeps_temperature_for_models_that_support_it() {
+        // Ensina o contrário: gpt-4o mantém `temperature` no primeiro envio.
+        let config = ProviderConfig {
+            kind: crate::domain::settings::ProviderKind::OpenAi,
+            model: "gpt-4o".into(),
+            base_url: None,
+            api_key: "k".into(),
+        };
+        let request = CompletionRequest::user("oi");
+        let body = build_body(&config, &request);
+        assert!(body.get("temperature").is_none());
+
+        let request = CompletionRequest::user("oi").with_temperature(0.0);
+        let body = build_body(&config, &request);
+        assert_eq!(body["temperature"], json!(0.0));
     }
 }

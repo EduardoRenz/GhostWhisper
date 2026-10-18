@@ -422,6 +422,49 @@ body,
   color: var(--ghostwhisper-text);
 }
 
+/* Abas das configurações (estilo Perssua: uma seção por aba). */
+.settings__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.settings__tab {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--ghostwhisper-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}
+
+.settings__tab:hover {
+  color: var(--ghostwhisper-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings__tab--active {
+  color: var(--ghostwhisper-text);
+  background: rgba(0, 122, 255, 0.2);
+  border-color: rgba(0, 122, 255, 0.5);
+}
+
+/* Chave de API mascarada (indica presença sem expor o valor). */
+.settings__key {
+  font: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 0.08rem;
+  color: var(--ghostwhisper-text-muted);
+  user-select: text;
+  -webkit-user-select: text;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+}
+
 .settings__shortcut {
   align-items: center;
   justify-content: space-between;

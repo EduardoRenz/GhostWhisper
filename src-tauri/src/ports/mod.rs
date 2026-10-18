@@ -27,4 +27,3 @@ pub mod speech_engine_factory;
 pub mod speech_to_text;
 pub mod translator;
 pub mod virtual_sink;
-pub mod voice_activity;

@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
+    WhisperVadParams,
 };
 
 use crate::domain::audio::TARGET_SAMPLE_RATE;
@@ -40,6 +41,29 @@ const TIMEOUT_BASE_MS: u64 = 30_000;
 const TIMEOUT_PER_AUDIO_SEC_MS: u64 = 15_000;
 /// Teto duro por pedido (ms).
 const TIMEOUT_MAX_MS: u64 = 120_000;
+
+// --- Decodificação e VAD nativo (equivalentes ao Perssua) -----------------
+//
+// O Perssua roda o VAD embutido do whisper.cpp (`--vad …`) e fixa os parâmetros
+// de amostragem para evitar o "fallback" por temperatura, que multiplica
+// decodificações e piora a latência. Transposto para o `whisper-rs`:
+// `WhisperVad.js` (limiares) e `WhisperServerManager.js`/`runWhisperCli` (decode).
+
+/// Temperatura fixa (sem amostragem estocástica).
+const DECODE_TEMPERATURE: f32 = 0.0;
+/// Incremento de temperatura 0 desliga o fallback (equivale a `-nf`).
+const DECODE_TEMPERATURE_INC: f32 = 0.0;
+/// Limiar de entropia (abaixo do padrão 2.4, menos alucinação).
+const DECODE_ENTROPY_THOLD: f32 = 2.2;
+
+/// Limiar de probabilidade de fala do VAD Silero (`--vad-threshold`).
+const VAD_THRESHOLD: f32 = 0.5;
+/// Duração mínima de fala (`--vad-min-speech-duration-ms`).
+const VAD_MIN_SPEECH_MS: i32 = 250;
+/// Silêncio mínimo para encerrar um trecho (`--vad-min-silence-duration-ms`).
+const VAD_MIN_SILENCE_MS: i32 = 300;
+/// Padding antes/depois da fala (`--vad-speech-pad-ms`).
+const VAD_SPEECH_PAD_MS: i32 = 200;
 
 /// Threads por contexto: metade dos núcleos (mínimo 1) para não sobrecarregar
 /// a CPU quando os dois canais transcrevem ao mesmo tempo.
@@ -71,6 +95,9 @@ pub struct WhisperSpeechToText {
     language: String,
     threads: i32,
     loaded: Arc<Mutex<Option<LoadedWhisper>>>,
+    /// Caminho do modelo Silero usado pelo VAD nativo do whisper.cpp.
+    /// Resolvido no [`preload`](Self::preload); ausente = decode sem VAD.
+    vad_model_path: Arc<Mutex<Option<String>>>,
     /// Publicador opcional para o status de download/carga (feedback da UI).
     publisher: Option<Arc<dyn EventPublisher>>,
 }
@@ -89,6 +116,7 @@ impl WhisperSpeechToText {
             language: language.into(),
             threads: asr_threads(),
             loaded: Arc::new(Mutex::new(None)),
+            vad_model_path: Arc::new(Mutex::new(None)),
             publisher,
         }
     }
@@ -99,6 +127,7 @@ impl WhisperSpeechToText {
     /// transcrição em silêncio durante o download (BR: dar retorno ao usuário).
     pub fn preload(self: &Arc<Self>) {
         let loaded = Arc::clone(&self.loaded);
+        let vad_slot = Arc::clone(&self.vad_model_path);
         let this = Arc::clone(self);
         let spawned = std::thread::Builder::new()
             .name("whisper-preload".into())
@@ -108,6 +137,16 @@ impl WhisperSpeechToText {
                     AsrPhase::Preparing,
                     format!("Preparando modelo {hint}… (pode baixar ~{hint})"),
                 );
+                // VAD nativo do whisper.cpp: o modelo Silero precisa estar em disco
+                // antes da primeira decodificação (Perssua: `WhisperVad.js`).
+                match this.models.vad_model_path() {
+                    Ok(path) => {
+                        if let Ok(mut slot) = vad_slot.lock() {
+                            *slot = Some(path.to_string_lossy().to_string());
+                        }
+                    }
+                    Err(error) => tracing::warn!("VAD Silero indisponível: {error}"),
+                }
                 let mut guard = match loaded.lock() {
                     Ok(guard) => guard,
                     Err(_) => {
@@ -188,6 +227,11 @@ impl SpeechToText for WhisperSpeechToText {
         let loaded = Arc::clone(&self.loaded);
         let language = self.language.clone();
         let threads = self.threads;
+        let vad_model_path = self
+            .vad_model_path
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone());
         let audio: Vec<f32> = samples.to_vec();
 
         // O modelo é baixado/carregado em background por `preload()`; aqui só
@@ -209,7 +253,7 @@ impl SpeechToText for WhisperSpeechToText {
         std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)
             .spawn(move || {
-                let params = {
+                let mut params = {
                     let strategy = match quality {
                         SpeechQuality::Preview => SamplingStrategy::Greedy { best_of: 1 },
                         SpeechQuality::Final => SamplingStrategy::BeamSearch {
@@ -225,8 +269,28 @@ impl SpeechToText for WhisperSpeechToText {
                     params.set_print_progress(false);
                     params.set_print_realtime(false);
                     params.set_print_timestamps(false);
+                    // Perssua (`WhisperServerManager.js` / `runWhisperCli`): fixa
+                    // temperatura e entropia e suprime tokens de não-fala. Sem
+                    // isso o whisper faz "fallback" por temperatura (até ~5
+                    // decodificações extras) em áudio difícil.
+                    params.set_temperature(DECODE_TEMPERATURE);
+                    params.set_temperature_inc(DECODE_TEMPERATURE_INC);
+                    params.set_entropy_thold(DECODE_ENTROPY_THOLD);
+                    params.set_suppress_nst(true);
                     params
                 };
+                // VAD Silero embutido do whisper.cpp (Perssua: `WhisperVad.js`):
+                // corta silêncio e devolve segmentos apenas de fala.
+                if let Some(vad) = vad_model_path.as_deref() {
+                    params.set_vad_model_path(Some(vad));
+                    params.enable_vad(true);
+                    let mut vad_params = WhisperVadParams::new();
+                    vad_params.set_threshold(VAD_THRESHOLD);
+                    vad_params.set_min_speech_duration(VAD_MIN_SPEECH_MS);
+                    vad_params.set_min_silence_duration(VAD_MIN_SILENCE_MS);
+                    vad_params.set_speech_pad(VAD_SPEECH_PAD_MS);
+                    params.set_vad_params(vad_params);
+                }
                 // `try_lock`: se a decodificação anterior estourou o timeout ela
                 // continua rodando com o lock preso. Bloquear aqui, junto com a
                 // fila global de decodificação,=deadlock permanente do ASR.

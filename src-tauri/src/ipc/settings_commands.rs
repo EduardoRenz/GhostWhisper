@@ -93,6 +93,21 @@ pub fn settings_provider_label(state: State<'_, AppState>) -> Result<String> {
     state.llm.provider_label()
 }
 
+/// Versão mascarada da chave ativa (`••••••••·abcd`) para indicar presença.
+///
+/// Nunca devolve o valor bruto: só os últimos 4 caracteres, mesma regra do
+/// OpenAI/OpenRouter quando exibem chaves salvas.
+#[tauri::command]
+pub fn settings_key_preview(state: State<'_, AppState>) -> Result<String> {
+    let settings = state.settings.load()?;
+    let masked = state
+        .secrets
+        .get(&settings.provider.secret_key())?
+        .map(|value| crate::domain::settings::redact_secret(&value))
+        .unwrap_or_default();
+    Ok(masked)
+}
+
 /// Informa se o armazenamento de segredos é persistente (keyring) ou de sessão.
 #[tauri::command]
 pub fn settings_secrets_persistent(state: State<'_, AppState>) -> bool {

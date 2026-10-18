@@ -17,6 +17,8 @@
 | 08 | Tradução ao vivo + insights/sugestões | CONCLUDED |
 | 09 | Atalhos globais + stealth básico | CONCLUDED |
 | 10 | Empacotamento (.deb/AppImage) + spike Wayland/invisibilidade | CONCLUDED |
+| 11 | Streaming de transcrição estilo Perssua (whisper fluindo) | CONCLUDED |
+| 12 | Configurações em abas, chave redactada e compat com providers | CONCLUDED |
 
 ## Dependências entre tarefas
 

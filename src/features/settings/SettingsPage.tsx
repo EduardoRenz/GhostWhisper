@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   clearProviderKey,
   getProviders,
   getSettings,
   hasProviderKey,
+  keyPreview,
   providerLabel,
   saveSettings,
   secretsPersistent,
@@ -38,12 +39,25 @@ import {
 
 type Status = { kind: "info" | "ok" | "error"; text: string } | null;
 
+/** Abas da janela de configurações (Perssua usa `tabs` por seção). */
+const TABS = [
+  { id: "sources", label: "Fontes de IA" },
+  { id: "transcription", label: "Transcrição & Áudio" },
+  { id: "general", label: "Ajustes" },
+  { id: "shortcuts", label: "Atalhos" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
 /** Página de configurações: provider, modelo e chave de API (BYO key). */
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings>(defaultSettings());
   const [providers, setProviders] = useState<ProviderKind[]>(PROVIDERS);
+  const [tab, setTab] = useState<TabId>("sources");
   const [keyInput, setKeyInput] = useState("");
+  const [keyEditing, setKeyEditing] = useState(false);
   const [hasKey, setHasKey] = useState(false);
+  const [keyMasked, setKeyMasked] = useState("");
   const [persistent, setPersistent] = useState(true);
   const [label, setLabel] = useState("");
   const [catalog, setCatalog] = useState<ShortcutInfo[]>([]);
@@ -51,10 +65,11 @@ export function SettingsPage() {
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
 
-  const refreshKeyState = async () => {
+  const refreshKeyState = useCallback(async () => {
     setHasKey((await hasProviderKey()) ?? false);
+    setKeyMasked((await keyPreview()) ?? "");
     setLabel((await providerLabel()) ?? "");
-  };
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -77,7 +92,7 @@ export function SettingsPage() {
       setPersistent((await secretsPersistent()) ?? true);
       await refreshKeyState();
     })();
-  }, []);
+  }, [refreshKeyState]);
 
   const update = <K extends keyof Settings>(field: K, value: Settings[K]) =>
     setSettings((prev) => ({ ...prev, [field]: value }));
@@ -134,6 +149,7 @@ export function SettingsPage() {
       }
       await setProviderKey(keyInput);
       setKeyInput("");
+      setKeyEditing(false);
       await refreshKeyState();
       setStatus({
         kind: "ok",
@@ -147,6 +163,7 @@ export function SettingsPage() {
     run(async () => {
       await clearProviderKey();
       await refreshKeyState();
+      setKeyEditing(false);
       setStatus({ kind: "info", text: "Chave removida." });
     });
 
@@ -159,145 +176,59 @@ export function SettingsPage() {
       });
     });
 
-  return (
-    <main className="app settings" data-route="settings">
-      <h1 className="app__title">GhostWhisper — Configurações</h1>
-
-      <section className="settings__group">
+  /** Campo da chave: mostra a versão redactada quando já configurada. */
+  const keyField =
+    hasKey && !keyEditing ? (
+      <>
         <label className="settings__field">
-          <span>Provider</span>
-          <select
-            value={settings.provider}
-            onChange={(event) =>
-              update("provider", event.target.value as ProviderKind)
-            }
-          >
-            {providers.map((provider) => (
-              <option key={provider} value={provider}>
-                {provider}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="settings__field">
-          <span>Modelo</span>
+          <span>Chave de API</span>
           <input
+            className="settings__key"
             type="text"
-            value={settings.model}
-            onChange={(event) => update("model", event.target.value)}
+            readOnly
+            value={keyMasked || "••••••••"}
+            aria-label="Chave de API (mascarada)"
+            onChange={undefined}
+            onFocus={undefined}
           />
-        </label>
-
-        {providerRequiresBaseUrl(settings.provider) && (
-          <label className="settings__field">
-            <span>Base URL (formato OpenAI)</span>
-            <input
-              type="url"
-              placeholder="http://localhost:11434/v1"
-              value={settings.base_url ?? ""}
-              onChange={(event) =>
-                update("base_url", event.target.value || null)
-              }
-            />
-          </label>
-        )}
-
-        <label className="settings__field">
-          <span>Modelo whisper (local)</span>
-          <select
-            value={settings.whisper_model}
-            onChange={(event) => update("whisper_model", event.target.value)}
-          >
-            {WHISPER_MODELS.map((model) => (
-              <option key={model} value={model}>
-                {model} ({WHISPER_MODEL_SIZES[model] ?? "?"})
-              </option>
-            ))}
-          </select>
         </label>
         <p className="settings__hint">
-          O modelo é baixado apenas ao iniciar a primeira sessão com ele.
+          Chave armazenada{" "}
+          {persistent ? "no keyring do sistema" : "apenas nesta sessão"} —
+          exibição mascarada (últimos 4 caracteres). Use "Trocar chave" para
+          substituí-la.
         </p>
-
-        <label className="settings__field">
-          <span>Idioma de origem</span>
-          <select
-            value={settings.source_language}
-            onChange={(event) =>
-              update("source_language", event.target.value as Language)
-            }
-          >
-            {LANGUAGES.map((language) => (
-              <option key={language} value={language}>
-                {SOURCE_LANGUAGE_LABELS[language]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="settings__field">
-          <span>Idioma de destino</span>
-          <select
-            value={settings.target_language}
-            onChange={(event) =>
-              update("target_language", event.target.value as Language)
-            }
-          >
-            {LANGUAGES.map((language) => (
-              <option key={language} value={language}>
-                {TARGET_LANGUAGE_LABELS[language]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="settings__hint">
-          Escolher um idioma de origem fixa o reconhecimento; "Auto" deixa o
-          Whisper detectar. Destino "Auto" (ou igual à origem) não traduz.
-        </p>
-
-        <label className="settings__field settings__field--row">
-          <input
-            type="checkbox"
-            checked={settings.translation_enabled}
-            onChange={(event) =>
-              update("translation_enabled", event.target.checked)
-            }
-          />
-          <span>Tradução ao vivo</span>
-        </label>
-
-        <label className="settings__field settings__field--row">
-          <input
-            type="checkbox"
-            checked={settings.stealth}
-            onChange={(event) => update("stealth", event.target.checked)}
-          />
-          <span>Modo stealth (fora da barra de tarefas)</span>
-        </label>
-
         <div className="settings__actions">
           <button
             type="button"
             className="settings__button"
             disabled={busy}
-            onClick={onSave}
+            onClick={() => setKeyEditing(true)}
           >
-            Salvar configurações
+            Trocar chave
+          </button>
+          <button
+            type="button"
+            className="settings__button"
+            disabled={busy}
+            onClick={onValidate}
+          >
+            Validar chave
+          </button>
+          <button
+            type="button"
+            className="settings__button"
+            disabled={busy}
+            onClick={onClearKey}
+          >
+            Remover chave
           </button>
         </div>
-      </section>
-
-      <section className="settings__group">
-        <div className="settings__field settings__field--row">
-          <span>
-            Chave de API{" "}
-            <strong>{hasKey ? "(configurada)" : "(ausente)"}</strong>
-            {!persistent && " · somente sessão"}
-          </span>
-        </div>
+      </>
+    ) : (
+      <>
         <label className="settings__field">
-          <span>Nova chave</span>
+          <span>{hasKey ? "Trocar chave" : "Nova chave"}</span>
           <input
             type="password"
             autoComplete="off"
@@ -323,6 +254,16 @@ export function SettingsPage() {
           >
             Validar chave
           </button>
+          {hasKey && (
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={() => setKeyEditing(false)}
+            >
+              Cancelar
+            </button>
+          )}
           <button
             type="button"
             className="settings__button"
@@ -332,59 +273,241 @@ export function SettingsPage() {
             Remover chave
           </button>
         </div>
-        {label && (
-          <p className="settings__hint">Provider ativo: {label}</p>
-        )}
-      </section>
+      </>
+    );
 
-      <section className="settings__group">
-        <span className="settings__group-title">Atalhos globais</span>
-        {SHORTCUT_ACTIONS.map((action) => {
-          const info = catalog.find((entry) => entry.action === action);
-          const binding = settings.shortcuts.find(
-            (entry) => entry.action === action,
-          );
-          return (
-            <label
-              key={action}
-              className="settings__field settings__field--row settings__shortcut"
+  return (
+    <main className="app settings" data-route="settings">
+      <h1 className="app__title">GhostWhisper — Configurações</h1>
+
+      <nav className="settings__nav" role="tablist">
+        {TABS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.id}
+            className={
+              tab === entry.id ? "settings__tab settings__tab--active" : "settings__tab"
+            }
+            onClick={() => setTab(entry.id)}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "sources" && (
+        <section className="settings__group">
+          <label className="settings__field">
+            <span>Provider</span>
+            <select
+              value={settings.provider}
+              onChange={(event) =>
+                update("provider", event.target.value as ProviderKind)
+              }
             >
-              <span className="settings__shortcut-label">
-                {info?.label ?? action}
-              </span>
+              {providers.map((provider) => (
+                <option key={provider} value={provider}>
+                  {provider}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="settings__field">
+            <span>Modelo</span>
+            <input
+              type="text"
+              value={settings.model}
+              onChange={(event) => update("model", event.target.value)}
+            />
+          </label>
+
+          {providerRequiresBaseUrl(settings.provider) && (
+            <label className="settings__field">
+              <span>Base URL (formato OpenAI)</span>
               <input
-                type="text"
-                value={binding?.accelerator ?? ""}
-                placeholder={info?.default_accelerator ?? ""}
+                type="url"
+                placeholder="http://localhost:11434/v1"
+                value={settings.base_url ?? ""}
                 onChange={(event) =>
-                  updateAccelerator(action, event.target.value)
+                  update("base_url", event.target.value || null)
                 }
               />
             </label>
-          );
-        })}
-        <div className="settings__actions">
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onSaveShortcuts}
-          >
-            Salvar atalhos
-          </button>
-        </div>
-        {conflicts.length > 0 && (
-          <ul className="settings__conflicts">
-            {conflicts.map((conflict) => (
-              <li key={`${conflict.action}-${conflict.accelerator}`}>
-                {conflict.accelerator}: {conflict.reason}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          )}
 
-      <AudioTestPanel />
+          {keyField}
+
+          {label && <p className="settings__hint">Provider ativo: {label}</p>}
+
+          <div className="settings__actions">
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={onSave}
+            >
+              Salvar configurações
+            </button>
+          </div>
+        </section>
+      )}
+
+      {tab === "transcription" && (
+        <section className="settings__group">
+          <label className="settings__field">
+            <span>Modelo whisper (local)</span>
+            <select
+              value={settings.whisper_model}
+              onChange={(event) => update("whisper_model", event.target.value)}
+            >
+              {WHISPER_MODELS.map((model) => (
+                <option key={model} value={model}>
+                  {model} ({WHISPER_MODEL_SIZES[model] ?? "?"})
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="settings__hint">
+            O modelo é baixado apenas ao iniciar a primeira sessão com ele.
+          </p>
+
+          <label className="settings__field">
+            <span>Idioma de origem</span>
+            <select
+              value={settings.source_language}
+              onChange={(event) =>
+                update("source_language", event.target.value as Language)
+              }
+            >
+              {LANGUAGES.map((language) => (
+                <option key={language} value={language}>
+                  {SOURCE_LANGUAGE_LABELS[language]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="settings__field">
+            <span>Idioma de destino</span>
+            <select
+              value={settings.target_language}
+              onChange={(event) =>
+                update("target_language", event.target.value as Language)
+              }
+            >
+              {LANGUAGES.map((language) => (
+                <option key={language} value={language}>
+                  {TARGET_LANGUAGE_LABELS[language]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="settings__hint">
+            Escolher um idioma de origem fixa o reconhecimento; "Auto" deixa o
+            Whisper detectar. Destino "Auto" (ou igual à origem) não traduz.
+          </p>
+
+          <label className="settings__field settings__field--row">
+            <input
+              type="checkbox"
+              checked={settings.translation_enabled}
+              onChange={(event) =>
+                update("translation_enabled", event.target.checked)
+              }
+            />
+            <span>Tradução ao vivo</span>
+          </label>
+
+          <div className="settings__actions">
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={onSave}
+            >
+              Salvar configurações
+            </button>
+          </div>
+
+          <AudioTestPanel />
+        </section>
+      )}
+
+      {tab === "general" && (
+        <section className="settings__group">
+          <label className="settings__field settings__field--row">
+            <input
+              type="checkbox"
+              checked={settings.stealth}
+              onChange={(event) => update("stealth", event.target.checked)}
+            />
+            <span>Modo stealth (fora da barra de tarefas)</span>
+          </label>
+
+          <div className="settings__actions">
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={onSave}
+            >
+              Salvar configurações
+            </button>
+          </div>
+        </section>
+      )}
+
+      {tab === "shortcuts" && (
+        <section className="settings__group">
+          <span className="settings__group-title">Atalhos globais</span>
+          {SHORTCUT_ACTIONS.map((action) => {
+            const info = catalog.find((entry) => entry.action === action);
+            const binding = settings.shortcuts.find(
+              (entry) => entry.action === action,
+            );
+            return (
+              <label
+                key={action}
+                className="settings__field settings__field--row settings__shortcut"
+              >
+                <span className="settings__shortcut-label">
+                  {info?.label ?? action}
+                </span>
+                <input
+                  type="text"
+                  value={binding?.accelerator ?? ""}
+                  placeholder={info?.default_accelerator ?? ""}
+                  onChange={(event) =>
+                    updateAccelerator(action, event.target.value)
+                  }
+                />
+              </label>
+            );
+          })}
+          <div className="settings__actions">
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={onSaveShortcuts}
+            >
+              Salvar atalhos
+            </button>
+          </div>
+          {conflicts.length > 0 && (
+            <ul className="settings__conflicts">
+              {conflicts.map((conflict) => (
+                <li key={`${conflict.action}-${conflict.accelerator}`}>
+                  {conflict.accelerator}: {conflict.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {status && (
         <p className={`settings__status settings__status--${status.kind}`}>

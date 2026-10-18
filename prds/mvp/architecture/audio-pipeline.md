@@ -20,9 +20,9 @@ aceito pelo whisper.cpp.
 
 ```
 mic (cpal)     ─┐
-                ├─▶ resample (rubato) ─▶ ring buffer ─▶ VAD (Silero) ─▶ ASR (whisper-rs) ─▶ evento Tauri
-system (pulse) ─┘                                   │
-                                                    └─▶ nível de áudio (medidor UI)
+                ├─▶ resample ─▶ buffer de turno ─▶ ASR (whisper-rs + VAD Silero) ─▶ evento Tauri
+system (pulse) ─┘         (gate RMS)             │
+                                                 └─▶ nível de áudio (medidor UI)
 ```
 
 ### Etapas
@@ -31,8 +31,10 @@ system (pulse) ─┘                                   │
 2. **Resample:** `rubato` converte de 44.1/48 kHz → 16 kHz e downmix para mono.
 3. **Buffer:** ring buffer com backpressure; descarte controlado se o ASR atrasar
    (nunca crescer sem limite).
-4. **VAD:** Silero decide início/fim de fala; só segmentos com fala vão ao ASR.
-5. **ASR:** `whisper-rs` processa janelas com sobreposição; emite
+4. **Gate/segmentação:** um gate RMS barato marca fala/onsets; o **VAD Silero
+   embutido no whisper.cpp** corta o silêncio e devolve os trechos de fala.
+5. **ASR:** `whisper-rs` decodifica o **turno que cresce** em prévias frequentes
+   (texto rolante) e um **passe final** ao fechar o turno; emite
    `transcript_segment { id, speaker, text, start_ms, end_ms, final }`.
 6. **Eventos:** cada segmento é emitido para o frontend e persistido no SQLite.
 
@@ -51,12 +53,21 @@ pactl load-module module-null-sink sink_name=ghostwhisper session.sink_name=ghos
 
 ## 4. VAD + ASR
 
-- **Silero VAD:** modelo `ggml-silero-v5.1.2.bin` (MIT) embarcado em `assets/`,
-  carregado por `whisper-rs` (feature VAD) ou por runtime dedicado.
+- **VAD:** o **Silero embutido no whisper.cpp** (`enable_vad` +
+  `WhisperVadParams`: `threshold 0.5`, `min-speech 250 ms`, `min-silence 300 ms`,
+  `speech-pad 200 ms`), com o modelo `ggml-silero-v5.1.2.bin` (MIT) resolvido pelo
+  `ModelStore` no `preload()`. Igual ao Perssua (`WhisperVad.js`). O pipeline não
+  roda mais um VAD separado sobre o buffer inteiro — usa um **gate de amplitude
+  (RMS)** barato para timing/onsets.
 - **whisper.cpp:** modelos `tiny`/`base`/`small`/`medium` baixados sob demanda e
-  cacheados no diretório de dados do app.
-- **Streaming:** janela deslizante com sobreposição; VAD delimita turnos; texto
-  parcial (`final=false`) é refinado até `final=true`.
+  cacheados no diretório de dados do app; **um único contexto** é compartilhado
+  entre os canais (a decodificação é serializada por uma fila global).
+- **Decode:** `temperature 0`, `temperature_inc 0`, `entropy_thold 2.2`,
+  `suppress_nst`; prévia **greedy** (`best_of 1`) e turno final **beam 5**.
+- **Streaming (Perssua):** buffer de turno (teto 60 s) decodificado em **prévias
+  frequentes** (áudio mínimo 0,35 s, passo 0,75 s, 1ª em 1,2 s, ociosidade 1 s)
+  que publicam **texto rolante**; o turno fecha após **1 s de silêncio** (ou teto
+  de 55 s) com o passe final. Ver `application/transcription_pipeline.rs`.
 
 ## 5. Atribuição de falante
 
@@ -84,7 +95,7 @@ estrutural (não diarização por ML) — mais simples e confiável para o MVP.
 ## 8. Arquivos envolvidos
 
 - Novos (adapters): `adapters/audio/{cpal_microphone_source,pulse_system_audio_source,pactl_sink_helper,pcm_resampler}.rs`,
-  `adapters/speech/{silero_voice_activity,whisper_speech_to_text,whisper_model_store}.rs`.
-- Novos (ports): `ports/{audio_source,speech_to_text,voice_activity}.rs`.
+  `adapters/speech/{whisper_speech_to_text,whisper_model_store,whisper_speech_engine_factory,serialising_speech_to_text}.rs`.
+- Novos (ports): `ports/{audio_source,speech_to_text,speech_engine_factory}.rs`.
 - Novos (application): `application/transcription_service.rs`.
 - Modificados: `state.rs`, `ipc/{audio_commands,session_commands}.rs`, `lib.rs`.

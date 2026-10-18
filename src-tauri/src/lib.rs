@@ -62,6 +62,7 @@ pub fn run() {
             ipc::settings_commands::settings_clear_provider_key,
             ipc::settings_commands::settings_validate_key,
             ipc::settings_commands::settings_provider_label,
+            ipc::settings_commands::settings_key_preview,
             ipc::settings_commands::settings_secrets_persistent,
             ipc::llm_commands::llm_translate,
             ipc::llm_commands::llm_insight,

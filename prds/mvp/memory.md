@@ -407,3 +407,89 @@ documentado na Tarefa 00 e no README. Toolchain Rust instalada via rustup
 - **Verificação:** 117 testes Rust (3 novos de migração) + 18 frontend;
   clippy 0, fmt/tsc limpos. Pacotes **não** foram reconstruídos a pedido.
 
+---
+
+## 2026-10-17 — Regra: Perssua como fonte de decisão de produto (BR-015)
+
+- **Decisão do usuário:** ao decidir *como* resolver um problema, priorizar sempre
+  a solução já adotada pelo **Perssua** (programa maduro); a transposição é só de
+  tecnologia (Electron/JS/whisper.cpp → Tauri/Rust).
+- **Registrado:** `prds/business-rules.md` **BR-015**; `.agents/rules.md` §6.1
+  (R11–R13); resumo em `AGENTS.md` (Regras rápidas).
+- **Efeito:** toda decisão técnica passa a citar o equivalente no Perssua
+  (`electron/local-whisper`, etc.) ou justificar o desvio (ex.: captura Linux).
+
+## 2026-10-17 — ISS-010: streaming de transcrição estilo Perssua (whisper fluindo)
+
+### Diagnóstico (REA do `Perssua 0.27.5`, AppImage x86_64)
+- Extraído `resources/app.asar` (412 MB) e lido `electron/local-whisper`:
+  `WhisperSessionSupport.js`, `WhisperSessionStreaming.js`, `WhisperSession.js`,
+  `WhisperVad.js`, `WhisperServerManager.js`, `CappedAudioBuffer.js`, `index.js`.
+- **Parâmetros do Perssua:** janela 0,75 s / overlap 0,15 s / áudio mínimo 0,35 s
+  / ociosidade 1 s (backend server; CLI 1,5/0,25/0,5/2,5); primeira prévia em
+  **1,2 s**; silêncio para fechar turno **1 s**; fala mínima 160 ms; turno final
+  mín 0,8 s / máx 60 s; teto do buffer 20 s; `best_of`/`beam 1` na prévia e
+  **beam 5** no final.
+- **VAD nativo do whisper.cpp** (`--vad … threshold 0.5, min-speech 250,
+  min-silence 300, speech-pad 200`) + **RMS** para timing — **não** um VAD Silero
+  separado.
+- **Decode:** `temperature 0`, `temperature_inc 0` (`-nf`), `entropy_thold 2.2`,
+  `suppress_nst` (`-sns`); transcrição **rolante** do turno que cresce.
+- **Um `whisper-server`** por modelo (compartilhado).
+
+### Causa do "não flui" no GhostWhisper
+1. VAD Silero separado rodava sobre o **buffer inteiro** a cada 250 ms (O(n)).
+2. Prévia mostrava só os **últimos 2 s** e substituía o turno (texto "piscava").
+3. Cadência de 900 ms + teto de turno 10 s + falta dos params de decode.
+4. Dois contextos whisper (modelo carregado 2×).
+
+### Implementado (transposto para Rust)
+- `WhisperSpeechToText`: **VAD embutido** (`enable_vad`/`set_vad_params`) e decode
+  com temperatura/entropia/suppress_nst do Perssua; VAD resolvido no `preload`.
+- `TranscriptionPipeline` reescrito: buffer de turno (60 s), **prévias sobre o
+  turno crescente** (mín 0,35 s, passo 0,75 s, 1ª em 1,2 s, idle 1 s) com **texto
+  rolante**; **final por 1 s de silêncio** (ou teto 55 s) com beam, e também pelo
+  **fim de fala do VAD do whisper** (`endedInNoise`); gate RMS.
+- Removida a porta `VoiceActivityDetector` + adapter `SileroVoiceActivityDetector`.
+- `WhisperSpeechEngineFactory`: **um contexto compartilhado** entre canais (fila
+  global mantida).
+
+### Verificação
+- **114 testes Rust** (10 de streaming reescritos/novos: 1ª prévia em 1,2 s,
+  passo/persistência, turno contínuo no teto, texto rolante, flush no stop,
+  prévia greedy × final beam, fim por VAD em ruído) + **18 frontend**.
+- `cargo clippy`/`cargo fmt --check`/`tsc` limpos. E2E JFK mantido (`--ignored`).
+- Pacotes reconstruídos: `.deb` **8,08 MiB** e AppImage **85,95 MiB**.
+
+---
+
+## 2026-10-17 — Ajustes de UI/config e compat com providers (ISS-011/012)
+
+### Referência Perssua (REA, asar de 0.27.5)
+- **Configurações em abas:** `settings.tabs` = `onboarding, api ("AI
+  Sources"), models, audio ("Audio & Screen"), permissions, features, mcp,
+  agents, shortcuts, privacy, tutorial, account, premium, help`; provider
+  mostra status **Connected/Not Connected** com "Add API Key".
+- **Parâmetro rejeitado:** `electron/utils/providerParameterErrors.js` +
+  `providerParameterContracts.js` — categorias `unsupported_parameter` **e**
+  `unsupported_value` (`invalid_value`, `unknown_parameter`…), contrato de
+  campos opcionais (temperature/top_p/seed/penalties/max_tokens) e
+  `builtInOmissions` que **não envia** `temperature` para modelos que só
+  aceitam o padrão.
+
+### Implementado (transposto para Rust/React)
+- **ISS-011:** `rejected_param` (códigos `unsupported_value`/`invalid_value` +
+  mensagens "Unsupported value"/"Only the default"/"does not support");
+  `apply_rejected_param_fallback` remiti só opcionais de amostragem;
+  `temperature_supported` pula gpt-5*/o1*/o3*/o4*. Testes com o JSON real do
+  usuário e mock 400→200.
+- **ISS-012:** `SettingsPage` em **4 abas** (Fontes de IA / Transcrição & Áudio /
+  Ajustes / Atalhos); chave configurada exibida **redactada**
+  (`•••••••·abcd`, readonly) com form só para (re)definir; `redact_secret`
+  como regra de domínio e `settings_key_preview` devolvendo apenas a máscara.
+
+### Verificação
+- **122 testes Rust** + **22 frontend** (4 do componente com IPC mockado);
+  clippy/fmt/tsc limpos.
+- Pacotes reconstruídos (`scripts/package-linux.sh deb,appimage`).
+

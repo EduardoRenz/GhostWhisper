@@ -88,6 +88,21 @@ Convenções específicas:
 - Atualize `prds/mvp/tasks/NN-task.md` e o status em `_tasks.md`.
 - Registre decisões em `prds/business-rules.md` e o histórico em `prds/memory.md`.
 
+## 6.1 Referência de produto: Perssua é a fonte de verdade
+
+- **R11.** Ao decidir **como** resolver um problema de produto/técnica, priorize a
+  solução que o **Perssua** já usa — ele é um produto maduro e validado. A única
+  transposição esperada é de **tecnologia** (Electron/JS/SQLite/whisper.cpp →
+  Tauri/Rust), nunca de comportamento.
+- **R12.** Antes de inventar um protocolo, heurística ou parâmetro novo, procure o
+  equivalente no Perssua (extraído com o REA em `Perssua-*.AppImage` →
+  `resources/app.asar`, módulos como `electron/local-whisper`). Só proponha algo
+  diferente quando houver motivo técnico explícito (ex.: captura de áudio Linux),
+  e documente o desvio.
+- **R13.** Ao transpor, mantenha **nomes e valores** observáveis do Perssua
+  (constantes, limiares, ordem de etapas) para facilitar a auditoria, adaptando
+  apenas o que não existe no Linux.
+
 ## 7. Proibições
 
 - Copiar código/asset/marca proprietária de terceiros (BR-008).

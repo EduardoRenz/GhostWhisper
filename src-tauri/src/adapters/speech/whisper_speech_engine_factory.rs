@@ -1,31 +1,38 @@
-//! Fábrica de motores de fala (VAD Silero + ASR whisper.cpp) por canal.
+//! Fábrica do motor de fala (ASR whisper.cpp) com **contexto compartilhado**.
+//!
+//! Transposto do Perssua, que mantém um único `whisper-server` para todos os
+//! canais/falantes (o modelo é carregado uma vez). Aqui, o modelo e o idioma do
+//! whisper vêm das configurações e um único `WhisperSpeechToText` é reusado
+//! enquanto não mudarem — a serialização da decodificação continua garantida por
+//! `SerialisingSpeechToText` (uma fila global).
 
 use std::sync::{Arc, Mutex};
 
 use crate::domain::settings::Settings;
-use crate::error::Result;
+use crate::error::{GhostWhisperError, Result};
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::model_store::ModelStore;
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::speech_engine_factory::SpeechEngineFactory;
 use crate::ports::speech_to_text::SpeechToText;
-use crate::ports::voice_activity::VoiceActivityDetector;
 
 use super::serialising_speech_to_text::SerialisingSpeechToText;
-use super::silero_voice_activity::SileroVoiceActivityDetector;
 use super::whisper_speech_to_text::WhisperSpeechToText;
 
-/// Cria um par VAD+ASR novo (com contexto próprio) a cada chamada.
-///
-/// O modelo e o idioma do whisper são lidos das configurações a cada criação,
-/// de modo que mudanças valem para a próxima sessão iniciada. Todos os motores
-/// compartilham uma **fila global de decodificação**, para que dois canais não
-/// disputem CPU ao mesmo tempo.
+/// Motor em cache, válido enquanto (modelo, idioma) não mudarem.
+struct CachedEngine {
+    model: String,
+    language: String,
+    asr: Arc<dyn SpeechToText>,
+}
+
+/// Cria o motor de fala, reusando o mesmo contexto entre os canais.
 pub struct WhisperSpeechEngineFactory {
     models: Arc<dyn ModelStore>,
     settings: Arc<dyn SettingsStore>,
     gate: Arc<Mutex<()>>,
     publisher: Option<Arc<dyn EventPublisher>>,
+    cached: Mutex<Option<CachedEngine>>,
 }
 
 impl WhisperSpeechEngineFactory {
@@ -36,6 +43,7 @@ impl WhisperSpeechEngineFactory {
             settings,
             gate: Arc::new(Mutex::new(())),
             publisher: None,
+            cached: Mutex::new(None),
         }
     }
 
@@ -60,16 +68,26 @@ fn engine_params(settings: &Settings) -> (String, String) {
 }
 
 impl SpeechEngineFactory for WhisperSpeechEngineFactory {
-    fn create(&self) -> Result<(Arc<dyn VoiceActivityDetector>, Arc<dyn SpeechToText>)> {
+    fn create(&self) -> Result<Arc<dyn SpeechToText>> {
         let settings = self.settings.load().unwrap_or_default();
         let (model, language) = engine_params(&settings);
 
-        let vad: Arc<dyn VoiceActivityDetector> =
-            Arc::new(SileroVoiceActivityDetector::new(Arc::clone(&self.models)));
+        let mut cache = self
+            .cached
+            .lock()
+            .map_err(|_| GhostWhisperError::Other("cache do ASR envenenado".into()))?;
+
+        // Mesmo modelo/idioma ⇒ devolve o mesmo contexto (uma carga só).
+        if let Some(engine) = cache.as_ref() {
+            if engine.model == model && engine.language == language {
+                return Ok(Arc::clone(&engine.asr));
+            }
+        }
+
         let whisper = Arc::new(WhisperSpeechToText::new(
             Arc::clone(&self.models),
-            model,
-            language,
+            model.clone(),
+            language.clone(),
             self.publisher.clone(),
         ));
         // Baixa/carrega o modelo em background e avisa a UI; enquanto isso o
@@ -79,7 +97,12 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
             whisper,
             Arc::clone(&self.gate),
         ));
-        Ok((vad, asr))
+        *cache = Some(CachedEngine {
+            model,
+            language,
+            asr: Arc::clone(&asr),
+        });
+        Ok(asr)
     }
 }
 
@@ -98,15 +121,14 @@ mod tests {
     }
 
     #[test]
-    fn creates_independent_engines_per_call() {
+    fn reuses_the_same_engine_for_same_settings() {
         let factory = factory(Settings::default());
 
-        let (vad_a, asr_a) = factory.create().expect("primeiro motor");
-        let (vad_b, asr_b) = factory.create().expect("segundo motor");
+        let asr_a = factory.create().expect("primeiro motor");
+        let asr_b = factory.create().expect("segundo motor");
 
-        // Contextos distintos (nenhum compartilhamento entre canais).
-        assert!(!Arc::ptr_eq(&vad_a, &vad_b));
-        assert!(!Arc::ptr_eq(&asr_a, &asr_b));
+        // Um contexto só, compartilhado pelos canais (Perssua: um `whisper-server`).
+        assert!(Arc::ptr_eq(&asr_a, &asr_b));
     }
 
     #[test]

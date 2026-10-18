@@ -107,7 +107,7 @@ impl SessionController for SessionService {
         let mut last_error: Option<GhostWhisperError> = None;
 
         for channel in unique {
-            let (vad, asr) = match self.engines.create() {
+            let asr = match self.engines.create() {
                 Ok(engine) => engine,
                 Err(error) => {
                     tracing::warn!("falha ao criar motor de fala ({:?}): {error}", channel);
@@ -125,7 +125,6 @@ impl SessionController for SessionService {
                 id.clone(),
                 speaker,
                 channel,
-                vad,
                 asr,
                 Arc::clone(&self.publisher),
                 Arc::clone(&self.transcriptions),
@@ -216,11 +215,8 @@ mod tests {
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
     use crate::adapters::system::system_clock::FixedClock;
     use crate::domain::audio::AudioDevice;
-    use crate::domain::transcription::{
-        SpeechQuality, SpeechSpan, TranscribedSpan, TranscriptSegment,
-    };
+    use crate::domain::transcription::{SpeechQuality, TranscribedSpan, TranscriptSegment};
     use crate::ports::speech_to_text::SpeechToText;
-    use crate::ports::voice_activity::VoiceActivityDetector;
 
     struct FakeAudioSource {
         started: AtomicBool,
@@ -258,15 +254,8 @@ mod tests {
         }
     }
 
-    struct NoSpeechVad;
-    impl VoiceActivityDetector for NoSpeechVad {
-        fn speech_segments(&self, _samples: &[f32]) -> Result<Vec<SpeechSpan>> {
-            Ok(vec![])
-        }
-    }
-
-    struct NullAsr;
-    impl SpeechToText for NullAsr {
+    struct NoSpeechAsr;
+    impl SpeechToText for NoSpeechAsr {
         fn transcribe(
             &self,
             _samples: &[f32],
@@ -278,8 +267,8 @@ mod tests {
 
     struct FakeEngineFactory;
     impl SpeechEngineFactory for FakeEngineFactory {
-        fn create(&self) -> Result<(Arc<dyn VoiceActivityDetector>, Arc<dyn SpeechToText>)> {
-            Ok((Arc::new(NoSpeechVad), Arc::new(NullAsr)))
+        fn create(&self) -> Result<Arc<dyn SpeechToText>> {
+            Ok(Arc::new(NoSpeechAsr))
         }
     }
 

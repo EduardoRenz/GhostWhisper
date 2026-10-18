@@ -106,3 +106,15 @@ uma nota de revisão.
   `WhisperSpeechToText`); dobras de teste `InMemory*`/`Fake*`.
 - **Data:** 2026-10-17
 - **Status:** Ativa
+
+## BR-015 — Perssua como fonte de decisão de produto
+- **Decisão:** ao decidir *como* resolver um problema, priorizar a solução já
+  adotada pelo **Perssua** (produto maduro e validado). A transposição é apenas de
+  tecnologia (Electron/JS/whisper.cpp → Tauri/Rust), preservando comportamento,
+  nomes e valores observáveis (limiares, ordem das etapas). Desvios só com motivo
+  técnico explícito e documentado (ex.: captura de áudio no Linux).
+- **Motivo:** reduzir risco de reinventar heurísticas piores que as de um produto
+  em produção; a referência é auditável via REA no `Perssua-*.AppImage`.
+- **Detalhes:** [`.agents/rules.md`](../.agents/rules.md) §6.1 (R11–R13).
+- **Data:** 2026-10-17
+- **Status:** Ativa

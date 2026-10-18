@@ -37,6 +37,10 @@ export const validateKey = (): Promise<string | undefined> =>
 export const providerLabel = (): Promise<string | undefined> =>
   invokeSafe<string>("settings_provider_label");
 
+/** Versão mascarada da chave ativa (`••••••••·abcd`) ou "" quando ausente. */
+export const keyPreview = (): Promise<string | undefined> =>
+  invokeSafe<string>("settings_key_preview");
+
 /** Indica se as chaves são persistidas no keyring ou só na sessão. */
 export const secretsPersistent = (): Promise<boolean | undefined> =>
   invokeSafe<boolean>("settings_secrets_persistent");

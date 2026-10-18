@@ -76,13 +76,6 @@ pub struct TranscriptSegment {
     pub is_final: bool,
 }
 
-/// Trecho de fala detectado pelo VAD (tempos em ms relativos ao buffer).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SpeechSpan {
-    pub start_ms: i64,
-    pub end_ms: i64,
-}
-
 /// Texto transcrito pelo ASR (tempos em ms relativos ao trecho enviado).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscribedSpan {
