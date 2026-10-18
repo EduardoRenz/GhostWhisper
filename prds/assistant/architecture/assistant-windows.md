@@ -168,13 +168,23 @@ SuggestionsWindow → assistant_modes_list
 
 - `tauri.conf.json` declara `summary` e `suggestions` com `visible: false`,
   `decorations: false`, `transparent: true`, `alwaysOnTop: true`,
-  `skipTaskbar: true`, `resizable: false`.
+  `skipTaskbar: true`, `resizable: true`, `minWidth: 320`, `minHeight: 240`.
 - `summary_open` / `suggestions_open` mostram e focam; emitem `panel_opened`.
 - `panel_hide` esconde e emite `panel_hidden`; o `CloseRequested` nativo também
   esconde em vez de destruir.
 - `panel_start_drag` chama `start_dragging()` na janela chamadora.
-- Posições persistem em `Settings.summary_position` / `suggestions_position` por
-  um tracker no composition root (mesmo padrão do overlay).
+- **Resize sem moldura:** como uma janela sem decoração não tem bordas para o
+  gerenciador de janelas pegar, o `PanelFrame` renderiza `ResizeHandles` (8 alças
+  invisíveis nas bordas/cantos) que chamam
+  `getCurrentWindow().startResizeDragging(dir)` — permissão
+  `core:window:allow-start-resize-dragging` em `capabilities/default.json`. Em
+  **X11/XWayland** funciona; no **Wayland nativo** depende do compositor e pode
+  não funcionar (BR-007).
+- Posições persistem em `Settings.summary_position`/`suggestions_position` e
+  tamanhos em `Settings.summary_size`/`suggestions_size` (px físicos), por um
+  tracker no composition root que roda enquanto a janela está visível; o boot
+  reaplica ambos. O CSS mínimo (`.panel-shell`, `min-width: 0`, `@media
+  (max-width: 420px)`) evita layout degenerado no tamanho mínimo.
 - As labels novas entram em `src-tauri/capabilities/default.json`.
 
 ## 7. Prompt contracts

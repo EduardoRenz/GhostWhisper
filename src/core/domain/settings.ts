@@ -58,6 +58,10 @@ export interface Settings {
   summary_position: [number, number] | null;
   /** Posição da janela de sugestões. */
   suggestions_position: [number, number] | null;
+  /** Tamanho (px físicos) da janela de resumo. */
+  summary_size: [number, number] | null;
+  /** Tamanho (px físicos) da janela de sugestões. */
+  suggestions_size: [number, number] | null;
 }
 
 /** Providers na ordem de exibição. */
@@ -109,6 +113,8 @@ export const defaultSettings = (): Settings => ({
   suggestion_interval_secs: 20,
   summary_position: null,
   suggestions_position: null,
+  summary_size: null,
+  suggestions_size: null,
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */

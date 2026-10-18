@@ -139,12 +139,22 @@ pub struct Settings {
     /// Posição da janela de sugestões.
     #[serde(default)]
     pub suggestions_position: Option<(i32, i32)>,
+    /// Tamanho (px físicos) da janela de resumo.
+    #[serde(default)]
+    pub summary_size: Option<(u32, u32)>,
+    /// Tamanho (px físicos) da janela de sugestões.
+    #[serde(default)]
+    pub suggestions_size: Option<(u32, u32)>,
 }
 
 /// Intervalo mínimo aceito para atualizações automáticas (segundos).
 pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
 /// Intervalo máximo aceito para atualizações automáticas (segundos).
 pub const MAX_AUTO_INTERVAL_SECS: u32 = 120;
+/// Largura mínima dos painéis (paridade com o `tauri.conf.json`).
+pub const MIN_PANEL_WIDTH: u32 = 320;
+/// Altura mínima dos painéis (paridade com o `tauri.conf.json`).
+pub const MIN_PANEL_HEIGHT: u32 = 240;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -168,6 +178,8 @@ impl Default for Settings {
             suggestion_interval_secs: default_suggestion_interval(),
             summary_position: None,
             suggestions_position: None,
+            summary_size: None,
+            suggestions_size: None,
         }
     }
 }
@@ -186,6 +198,11 @@ fn default_summary_interval() -> u32 {
 
 fn default_suggestion_interval() -> u32 {
     20
+}
+
+/// Traz um tamanho de painel para o mínimo permitido.
+fn clamp_panel_size(size: Option<(u32, u32)>) -> Option<(u32, u32)> {
+    size.map(|(width, height)| (width.max(MIN_PANEL_WIDTH), height.max(MIN_PANEL_HEIGHT)))
 }
 
 /// Ganho de microfone padrão (Perssua: `local_whisper_user_mic_gain = 8`).
@@ -282,6 +299,8 @@ impl Settings {
         self.suggestion_interval_secs = self
             .suggestion_interval_secs
             .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
+        self.summary_size = clamp_panel_size(self.summary_size);
+        self.suggestions_size = clamp_panel_size(self.suggestions_size);
         self
     }
 
@@ -477,6 +496,35 @@ mod tests {
         assert_eq!(dirty.summary_interval_secs, MIN_AUTO_INTERVAL_SECS);
         assert_eq!(dirty.suggestion_interval_secs, MAX_AUTO_INTERVAL_SECS);
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_clamps_panel_size_to_the_minimum() {
+        let dirty = Settings {
+            summary_size: Some((100, 100)),
+            suggestions_size: Some((900, 700)),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            dirty.summary_size,
+            Some((MIN_PANEL_WIDTH, MIN_PANEL_HEIGHT))
+        );
+        assert_eq!(dirty.suggestions_size, Some((900, 700)));
+        assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_settings_get_panel_size_defaults() {
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json
+            .replace("\"summary_size\":null,", "")
+            .replace("\"suggestions_size\":null,", "");
+        assert!(!legacy.contains("summary_size"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert_eq!(parsed.summary_size, None);
+        assert_eq!(parsed.suggestions_size, None);
+        assert!(parsed.validate().is_ok());
     }
 
     #[test]

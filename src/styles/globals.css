@@ -1118,17 +1118,97 @@ body,
 
 /* Janelas de painel (resumo e sugestões) --------------------------------- */
 
+.panel-shell {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
-  margin: 6px;
+  margin: 0;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
   background: rgba(12, 12, 16, 0.94);
   color: var(--ghostwhisper-text);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+}
+
+/* Alças de resize (janelas sem moldura) ---------------------------------- */
+
+.panel__resize {
+  position: absolute;
+  z-index: 20;
+}
+
+.panel__resize--n {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.panel__resize--s {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.panel__resize--w {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.panel__resize--e {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.panel__resize--nw {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.panel__resize--ne {
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.panel__resize--sw {
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.panel__resize--se {
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
 }
 
 .panel__header {
@@ -1334,9 +1414,52 @@ body,
 }
 
 .panel__history-text {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.panel__history-time,
+.panel__history-meta {
+  flex: 0 0 auto;
+}
+
+/* Responsivo: janelas estreitas ------------------------------------------ */
+
+.markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 420px) {
+  .panel__header {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.35rem;
+  }
+
+  .panel__actions {
+    gap: 0.25rem;
+  }
+
+  .panel__button,
+  .panel__toggle,
+  .panel__select {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .panel__body {
+    padding: 0.4rem;
+  }
+
+  .panel__history-meta {
+    display: none;
+  }
 }
 
 /* Agentes personalizados nas configurações --------------------------------- */

@@ -347,6 +347,15 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         }
     }
+    // ...e o último tamanho (px físicos) do painel.
+    for (label, size) in [
+        ("summary", current_settings.summary_size),
+        ("suggestions", current_settings.suggestions_size),
+    ] {
+        if let (Some(window), Some((width, height))) = (app.get_webview_window(label), size) {
+            let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+        }
+    }
 
     // Motor de fala por canal: cada pipeline recebe seu próprio contexto.
     // Modelo e idioma do whisper vêm das configurações (lidas a cada sessão).
@@ -483,19 +492,34 @@ fn spawn_panel_position_tracker(app: tauri::AppHandle, label: &'static str) {
         let Ok(position) = window.outer_position() else {
             continue;
         };
+        let Ok(size) = window.inner_size() else {
+            continue;
+        };
 
         let state = app.state::<state::AppState>();
         let Ok(mut settings) = state.settings.load() else {
             continue;
         };
         let current = (position.x, position.y);
-        let slot = match label {
-            "summary" => &mut settings.summary_position,
-            "suggestions" => &mut settings.suggestions_position,
+        let current_size = (size.width, size.height);
+        let (position_slot, size_slot) = match label {
+            "summary" => (&mut settings.summary_position, &mut settings.summary_size),
+            "suggestions" => (
+                &mut settings.suggestions_position,
+                &mut settings.suggestions_size,
+            ),
             _ => continue,
         };
-        if *slot != Some(current) {
-            *slot = Some(current);
+        let mut changed = false;
+        if *position_slot != Some(current) {
+            *position_slot = Some(current);
+            changed = true;
+        }
+        if *size_slot != Some(current_size) {
+            *size_slot = Some(current_size);
+            changed = true;
+        }
+        if changed {
             let _ = state.settings.save(&settings);
         }
     });

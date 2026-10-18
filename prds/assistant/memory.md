@@ -13,7 +13,7 @@ Histórico deste PRD no formato fixo do
 
 ## 2026-10-18 — PRD Assistant: resumo vivo e sugestões por agentes
 
-- **IDs:** BR-023, BR-024, BR-025, BR-026, T01–T07
+- **IDs:** BR-023, BR-024, BR-025, BR-026, T01–T08
 - **Refs:** [`prd.md`](prd.md), [`issues.md`](issues.md),
   [`architecture/assistant-windows.md`](architecture/assistant-windows.md),
   [`tasks/_tasks.md`](tasks/_tasks.md)
@@ -67,13 +67,17 @@ As duas devem gerar e renderizar Markdown, com código formatado e colorido.
 - **T07** histórico de versões do resumo **em memória** (teto 20) na janela:
   hora + título do tópico, leitura congelada com “Voltar ao atual”; `summaryTopic`
   como fallback de título.
+- **T08** janelas redimensionáveis: `resizable: true` + mínimo 320×240, alças
+  próprias (`ResizeHandles` → `startResizeDragging`) e permissão
+  `core:window:allow-start-resize-dragging`; CSS responsivo; tamanho persistido em
+  `Settings.summary_size`/`suggestions_size` e reaplicado no boot.
 
 ### Verificação
-- **280 testes Rust** (+63; 8 `ignored`) · `cargo clippy --all-targets` e
+- **282 testes Rust** (+65; 8 `ignored`) · `cargo clippy --all-targets` e
   `cargo fmt --check` limpos · `cargo build` ok.
-- **115 testes frontend** (+41) · `tsc --noEmit` limpo · `pnpm build` ok.
-- Pacotes: `pnpm tauri build` gerou `.deb` (8,65 MiB) e AppImage (86,44 MiB) em
-  `src-tauri/target/release/bundle/`.
+- **118 testes frontend** (+44) · `tsc --noEmit` limpo · `pnpm build` ok.
+- Pacotes: `.deb` (8,65 MiB) e AppImage (86,44 MiB) em
+  `src-tauri/target/release/bundle/` (reconstruir após a T08).
 
 ### Pendências
 - Captura de tela/OCR continua fora de escopo: no modo LeetCode o enunciado vem

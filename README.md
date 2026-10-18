@@ -196,6 +196,11 @@ Duas **janelas próprias** (movíveis e sempre no topo) complementam o overlay:
   áudio-only).
 - **Código e Markdown:** as respostas são renderizadas com títulos, listas,
   tabelas e **código colorido** (com botão copiar); HTML bruto não é executado.
+- **Janelas:** as duas são **sem moldura e arrastáveis** pelo cabeçalho. Redimensione
+  pelas bordas/cantos (alças próprias, mínimo 320×240) e o **tamanho e a posição
+  são lembrados** entre reinícios. Em **Wayland nativo** o redimensionamento por
+  alça pode não funcionar (em X11/XWayland funciona); veja a limitação em
+  [`prds/assistant/architecture/assistant-windows.md`](prds/assistant/architecture/assistant-windows.md).
 - **Custo:** o automático só roda com a janela aberta e a sessão gravando; dá para
   pausar cada janela no cabeçalho e ajustar a cadência em *Configurações →
   Assistente*. Os agentes personalizados (nome, prompts e contexto) também ficam

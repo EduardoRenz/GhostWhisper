@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–07 `CONCLUDED`)
+- **Status:** Implementado (tasks 01–08 `CONCLUDED`)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/assistant-windows.md`](architecture/assistant-windows.md),
@@ -90,6 +90,9 @@ outro monitor.
   leitura — as atualizações continuam entrando na lista sem trocar o que está na
   tela — e **Voltar ao atual** retorna ao resumo ao vivo. Trocar de sessão limpa o
   histórico.
+- **CA-01.12** A janela é **redimensionável** pelas bordas/cantos (alças próprias,
+  já que não tem moldura), com mínimo de 320×240, e o **tamanho é lembrado** junto
+  da posição entre reinícios.
 
 ### US-02 — Janela de Sugestões com seleção de agentes
 
@@ -117,6 +120,8 @@ e me diga o que falar/fazer, no estilo do agente escolhido.
   sugestões geradas na sessão de uso.
 - **CA-02.10** Há uma caixa **Contexto extra** para colar enunciado/código,
   enviada como fonte suplementar (não como instrução).
+- **CA-02.11** A janela é **redimensionável** (alças próprias) com mínimo de
+  320×240 e o **tamanho é lembrado** entre reinícios, como a de resumo.
 
 ### US-03 — Agentes embutidos com comportamento do Perssua
 
