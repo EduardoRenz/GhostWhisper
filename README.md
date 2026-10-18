@@ -148,6 +148,23 @@ Remapeáveis na tela de configurações; conflitos são reportados sem derrubar 
   (input-shape por região no X11).
 - **Teste de áudio:** na tela de configurações, teste microfone/áudio do sistema
   e veja o nível em tempo real antes de iniciar uma sessão.
+- **Pausar / Retomar:** "Pausar" suspende a captura **sem encerrar a sessão** — as
+  mensagens ficam na tela e o relógio continua de onde parou. "Nova sessão" encerra
+  e começa outra; "Parar" encerra (para voltar numa sessão encerrada, use
+  *Histórico → Continuar sessão*).
+- **Trocar de canal:** o seletor (Ambos / Microfone / Sistema) funciona **sempre**,
+  inclusive com a sessão gravando ou pausada — a troca não encerra a sessão nem
+  perde a linha temporal.
+- **Ouvir minha voz:** no teste de áudio (configurações), o toggle reproduz o
+  microfone com ~0,4 s de atraso — use **fone de ouvido** (com caixa de som o
+  retorno realimenta o microfone). Você ouve exatamente o que o ASR recebe.
+- **Linha temporal:** cada fala (e cada sugestão da IA) mostra o tempo desde o
+  início da sessão (`mm:ss`).
+- **Histórico:** na aba *Histórico* do painel expandido ficam as sessões
+  anteriores (com título, data e duração). Dá para **continuar** uma sessão,
+  renomear, excluir, abrir a linha temporal completa (falas + sugestões) e
+  **exportar em Markdown** — pelo diálogo nativo "salvar como" ou copiando para a
+  área de transferência.
 
 ## Privacidade
 
@@ -156,7 +173,10 @@ Remapeáveis na tela de configurações; conflitos são reportados sem derrubar 
 - Chamadas de LLM vão direto do seu computador ao provider que você configurou.
 
 > **Limitação conhecida (Linux):** a exclusão de janela do compartilhamento de tela
-> não é garantida pelo protocolo gráfico (BR-006). Veja a análise e a decisão em
+> não é garantida pelo protocolo gráfico (BR-006). O **modo stealth** sai da barra
+> de tarefas e do alt-tab, mas **não esconde o overlay de uma captura de tela**: não
+> existe API para isso no X11/Wayland. Em reuniões, compartilhe **uma janela** em vez
+> da tela inteira, ou deixe o overlay em outro monitor. Veja a análise e a decisão em
 > [`prds/mvp/architecture/wayland-spike.md`](prds/mvp/architecture/wayland-spike.md).
 
 ## Licença

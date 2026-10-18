@@ -14,26 +14,33 @@ import { useLiveTranscription } from "../../core/application/useLiveTranscriptio
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useTranslation } from "../../core/application/useTranslation";
+import { ALL_CHANNELS } from "../../core/domain/transcript";
 import { ActionBar } from "./ActionBar";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 import { LevelMeters } from "./LevelMeters";
+import { HistoryPanel } from "../history/HistoryPanel";
 import { TranscriptView } from "../transcript/TranscriptView";
 import { TranslationView } from "../translation/TranslationView";
 import { InsightsPanel } from "../insights/InsightsPanel";
 
+/** Visão mostrada no painel expandido. */
+type PanelView = "live" | "history";
+
 /**
  * Casca do overlay: ActionBar sempre visível e painel expandido (transcrição,
- * tradução e insights). Apenas elementos `[data-interactive]` capturam o mouse;
- * o restante é click-through (input-shape por região no X11).
+ * tradução, insights e histórico). Apenas elementos `[data-interactive]`
+ * capturam o mouse; o restante é click-through (input-shape por região no X11).
  */
 export function Overlay() {
   const [surface, setSurface] = useState<Surface>("actionbar");
+  const [view, setView] = useState<PanelView>("live");
   const [stealth, setStealth] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const { segments } = useLiveTranscription();
+  const { state, busy, error, start, pause, resume, stop, continueSession, setChannels } =
+    useSessionState();
+  const { segments } = useLiveTranscription(state.session_id);
   const asrStatus = useAsrStatus();
   const levels = useAudioLevel();
-  const { state, busy, error, start, stop } = useSessionState();
   const { settings } = useSettings();
   // Destino "auto" ou igual à origem = não traduz.
   const translationApplies =
@@ -44,23 +51,39 @@ export function Overlay() {
   const pushedInsight = useInsightFeed();
   useInteractiveRegions();
 
+  const expanded = surface === "expanded" || surface === "expanded-tall";
+
+  /** Aplica a superfície, respeitando a visão escolhida no painel. */
+  const changeSurface = (next: Surface) => {
+    const resolved: Surface =
+      next === "expanded" && view === "history" ? "expanded-tall" : next;
+    setSurface(resolved);
+    void setSurfaceIpc(resolved);
+  };
+
+  const showLive = () => {
+    setView("live");
+    changeSurface("expanded");
+  };
+
+  const showHistory = () => {
+    setView("history");
+    changeSurface("expanded-tall");
+  };
+
   // Sincroniza o stealth com as settings persistidas.
   useEffect(() => {
     setStealth(settings.stealth);
   }, [settings.stealth]);
 
-  // Insight por atalho: abre o painel expandido para exibi-lo.
+  // Insight por atalho: abre o painel de transcrição ao vivo para exibi-lo.
   useEffect(() => {
     if (pushedInsight) {
-      setSurface("expanded");
+      setView("live");
       void setSurfaceIpc("expanded");
+      setSurface("expanded");
     }
   }, [pushedInsight]);
-
-  const changeSurface = (next: Surface) => {
-    setSurface(next);
-    void setSurfaceIpc(next);
-  };
 
   const toggleStealth = () => {
     const next = !stealth;
@@ -68,7 +91,7 @@ export function Overlay() {
     void setStealthIpc(next);
   };
 
-  const onOpenSettings = async () => {
+  const openSettings = async () => {
     setSettingsError(null);
     try {
       await openSettingsWindow();
@@ -77,8 +100,9 @@ export function Overlay() {
     }
   };
 
-  const onStartDrag = () => {
-    void startDragIpc();
+  const onContinueSession = (id: string) => {
+    void continueSession(id, ALL_CHANNELS);
+    showLive();
   };
 
   return (
@@ -89,32 +113,63 @@ export function Overlay() {
         stealth={stealth}
         onToggleStealth={toggleStealth}
         listening={state.listening}
+        paused={state.paused}
+        channels={state.channels}
         busy={busy}
         onStart={(channels) => void start(channels)}
+        onPause={() => void pause()}
+        onResume={() => void resume()}
         onStop={() => void stop()}
-        onOpenSettings={() => void onOpenSettings()}
-        onStartDrag={onStartDrag}
+        onChannelsChange={(channels) => void setChannels(channels)}
+        onOpenSettings={() => void openSettings()}
+        onStartDrag={() => void startDragIpc()}
       />
 
-      {surface === "expanded" && (
+      {expanded && (
         <div className="overlay__panel">
-          <LevelMeters
-            levels={levels}
-            channels={state.channels}
-            listening={state.listening}
-          />
-          <TranscriptView segments={segments} />
-          {translationApplies && (
-            <TranslationView
-              segments={segments}
-              translations={translations}
-              targetLanguage={settings.target_language}
+          <div className="overlay__tabs" data-interactive>
+            <button
+              type="button"
+              className={`overlay__tab${view === "live" ? " overlay__tab--active" : ""}`}
+              onClick={showLive}
+            >
+              Ao vivo
+            </button>
+            <button
+              type="button"
+              className={`overlay__tab${view === "history" ? " overlay__tab--active" : ""}`}
+              onClick={showHistory}
+            >
+              Histórico
+            </button>
+          </div>
+
+          {view === "history" ? (
+            <HistoryPanel
+              activeSessionId={state.session_id}
+              onContinue={onContinueSession}
             />
+          ) : (
+            <>
+              <LevelMeters
+                levels={levels}
+                channels={state.channels}
+                listening={state.listening && !state.paused}
+              />
+              <TranscriptView segments={segments} />
+              {translationApplies && (
+                <TranslationView
+                  segments={segments}
+                  translations={translations}
+                  targetLanguage={settings.target_language}
+                />
+              )}
+              <InsightsPanel
+                sessionId={state.session_id}
+                externalSuggestion={pushedInsight}
+              />
+            </>
           )}
-          <InsightsPanel
-            sessionId={state.session_id}
-            externalInsight={pushedInsight}
-          />
         </div>
       )}
 

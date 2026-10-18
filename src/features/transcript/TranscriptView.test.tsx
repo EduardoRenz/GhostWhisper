@@ -34,4 +34,18 @@ describe("TranscriptView", () => {
     expect(screen.getByText("olá")).toBeDefined();
     expect(screen.getByText("oi")).toBeDefined();
   });
+
+  it("mostra o tempo de cada fala desde o início da sessão", () => {
+    render(
+      <TranscriptView
+        segments={[
+          { ...segment("1", "ME", "olá"), start_ms: 65_000 },
+          { ...segment("2", "THEY", "oi"), start_ms: 3_725_000 },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("01:05")).toBeDefined();
+    expect(screen.getByText("1:02:05")).toBeDefined();
+  });
 });

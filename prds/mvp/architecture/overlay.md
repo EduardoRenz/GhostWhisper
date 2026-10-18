@@ -54,13 +54,27 @@ janela, mas o **X11** expõe a extensão **SHAPE** (`ShapeRectangles` com
 - No Wayland o polling global de cursor é restrito → comportamento degradado
   (documentado). Foco do MVP é X11/XWayland (BR-007).
 
-## 4. Discretude ("stealth" básico no MVP)
+## 4. Discretude ("stealth") — revisado na task 19
 
-- `set_skip_taskbar(true)` e título vazio quando stealth ativo.
-- Atalho global para mostrar/ocultar.
-- **Invisibilidade no compartilhamento de tela não é garantida** (BR-006). O spike
-  da T10 avalia: (a) overlay em **output virtual dedicado**; (b) alinhamento com
-  portal de captura. Nada de promessa de paridade com macOS/Windows.
+- `set_skip_taskbar(true)` e título vazio quando stealth ativo, **reaplicados** em
+  `show()` e ao trocar de superfície (redimensionar remapeia a janela e alguns
+  compositores readicionam a barra de tarefas).
+- Por paridade com o Perssua (`setContentProtection`), também chamamos
+  `set_content_protected` — que no **Linux é no-op** (a API só tem efeito no
+  macOS/Windows). Não somos piores que a referência de produto; também não estamos
+  prometendo o que o Linux não faz.
+- **Invisibilidade no compartilhamento de tela não é garantida** (BR-006). Não
+  existe propriedade de janela que a exclua da captura no X11/XWayland: o Chrome
+  (Meet) captura por XComposite/portal PipeWire e o overlay entra na imagem.
+  - **Único caminho real no Linux:** KDE Plasma **6.6+** ("Hide from Screencast";
+    regra de janela KWin "Exclude from screencast" e `PlasmaWindowInterface`
+    `excludeFromCaptureRequested`). Por compositor — opt-in futuro.
+  - **Mitigações de uso** (documentadas na UI e no README): compartilhar **uma
+    janela** na reunião (o overlay fica de fora por não ser a fonte) ou mover o
+    overlay para um **monitor que não está sendo compartilhado**.
+- Atalho global para mostrar/ocultar; o spike da T10 avaliou (a) overlay em
+  **output virtual dedicado** (só wlroots) e (b) alinhamento com o portal de
+  captura — ambos descartados para o MVP.
 
 ## 5. Posicionamento e multi-monitor
 

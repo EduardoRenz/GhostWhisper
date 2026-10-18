@@ -1,4 +1,14 @@
-//! Caso de uso: iniciar/encerrar sessões de transcrição.
+//! Caso de uso: iniciar/encerrar/pausar/continuar sessões de transcrição.
+//!
+//! Conceito de sessão (BR-019): a sessão é a unidade de continuidade. Pausar
+//! suspende a captura e **mantém a sessão aberta** (mesmo id); retomar volta a
+//! capturar nela; continuar reativa uma sessão encerrada. Só `start` cria um id
+//! novo. Os timestamps dos segmentos são relativos ao início da sessão, então a
+//! linha temporal segue de onde parou (transposto do Perssua: `pause/resume` da
+//! prévia de transcrição + `DatabaseManager.resumeSession`).
+//!
+//! Os **canais capturados podem ser trocados a qualquer momento**
+//! ([`set_channels`](SessionController::set_channels)) sem encerrar a sessão.
 
 use std::sync::{Arc, Mutex};
 
@@ -30,14 +40,43 @@ pub struct SessionService {
     active: Mutex<Option<ActiveSession>>,
 }
 
-struct ActiveSession {
-    id: String,
-    channels: Vec<ActiveChannel>,
-}
-
+/// Canal sendo captado agora: porta de áudio + pipeline de transcrição.
+#[derive(Clone)]
 struct ActiveChannel {
     channel: AudioChannel,
     pipeline: Arc<TranscriptionPipeline>,
+}
+
+/// Sessão aberta (gravando ou pausada).
+struct ActiveSession {
+    id: String,
+    /// Início da sessão (relógio de parede) — preservado ao retomar.
+    started_at_ms: i64,
+    /// Canais **desejados** (mantidos durante a pausa).
+    channels: Vec<AudioChannel>,
+    /// Canais captando agora. **Vazio enquanto pausada** (é o que define a pausa).
+    live: Vec<ActiveChannel>,
+}
+
+impl ActiveSession {
+    fn paused(&self) -> bool {
+        self.live.is_empty()
+    }
+
+    /// Canais exibidos na UI: os que captam agora ou, na pausa, os escolhidos.
+    fn labels(&self) -> Vec<String> {
+        if self.paused() {
+            return self
+                .channels
+                .iter()
+                .map(|channel| channel.as_str().to_string())
+                .collect();
+        }
+        self.live
+            .iter()
+            .map(|entry| entry.channel.as_str().to_string())
+            .collect()
+    }
 }
 
 impl SessionService {
@@ -70,12 +109,9 @@ impl SessionService {
             AudioChannel::System => &self.system_audio,
         }
     }
-}
 
-impl SessionController for SessionService {
-    fn start(&self, channels: &[AudioChannel]) -> Result<String> {
-        self.stop()?;
-
+    /// Valida e deduplica os canais pedidos.
+    fn normalize_channels(channels: &[AudioChannel]) -> Result<Vec<AudioChannel>> {
         let mut unique: Vec<AudioChannel> = Vec::new();
         for channel in channels {
             if !unique.contains(channel) {
@@ -87,13 +123,127 @@ impl SessionController for SessionService {
                 "selecione ao menos um canal de áudio".to_string(),
             ));
         }
+        Ok(unique)
+    }
+
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<ActiveSession>>> {
+        self.active
+            .lock()
+            .map_err(|_| GhostWhisperError::Other("lock de sessão envenenado".to_string()))
+    }
+
+    fn emit(
+        &self,
+        listening: bool,
+        paused: bool,
+        session_id: Option<String>,
+        channels: Vec<String>,
+    ) {
+        self.publisher.emit_session_state(&SessionStateEvent {
+            listening,
+            paused,
+            session_id,
+            channels,
+        });
+    }
+
+    /// Publica o estado de uma sessão aberta (gravando ou pausada).
+    fn emit_active(&self, active: &ActiveSession) {
+        self.emit(
+            true,
+            active.paused(),
+            Some(active.id.clone()),
+            active.labels(),
+        );
+    }
+
+    /// Publica o estado "sem sessão".
+    fn emit_idle(&self) {
+        self.emit(false, false, None, Vec::new());
+    }
+
+    /// Origem de tempo (ms) desta captura dentro da sessão.
+    fn origin_ms(&self, started_at_ms: i64) -> i64 {
+        (self.clock.now_ms() - started_at_ms).max(0)
+    }
+
+    /// Monta **um** canal (motor de fala + pipeline + captura).
+    ///
+    /// Devolve `None` quando o canal não pôde ser aberto (já registrado no log);
+    /// quem chama decide se isso é fatal (nenhum canal) ou parcial.
+    fn open_channel(
+        &self,
+        session_id: &str,
+        origin_ms: i64,
+        channel: AudioChannel,
+    ) -> Option<ActiveChannel> {
+        let asr = match self.engines.create() {
+            Ok(engine) => engine,
+            Err(error) => {
+                tracing::warn!("falha ao criar motor de fala ({channel:?}): {error}");
+                return None;
+            }
+        };
+
+        let speaker = match channel {
+            AudioChannel::Microphone => Speaker::Me,
+            AudioChannel::System => Speaker::They,
+        };
+
+        let pipeline = Arc::new(
+            TranscriptionPipeline::new(
+                session_id.to_string(),
+                speaker,
+                channel,
+                asr,
+                Arc::clone(&self.publisher),
+                Arc::clone(&self.transcriptions),
+            )
+            .with_timings(TurnTimings::from_env())
+            .with_time_origin(origin_ms),
+        )
+        .start();
+
+        let consumer: Arc<dyn AudioConsumer> = pipeline.clone();
+        match self.source(channel).start(None, consumer) {
+            Ok(()) => Some(ActiveChannel { channel, pipeline }),
+            Err(error) => {
+                tracing::warn!("falha ao capturar {channel:?}: {error}");
+                pipeline.stop();
+                None
+            }
+        }
+    }
+
+    /// Para a captura de um canal (pipeline + fonte).
+    fn close_channel(&self, entry: &ActiveChannel) {
+        entry.pipeline.stop();
+        if let Err(error) = self.source(entry.channel).stop() {
+            tracing::warn!("falha ao parar {:?}: {error}", entry.channel);
+        }
+    }
+
+    /// Para a captura da sessão ativa (sem encerrá-la).
+    fn stop_capture(&self, active: &ActiveSession) {
+        for entry in &active.live {
+            self.close_channel(entry);
+        }
+    }
+}
+
+impl SessionController for SessionService {
+    fn start(&self, channels: &[AudioChannel]) -> Result<String> {
+        // Uma nova sessão encerra a anterior (pausada ou não).
+        self.stop()?;
+        let channels = Self::normalize_channels(channels)?;
 
         let id = Uuid::new_v4().to_string();
+        let started_at_ms = self.clock.now_ms();
 
         // Persiste a sessão antes de começar a capturar.
         self.sessions.create(&Session {
             id: id.clone(),
-            started_at_ms: self.clock.now_ms(),
+            started_at_ms,
             ended_at_ms: None,
             provider: "local".to_string(),
             model: None,
@@ -104,102 +254,252 @@ impl SessionController for SessionService {
             status: SessionStatus::Active,
         })?;
 
-        let mut active_channels: Vec<ActiveChannel> = Vec::new();
-        let mut last_error: Option<GhostWhisperError> = None;
-
-        for channel in unique {
-            let asr = match self.engines.create() {
-                Ok(engine) => engine,
-                Err(error) => {
-                    tracing::warn!("falha ao criar motor de fala ({:?}): {error}", channel);
-                    last_error = Some(error);
-                    continue;
-                }
-            };
-
-            let speaker = match channel {
-                AudioChannel::Microphone => Speaker::Me,
-                AudioChannel::System => Speaker::They,
-            };
-
-            let pipeline = Arc::new(
-                TranscriptionPipeline::new(
-                    id.clone(),
-                    speaker,
-                    channel,
-                    asr,
-                    Arc::clone(&self.publisher),
-                    Arc::clone(&self.transcriptions),
-                )
-                .with_timings(TurnTimings::from_env()),
-            )
-            .start();
-
-            let consumer: Arc<dyn AudioConsumer> = pipeline.clone();
-            match self.source(channel).start(None, consumer) {
-                Ok(()) => active_channels.push(ActiveChannel { channel, pipeline }),
-                Err(error) => {
-                    tracing::warn!("falha ao capturar {:?}: {error}", channel);
-                    pipeline.stop();
-                    last_error = Some(error);
-                }
-            }
-        }
-
-        if active_channels.is_empty() {
-            // Não deixe uma sessão órfã aberta.
-            let _ = self.sessions.end(&id, self.clock.now_ms());
-            return Err(last_error.unwrap_or_else(|| {
-                GhostWhisperError::Other("falha ao iniciar áudio".to_string())
-            }));
-        }
-
-        let channel_labels: Vec<String> = active_channels
+        let origin_ms = self.origin_ms(started_at_ms);
+        tracing::info!(session_id = id, origin_ms, channels = ?channels, "sessão iniciada");
+        let live: Vec<ActiveChannel> = channels
             .iter()
-            .map(|active| active.channel.as_str().to_string())
+            .filter_map(|channel| self.open_channel(&id, origin_ms, *channel))
             .collect();
 
-        let mut guard = self
-            .active
-            .lock()
-            .map_err(|_| GhostWhisperError::Other("lock de sessão envenenado".to_string()))?;
-        *guard = Some(ActiveSession {
+        if live.is_empty() {
+            // Não deixe uma sessão órfã aberta.
+            let _ = self.sessions.end(&id, self.clock.now_ms());
+            return Err(GhostWhisperError::Other(
+                "falha ao iniciar áudio".to_string(),
+            ));
+        }
+
+        let active = ActiveSession {
             id: id.clone(),
-            channels: active_channels,
-        });
-        drop(guard);
-
-        self.publisher.emit_session_state(&SessionStateEvent {
-            listening: true,
-            session_id: Some(id.clone()),
-            channels: channel_labels,
-        });
-
+            started_at_ms,
+            channels,
+            live,
+        };
+        self.emit_active(&active);
+        {
+            let mut guard = self.lock()?;
+            *guard = Some(active);
+        }
         Ok(id)
     }
 
     fn stop(&self) -> Result<()> {
-        let active = self
-            .active
-            .lock()
-            .map_err(|_| GhostWhisperError::Other("lock de sessão envenenado".to_string()))?
-            .take();
-
+        let active = self.lock()?.take();
         if let Some(active) = active {
+            self.stop_capture(&active);
+            // Na pausa as fontes já pararam; parar de novo é idempotente.
             for channel in &active.channels {
-                channel.pipeline.stop();
-                if let Err(error) = self.source(channel.channel).stop() {
-                    tracing::warn!("falha ao parar {:?}: {error}", channel.channel);
-                }
+                let _ = self.source(*channel).stop();
             }
             self.sessions.end(&active.id, self.clock.now_ms())?;
-            self.publisher.emit_session_state(&SessionStateEvent {
-                listening: false,
-                session_id: None,
-                channels: Vec::new(),
-            });
+            self.emit_idle();
         }
         Ok(())
+    }
+
+    fn pause(&self) -> Result<()> {
+        let (id, channels, live) = {
+            let mut guard = self.lock()?;
+            let Some(active) = guard.as_mut() else {
+                return Ok(());
+            };
+            if active.paused() {
+                return Ok(());
+            }
+            (
+                active.id.clone(),
+                active.channels.clone(),
+                std::mem::take(&mut active.live),
+            )
+        };
+
+        // Fora do lock: `pipeline.stop()` fecha o turno em aberto e pode aguardar
+        // o passe final (até 20 s) — nada de segurar o estado da sessão nisso.
+        for entry in &live {
+            self.close_channel(entry);
+        }
+
+        tracing::info!(session_id = id, "sessão pausada (sessão segue aberta)");
+        let labels = channels
+            .iter()
+            .map(|channel| channel.as_str().to_string())
+            .collect();
+        self.emit(true, true, Some(id), labels);
+        Ok(())
+    }
+
+    fn resume(&self) -> Result<()> {
+        let snapshot = {
+            let guard = self.lock()?;
+            match guard.as_ref() {
+                Some(active) if active.paused() => Some((
+                    active.id.clone(),
+                    active.started_at_ms,
+                    active.channels.clone(),
+                )),
+                _ => None,
+            }
+        };
+        let Some((id, started_at_ms, channels)) = snapshot else {
+            return Ok(());
+        };
+
+        let origin_ms = self.origin_ms(started_at_ms);
+        let live: Vec<ActiveChannel> = channels
+            .iter()
+            .filter_map(|channel| self.open_channel(&id, origin_ms, *channel))
+            .collect();
+
+        let mut missing = false;
+        let labels = {
+            let mut guard = self.lock()?;
+            match guard.as_mut() {
+                Some(active) => {
+                    active.live = live.clone();
+                    active.labels()
+                }
+                None => {
+                    missing = true;
+                    Vec::new()
+                }
+            }
+        };
+        if missing {
+            // A sessão foi encerrada enquanto retomávamos: não deixe o áudio
+            // capturando sem sessão (o stop pode demorar; fora do lock).
+            for entry in &live {
+                self.close_channel(entry);
+            }
+            return Ok(());
+        }
+        tracing::info!(session_id = id, "sessão retomada");
+        self.emit(true, false, Some(id), labels);
+        Ok(())
+    }
+
+    fn set_channels(&self, channels: &[AudioChannel]) -> Result<()> {
+        let channels = Self::normalize_channels(channels)?;
+
+        let (id, started_at_ms, paused, live, labels) = {
+            let mut guard = self.lock()?;
+            let Some(active) = guard.as_mut() else {
+                // Sem sessão aberta não há captura para mexer: a escolha é da UI.
+                return Ok(());
+            };
+            let previous = std::mem::take(&mut active.live);
+            active.channels = channels.clone();
+            (
+                active.id.clone(),
+                active.started_at_ms,
+                previous.is_empty(),
+                previous,
+                active.labels(),
+            )
+        };
+
+        if paused {
+            // Pausada: só guarda a escolha; o retomar captura o novo conjunto.
+            tracing::info!(session_id = id, channels = ?channels, "canais da sessão pausada atualizados");
+            self.emit(true, true, Some(id), labels);
+            return Ok(());
+        }
+
+        let (mut kept, removed): (Vec<ActiveChannel>, Vec<ActiveChannel>) = live
+            .into_iter()
+            .partition(|entry| channels.contains(&entry.channel));
+
+        // Tira os canais que saíram (fora do lock: o stop pode demorar).
+        for entry in &removed {
+            self.close_channel(entry);
+        }
+
+        // Liga os que entraram, com a **mesma origem de tempo** da sessão.
+        let origin_ms = self.origin_ms(started_at_ms);
+        for channel in &channels {
+            if kept.iter().any(|entry| entry.channel == *channel) {
+                continue;
+            }
+            if let Some(entry) = self.open_channel(&id, origin_ms, *channel) {
+                kept.push(entry);
+            }
+        }
+
+        if kept.is_empty() {
+            // Nenhum canal sobreviveu: não deixa a sessão "gravando" sem áudio.
+            let _ = self.sessions.end(&id, self.clock.now_ms());
+            {
+                let mut guard = self.lock()?;
+                *guard = None;
+            }
+            self.emit_idle();
+            return Err(GhostWhisperError::Other(
+                "nenhum canal de áudio pôde ser capturado".to_string(),
+            ));
+        }
+
+        // Preserva a ordem pedida pelo usuário.
+        kept.sort_by_key(|entry| {
+            channels
+                .iter()
+                .position(|channel| *channel == entry.channel)
+                .unwrap_or(usize::MAX)
+        });
+
+        let labels = {
+            let mut guard = self.lock()?;
+            match guard.as_mut() {
+                Some(active) => {
+                    active.live = kept;
+                    active.labels()
+                }
+                None => labels,
+            }
+        };
+        tracing::info!(session_id = id, channels = ?labels, "canais da sessão trocados");
+        self.emit(true, false, Some(id), labels);
+        Ok(())
+    }
+
+    fn continue_session(&self, id: &str, channels: &[AudioChannel]) -> Result<String> {
+        // Encerra a sessão ativa atual (se houver) antes de reabrir a pedida.
+        self.stop()?;
+
+        let session = self
+            .sessions
+            .get(id)?
+            .ok_or_else(|| GhostWhisperError::Config(format!("sessão {id} não encontrada")))?;
+        let channels = Self::normalize_channels(channels)?;
+
+        if session.status == SessionStatus::Ended {
+            self.sessions.resume(id)?;
+        }
+
+        let origin_ms = self.origin_ms(session.started_at_ms);
+        let live: Vec<ActiveChannel> = channels
+            .iter()
+            .filter_map(|channel| self.open_channel(id, origin_ms, *channel))
+            .collect();
+
+        if live.is_empty() {
+            // Reabrimos algo que não grava: devolve ao estado encerrado.
+            let _ = self.sessions.end(id, self.clock.now_ms());
+            return Err(GhostWhisperError::Other(
+                "falha ao iniciar áudio".to_string(),
+            ));
+        }
+
+        let active = ActiveSession {
+            id: id.to_string(),
+            started_at_ms: session.started_at_ms,
+            channels,
+            live,
+        };
+        self.emit_active(&active);
+        {
+            let mut guard = self.lock()?;
+            *guard = Some(active);
+        }
+        Ok(id.to_string())
     }
 
     fn current_session_id(&self) -> Option<String> {
@@ -290,7 +590,7 @@ mod tests {
         fn emit_session_state(&self, state: &SessionStateEvent) {
             self.states.lock().unwrap().push(state.clone());
         }
-        fn emit_insight(&self, _text: &str) {}
+        fn emit_insight(&self, _suggestion: &crate::ports::insight_generator::InsightSuggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 
@@ -300,6 +600,23 @@ mod tests {
         sessions: Arc<InMemorySessionRepository>,
         publisher: Arc<RecordingPublisher>,
         service: SessionService,
+    }
+
+    impl Fixture {
+        /// Último estado publicado.
+        fn last_state(&self) -> SessionStateEvent {
+            self.publisher
+                .states
+                .lock()
+                .unwrap()
+                .last()
+                .cloned()
+                .expect("estado")
+        }
+
+        fn states(&self) -> Vec<SessionStateEvent> {
+            self.publisher.states.lock().unwrap().clone()
+        }
     }
 
     fn fixture(mic_fail: bool, system_fail: bool) -> Fixture {
@@ -344,6 +661,7 @@ mod tests {
             let states = f.publisher.states.lock().unwrap();
             assert_eq!(states.len(), 1);
             assert!(states[0].listening);
+            assert!(!states[0].paused);
             assert_eq!(states[0].channels, vec!["microphone", "system"]);
         }
 
@@ -402,5 +720,356 @@ mod tests {
         f.service.start(&[AudioChannel::System]).expect("system");
         assert!(!f.mic.is_running());
         assert!(f.system.is_running());
+    }
+
+    // --- Sessão contínua (BR-019) -------------------------------------------
+
+    #[test]
+    fn pause_keeps_the_session_open_and_stops_capture() {
+        let f = fixture(false, false);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        f.service.pause().expect("pause");
+
+        assert!(!f.mic.is_running(), "captura suspensa");
+        assert_eq!(f.service.current_session_id().as_deref(), Some(id.as_str()));
+        let stored = f.sessions.get(&id).expect("get").expect("present");
+        assert_eq!(stored.status, SessionStatus::Active, "pausa não encerra");
+
+        let state = f.last_state();
+        assert!(state.listening);
+        assert!(state.paused);
+        assert_eq!(state.session_id.as_deref(), Some(id.as_str()));
+    }
+
+    #[test]
+    fn pause_is_idempotent_and_without_session_is_a_noop() {
+        let f = fixture(false, false);
+        f.service.pause().expect("sem sessão");
+        assert!(f.states().is_empty(), "não emite estado sem sessão");
+
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+        f.service.pause().expect("pause");
+        let emitted = f.states().len();
+        f.service.pause().expect("pause de novo");
+        assert_eq!(f.states().len(), emitted, "pausar duas vezes não republica");
+    }
+
+    #[test]
+    fn resume_reopens_the_same_session_and_keeps_started_at() {
+        let f = fixture(false, false);
+        let id = f
+            .service
+            .start(&[AudioChannel::Microphone, AudioChannel::System])
+            .expect("start");
+        f.service.pause().expect("pause");
+
+        f.service.resume().expect("resume");
+
+        assert!(f.mic.is_running());
+        assert!(f.system.is_running());
+        assert_eq!(f.service.current_session_id().as_deref(), Some(id.as_str()));
+        assert_eq!(
+            f.sessions.get(&id).expect("get").expect("present").status,
+            SessionStatus::Active
+        );
+
+        let state = f.last_state();
+        assert!(state.listening);
+        assert!(!state.paused);
+        assert_eq!(state.channels, vec!["microphone", "system"]);
+    }
+
+    #[test]
+    fn resume_without_pause_is_a_noop() {
+        let f = fixture(false, false);
+        f.service.resume().expect("sem sessão");
+        assert!(f.states().is_empty());
+
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+        let emitted = f.states().len();
+        f.service.resume().expect("já gravando");
+        assert_eq!(f.states().len(), emitted);
+    }
+
+    #[test]
+    fn stop_works_while_paused() {
+        let f = fixture(false, false);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+        f.service.pause().expect("pause");
+
+        f.service.stop().expect("stop");
+
+        assert_eq!(f.service.current_session_id(), None);
+        assert_eq!(
+            f.sessions.get(&id).expect("get").expect("present").status,
+            SessionStatus::Ended
+        );
+        let state = f.last_state();
+        assert!(!state.listening);
+        assert!(!state.paused);
+        assert_eq!(state.session_id, None);
+    }
+
+    #[test]
+    fn new_session_ends_the_paused_one() {
+        let f = fixture(false, false);
+        let first = f.service.start(&[AudioChannel::Microphone]).expect("start");
+        f.service.pause().expect("pause");
+
+        let second = f
+            .service
+            .start(&[AudioChannel::Microphone])
+            .expect("nova sessão");
+
+        assert_ne!(first, second);
+        assert_eq!(
+            f.sessions
+                .get(&first)
+                .expect("get")
+                .expect("present")
+                .status,
+            SessionStatus::Ended
+        );
+        assert_eq!(
+            f.service.current_session_id().as_deref(),
+            Some(second.as_str())
+        );
+    }
+
+    #[test]
+    fn continue_reactivates_an_ended_session_and_keeps_its_start() {
+        let f = fixture(false, false);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+        f.service.stop().expect("stop");
+
+        let continued = f
+            .service
+            .continue_session(&id, &[AudioChannel::Microphone])
+            .expect("continue");
+
+        assert_eq!(continued, id, "continua na mesma sessão");
+        assert!(f.mic.is_running());
+        let stored = f.sessions.get(&id).expect("get").expect("present");
+        assert_eq!(stored.status, SessionStatus::Active);
+        assert_eq!(stored.ended_at_ms, None, "ended_at é limpo");
+        assert_eq!(stored.started_at_ms, 1_000, "início preservado");
+    }
+
+    #[test]
+    fn continue_ends_the_currently_active_session() {
+        let f = fixture(false, false);
+        let old = f.service.start(&[AudioChannel::System]).expect("start");
+        f.service.stop().expect("stop");
+
+        let current = f
+            .service
+            .start(&[AudioChannel::Microphone])
+            .expect("start atual");
+        let continued = f
+            .service
+            .continue_session(&old, &[AudioChannel::System])
+            .expect("continue");
+
+        assert_eq!(continued, old);
+        assert_eq!(
+            f.sessions
+                .get(&current)
+                .expect("get")
+                .expect("present")
+                .status,
+            SessionStatus::Ended,
+            "a sessão ativa anterior é encerrada"
+        );
+        assert_eq!(
+            f.service.current_session_id().as_deref(),
+            Some(old.as_str())
+        );
+    }
+
+    #[test]
+    fn continue_unknown_session_fails() {
+        let f = fixture(false, false);
+        let error = f
+            .service
+            .continue_session("nao-existe", &[AudioChannel::Microphone])
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("não encontrada"), "{error}");
+    }
+
+    #[test]
+    fn continue_with_all_channels_failing_keeps_the_session_ended() {
+        let f = fixture(false, false);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+        f.service.stop().expect("stop");
+
+        let broken = fixture(true, true);
+        broken
+            .sessions
+            .create(&Session {
+                id: id.clone(),
+                started_at_ms: 1_000,
+                ended_at_ms: Some(2_000),
+                provider: "local".to_string(),
+                model: None,
+                transcription_model: None,
+                user_id: None,
+                subject: None,
+                overview: None,
+                status: SessionStatus::Ended,
+            })
+            .expect("create");
+
+        assert!(broken
+            .service
+            .continue_session(&id, &[AudioChannel::Microphone])
+            .is_err());
+        assert_eq!(
+            broken
+                .sessions
+                .get(&id)
+                .expect("get")
+                .expect("present")
+                .status,
+            SessionStatus::Ended,
+            "não deixa a sessão reaberta sem captura"
+        );
+    }
+
+    // --- Troca de canais durante a sessão ------------------------------------
+
+    #[test]
+    fn set_channels_adds_a_channel_without_ending_the_session() {
+        let f = fixture(false, false);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        f.service
+            .set_channels(&[AudioChannel::Microphone, AudioChannel::System])
+            .expect("set channels");
+
+        assert!(f.mic.is_running(), "o canal antigo continua");
+        assert!(f.system.is_running(), "o novo canal começou");
+        assert_eq!(
+            f.service.current_session_id().as_deref(),
+            Some(id.as_str()),
+            "mesma sessão"
+        );
+        let stored = f.sessions.get(&id).expect("get").expect("present");
+        assert_eq!(stored.status, SessionStatus::Active);
+        assert_eq!(stored.ended_at_ms, None);
+
+        let state = f.last_state();
+        assert!(state.listening);
+        assert!(!state.paused);
+        assert_eq!(state.channels, vec!["microphone", "system"]);
+    }
+
+    #[test]
+    fn set_channels_removes_a_channel_and_stops_only_it() {
+        let f = fixture(false, false);
+        f.service
+            .start(&[AudioChannel::Microphone, AudioChannel::System])
+            .expect("start");
+
+        f.service
+            .set_channels(&[AudioChannel::System])
+            .expect("set channels");
+
+        assert!(!f.mic.is_running(), "o canal removido parou");
+        assert!(f.system.is_running(), "o mantido segue captando");
+        assert_eq!(f.last_state().channels, vec!["system"]);
+    }
+
+    #[test]
+    fn set_channels_swaps_one_for_the_other() {
+        let f = fixture(false, false);
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        f.service
+            .set_channels(&[AudioChannel::System])
+            .expect("set channels");
+
+        assert!(!f.mic.is_running());
+        assert!(f.system.is_running());
+        assert_eq!(f.last_state().channels, vec!["system"]);
+    }
+
+    #[test]
+    fn set_channels_while_paused_only_updates_the_choice() {
+        let f = fixture(false, false);
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+        f.service.pause().expect("pause");
+
+        f.service
+            .set_channels(&[AudioChannel::System])
+            .expect("set channels");
+
+        assert!(!f.mic.is_running());
+        assert!(!f.system.is_running(), "pausado não captura");
+        let state = f.last_state();
+        assert!(state.paused);
+        assert_eq!(state.channels, vec!["system"], "escolha exibida na pausa");
+
+        // O retomar usa o novo conjunto.
+        f.service.resume().expect("resume");
+        assert!(f.system.is_running());
+        assert!(!f.mic.is_running());
+        assert_eq!(f.last_state().channels, vec!["system"]);
+    }
+
+    #[test]
+    fn set_channels_without_a_session_is_a_noop() {
+        let f = fixture(false, false);
+        f.service
+            .set_channels(&[AudioChannel::System])
+            .expect("sem sessão");
+        assert!(f.states().is_empty(), "não emite estado sem sessão");
+    }
+
+    #[test]
+    fn set_channels_rejects_an_empty_list() {
+        let f = fixture(false, false);
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+        assert!(f.service.set_channels(&[]).is_err());
+        assert!(f.mic.is_running(), "a captura atual não é afetada");
+    }
+
+    #[test]
+    fn set_channels_keeps_the_working_one_when_the_other_fails() {
+        let f = fixture(false, true);
+        f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        f.service
+            .set_channels(&[AudioChannel::Microphone, AudioChannel::System])
+            .expect("set channels");
+
+        assert!(f.mic.is_running());
+        assert!(!f.system.is_running());
+        assert_eq!(f.last_state().channels, vec!["microphone"]);
+    }
+
+    #[test]
+    fn set_channels_ends_the_session_when_no_channel_survives() {
+        // Microfone ok, sistema indisponível: trocar para o sistema remove o
+        // único canal vivo e não consegue abrir o novo.
+        let f = fixture(false, true);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        let error = f
+            .service
+            .set_channels(&[AudioChannel::System])
+            .expect_err("sem canal");
+
+        assert!(error.to_string().contains("nenhum canal"), "{error}");
+        assert_eq!(f.service.current_session_id(), None);
+        assert_eq!(
+            f.sessions.get(&id).expect("get").expect("present").status,
+            SessionStatus::Ended,
+            "não fica gravando sem áudio"
+        );
+        let state = f.last_state();
+        assert!(!state.listening);
+        assert_eq!(state.session_id, None);
     }
 }

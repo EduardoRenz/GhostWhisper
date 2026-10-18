@@ -7,6 +7,7 @@
 //! Catálogo completo em `prds/mvp/architecture/engineering-guidelines.md`.
 
 pub mod audio_consumer;
+pub mod audio_monitor;
 pub mod audio_source;
 pub mod chat_bot_provider;
 pub mod click_through;

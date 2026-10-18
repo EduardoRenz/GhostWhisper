@@ -45,8 +45,18 @@ uma nota de revisão.
   mitigação primária é o overlay rodar em um **output virtual dedicado**; a
   documentação deve ser explícita sobre o limite.
 - **Motivo:** não existe API de exclusão de janela na captura no Linux.
-- **Data:** 2026-10-17
-- **Status:** Ativa
+- **Status (2026-10-18, task 19):** revisada e **mantida**, agora explícita também
+  na UI (*tooltip* do stealth e aba Geral das configurações). O "modo stealth" do
+  GhostWhisper é **igual ao do Perssua no Linux** (`skip-taskbar` + título vazio);
+  o `setContentProtection` do Perssua é no-op aqui e, por paridade, passamos a
+  chamá-lo também (efeito real só em macOS/Windows). Único caminho real no Linux:
+  **KDE Plasma 6.6+** ("Hide from Screencast" / `PlasmaWindowInterface`, por
+  compositor) — opt-in futuro. Alternativas práticas hoje: compartilhar **uma
+  janela** na reunião ou deixar o overlay em outro monitor.
+- **Detalhes:** [`mvp/tasks/19-task.md`](mvp/tasks/19-task.md),
+  [`mvp/architecture/overlay.md`](mvp/architecture/overlay.md) §4,
+  [`mvp/architecture/wayland-spike.md`](mvp/architecture/wayland-spike.md).
+- **Data:** 2026-10-17 · **Status:** Ativa (revisada na task 19)
 
 ## BR-007 — X11/XWayland primeiro, Wayland nativo depois
 - **Decisão:** o overlay é entregue primeiro em X11/XWayland. Suporte Wayland nativo
@@ -156,3 +166,47 @@ uma nota de revisão.
 - **Detalhes:** [`mvp/architecture/transcription-streaming.md`](mvp/architecture/transcription-streaming.md) §6;
   [`mvp/tasks/14-task.md`](mvp/tasks/14-task.md) e [`mvp/tasks/15-task.md`](mvp/tasks/15-task.md).
 - **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 14)
+
+## BR-019 — Sessão é cumulativa (pausar/retomar não reinicia a linha do tempo)
+- **Decisão:** a sessão é a unidade de continuidade. **Pausar** apenas suspende a
+  captura e mantém a sessão aberta (mesmo id); **retomar** volta a capturar nela;
+  **continuar** reativa uma sessão encerrada. Só "Nova sessão" (ou "Parar", que a
+  encerra) começa outro id. As mensagens de uma sessão **nunca são descartadas**
+  pela UI — elas são gravadas e recarregadas do banco. Todo segmento tem o tempo
+  (`mm:ss`) desde o **início da sessão**, não desde o início da captura.
+- **Motivo:** o comportamento do Perssua (`transcriptionPreview.pause/resume` +
+  `DatabaseManager.resumeSession`) e a reclamação do usuário: parar/iniciar
+  apagava as mensagens da tela. A pausa também preserva o custo do modelo (não
+  recarrega o contexto do ASR a cada interrupção).
+- **Consequência:** `sessions` permanece `active` durante a pausa (o `CHECK` do
+  schema não muda e não há migração); sessões órfãs (app fechado gravando) são
+  encerradas no boot; o id do segmento carrega a origem de tempo para não
+  colidir ao continuar. O histórico e o export ficam nas tasks 17/18.
+  **Pausar ≠ Parar**: parar **encerra** a sessão (para voltar, só pelo Histórico →
+  Continuar); pausar mantém a sessão aberta e retoma em um clique. **Trocar os
+  canais captados é sempre permitido** — inclusive gravando ou pausado — sem
+  encerrar a sessão (task 20).
+- **Detalhes:** [`mvp/tasks/16-task.md`](mvp/tasks/16-task.md);
+  [`mvp/architecture/session-history.md`](mvp/architecture/session-history.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (task 16)
+
+## BR-020 — Sugestões da IA entram na linha temporal; export é Markdown
+- **Decisão:** toda sugestão pedida (painel ou atalho) é **persistida** como
+  mensagem da sessão (tabela `messages`, papel `assistant`) com o **tempo desde o
+  início da sessão** — a mesma escala das falas — e aparece na linha temporal ao
+  vivo, no histórico e no export. O export de uma sessão é um **Markdown** da linha
+  temporal: cabeçalho (título, início/fim, duração) + `- **[mm:ss] Você:** fala` +
+  a sugestão como bloco destacado `> 🤖 **Sugestão [mm:ss]** — texto`. O histórico
+  vive no **painel expandido do overlay** (aba `Ao vivo | Histórico`).
+- **Motivo:** pedido do usuário — sem tempo não há linha temporal, e sugestão não
+  persistida desaparece ao fechar o painel. O Perssua guarda as mensagens na mesma
+  tabela, mas **não exporta arquivo** (só "copiar resumo/chat/transcrição"); o
+  Markdown é um diferencial nosso, com a sugestão marcada e datada.
+- **Consequência:** a UI nunca monta o Markdown (o core renderiza a partir do banco,
+  uma única implementação em `application/session_timeline.rs` + `markdown_export.rs`);
+  `messages.timestamp` passa a ser relativo à sessão (o Perssua usa relógio de
+  parede) para as duas séries compartilharem um eixo.
+- **Detalhes:** [`mvp/tasks/17-task.md`](mvp/tasks/17-task.md),
+  [`mvp/tasks/18-task.md`](mvp/tasks/18-task.md),
+  [`mvp/architecture/session-history.md`](mvp/architecture/session-history.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (tasks 17/18)

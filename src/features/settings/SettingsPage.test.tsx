@@ -24,9 +24,13 @@ const audioIpc = vi.hoisted(() => ({
   AudioDevice: {},
   listMicrophones: vi.fn(async () => []),
   listSystemSources: vi.fn(async () => []),
+  monitorDefaultDelay: vi.fn(async () => 400),
+  monitorIsRunning: vi.fn(async () => false),
   startMicrophone: vi.fn(async () => undefined),
+  startMonitor: vi.fn(async () => undefined),
   startSystemAudio: vi.fn(async () => undefined),
   stopMicrophone: vi.fn(async () => undefined),
+  stopMonitor: vi.fn(async () => undefined),
   stopSystemAudio: vi.fn(async () => undefined),
 }));
 

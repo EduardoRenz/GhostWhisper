@@ -600,3 +600,176 @@ nunca dispara prévia e o turno é rejeitado.
 - Task 15: monitor atrasado ("ouvir minha voz") — porta
   `ports/audio_player.rs` + adapter `cpal` de saída e ring buffer de ~300–600 ms,
   com fone de ouvido obrigatório. Especificada, não implementada.
+
+---
+
+## 2026-10-18 — Sessão contínua: pausar/retomar não perde mais as mensagens (T16, ISS-016)
+
+- **IDs:** ISS-016, T16, BR-019
+- **Refs:** `prds/mvp/architecture/session-history.md`, `prds/mvp/tasks/16-task.md`,
+  `src-tauri/src/application/session_service.rs`
+
+### Contexto
+Relato: "cada vez que eu pauso e continuo a gravação, a aplicação apaga as
+mensagens e reinicia". Diagnóstico: não faltava persistência (os finais já iam
+para o SQLite), faltava **conceito de sessão**. `SessionService::start` encerrava
+a anterior e criava um id novo, e a UI (`useLiveTranscription`) zerava a lista na
+troca de id — o histórico ficava invisível no banco.
+
+### REA (Perssua 0.27.5)
+- `transcriptionPreview`: `pause: "Pausar"`, `resume: "Retomar"`,
+  `paused: "Pausado — o áudio não está sendo capturado"` → pausa **mantém** a sessão.
+- `DatabaseManager.resumeSession(id)`: volta `status='active'` e limpa `ended_at`;
+  `endAllActiveSessions(userId)`: encerra órfãs no boot.
+- `sessionDetailPage.resumeSession: "Continuar sessão"`; páginas "Todas as
+  Sessões"/"Informações da sessão" (detalhe + copiar resumo/chat/transcrição) —
+  **sem export Markdown** (nosso diferencial, task 18).
+
+### Implementado (BR-019)
+- `SessionController::{pause, resume, continue_session}`; pausa é **estado de
+  runtime** (`active.pipelines` vazio) — o banco segue `active`, respeitando o
+  `CHECK` do schema: **sem migração**.
+- `TranscriptionPipeline::with_time_origin(ms)`: timestamps relativos ao **início
+  da sessão**; id do segmento `{sessão}-{origem}-t{turn}` (corrige colisão de
+  chave ao continuar, que falharia em silêncio no INSERT).
+- `SessionRepository::{resume, end_all_active}` (SQLite + in-memory);
+  `end_all_active` no boot do composition root.
+- `SessionStateEvent.paused`; IPC `session_pause`/`session_resume`/`session_continue`.
+- UI: `Pausar · Retomar · Nova sessão · Parar`, pílula `❚❚ pausado`, medidores
+  zerados na pausa; `useLiveTranscription(sessionId)` **recarrega o histórico**
+  (`db_session_transcriptions`) e mescla com os eventos ao vivo (`mergeHistory`,
+  final ganha da prévia); `formatClock` → `mm:ss` por linha.
+
+### Decisões
+- Pausar **encerra os pipelines** (novo contexto do ASR ao retomar): simples, sem
+  pipeline "meio vivo"; o modelo não fica residente numa pausa longa.
+- A pausa vira um **buraco real** na linha do tempo (o tempo em que a mensagem foi
+  gerada); relógio de parede = `started_at + start_ms`.
+- Atalho/tray "iniciar/encerrar sessão" encerra a sessão pausada (não retoma).
+
+### Verificação
+- **175 testes Rust** (+13) · 7 `ignored` · clippy/fmt limpos.
+- **40 frontend** (+17) · `tsc` ✓ · `pnpm build` ✓.
+
+### Pendente
+- Task 17: histórico no overlay expandido (aba `Ao vivo | Histórico`,
+  `Surface::ExpandedTall`), sugestões da IA persistidas na tabela `messages`
+  (que existe e está morta) e `rename`/`delete` de sessão.
+- Task 18: export Markdown (diálogo nativo) e task 19 (revisão do stealth).
+
+---
+
+## 2026-10-18 — Histórico, sugestões da IA na linha temporal, export Markdown e revisão do stealth (T17/T18/T19)
+
+- **IDs:** T17, T18, T19, BR-006 (revisada), BR-020
+- **Refs:** `prds/mvp/tasks/17-task.md`, `18-task.md`, `19-task.md`,
+  `prds/mvp/architecture/session-history.md`, `overlay.md` §4, `wayland-spike.md`
+
+### Contexto
+O usuário pediu para fechar o MVP: (a) mensagens não podem sumir ao pausar/continuar
+(feito na T16), (b) **salvar/continuar/nova sessão + linha temporal com tempo**,
+(c) **export Markdown com a sugestão da IA e o tempo**, e (d) revisar o **stealth**
+("testei no Google Meet e o overlay aparece").
+
+### Descobrimos
+- O banco do autor tinha **75 sessões / 120 transcrições** e **nenhum caminho na
+  UI** para vê-las: US-08/CU-07 nunca tinham sido entregues.
+- As **sugestões da IA não eram persistidas** em lugar nenhum — a tabela
+  `messages` existia desde a task 05 (herdada do Perssua) e estava morta.
+- O schema declara `ON DELETE CASCADE` desde a task 05, mas sem
+  `PRAGMA foreign_keys = ON` o SQLite **aceita e ignora** a FK: excluir sessão
+  deixaria órfãos. Corrigido.
+
+### Implementado — T17 (histórico + sugestões)
+- `domain/message.rs` + porta `MessagesRepository` → `LocalMessagesRepository`
+  (tabela `messages` + triggers FTS5 já existentes, **sem migração**) e a dobra
+  in-memory.
+- `application/session_timeline.rs` (**puro**): funde falas finais + mensagens
+  `assistant` numa linha temporal ordenada, empate determinístico.
+- `InsightService` persiste a sugestão com o tempo desde o início da sessão e
+  devolve `InsightSuggestion`; `emit_insight` passou a emitir a sugestão (o atalho
+  global também grava).
+- IPC: `db_session_messages`, `db_session_timeline`, `session_rename`,
+  `session_delete`; `AppState` ganhou `messages` e `clock`.
+- UI: abas `Ao vivo | Histórico` no painel expandido (superfície nova
+  `expanded-tall`, 900×560); lista com título/data/duração, detalhe com a linha
+  temporal, **Continuar**, renomear, excluir; sugestões com `[mm:ss]` no painel ao
+  vivo. Sem busca livre ainda (exigiria IPC de foco para o `<input>`).
+
+### Implementado — T18 (export Markdown)
+- `application/markdown_export.rs` (puro, recebe `now_ms`): cabeçalho (título,
+  início/fim, duração, contagens) + `- **[mm:ss] Você:** fala` + a sugestão como
+  bloco destacado `> 🤖 **Sugestão [mm:ss]** — texto`; multi-linha preservado.
+- IPC `session_export_markdown` (copiar) e `session_save_markdown` (grava, garante
+  `.md`); **diálogo nativo** de salvar com `tauri-plugin-dialog` 2.8.3 (Cargo +
+  npm + `dialog:default`); `chrono` (já transitivo) direto só para hora local.
+
+### Implementado — T19 (stealth)
+- **Veredito: o desafio é maior, não é bug nosso.** No Linux o GhostWhisper faz o
+  mesmo que o Perssua (`setSkipTaskbar` + título vazio); o `setContentProtection`
+  do Perssua é **no-op aqui**.
+- Entregue: paridade (`set_content_protected`), **reafirmação** do stealth em
+  `show()`/`set_surface()`, tooltip + aviso honesto nas configurações, README,
+  `overlay.md` §4 e `wayland-spike.md` com o achado novo: **KDE Plasma 6.6+**
+  ("Hide from Screencast", regra de janela e `PlasmaWindowInterface`) é o único
+  caminho real no Linux — opt-in futuro, por compositor.
+
+### Verificação
+- **191 testes Rust** (+16) · 7 `ignored` · clippy/fmt limpos.
+- **58 frontend** (+18) · `tsc` ✓ · `pnpm build` ✓.
+- `.deb` e AppImage reconstruídos.
+
+### Pendente
+- Busca livre no histórico (FTS5 já existe; falta IPC de foco) e paginação.
+- KDE: exclusão de captura via DBus (opt-in, KWin ≥ 6.6).
+- Task 15 (monitor atrasado do microfone) segue PENDING.
+
+---
+
+## 2026-10-18 — Monitor atrasado ("ouvir minha voz") e canais sempre trocáveis (T15, T20)
+
+- **IDs:** T15, T20, ISS-017, BR-019 (ampliada)
+- **Refs:** `prds/mvp/tasks/15-task.md`, `prds/mvp/tasks/20-task.md`
+
+### Pergunta do usuário respondida na UI
+- **Pausar × Parar**: parar **encerra** a sessão (`ended_at` gravado; só volta pelo
+  *Histórico → Continuar sessão*); pausar **mantém a sessão aberta** (retoma em um
+  clique). Nos dois a captura para e o turno em aberto é fechado (flush).
+- **Canais**: o seletor estava `disabled` durante a captura (herança de antes das
+  sessões). Agora **é sempre permitido trocar**, gravando ou pausado.
+
+### T20 — troca de canais na sessão (ISS-017)
+- `SessionController::set_channels`: para o canal que sai, liga o que entra,
+  **mesma sessão e mesma origem de tempo**; na pausa só atualiza a escolha; sem
+  sessão é no-op; falha parcial preserva quem funciona; se nenhum sobrevive, a
+  sessão é **encerrada** (nunca "gravando" sem áudio).
+- `ActiveSession` virou `channels` (desejados) + `live` (`ActiveChannel`), com a
+  ordem de exibição preservada. UI: seletor sempre ativo refletindo o estado real.
+
+### T15 — monitor atrasado do microfone
+- Decisões (o esboço original mudou): a saída usa **`libpulse-simple-binding`**
+  (já era dependência; o servidor faz o resample) em vez de `cpal` de saída com
+  reamostragem própria; o atraso virou **política pura no domínio**
+  (`DelayedAudioQueue`) em vez de ring buffer no adapter; o monitor espelha o
+  **pós-ganho/pós-gate** (o que o ASR recebe), sem ganho extra.
+- `DelayedAudioQueue` (400 ms padrão, teto de `atraso + 500 ms` descartando o
+  **mais antigo**), porta `AudioMonitor`, `PulseDelayedMonitor` (erro de abertura
+  volta ao chamador; silêncio mantém o stream no ritmo), decorador
+  `MonitoredAudioSource`/`MonitorFanOut`, IPC `audio_monitor_*` e toggle
+  **"Ouvir minha voz"** no teste de áudio (só microfone, só com o teste rodando,
+  com aviso de fone de ouvido).
+- Env: `GHOSTWHISPER_MONITOR_DELAY_MS`.
+
+### Verificação
+- **215 testes Rust** (+19 desta rodada; 8 `ignored`) · clippy/fmt limpos.
+  O teste real do monitor contra o servidor Pulse foi **executado** (`--ignored`):
+  liga, toca, para e zera o pendente.
+- **64 frontend** (+6): toggle do monitor (só microfone, desabilitado antes do
+  teste, atraso no rótulo, liga/desliga, desliga ao parar) e troca de canais
+  (habilitado gravando/pausado, atualiza, reflete o estado, "Nova sessão"
+  reaproveita).
+- `.deb`/AppImage reconstruídos.
+
+### Pendente
+- Escolha de **dispositivo** por canal dentro da sessão (hoje só no teste de áudio).
+- Atraso do monitor ajustável na UI (hoje 400 ms fixo + env).

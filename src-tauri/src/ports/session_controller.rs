@@ -21,14 +21,28 @@ impl AudioChannel {
     }
 }
 
-/// Inicia/encerra sessões de transcrição.
+/// Inicia/encerra/pausa sessões de transcrição.
 ///
 /// Implementado pela aplicação (`SessionService`) e chamado pelo IPC.
+///
+/// Conceito de sessão (BR-019): **pausar** suspende a captura mas mantém a
+/// sessão aberta (mesmo id); **retomar** volta a capturar nela; **continuar**
+/// reativa uma sessão encerrada; só [`start`](SessionController::start) começa um
+/// id novo.
 pub trait SessionController: Send + Sync {
-    /// Inicia uma sessão capturando **todos** os canais dados; retorna o id.
+    /// Inicia uma **nova** sessão capturando todos os canais dados; retorna o id.
     fn start(&self, channels: &[AudioChannel]) -> Result<String>;
     /// Encerra a sessão atual (se houver).
     fn stop(&self) -> Result<()>;
-    /// Id da sessão ativa, se houver.
+    /// Suspende a captura mantendo a sessão aberta.
+    fn pause(&self) -> Result<()>;
+    /// Volta a capturar na sessão pausada.
+    fn resume(&self) -> Result<()>;
+    /// Troca os canais capturados **mantendo a sessão aberta** (inclusive
+    /// pausada: a escolha vale para a próxima captura).
+    fn set_channels(&self, channels: &[AudioChannel]) -> Result<()>;
+    /// Continua uma sessão existente (reativa se encerrada) e captura nela.
+    fn continue_session(&self, id: &str, channels: &[AudioChannel]) -> Result<String>;
+    /// Id da sessão ativa (inclui a pausada), se houver.
     fn current_session_id(&self) -> Option<String>;
 }

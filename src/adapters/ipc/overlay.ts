@@ -1,7 +1,7 @@
 /** Adaptador IPC do overlay. */
 import { invokeSafe } from "./client";
 
-export type Surface = "actionbar" | "expanded" | "hidden";
+export type Surface = "actionbar" | "expanded" | "expanded-tall" | "hidden";
 
 /** Ajusta a superfície da janela (barra/expandida/oculta). */
 export const setSurface = (surface: Surface): Promise<void | undefined> =>

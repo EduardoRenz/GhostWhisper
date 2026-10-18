@@ -12,6 +12,27 @@ export const sessionStart = (
 export const sessionStop = (): Promise<void | undefined> =>
   invokeSafe<void>("session_stop");
 
+/** Suspende a captura mantendo a sessão aberta (BR-019). */
+export const sessionPause = (): Promise<void | undefined> =>
+  invokeSafe<void>("session_pause");
+
+/** Volta a capturar na sessão pausada (BR-019). */
+export const sessionResume = (): Promise<void | undefined> =>
+  invokeSafe<void>("session_resume");
+
+/** Troca os canais capturados sem encerrar a sessão. */
+export const sessionSetChannels = (
+  channels: SessionChannel[],
+): Promise<void | undefined> =>
+  invokeSafe<void>("session_set_channels", { channels });
+
+/** Continua uma sessão existente (reativa se encerrada) e captura nela. */
+export const sessionContinue = (
+  id: string,
+  channels: SessionChannel[],
+): Promise<string | undefined> =>
+  invokeSafe<string>("session_continue", { id, channels });
+
 /** Id da sessão ativa, se houver. */
 export const sessionCurrent = (): Promise<string | null | undefined> =>
   invokeSafe<string | null>("session_current");

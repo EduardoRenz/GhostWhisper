@@ -1,41 +1,68 @@
 import { useEffect, useRef, useState } from "react";
+import { sessionTranscriptions } from "../../adapters/ipc/database";
 import { subscribe } from "../../adapters/ipc/events";
-import type { TranscriptSegment } from "../domain/transcript";
-
-/** Máximo de segmentos mantidos em tela (evita re-render/reflow excessivo). */
-export const MAX_SEGMENTS = 60;
+import {
+  mergeHistory,
+  mergeSegment,
+  type TranscriptSegment,
+} from "../domain/transcript";
 
 /**
- * Assina `transcript_segment` e mantém a lista viva (limitada) em memória.
- * Segmentos de uma nova sessão reiniciam a lista.
+ * Mantém a linha temporal da sessão em tela.
+ *
+ * Ao entrar numa sessão (inclusive ao **retomar** ou **continuar**, BR-019) o
+ * histórico persistido é recarregado do banco e mesclado com os eventos ao vivo
+ * — as mensagens não são mais descartadas quando a captura para e volta.
  */
-export function useLiveTranscription(): {
+export function useLiveTranscription(sessionId: string | null): {
   segments: TranscriptSegment[];
-  clear: () => void;
 } {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
-  const currentSession = useRef<string | null>(null);
+  /** Sessão a que a lista em tela pertence. */
+  const sessionRef = useRef<string | null>(null);
 
+  // Troca de sessão: descarta o que era de outra sessão e recarrega o
+  // histórico persistido dela (BR-019).
+  useEffect(() => {
+    sessionRef.current = sessionId;
+    if (!sessionId) {
+      setSegments([]);
+      return;
+    }
+
+    setSegments((prev) => prev.filter((item) => item.session_id === sessionId));
+
+    let cancelled = false;
+    void sessionTranscriptions(sessionId).then((loaded) => {
+      if (cancelled || !loaded) {
+        return;
+      }
+      // Os eventos ao vivo podem ter chegado antes da resposta: mescla em vez
+      // de sobrepor.
+      setSegments((prev) =>
+        mergeHistory(
+          loaded,
+          prev.filter((item) => item.session_id === sessionId),
+        ),
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // Eventos ao vivo (prévia e final compartilham o id).
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
 
     void subscribe<TranscriptSegment>("transcript_segment", (segment) => {
-      setSegments((prev) => {
-        const sessionChanged =
-          currentSession.current !== null &&
-          currentSession.current !== segment.session_id;
-        currentSession.current = segment.session_id;
-        const base = sessionChanged ? [] : prev;
-        // Preview e final compartilham o mesmo id: substitui em vez de duplicar.
-        const index = base.findIndex((item) => item.id === segment.id);
-        if (index === -1) {
-          return [...base, segment].slice(-MAX_SEGMENTS);
-        }
-        const next = [...base];
-        next[index] = segment;
-        return next;
-      });
+      // Um evento atrasado de outra sessão é ignorado (não contamina a lista).
+      if (segment.session_id !== sessionRef.current) {
+        return;
+      }
+      setSegments((prev) => mergeSegment(prev, segment));
     }).then((stop) => {
       if (cancelled) {
         stop();
@@ -50,10 +77,5 @@ export function useLiveTranscription(): {
     };
   }, []);
 
-  const clear = () => {
-    currentSession.current = null;
-    setSegments([]);
-  };
-
-  return { segments, clear };
+  return { segments };
 }

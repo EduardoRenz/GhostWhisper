@@ -52,6 +52,46 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(())
     }
 
+    fn resume(&self, id: &str) -> Result<()> {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            if let Some(session) = sessions.iter_mut().find(|session| session.id == id) {
+                session.ended_at_ms = None;
+                session.status = SessionStatus::Active;
+            }
+        }
+        Ok(())
+    }
+
+    fn end_all_active(&self, ended_at_ms: i64) -> Result<usize> {
+        let mut ended = 0;
+        if let Ok(mut sessions) = self.sessions.lock() {
+            for session in sessions.iter_mut() {
+                if session.status == SessionStatus::Active {
+                    session.ended_at_ms = Some(ended_at_ms);
+                    session.status = SessionStatus::Ended;
+                    ended += 1;
+                }
+            }
+        }
+        Ok(ended)
+    }
+
+    fn rename(&self, id: &str, subject: &str) -> Result<()> {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            if let Some(session) = sessions.iter_mut().find(|session| session.id == id) {
+                session.subject = Some(subject.to_string());
+            }
+        }
+        Ok(())
+    }
+
+    fn delete(&self, id: &str) -> Result<()> {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            sessions.retain(|session| session.id != id);
+        }
+        Ok(())
+    }
+
     fn get(&self, id: &str) -> Result<Option<Session>> {
         Ok(self.find(id))
     }

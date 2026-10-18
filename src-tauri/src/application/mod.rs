@@ -5,8 +5,10 @@
 
 pub mod insight_service;
 pub mod llm_router;
+pub mod markdown_export;
 pub mod prompts;
 pub mod session_service;
+pub mod session_timeline;
 #[cfg(test)]
 pub mod test_support;
 pub mod transcription_pipeline;

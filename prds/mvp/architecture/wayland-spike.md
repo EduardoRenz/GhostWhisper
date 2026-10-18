@@ -73,3 +73,24 @@ atalhos/cursor impostas pelo compositor. A degradação deve ser registrada em l
 - Alvos de empacotamento e instruções assumem X11/XWayland.
 - O README e a tela de privacidade mantêm o aviso de que a exclusão do
   compartilhamento **não é garantida**.
+
+---
+
+## Adendo — task 19 (2026-10-18): revisitando "invisibilidade"
+
+A pergunta do usuário ("testei no Google Meet e o overlay aparece") motivou uma
+segunda passada. Evidências novas:
+
+| Item | Observação |
+|------|-----------|
+| Perssua 0.27.5 (`stealthModeApplication.js`) | `setContentProtection(true)` + `setSkipTaskbar(true)` + `setTitle("")`; `setContentProtection` é **no-op no Linux** |
+| Chrome/Meet em X11 | captura via XComposite (tela inteira) — inclui qualquer janela composta |
+| KDE Plasma 6.6 | "Hide from Screencast": regra de janela KWin (MR !8828) e `PlasmaWindowInterface::excludeFromCaptureRequested` (MR !8442/!9171) |
+| Sessão do autor | `XDG_SESSION_TYPE=x11`, GNOME — nenhum caminho de exclusão disponível |
+
+**Decisão mantida (BR-006):** não prometer invisibilidade. Entregamos o que é
+possível e honesto: paridade com o Perssua (`set_content_protected`), reafirmação
+do `skip-taskbar`/título ao remapear a janela e orientação de uso (compartilhar uma
+janela em vez da tela inteira; overlay em outro monitor). O caminho KDE 6.6 fica
+registrado como opt-in futuro (por compositor, exige DBus). Ver
+[`../tasks/19-task.md`](../tasks/19-task.md).

@@ -5,6 +5,7 @@
 pub mod audio;
 pub mod geometry;
 pub mod llm;
+pub mod message;
 pub mod session;
 pub mod settings;
 pub mod shortcuts;

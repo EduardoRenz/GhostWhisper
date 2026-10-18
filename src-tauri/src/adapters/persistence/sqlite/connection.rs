@@ -29,6 +29,10 @@ pub fn open_in_memory() -> Result<Connection> {
 
 /// Aplica o schema (idempotente).
 pub fn initialize(conn: &Connection) -> Result<()> {
+    // Chaves estrangeiras ligadas: o schema depende delas para o `ON DELETE
+    // CASCADE` (sessão → transcrições/mensagens). Sem o pragma, o SQLite aceita
+    // (e ignora) a FK — e uma sessão excluída deixaria órfãos.
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     conn.execute_batch(SCHEMA)?;
     Ok(())
 }

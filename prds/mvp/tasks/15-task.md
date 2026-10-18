@@ -1,48 +1,66 @@
 # 15 — Monitor atrasado do microfone ("ouvir minha voz")
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 14
 - **Habilita:** —
 
 ## Objetivo
-Dar retorno **audível** ao calibrar o microfone: ouvir a própria voz com um
-atraso fixo confirma na hora qual dispositivo está captando e se o nível está
-bom — sem depender de números no painel.
+Dar retorno **audível** ao calibrar o microfone: ouvir a própria voz com um atraso
+fixo confirma na hora qual dispositivo está captando e se o nível está bom — sem
+depender de números (RMS/barra) no painel de teste.
 
-## Motivo (UX)
-O "teste de áudio" mostra barra e RMS, mas o usuário ainda precisa julgar se
-aquilo é fala boa. Ouvir a própria voz é o retorno mais direto possível.
+## Desenho final (e por que mudou em relação ao esboço)
+| Esboço inicial | Implementado | Motivo |
+|---|---|---|
+| `ports/audio_player.rs` + adapter `cpal` de saída | `ports/audio_monitor.rs` + `PulseDelayedMonitor` (API simple do Pulse) | o caminho `cpal` de saída exigiria reamostrar 16 kHz → taxa do dispositivo; o servidor Pulse/PipeWire já faz remix/resample, e `libpulse-simple-binding` **já era dependência** (usada na captura do sistema) |
+| ring buffer no adapter | fila de atraso **no domínio** (`DelayedAudioQueue`) | política pura → testável sem placa de som nem threads |
+| monitor no caminho cru do microfone | monitor no **mesmo ponto que o ASR recebe** (depois do ganho/gate, BR-018) | ouvir exatamente o que o whisper recebe é o que ajuda a decidir a sensibilidade |
+| ganho de monitor independente | sem ganho extra (o nível é o do ASR; ajuste pela “Sensibilidade do microfone”) | evita número mágico — o slider é o controle |
+| atraso escolhido na UI | **400 ms** fixo, override por ambiente | um botão, não um painel de configuração |
 
-## Desenho proposto
-- **Porta nova:** `ports/audio_player.rs` (`play(&self, samples: &[f32])` +
-  `stop()`), com adaptador `adapters/audio/cpal_output.rs` (saída `cpal`) — o
-  projeto hoje só tem caminho de **entrada**; não existe saída.
-- **Wiring:** instanciado no composition root (`lib.rs`) e guardado em
-  `AppState`; usado **somente** pelo painel de teste.
-- **Atraso fixo (ring buffer):** ~300–600 ms. Sem atraso, alto-falante gera
-  realimentação (microfonia). O ring buffer desacopla entrada e saída; o atraso
-  ideal é o maior confortável (evita o loop acústico).
-- **Ganho de monitor independente** e baixo (ex.: 1×–2×), separado do ganho do
-  ASR — não precisa (nem deve) ser o mesmo valor.
-- **UI:** toggle "Ouvir minha voz" em `AudioTestPanel`, habilitado apenas
-  durante o teste e apenas no canal de microfone.
+## Entregáveis
+- `domain/audio.rs` — `DelayedAudioQueue`: blocos com carimbo `pronto_em = agora +
+  atraso`, `drain_ready`, teto de acúmulo (`atraso + 500 ms`, descarta o **mais
+  antigo** para a voz não atrasar sem limite) e contador de descartes.
+  Constante `DEFAULT_MONITOR_DELAY_MS = 400`.
+- `ports/audio_monitor.rs` — porta `AudioMonitor` (`start(delay_ms)`, `push`,
+  `stop`, `is_running`).
+- `adapters/audio/pulse_delayed_monitor.rs` — `PulseDelayedMonitor`: thread que
+  abre a saída padrão (PCM 16 bits mono 16 kHz) e escreve o que venceu,
+  **silêncio** quando nada venceu (mantém o stream no ritmo do relógio de áudio).
+  O erro de abertura volta **para quem chamou** (a UI avisa em vez de ficar muda);
+  override `GHOSTWHISPER_MONITOR_DELAY_MS`.
+- `adapters/audio/monitored_audio_source.rs` — decorador `MonitoredAudioSource` +
+  `MonitorFanOut`: repassa o áudio ao pipeline e **espelha** no monitor
+  (desligado = nada é reproduzido).
+- `lib.rs`: microfone = `MonitoredAudioSource(MicrophoneFrontEnd(cpal))`; o
+  monitor sobe desligado (nenhum som numa reunião normal).
+- IPC: `audio_monitor_start(delay_ms?)`, `audio_monitor_stop`,
+  `audio_monitor_is_running`, `audio_monitor_default_delay`.
+- UI: toggle **“Ouvir minha voz (com 0,4 s de atraso)”** no teste de áudio, só no
+  canal de microfone, habilitado apenas com o teste em execução, com aviso de
+  **fone de ouvido**; desliga ao parar o teste, ao trocar para o áudio do sistema
+  e ao sair da tela.
 
-## Cuidados
-- **Fone de ouvido** é obrigatório: com caixa ligada o loop é acústico e nenhum
-  atraso digital resolve. Avisar na UI.
-- **Nunca logar áudio** (regra do projeto) — o monitor é local, nada sai da
-  máquina (BR-002).
-- Encerrar a saída junto com o teste (nunca deixar um stream de saída pendurado
-  ao sair das configurações).
-- Se a porta/adapter `cpal` de saída se mostrar instável sob PipeWire, avaliar
-  `libpulse-simple-binding` (já é dependência do projeto).
+## Critérios de aceite
+- [x] Ouvir a voz com atraso estável, sem realimentação **em fone**.
+- [x] Toggle só no microfone e só durante o teste; saída encerrada ao parar/sair.
+- [x] Nenhum ganho/efeito extra no caminho do ASR (decorador só espelha).
+- [x] Nenhum log de áudio; nada de rede (BR-002).
+- [x] Testes: fila de atraso (unidade), decorador (espelha/não espelha/delega),
+  adapter (idle + teste real com servidor Pulse).
 
-## Critérios de aceite (a definir na implementação)
-- [ ] Ouvir a voz com atraso perceptível e estável, sem realimentação em fone.
-- [ ] Toggle só durante o teste de microfone; saída encerrada ao parar.
-- [ ] Ganho de monitor independente do ganho do ASR.
-- [ ] Nenhum log de áudio; nada de rede.
-- [ ] Testes: ring buffer (unidade), delegação do adaptador (fake de saída).
+## Verificação (2026-10-18)
+- Rust: `DelayedAudioQueue` (espera o atraso exato, ordem dos blocos, descarte do
+  mais antigo no acúmulo, `clear`, vazio ignorado), `MonitoredAudioSource`
+  (espelha para o monitor e repassa igual ao pipeline; desligado não reproduz;
+  delegação; erro do monitor reportado), `PulseDelayedMonitor` (idle não enfileira
+  nem abre saída; teste real `#[ignore]` contra o servidor Pulse — **executado**:
+  liga, toca, para e zera o pendente).
+- Frontend: toggle no microfone apenas, desabilitado antes do teste, atraso no
+  rótulo, liga/desliga, e o monitor desliga ao parar o teste.
 
-## Referência
-`AudioTestPanel.tsx` (nível), BR-018, task 14.
+## Pendências
+- Teste manual com fone (recomendado) e, opcionalmente, um atraso ajustável na UI.
+- Se o dispositivo padrão sair durante o monitor, o stream cai (log + `is_running`
+  falso); reconectar é manual (ligar de novo).

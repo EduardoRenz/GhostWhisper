@@ -119,3 +119,31 @@ pub fn system_sink_create(state: State<'_, AppState>, name: String) -> Result<u3
 pub fn system_sink_remove(state: State<'_, AppState>, module_index: u32) -> Result<()> {
     state.virtual_sink.remove(module_index)
 }
+
+// --- Monitor atrasado do microfone ("ouvir minha voz", task 15) ---------------
+
+/// Informa o atraso padrão do monitor (ms), para a UI mostrar/preencher.
+#[tauri::command]
+pub fn audio_monitor_default_delay() -> Result<u64> {
+    Ok(crate::adapters::audio::pulse_delayed_monitor::default_delay_ms())
+}
+
+/// Liga o monitor atrasado do microfone (o usuário se ouve).
+#[tauri::command]
+pub fn audio_monitor_start(state: State<'_, AppState>, delay_ms: Option<u64>) -> Result<()> {
+    let delay =
+        delay_ms.unwrap_or_else(crate::adapters::audio::pulse_delayed_monitor::default_delay_ms);
+    state.monitor.start(delay)
+}
+
+/// Desliga o monitor atrasado do microfone.
+#[tauri::command]
+pub fn audio_monitor_stop(state: State<'_, AppState>) -> Result<()> {
+    state.monitor.stop()
+}
+
+/// Informa se o monitor atrasado está ligado.
+#[tauri::command]
+pub fn audio_monitor_is_running(state: State<'_, AppState>) -> Result<bool> {
+    Ok(state.monitor.is_running())
+}

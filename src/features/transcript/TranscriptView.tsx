@@ -1,11 +1,15 @@
 import { useEffect, useRef } from "react";
-import { speakerLabel, type TranscriptSegment } from "../../core/domain/transcript";
+import {
+  formatClock,
+  speakerLabel,
+  type TranscriptSegment,
+} from "../../core/domain/transcript";
 
 interface TranscriptViewProps {
   segments: TranscriptSegment[];
 }
 
-/** Lista rolável da transcrição ao vivo (ME/THEY). */
+/** Lista rolável da transcrição ao vivo (ME/THEY) com a linha temporal. */
 export function TranscriptView({ segments }: TranscriptViewProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -26,6 +30,9 @@ export function TranscriptView({ segments }: TranscriptViewProps) {
               segment.final ? "" : " transcript__line--interim"
             }`}
           >
+            <span className="transcript__time" title="tempo desde o início da sessão">
+              {formatClock(segment.start_ms)}
+            </span>
             <span className="transcript__speaker">
               {speakerLabel(segment.speaker)}
             </span>

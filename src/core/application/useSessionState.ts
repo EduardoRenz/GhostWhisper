@@ -1,21 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { subscribe } from "../../adapters/ipc/events";
-import { sessionStart, sessionStop } from "../../adapters/ipc/session";
+import {
+  sessionContinue,
+  sessionPause,
+  sessionResume,
+  sessionSetChannels,
+  sessionStart,
+  sessionStop,
+} from "../../adapters/ipc/session";
 import type { SessionChannel, SessionState } from "../domain/transcript";
 
 const IDLE: SessionState = {
   listening: false,
+  paused: false,
   session_id: null,
   channels: [],
 };
 
-/** Assina `session_state` e expõe start/stop de sessão. */
+/** Assina `session_state` e expõe os controles do ciclo de sessão (BR-019). */
 export function useSessionState(): {
   state: SessionState;
   busy: boolean;
   error: string | null;
   start: (channels: SessionChannel[]) => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   stop: () => Promise<void>;
+  continueSession: (id: string, channels: SessionChannel[]) => Promise<void>;
+  setChannels: (channels: SessionChannel[]) => Promise<void>;
 } {
   const [state, setState] = useState<SessionState>(IDLE);
   const [busy, setBusy] = useState(false);
@@ -39,11 +51,12 @@ export function useSessionState(): {
     };
   }, []);
 
-  const start = useCallback(async (channels: SessionChannel[]) => {
+  /** Executa uma ação do ciclo de sessão cuidando de `busy`/`error`. */
+  const run = useCallback(async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
-      await sessionStart(channels);
+      await action();
     } catch (caught) {
       setError(String(caught));
     } finally {
@@ -51,17 +64,32 @@ export function useSessionState(): {
     }
   }, []);
 
-  const stop = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await sessionStop();
-    } catch (caught) {
-      setError(String(caught));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const start = useCallback(
+    (channels: SessionChannel[]) => run(() => sessionStart(channels)),
+    [run],
+  );
+  const pause = useCallback(() => run(() => sessionPause()), [run]);
+  const resume = useCallback(() => run(() => sessionResume()), [run]);
+  const stop = useCallback(() => run(() => sessionStop()), [run]);
+  const continueSession = useCallback(
+    (id: string, channels: SessionChannel[]) =>
+      run(() => sessionContinue(id, channels)),
+    [run],
+  );
+  const setChannels = useCallback(
+    (channels: SessionChannel[]) => run(() => sessionSetChannels(channels)),
+    [run],
+  );
 
-  return { state, busy, error, start, stop };
+  return {
+    state,
+    busy,
+    error,
+    start,
+    pause,
+    resume,
+    stop,
+    continueSession,
+    setChannels,
+  };
 }

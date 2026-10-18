@@ -35,3 +35,23 @@ export const startSystemAudio = (
 /** Interrompe a captura do áudio do sistema. */
 export const stopSystemAudio = (): Promise<void | undefined> =>
   invokeSafe<void>("system_audio_stop");
+
+// --- Monitor atrasado do microfone ("ouvir minha voz", task 15) --------------
+
+/** Atraso padrão do monitor (ms), definido pelo core. */
+export const monitorDefaultDelay = (): Promise<number | undefined> =>
+  invokeSafe<number>("audio_monitor_default_delay");
+
+/** Liga o monitor do microfone (o usuário se ouve com atraso). */
+export const startMonitor = (
+  delayMs?: number,
+): Promise<void | undefined> =>
+  invokeSafe<void>("audio_monitor_start", { delayMs: delayMs ?? null });
+
+/** Desliga o monitor do microfone. */
+export const stopMonitor = (): Promise<void | undefined> =>
+  invokeSafe<void>("audio_monitor_stop");
+
+/** Informa se o monitor está ligado. */
+export const monitorIsRunning = (): Promise<boolean | undefined> =>
+  invokeSafe<boolean>("audio_monitor_is_running");

@@ -1,7 +1,9 @@
-//! Comandos IPC de leitura do banco (histórico e busca).
+//! Comandos IPC de leitura do banco (histórico, linha temporal e busca).
 
 use tauri::State;
 
+use crate::application::session_timeline::{build_timeline, TimelineEntry};
+use crate::domain::message::ConversationMessage;
 use crate::domain::session::Session;
 use crate::domain::transcription::TranscriptSegment;
 use crate::error::Result;
@@ -26,6 +28,26 @@ pub fn db_session_transcriptions(
     session_id: String,
 ) -> Result<Vec<TranscriptSegment>> {
     state.transcriptions.list_by_session(&session_id)
+}
+
+/// Lista as mensagens (sugestões da IA) de uma sessão.
+#[tauri::command]
+pub fn db_session_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<ConversationMessage>> {
+    state.messages.list_by_session(&session_id)
+}
+
+/// Linha temporal da sessão: falas + sugestões, já ordenadas no tempo.
+#[tauri::command]
+pub fn db_session_timeline(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<TimelineEntry>> {
+    let segments = state.transcriptions.list_by_session(&session_id)?;
+    let messages = state.messages.list_by_session(&session_id)?;
+    Ok(build_timeline(&segments, &messages))
 }
 
 /// Busca transcrições por texto (FTS5).

@@ -4,6 +4,7 @@
 
 pub mod audio_commands;
 pub mod database_commands;
+pub mod export_commands;
 pub mod llm_commands;
 pub mod overlay;
 pub mod ping;

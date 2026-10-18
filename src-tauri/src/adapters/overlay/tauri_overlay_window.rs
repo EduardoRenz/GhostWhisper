@@ -11,12 +11,16 @@ use crate::ports::overlay_window::{OverlayWindowController, Surface};
 /// Dimensões lógicas por superfície `(largura, altura)`.
 const ACTIONBAR_SIZE: (f64, f64) = (900.0, 72.0);
 const EXPANDED_SIZE: (f64, f64) = (900.0, 380.0);
+const EXPANDED_TALL_SIZE: (f64, f64) = (900.0, 560.0);
 
 /// Implementa `OverlayWindowController` sobre a janela Tauri.
 pub struct TauriOverlayWindow {
     window: WebviewWindow,
     click_through: Arc<AtomicBool>,
     anchor_bottom: AtomicBool,
+    /// Estado desejado do stealth, para ser **reafirmado** quando o compositor
+    /// ou o Tauri remapeiam a janela (Perssua: `scheduleOverlayTaskbarStateReassertion`).
+    stealth: AtomicBool,
 }
 
 impl TauriOverlayWindow {
@@ -26,13 +30,32 @@ impl TauriOverlayWindow {
             window,
             click_through: Arc::new(AtomicBool::new(false)),
             anchor_bottom: AtomicBool::new(true),
+            stealth: AtomicBool::new(false),
         }
+    }
+
+    /// Aplica (ou reaplica) o estado de stealth na janela.
+    ///
+    /// `set_content_protected` é paridade com o Perssua
+    /// (`setContentProtection`): no **Linux é no-op** (a API só tem efeito no
+    /// macOS/Windows), então não prometemos invisibilidade no compartilhamento
+    /// (BR-006) — o efeito real aqui é sair da barra de tarefas e do título.
+    fn apply_stealth(&self) {
+        let enabled = self.stealth.load(Ordering::Relaxed);
+        let _ = self.window.set_skip_taskbar(enabled);
+        let _ = self
+            .window
+            .set_title(if enabled { "" } else { "GhostWhisper" });
+        let _ = self.window.set_content_protected(enabled);
     }
 }
 
 impl OverlayWindowController for TauriOverlayWindow {
     fn show(&self) {
         let _ = self.window.show();
+        // Reafirma o stealth: alguns compositores (e o próprio remapeamento)
+        // readicionam a janela à barra de tarefas / devolvem o título.
+        self.apply_stealth();
     }
 
     fn hide(&self) {
@@ -62,16 +85,15 @@ impl OverlayWindowController for TauriOverlayWindow {
     }
 
     fn set_stealth(&self, enabled: bool) {
-        let _ = self.window.set_skip_taskbar(enabled);
-        let _ = self
-            .window
-            .set_title(if enabled { "" } else { "GhostWhisper" });
+        self.stealth.store(enabled, Ordering::Relaxed);
+        self.apply_stealth();
     }
 
     fn set_surface(&self, surface: Surface) {
         let (width, height) = match surface {
             Surface::ActionBar => ACTIONBAR_SIZE,
             Surface::Expanded => EXPANDED_SIZE,
+            Surface::ExpandedTall => EXPANDED_TALL_SIZE,
             Surface::Hidden => {
                 self.hide();
                 return;
@@ -93,6 +115,10 @@ impl OverlayWindowController for TauriOverlayWindow {
                     .set_position(PhysicalPosition::new(position.x, position.y + delta));
             }
         }
+
+        // Redimensionar remapeia a janela em alguns compositores: reafirma o
+        // stealth (T19).
+        self.apply_stealth();
     }
 
     fn set_anchor_bottom(&self, anchored: bool) {

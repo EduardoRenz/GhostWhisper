@@ -5,13 +5,15 @@
 
 use std::sync::Arc;
 
+use crate::ports::audio_monitor::AudioMonitor;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
+use crate::ports::clock::Clock;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::insight_generator::InsightGenerator;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::overlay_window::OverlayWindowController;
-use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
+use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::secret_store::SecretStore;
 use crate::ports::session_controller::SessionController;
 use crate::ports::settings_store::SettingsStore;
@@ -30,6 +32,8 @@ pub struct AppState {
     pub audio: Arc<dyn AudioSource>,
     /// Captura de áudio do sistema (monitor de saída).
     pub system_audio: Arc<dyn AudioSource>,
+    /// Monitor atrasado do microfone ("ouvir minha voz").
+    pub monitor: Arc<dyn AudioMonitor>,
     /// Gerenciamento do sink virtual.
     pub virtual_sink: Arc<dyn VirtualSinkManager>,
     /// Controle de sessões de transcrição.
@@ -38,6 +42,10 @@ pub struct AppState {
     pub sessions: Arc<dyn SessionRepository>,
     /// Repositório de transcrições (histórico e busca).
     pub transcriptions: Arc<dyn TranscriptionsRepository>,
+    /// Repositório de mensagens (sugestões da IA).
+    pub messages: Arc<dyn MessagesRepository>,
+    /// Relógio do sistema (duração de sessões em andamento no export).
+    pub clock: Arc<dyn Clock>,
     /// Configurações do usuário (sem segredos).
     pub settings: Arc<dyn SettingsStore>,
     /// Chaves de API (keyring ou fallback de sessão).
@@ -62,10 +70,13 @@ impl AppState {
         click_through: Arc<dyn ClickThroughController>,
         audio: Arc<dyn AudioSource>,
         system_audio: Arc<dyn AudioSource>,
+        monitor: Arc<dyn AudioMonitor>,
         virtual_sink: Arc<dyn VirtualSinkManager>,
         session: Arc<dyn SessionController>,
         sessions: Arc<dyn SessionRepository>,
         transcriptions: Arc<dyn TranscriptionsRepository>,
+        messages: Arc<dyn MessagesRepository>,
+        clock: Arc<dyn Clock>,
         settings: Arc<dyn SettingsStore>,
         secrets: Arc<dyn SecretStore>,
         llm: Arc<dyn LlmController>,
@@ -79,10 +90,13 @@ impl AppState {
             click_through,
             audio,
             system_audio,
+            monitor,
             virtual_sink,
             session,
             sessions,
             transcriptions,
+            messages,
+            clock,
             settings,
             secrets,
             llm,
@@ -104,6 +118,8 @@ mod tests {
     use crate::domain::geometry::{Point, Rect};
     use crate::error::Result;
     use crate::ports::audio_consumer::AudioConsumer;
+    use crate::ports::audio_monitor::AudioMonitor;
+    use crate::ports::insight_generator::InsightSuggestion;
     use crate::ports::overlay_window::Surface;
     use crate::ports::session_controller::AudioChannel;
 
@@ -193,6 +209,20 @@ mod tests {
         }
     }
 
+    struct FakeAudioMonitor;
+    impl AudioMonitor for FakeAudioMonitor {
+        fn start(&self, _delay_ms: u64) -> Result<()> {
+            Ok(())
+        }
+        fn push(&self, _samples: &[f32]) {}
+        fn stop(&self) -> Result<()> {
+            Ok(())
+        }
+        fn is_running(&self) -> bool {
+            false
+        }
+    }
+
     struct FakeVirtualSink;
     impl VirtualSinkManager for FakeVirtualSink {
         fn create(&self, _name: &str) -> Result<u32> {
@@ -210,6 +240,18 @@ mod tests {
         }
         fn stop(&self) -> Result<()> {
             Ok(())
+        }
+        fn pause(&self) -> Result<()> {
+            Ok(())
+        }
+        fn resume(&self) -> Result<()> {
+            Ok(())
+        }
+        fn set_channels(&self, _channels: &[AudioChannel]) -> Result<()> {
+            Ok(())
+        }
+        fn continue_session(&self, id: &str, _channels: &[AudioChannel]) -> Result<String> {
+            Ok(id.to_string())
         }
         fn current_session_id(&self) -> Option<String> {
             Some("s1".into())
@@ -244,8 +286,13 @@ mod tests {
 
     struct FakeInsight;
     impl InsightGenerator for FakeInsight {
-        fn generate(&self, _session_id: Option<String>) -> Result<String> {
-            Ok("insight".into())
+        fn generate(&self, _session_id: Option<String>) -> Result<InsightSuggestion> {
+            Ok(InsightSuggestion {
+                message_id: "m1".into(),
+                session_id: "s1".into(),
+                text: "insight".into(),
+                at_ms: 0,
+            })
         }
     }
 
@@ -259,7 +306,7 @@ mod tests {
         ) {
         }
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
-        fn emit_insight(&self, _text: &str) {}
+        fn emit_insight(&self, _suggestion: &InsightSuggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 
@@ -277,6 +324,7 @@ mod tests {
     }
 
     fn build_state() -> AppState {
+        use crate::adapters::persistence::memory::in_memory_messages_repository::InMemoryMessagesRepository;
         use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
         use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
         use crate::adapters::secrets::in_memory_secret_store::InMemorySecretStore;
@@ -287,10 +335,13 @@ mod tests {
             Arc::new(FakeClickThrough::default()),
             Arc::new(FakeAudioSource),
             Arc::new(FakeAudioSource),
+            Arc::new(FakeAudioMonitor),
             Arc::new(FakeVirtualSink),
             Arc::new(FakeSessionController),
             Arc::new(InMemorySessionRepository::new()),
             Arc::new(InMemoryTranscriptionsRepository::new()),
+            Arc::new(InMemoryMessagesRepository::new()),
+            Arc::new(crate::adapters::system::system_clock::FixedClock(1_000_000)),
             Arc::new(InMemorySettingsStore::new()),
             Arc::new(InMemorySecretStore::new()),
             Arc::new(FakeLlm),
@@ -323,7 +374,16 @@ mod tests {
             .is_empty());
         assert_eq!(state.llm.validate().expect("validate"), "ok");
         assert!(!state.secrets.is_persistent());
+        assert!(!state.monitor.is_running(), "monitor desligado por padrão");
         assert_eq!(state.translator.translate("x").expect("translate"), "[x]");
-        assert_eq!(state.insight.generate(None).expect("insight"), "insight");
+        assert_eq!(
+            state.insight.generate(None).expect("insight").text,
+            "insight"
+        );
+        assert!(state
+            .messages
+            .list_by_session("s1")
+            .expect("messages")
+            .is_empty());
     }
 }

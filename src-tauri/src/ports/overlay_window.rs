@@ -9,6 +9,8 @@ pub enum Surface {
     ActionBar,
     /// Painel expandido (transcrição/insights).
     Expanded,
+    /// Painel expandido ampliado (histórico de sessões).
+    ExpandedTall,
     /// Oculto.
     Hidden,
 }

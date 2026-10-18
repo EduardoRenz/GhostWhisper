@@ -475,6 +475,13 @@ export function SettingsPage() {
             />
             <span>Modo stealth (fora da barra de tarefas)</span>
           </label>
+          <p className="settings__hint">
+            O modo stealth esconde o overlay da barra de tarefas e do
+            alt-tab. <strong>Ele não o esconde do compartilhamento de tela</strong>:
+            no Linux não existe API para excluir uma janela de captura (BR-006).
+            Para reuniões, compartilhe <em>uma janela</em> em vez da tela inteira
+            ou deixe o overlay em outro monitor.
+          </p>
 
           <div className="settings__actions">
             <button

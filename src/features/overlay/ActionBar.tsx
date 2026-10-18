@@ -8,9 +8,14 @@ interface ActionBarProps {
   stealth: boolean;
   onToggleStealth: () => void;
   listening: boolean;
+  paused: boolean;
+  channels: SessionChannel[];
   busy: boolean;
   onStart: (channels: SessionChannel[]) => void;
+  onPause: () => void;
+  onResume: () => void;
   onStop: () => void;
+  onChannelsChange: (channels: SessionChannel[]) => void;
   onOpenSettings: () => void;
   onStartDrag: () => void;
 }
@@ -22,13 +27,19 @@ export function ActionBar({
   stealth,
   onToggleStealth,
   listening,
+  paused,
+  channels,
   busy,
   onStart,
+  onPause,
+  onResume,
   onStop,
+  onChannelsChange,
   onOpenSettings,
   onStartDrag,
 }: ActionBarProps) {
-  const expanded = surface === "expanded";
+  const expanded = surface !== "actionbar" && surface !== "hidden";
+  const status = !listening ? "○ parado" : paused ? "❚❚ pausado" : "● gravando";
 
   return (
     <div className="overlay__bar" data-interactive>
@@ -43,17 +54,24 @@ export function ActionBar({
       </span>
       <span className="overlay__brand">GhostWhisper</span>
       <span
-        className={`overlay__status overlay__status--${listening ? "live" : "idle"}`}
+        className={`overlay__status overlay__status--${
+          paused ? "paused" : listening ? "live" : "idle"
+        }`}
         data-interactive
       >
-        {listening ? "● gravando" : "○ parado"}
+        {status}
       </span>
 
       <SessionControls
         listening={listening}
+        paused={paused}
+        channels={channels}
         busy={busy}
         onStart={onStart}
+        onPause={onPause}
+        onResume={onResume}
         onStop={onStop}
+        onChannelsChange={onChannelsChange}
       />
 
       <button
@@ -69,6 +87,7 @@ export function ActionBar({
         type="button"
         className="overlay__button"
         data-interactive
+        title="Modo stealth: sai da barra de tarefas e do título. Não esconde o overlay do compartilhamento de tela (limite do Linux)."
         onClick={onToggleStealth}
       >
         {stealth ? "Stealth: on" : "Stealth: off"}

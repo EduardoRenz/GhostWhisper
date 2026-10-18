@@ -6,6 +6,7 @@ use tauri::{AppHandle, Emitter};
 use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{EventPublisher, SessionStateEvent};
+use crate::ports::insight_generator::InsightSuggestion;
 use crate::ports::session_controller::AudioChannel;
 
 /// Nome do evento emitido para cada segmento de transcrição.
@@ -14,7 +15,7 @@ pub const TRANSCRIPT_SEGMENT_EVENT: &str = "transcript_segment";
 pub const AUDIO_LEVEL_EVENT: &str = "audio_level";
 /// Nome do evento de estado da sessão.
 pub const SESSION_STATE_EVENT: &str = "session_state";
-/// Nome do evento de insight gerado por atalho.
+/// Nome do evento de sugestão gerada (painel ou atalho).
 pub const INSIGHT_EVENT: &str = "insight";
 /// Nome do evento de status do motor de transcrição.
 pub const ASR_STATUS_EVENT: &str = "asr_status";
@@ -59,8 +60,8 @@ impl EventPublisher for TauriEventPublisher {
         let _ = self.app.emit(SESSION_STATE_EVENT, state);
     }
 
-    fn emit_insight(&self, text: &str) {
-        let _ = self.app.emit(INSIGHT_EVENT, text);
+    fn emit_insight(&self, suggestion: &InsightSuggestion) {
+        let _ = self.app.emit(INSIGHT_EVENT, suggestion);
     }
 
     fn emit_asr_status(&self, status: &AsrStatus) {

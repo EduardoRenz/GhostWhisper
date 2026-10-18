@@ -1,5 +1,6 @@
 //! Portas de persistência (sessões, transcrições e mensagens).
 
+use crate::domain::message::ConversationMessage;
 use crate::domain::session::Session;
 use crate::domain::transcription::TranscriptSegment;
 use crate::error::Result;
@@ -12,6 +13,17 @@ pub trait SessionRepository: Send + Sync {
     fn end(&self, id: &str, ended_at_ms: i64) -> Result<()>;
     fn get(&self, id: &str) -> Result<Option<Session>>;
     fn list_recent(&self, limit: usize) -> Result<Vec<Session>>;
+    /// Reativa uma sessão encerrada (`status = active`, `ended_at = NULL`).
+    fn resume(&self, id: &str) -> Result<()>;
+    /// Encerra todas as sessões ainda `active` e retorna quantas foram.
+    ///
+    /// Usado no boot: se o app foi fechado durante uma gravação, a sessão fica
+    /// órfã em `active` (BR-019).
+    fn end_all_active(&self, ended_at_ms: i64) -> Result<usize>;
+    /// Define o título (`subject`) da sessão.
+    fn rename(&self, id: &str, subject: &str) -> Result<()>;
+    /// Remove a sessão e, em cascata, as transcrições/mensagens dela.
+    fn delete(&self, id: &str) -> Result<()>;
 }
 
 /// Persistência de segmentos de transcrição (com busca full-text).
@@ -21,4 +33,12 @@ pub trait TranscriptionsRepository: Send + Sync {
     fn insert(&self, segment: &TranscriptSegment) -> Result<()>;
     fn list_by_session(&self, session_id: &str) -> Result<Vec<TranscriptSegment>>;
     fn search(&self, query: &str, limit: usize) -> Result<Vec<TranscriptSegment>>;
+}
+
+/// Persistência de mensagens da sessão (sugestões da IA).
+///
+/// Adaptador: `LocalMessagesRepository`; dobra: `InMemoryMessagesRepository`.
+pub trait MessagesRepository: Send + Sync {
+    fn insert(&self, message: &ConversationMessage) -> Result<()>;
+    fn list_by_session(&self, session_id: &str) -> Result<Vec<ConversationMessage>>;
 }

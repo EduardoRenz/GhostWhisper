@@ -40,6 +40,61 @@ pub fn session_stop(state: State<'_, AppState>) -> Result<()> {
     state.session.stop()
 }
 
+/// Renomeia a sessão (título exibido no histórico).
+#[tauri::command]
+pub fn session_rename(state: State<'_, AppState>, id: String, subject: String) -> Result<()> {
+    let subject = subject.trim();
+    if subject.is_empty() {
+        return Err(crate::error::GhostWhisperError::Config(
+            "informe um título para a sessão".to_string(),
+        ));
+    }
+    state.sessions.rename(&id, subject)
+}
+
+/// Exclui a sessão e, junto, suas falas e sugestões.
+#[tauri::command]
+pub fn session_delete(state: State<'_, AppState>, id: String) -> Result<()> {
+    // Se for a sessão em andamento, encerra a captura antes de apagar.
+    if state.session.current_session_id().as_deref() == Some(id.as_str()) {
+        state.session.stop()?;
+    }
+    state.sessions.delete(&id)
+}
+
+/// Suspende a captura mantendo a sessão aberta (BR-019).
+#[tauri::command]
+pub fn session_pause(state: State<'_, AppState>) -> Result<()> {
+    state.session.pause()
+}
+
+/// Volta a capturar na sessão pausada (BR-019).
+#[tauri::command]
+pub fn session_resume(state: State<'_, AppState>) -> Result<()> {
+    state.session.resume()
+}
+
+/// Troca os canais capturados sem encerrar a sessão.
+#[tauri::command]
+pub fn session_set_channels(
+    state: State<'_, AppState>,
+    channels: Vec<SessionChannelDto>,
+) -> Result<()> {
+    let channels: Vec<AudioChannel> = channels.into_iter().map(Into::into).collect();
+    state.session.set_channels(&channels)
+}
+
+/// Continua uma sessão existente (reativa se encerrada) e captura nela.
+#[tauri::command]
+pub fn session_continue(
+    state: State<'_, AppState>,
+    id: String,
+    channels: Vec<SessionChannelDto>,
+) -> Result<String> {
+    let channels: Vec<AudioChannel> = channels.into_iter().map(Into::into).collect();
+    state.session.continue_session(&id, &channels)
+}
+
 /// Retorna o id da sessão ativa, se houver.
 #[tauri::command]
 pub fn session_current(state: State<'_, AppState>) -> Result<Option<String>> {

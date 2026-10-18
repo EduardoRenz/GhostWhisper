@@ -28,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ipc::ping::ping,
             ipc::overlay::overlay_toggle,
@@ -46,13 +47,27 @@ pub fn run() {
             ipc::audio_commands::system_audio_is_running,
             ipc::audio_commands::system_sink_create,
             ipc::audio_commands::system_sink_remove,
+            ipc::audio_commands::audio_monitor_default_delay,
+            ipc::audio_commands::audio_monitor_start,
+            ipc::audio_commands::audio_monitor_stop,
+            ipc::audio_commands::audio_monitor_is_running,
             ipc::session_commands::session_start,
             ipc::session_commands::session_stop,
+            ipc::session_commands::session_pause,
+            ipc::session_commands::session_resume,
+            ipc::session_commands::session_set_channels,
+            ipc::session_commands::session_continue,
             ipc::session_commands::session_current,
             ipc::database_commands::db_list_sessions,
             ipc::database_commands::db_get_session,
             ipc::database_commands::db_session_transcriptions,
+            ipc::database_commands::db_session_messages,
+            ipc::database_commands::db_session_timeline,
             ipc::database_commands::db_search_transcriptions,
+            ipc::session_commands::session_rename,
+            ipc::session_commands::session_delete,
+            ipc::export_commands::session_export_markdown,
+            ipc::export_commands::session_save_markdown,
             ipc::settings_commands::settings_open,
             ipc::settings_commands::settings_providers,
             ipc::settings_commands::settings_get,
@@ -101,13 +116,16 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::ai::default_chat_bot_provider_factory::DefaultChatBotProviderFactory;
     use adapters::audio::cpal_microphone_source::CpalMicrophoneSource;
     use adapters::audio::microphone_front_end::MicrophoneFrontEnd;
+    use adapters::audio::monitored_audio_source::MonitoredAudioSource;
     use adapters::audio::pactl_sink_helper::PactlVirtualSinkManager;
+    use adapters::audio::pulse_delayed_monitor::PulseDelayedMonitor;
     use adapters::audio::pulse_system_audio_source::PulseSystemAudioSource;
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
     use adapters::persistence::sqlite::connection as db_connection;
+    use adapters::persistence::sqlite::local_messages_repository::LocalMessagesRepository;
     use adapters::persistence::sqlite::local_session_repository::LocalSessionRepository;
     use adapters::persistence::sqlite::local_transcriptions_repository::LocalTranscriptionsRepository;
     use adapters::secrets::in_memory_secret_store::InMemorySecretStore;
@@ -124,6 +142,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use application::llm_router::LlmRouter;
     use application::session_service::SessionService;
     use application::translation_service::TranslationService;
+    use ports::audio_monitor::AudioMonitor;
     use ports::audio_source::AudioSource;
     use ports::click_through::ClickThroughController;
     use ports::clock::Clock;
@@ -134,7 +153,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::model_store::ModelStore;
     use ports::overlay_window::OverlayWindowController;
     use ports::pointer_source::PointerSource;
-    use ports::repositories::{SessionRepository, TranscriptionsRepository};
+    use ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
     use ports::secret_store::SecretStore;
     use ports::session_controller::SessionController;
     use ports::settings_store::SettingsStore;
@@ -185,11 +204,16 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let settings: Arc<dyn SettingsStore> =
         Arc::new(FileSettingsStore::new(data_dir.join("settings.json")));
 
-    // Captura: o microfone passa pelo estágio de ganho (BR-018); o áudio do
-    // sistema (loopback) segue sem amplificação.
-    let audio: Arc<dyn AudioSource> = Arc::new(MicrophoneFrontEnd::new(
-        Arc::new(CpalMicrophoneSource::new()),
-        Arc::clone(&settings),
+    // Captura: o microfone passa pelo estágio de ganho (BR-018) e por um ponto
+    // de escuta para o monitor atrasado (task 15); o áudio do sistema (loopback)
+    // segue sem amplificação.
+    let monitor: Arc<dyn AudioMonitor> = Arc::new(PulseDelayedMonitor::new());
+    let audio: Arc<dyn AudioSource> = Arc::new(MonitoredAudioSource::new(
+        Arc::new(MicrophoneFrontEnd::new(
+            Arc::new(CpalMicrophoneSource::new()),
+            Arc::clone(&settings),
+        )),
+        Arc::clone(&monitor),
     ));
     let system_audio: Arc<dyn AudioSource> = Arc::new(PulseSystemAudioSource::new());
     let virtual_sink: Arc<dyn VirtualSinkManager> = Arc::new(PactlVirtualSinkManager);
@@ -204,7 +228,17 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::new(LocalSessionRepository::new(Arc::clone(&connection)));
     let transcriptions: Arc<dyn TranscriptionsRepository> =
         Arc::new(LocalTranscriptionsRepository::new(Arc::clone(&connection)));
+    let messages: Arc<dyn MessagesRepository> =
+        Arc::new(LocalMessagesRepository::new(Arc::clone(&connection)));
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+
+    // Sessões órfãs: app fechado durante uma gravação deixa a sessão `active` no
+    // banco. Encerra no boot para o histórico (task 17) não mentir (BR-019).
+    match sessions.end_all_active(clock.now_ms()) {
+        Ok(0) => {}
+        Ok(count) => tracing::info!("{count} sessão(ões) órfã(s) encerrada(s) no boot"),
+        Err(error) => tracing::warn!("falha ao encerrar sessões órfãs: {error}"),
+    }
 
     // Segredos (BYO key). Sem Secret Service, a chave fica apenas em memória
     // durante a execução (BR-003).
@@ -236,6 +270,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&settings),
         Arc::clone(&sessions),
         Arc::clone(&transcriptions),
+        Arc::clone(&messages),
+        Arc::clone(&clock),
     ));
 
     // Atalhos globais: o despachante resolve o `AppState` em tempo de execução.
@@ -277,7 +313,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&publisher),
         Arc::clone(&sessions),
         Arc::clone(&transcriptions),
-        clock,
+        Arc::clone(&clock),
     ));
 
     Ok(state::AppState::new(
@@ -285,10 +321,13 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         click_through,
         audio,
         system_audio,
+        monitor,
         virtual_sink,
         session,
         sessions,
         transcriptions,
+        messages,
+        clock,
         settings,
         secrets,
         llm,
@@ -423,7 +462,7 @@ fn dispatch_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
             }
         }
         ShortcutAction::RequestInsight => match state.insight.generate(None) {
-            Ok(text) => state.publisher.emit_insight(&text),
+            Ok(suggestion) => state.publisher.emit_insight(&suggestion),
             Err(error) => tracing::warn!("falha ao gerar insight pelo atalho: {error}"),
         },
     }

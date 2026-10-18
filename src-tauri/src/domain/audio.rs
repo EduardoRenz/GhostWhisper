@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use std::collections::VecDeque;
+
 /// Taxa de amostragem de trabalho (esperada pelo whisper.cpp).
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 
@@ -186,6 +188,113 @@ pub struct AudioDevice {
     pub is_default: bool,
 }
 
+// --- Monitor atrasado do microfone ("ouvir minha voz", task 15) -------------
+
+/// Atraso padrão do monitor, em ms.
+///
+/// O atraso é o que evita a realimentação (microfonia) quando a voz sai pela
+/// caixa de som: sem ele, o microfone reouve a própria saída e entra em loop.
+pub const DEFAULT_MONITOR_DELAY_MS: u64 = 400;
+
+/// Folga máxima além do atraso, em ms de áudio (protege contra atraso crescente).
+const MONITOR_MAX_LAG_MS: u64 = 500;
+
+/// Bloco de áudio agendado para reprodução.
+#[derive(Debug)]
+struct ReadyBlock {
+    /// Quando o bloco pode ser tocado (`ms` no relógio do chamador).
+    ready_at_ms: u64,
+    samples: Vec<f32>,
+}
+
+/// Fila de blocos de áudio com **atraso fixo** para o monitor.
+///
+/// Pura de propósito: recebe o `now_ms` do chamador, então o atraso e a
+/// proteção contra acúmulo são testáveis sem placa de som nem threads.
+#[derive(Debug)]
+pub struct DelayedAudioQueue {
+    delay_ms: u64,
+    blocks: VecDeque<ReadyBlock>,
+    pending_samples: usize,
+    dropped_samples: u64,
+}
+
+impl DelayedAudioQueue {
+    /// Cria a fila com o atraso dado (ms).
+    pub fn new(delay_ms: u64) -> Self {
+        Self {
+            delay_ms,
+            blocks: VecDeque::new(),
+            pending_samples: 0,
+            dropped_samples: 0,
+        }
+    }
+
+    /// Atraso configurado (ms).
+    pub fn delay_ms(&self) -> u64 {
+        self.delay_ms
+    }
+
+    /// Amostras aguardando reprodução.
+    pub fn pending_samples(&self) -> usize {
+        self.pending_samples
+    }
+
+    /// Amostras descartadas por acúmulo (o consumidor não acompanhou).
+    pub fn dropped_samples(&self) -> u64 {
+        self.dropped_samples
+    }
+
+    /// Enfileira um bloco; ele fica pronto em `now_ms + delay_ms`.
+    ///
+    /// Se a fila passar de `atraso + folga`, os blocos **mais antigos** são
+    /// descartados: melhor perder áudio velho do que deixar a voz cada vez mais
+    /// atrasada.
+    pub fn push(&mut self, samples: &[f32], now_ms: u64) {
+        if samples.is_empty() {
+            return;
+        }
+        let limit = ms_to_samples(self.delay_ms + MONITOR_MAX_LAG_MS);
+        while self.pending_samples + samples.len() > limit {
+            let Some(dropped) = self.blocks.pop_front() else {
+                break;
+            };
+            self.pending_samples = self.pending_samples.saturating_sub(dropped.samples.len());
+            self.dropped_samples += dropped.samples.len() as u64;
+        }
+        self.pending_samples += samples.len();
+        self.blocks.push_back(ReadyBlock {
+            ready_at_ms: now_ms + self.delay_ms,
+            samples: samples.to_vec(),
+        });
+    }
+
+    /// Anexa em `out` as amostras prontas (`ready_at_ms <= now_ms`).
+    pub fn drain_ready(&mut self, now_ms: u64, out: &mut Vec<f32>) {
+        while let Some(block) = self.blocks.front() {
+            if block.ready_at_ms > now_ms {
+                break;
+            }
+            let Some(block) = self.blocks.pop_front() else {
+                break;
+            };
+            self.pending_samples = self.pending_samples.saturating_sub(block.samples.len());
+            out.extend_from_slice(&block.samples);
+        }
+    }
+
+    /// Descarta o pendente (ao desligar o monitor).
+    pub fn clear(&mut self) {
+        self.blocks.clear();
+        self.pending_samples = 0;
+    }
+}
+
+/// Converte milissegundos em amostras na taxa de trabalho.
+fn ms_to_samples(ms: u64) -> usize {
+    (ms as usize * TARGET_SAMPLE_RATE as usize) / 1000
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,5 +434,105 @@ mod tests {
     fn gate_falls_back_to_the_default_threshold_on_garbage() {
         let gate = NoiseGate::new(f32::NAN, DEFAULT_NOISE_GATE_HANGOVER_MS);
         assert_eq!(gate.threshold(), SPEECH_RMS_THRESHOLD);
+    }
+
+    // --- Monitor atrasado (task 15) -----------------------------------------
+
+    /// 100 ms de áudio, com o valor dado (para identificar o bloco).
+    fn block(value: f32) -> Vec<f32> {
+        vec![value; TARGET_SAMPLE_RATE as usize / 10]
+    }
+
+    #[test]
+    fn delayed_queue_holds_the_block_until_the_delay_elapses() {
+        let mut queue = DelayedAudioQueue::new(400);
+        queue.push(&block(0.1), 1_000);
+
+        // Antes do atraso: nada pronto.
+        let mut out = Vec::new();
+        queue.drain_ready(1_000, &mut out);
+        assert!(out.is_empty());
+        queue.drain_ready(1_399, &mut out);
+        assert!(out.is_empty(), "ainda dentro do atraso");
+
+        // No atraso exato o bloco fica pronto.
+        queue.drain_ready(1_400, &mut out);
+        assert_eq!(out.len(), TARGET_SAMPLE_RATE as usize / 10);
+        assert!(out
+            .iter()
+            .all(|sample| (*sample - 0.1).abs() < f32::EPSILON));
+        assert_eq!(queue.pending_samples(), 0);
+    }
+
+    #[test]
+    fn delayed_queue_preserves_the_order_of_blocks() {
+        let mut queue = DelayedAudioQueue::new(100);
+        queue.push(&block(1.0), 0);
+        queue.push(&block(2.0), 10);
+
+        let mut out = Vec::new();
+        queue.drain_ready(100, &mut out);
+        assert!(out
+            .iter()
+            .all(|sample| (*sample - 1.0).abs() < f32::EPSILON));
+
+        out.clear();
+        queue.drain_ready(110, &mut out);
+        assert!(out
+            .iter()
+            .all(|sample| (*sample - 2.0).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn delayed_queue_drops_the_oldest_blocks_when_lagging_behind() {
+        // Atraso de 100 ms + folga de 500 ms = 600 ms de teto.
+        let mut queue = DelayedAudioQueue::new(100);
+        for index in 0..10 {
+            // 10 blocos de 100 ms = 1 s de áudio (acima do teto).
+            queue.push(&block(index as f32), 0);
+        }
+
+        assert!(
+            queue.pending_samples() <= ms_to_samples(600),
+            "a fila não pode crescer sem limite"
+        );
+        assert!(
+            queue.dropped_samples() > 0,
+            "o excedente antigo é descartado"
+        );
+
+        let mut out = Vec::new();
+        queue.drain_ready(1_000, &mut out);
+        // O que sobrou é o mais recente (o bloco 9 é o último empilhado).
+        assert!(
+            out.last()
+                .is_some_and(|sample| (*sample - 9.0).abs() < f32::EPSILON),
+            "áudio recente preservado"
+        );
+    }
+
+    #[test]
+    fn delayed_queue_ignores_empty_blocks_and_clears_on_demand() {
+        let mut queue = DelayedAudioQueue::new(50);
+        queue.push(&[], 0);
+        assert_eq!(queue.pending_samples(), 0);
+
+        queue.push(&block(0.5), 0);
+        assert!(queue.pending_samples() > 0);
+        queue.clear();
+        assert_eq!(queue.pending_samples(), 0);
+
+        let mut out = Vec::new();
+        queue.drain_ready(1_000, &mut out);
+        assert!(out.is_empty(), "descartado não toca");
+    }
+
+    #[test]
+    fn delayed_queue_reports_its_delay() {
+        assert_eq!(DelayedAudioQueue::new(0).delay_ms(), 0);
+        assert_eq!(
+            DelayedAudioQueue::new(DEFAULT_MONITOR_DELAY_MS).delay_ms(),
+            400
+        );
     }
 }

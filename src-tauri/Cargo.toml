@@ -18,6 +18,8 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-dialog = "2.8.3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.15"
 libpulse-binding = "2"
 libpulse-simple-binding = "2"

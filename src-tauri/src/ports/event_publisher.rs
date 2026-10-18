@@ -4,13 +4,16 @@ use serde::Serialize;
 
 use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
+use crate::ports::insight_generator::InsightSuggestion;
 use crate::ports::session_controller::AudioChannel;
 
 /// Estado da sessão publicado para a UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SessionStateEvent {
-    /// `true` quando há sessão escutando.
+    /// `true` quando há sessão aberta (gravando **ou** pausada).
     pub listening: bool,
+    /// `true` quando a captura está suspensa, mas a sessão segue aberta.
+    pub paused: bool,
     /// Id da sessão ativa (quando `listening`).
     pub session_id: Option<String>,
     /// Canais ativos: `microphone` e/ou `system`.
@@ -27,8 +30,8 @@ pub trait EventPublisher: Send + Sync {
     fn emit_audio_level(&self, channel: AudioChannel, level: AudioLevel);
     /// Emite uma mudança de estado da sessão.
     fn emit_session_state(&self, state: &SessionStateEvent);
-    /// Emite um insight/sugestão gerado fora do painel (ex.: atalho).
-    fn emit_insight(&self, text: &str);
+    /// Emite uma sugestão já persistida (painel ou atalho global).
+    fn emit_insight(&self, suggestion: &InsightSuggestion);
     /// Emite o status de preparação do motor de transcrição (download/carga).
     fn emit_asr_status(&self, status: &AsrStatus);
 }

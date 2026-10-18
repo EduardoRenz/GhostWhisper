@@ -14,6 +14,8 @@ use crate::state::AppState;
 pub enum SurfaceDto {
     Actionbar,
     Expanded,
+    #[serde(rename = "expanded-tall")]
+    ExpandedTall,
     Hidden,
 }
 
@@ -22,6 +24,7 @@ impl From<SurfaceDto> for Surface {
         match value {
             SurfaceDto::Actionbar => Surface::ActionBar,
             SurfaceDto::Expanded => Surface::Expanded,
+            SurfaceDto::ExpandedTall => Surface::ExpandedTall,
             SurfaceDto::Hidden => Surface::Hidden,
         }
     }

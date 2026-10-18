@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import {
   listMicrophones,
   listSystemSources,
+  monitorDefaultDelay,
   startMicrophone,
+  startMonitor,
   startSystemAudio,
   stopMicrophone,
+  stopMonitor,
   stopSystemAudio,
   type AudioDevice,
 } from "../../adapters/ipc/audio";
@@ -29,10 +32,25 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [monitoring, setMonitoring] = useState(false);
+  const [monitorDelay, setMonitorDelay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const levels = useAudioLevel();
   const { state } = useSessionState();
   const sessionActive = state.listening;
+
+  // Atraso do monitor (definido pelo core; o usuário não precisa escolher).
+  useEffect(() => {
+    let cancelled = false;
+    void monitorDefaultDelay().then((delay) => {
+      if (!cancelled && typeof delay === "number") {
+        setMonitorDelay(delay);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // (Re)carrega dispositivos ao trocar de canal.
   useEffect(() => {
@@ -56,14 +74,39 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
     };
   }, [channel]);
 
-  // Nunca deixa uma captura de teste pendurada ao sair da página.
+  // Nunca deixa uma captura de teste (nem o monitor) pendurada ao sair da página.
   useEffect(
     () => () => {
+      void stopMonitor();
       void stopMicrophone();
       void stopSystemAudio();
     },
     [],
   );
+
+  // O monitor é só do microfone: ao trocar para o áudio do sistema, desliga.
+  useEffect(() => {
+    if (channel === "system" && monitoring) {
+      void stopMonitor();
+      setMonitoring(false);
+    }
+  }, [channel, monitoring]);
+
+  const onToggleMonitor = async () => {
+    setError(null);
+    try {
+      if (monitoring) {
+        await stopMonitor();
+        setMonitoring(false);
+      } else {
+        await startMonitor(monitorDelay ?? undefined);
+        setMonitoring(true);
+      }
+    } catch (caught) {
+      setError(String(caught));
+      setMonitoring(false);
+    }
+  };
 
   const onStart = async () => {
     setError(null);
@@ -83,6 +126,8 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
   const onStop = async () => {
     setError(null);
     try {
+      await stopMonitor();
+      setMonitoring(false);
       if (channel === "microphone") {
         await stopMicrophone();
       } else {
@@ -159,6 +204,30 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
             sensibilidade é silenciado de propósito para não virar transcrição
             falsa.
           </p>
+        )}
+
+        {channel === "microphone" && (
+          <div className="audio-test__monitor">
+            <label className="settings__field settings__field--row">
+              <input
+                type="checkbox"
+                checked={monitoring}
+                disabled={!running}
+                onChange={() => void onToggleMonitor()}
+              />
+              <span>
+                Ouvir minha voz
+                {monitorDelay !== null &&
+                  ` (com ${(monitorDelay / 1000).toFixed(1)} s de atraso)`}
+              </span>
+            </label>
+            <p className="settings__hint">
+              Use <strong>fone de ouvido</strong>: com caixa de som o retorno
+              realimenta o microfone (microfonia). Você ouve exatamente o que o
+              ASR recebe — ganho e sensibilidade incluídos. Só funciona com o
+              teste em execução.
+            </p>
+          </div>
         )}
       </div>
 

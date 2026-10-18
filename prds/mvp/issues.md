@@ -19,6 +19,61 @@ Registro de bugs e pendências observadas em uso. Legenda de status:
 | ISS-013 | Fim de turno preso atrás da prévia (decodificação bloqueava o agendamento) | Alta | FIXED |
 | ISS-014 | ASR enroscava após timeout (`AsrBusy` em cascata) e threads subdimensionadas | Alta | FIXED |
 | ISS-015 | Sensibilidade do microfone muito baixa (nenhum ganho de entrada) | Alta | FIXED |
+| ISS-016 | Pausar/continuar a gravação apagava as mensagens (sem conceito de sessão) | Alta | FIXED |
+| ISS-017 | Seletor de canais travado durante a captura (`disabled` enquanto gravava) | Média | FIXED |
+
+---
+
+## ISS-017 — Não dava para trocar os canais com a sessão gravando
+
+- **Severidade:** Média · **Status:** FIXED
+- **Sintoma (relato do usuário):** *"por que não é permitido mais trocar os canais a
+  ouvir? isso deveria ser sempre possível, inclusive sem precisar pausar ou parar"*.
+- **Causa:** o `<select>` de canais ficava `disabled={listening}` — herdado de
+  antes do conceito de sessão, quando trocar de canal exigia encerrar e começar
+  outra sessão. Somado à sessão contínua (BR-019), virou um contrassenso.
+- **Correção (task 20):** `SessionController::set_channels` troca a captura
+  **mantendo a sessão** (mesmo id, mesma origem de tempo): para os canais que
+  saem, liga os que entram, atualiza a escolha quando pausada e preserva os
+  canais que seguem funcionando. O seletor fica sempre habilitado e reflete o que
+  está sendo captado.
+- **Arquivos:** `ports/session_controller.rs`, `application/session_service.rs`,
+  `ipc/session_commands.rs`, `lib.rs`, `core/application/useSessionState.ts`,
+  `adapters/ipc/session.ts`, `features/session/SessionControls.tsx` (+ testes).
+- **Evidência:** +9 testes Rust e +4 frontend (ver [`20-task.md`](tasks/20-task.md)).
+- **Task:** [`20-task.md`](tasks/20-task.md)
+
+---
+
+## ISS-016 — Pausar/continuar apagava as mensagens
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma (relato do usuário):** *"toda vez que eu pauso e continuo a
+  gravação, a aplicação está apagando as mensagens e reiniciando"*.
+- **Causa:** faltava o **conceito de sessão** no ciclo de captura. Cada
+  `session_start` encerrava a anterior e criava **um id novo**
+  (`SessionService::start`), e a UI (`useLiveTranscription`) **zerava a lista**
+  quando o `session_id` mudava. A linha do tempo antiga continuava no banco, sem
+  nenhum caminho na UI para vê-la. Os timestamps eram relativos ao **início da
+  captura**, então uma retomada também reiniciaria o relógio em 0.
+- **Correção (BR-019):** pausar suspende a captura e **mantém a sessão aberta**
+  (mesmo id); retomar volta a capturar nela; continuar reativa uma sessão
+  encerrada; só "Nova sessão" cria outro id. A UI recarrega o histórico
+  persistido da sessão em vez de começar vazia, e cada linha mostra `mm:ss` desde
+  o início da sessão (`with_time_origin`). O id do segmento passou a carregar a
+  origem de tempo (sem colisão ao continuar) e sessões órfãs são encerradas no
+  boot.
+- **Referência (BR-015):** `transcriptionPreview.pause/resume` ("Pausado — o áudio
+  não está sendo capturado") e `DatabaseManager.{resumeSession,endAllActiveSessions}`.
+- **Arquivos:** `ports/session_controller.rs`, `ports/repositories.rs`,
+  `ports/event_publisher.rs`, `application/session_service.rs`,
+  `application/transcription_pipeline.rs`, `adapters/persistence/{sqlite,memory}/*`,
+  `ipc/session_commands.rs`, `lib.rs`, `core/{domain/transcript.ts,application/useLiveTranscription.ts,application/useSessionState.ts}`,
+  `features/session/SessionControls.tsx`, `features/overlay/*`, `features/transcript/TranscriptView.tsx`.
+- **Evidência:** 175 testes Rust (+13) e 40 frontend (+17) — ver
+  [`16-task.md`](tasks/16-task.md).
+- **Task:** [`16-task.md`](tasks/16-task.md) · **Continua em:** histórico/export nas
+  tasks 17/18.
 
 ---
 

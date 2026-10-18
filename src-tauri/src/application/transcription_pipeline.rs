@@ -98,6 +98,12 @@ pub struct TranscriptionPipeline {
     transcriptions: Arc<dyn TranscriptionsRepository>,
     /// Limiares de tempo do turno.
     timings: TurnTimings,
+    /// Deslocamento do relógio da sessão (ms) no início desta captura.
+    ///
+    /// Os timestamps dos segmentos são relativos ao **início da sessão**, não ao
+    /// início da captura: ao retomar/continuar uma sessão a linha temporal segue
+    /// de onde estava em vez de reiniciar em 0 (BR-019).
+    time_origin_ms: i64,
     /// Buffer do turno atual (teto rígido).
     buffer: Mutex<VecDeque<f32>>,
     stop: AtomicBool,
@@ -162,6 +168,15 @@ impl TranscriptionPipeline {
         self
     }
 
+    /// Define o deslocamento do relógio da sessão (ms) nesta captura.
+    ///
+    /// `0` = sessão nova; ao retomar/continuar, passe
+    /// `agora_ms - session.started_at_ms` (BR-019).
+    pub fn with_time_origin(mut self, origin_ms: i64) -> Self {
+        self.time_origin_ms = origin_ms.max(0);
+        self
+    }
+
     /// Construtor completo.
     #[allow(clippy::too_many_arguments)]
     fn with_timings_and_all(
@@ -182,6 +197,7 @@ impl TranscriptionPipeline {
             publisher,
             transcriptions,
             timings,
+            time_origin_ms: 0,
             buffer: Mutex::new(VecDeque::new()),
             stop: AtomicBool::new(false),
             turn: AtomicU64::new(0),
@@ -580,14 +596,20 @@ impl TranscriptionPipeline {
     ///
     /// A prévia e o final compartilham o mesmo id, então a UI substitui o texto
     /// em vez de duplicar. Só o final é persistido.
+    ///
+    /// O id carrega a **origem de tempo** da captura: continuar uma sessão cria
+    /// pipelines novos com `turn` reiniciando em 0, e sem a origem dois turnos de
+    /// capturas diferentes colidiriam (chave primária no banco e substituição
+    /// errada na UI).
     fn publish_turn(&self, turn: u64, text: &str, base_ms: i64, cut_ms: i64, is_final: bool) {
+        let start_ms = self.time_origin_ms + base_ms;
         let segment = TranscriptSegment {
-            id: format!("{}-t{turn}", self.session_id),
+            id: format!("{}-{}-t{turn}", self.session_id, self.time_origin_ms),
             session_id: self.session_id.clone(),
             speaker: self.speaker,
             text: text.to_string(),
-            start_ms: base_ms,
-            end_ms: base_ms + cut_ms,
+            start_ms,
+            end_ms: start_ms + cut_ms,
             is_final,
         };
         if is_final {
@@ -978,7 +1000,7 @@ mod tests {
         }
         fn emit_audio_level(&self, _channel: AudioChannel, _level: AudioLevel) {}
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
-        fn emit_insight(&self, _text: &str) {}
+        fn emit_insight(&self, _suggestion: &crate::ports::insight_generator::InsightSuggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 
@@ -1009,6 +1031,17 @@ mod tests {
         (pipeline, publisher)
     }
 
+    /// Pipeline com a origem de tempo de uma sessão retomada (BR-019).
+    fn pipeline_with_origin(
+        text: &str,
+        origin_ms: i64,
+    ) -> (TranscriptionPipeline, Arc<RecordingPublisher>) {
+        let (pipeline, publisher, _rows) = pipeline(Arc::new(FakeAsr {
+            text: text.to_string(),
+        }));
+        (pipeline.with_time_origin(origin_ms), publisher)
+    }
+
     fn timings() -> TurnTimings {
         TurnTimings::default()
     }
@@ -1036,7 +1069,30 @@ mod tests {
         let segments = publisher.segments();
         assert_eq!(segments.len(), 1, "esperava a primeira prévia");
         assert!(!segments[0].is_final);
-        assert_eq!(segments[0].id, "s1-t0");
+        assert_eq!(segments[0].id, "s1-0-t0");
+    }
+
+    #[test]
+    fn time_origin_shifts_timestamps_and_keeps_ids_unique() {
+        // Duas capturas da MESMA sessão (BR-019): a segunda continua o relógio de
+        // onde a primeira parou, e os ids de turno não colidem entre capturas.
+        let (first, first_publisher) = pipeline_with_origin("fala", 0);
+        first.consume(&speech(1_500));
+        first.tick();
+        let first_segments = first_publisher.segments();
+
+        let (second, second_publisher) = pipeline_with_origin("fala", 60_000);
+        second.consume(&speech(1_500));
+        second.tick();
+        let second_segments = second_publisher.segments();
+
+        assert_eq!(first_segments[0].start_ms, 0);
+        assert_eq!(second_segments[0].start_ms, 60_000, "linha temporal segue");
+        assert_eq!(second_segments[0].end_ms, 61_500);
+        assert_ne!(
+            first_segments[0].id, second_segments[0].id,
+            "ids de capturas diferentes não podem colidir"
+        );
     }
 
     #[test]
