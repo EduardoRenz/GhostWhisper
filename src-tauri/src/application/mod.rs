@@ -10,6 +10,7 @@ pub mod prompts;
 pub mod session_lookup;
 pub mod session_service;
 pub mod session_timeline;
+pub mod suggestion_scheduler;
 pub mod suggestion_service;
 pub mod summary_service;
 #[cfg(test)]

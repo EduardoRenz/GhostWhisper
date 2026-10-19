@@ -66,10 +66,30 @@ src/core/application/useSuggestions.ts               # deltas + auto contínuo (
 
 - **GPU + flash attention.** Features `vulkan`/`cuda` do `whisper-rs`, com
   detecção de dispositivo e fallback CPU; `flash_attn = true` quando suportado
-  (Perssua: só `--no-flash-attn` em macOS).
+  (Perssua: só `--no-flash-attn` em macOS). No Linux sem ROCm/CUDA, o caminho é
+  **Vulkan** (`whisper-rs/vulkan`), viabilizado por `scripts/vulkan-env.sh`
+  (headers + `glslc`, sem sudo).
+
+### Medição (RX 480 / RADV POLARIS10, Vulkan, dev `RelWithDebInfo`, amostra JFK)
+
+| modelo | 1 s | 8 s | 20 s | 30 s |
+|---|---|---|---|---|
+| `tiny` (Vulkan) | 99 ms | 241 ms | 580 ms | 791 ms |
+| `small` (Vulkan) | 541 ms | 725 ms | 1 156 ms | 2 107 ms |
+| `large-v3-turbo` (Vulkan) | 2 432 ms | 2 573 ms | 2 973 ms | 4 511 ms |
+| `tiny` (CPU, referência antiga) | — | ~1,5–2 s | ~1,5–2 s | — |
+
+Leitura: o **`small` na GPU** entrega a latência que o `tiny` tinha na CPU, com
+muito mais precisão — é o default recomendado com GPU. O `large-v3-turbo` tem um
+**piso de ~2,4 s por chamada** nesta placa (sem fp16/matrix cores), o que atrasa
+prévias curtas; fica como opção para turnos longos ou GPUs mais fortes.
 - **Modelo por hardware.** Default `large-v3-turbo` com GPU; CPU mantém o menor.
 - **AEC referenciado.** O áudio do sistema vira referência para cancelar eco no
-  microfone (atraso configurável, default 60 ms), como `explicit_aec_*` (§5).
+  microfone, como `explicit_aec_*` (§5): `SystemAudioReferenceTap` guarda uma
+  janela de ~2 s (`SharedAudioReference`), o `MicrophoneFrontEnd` puxa a janela
+  atrasada (padrão 60 ms) e um **NLMS** de 512 taps subtrai a estimativa **antes**
+  do ganho, com guarda de *double-talk*. Referência muda ⇒ saída intacta; toggle
+  em `Settings.aec_enabled`.
 - **Reuso do passe final.** Se o VAD nativo do whisper já marcou o fim da fala
   (`speech_end_ms`), o resultado da prévia é promovido a final, sem segundo beam
   search (Perssua: `endedInNoise`).

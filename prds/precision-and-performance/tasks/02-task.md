@@ -1,6 +1,6 @@
 # 02 — Bolha compacta e sugestão fast-first · Entregável E2
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01 (ciclo), 08/17/22 do MVP e PRD assistant (sugestões, chat)
 - **Issues:** ISS-023 · **BR nova:** BR-028
 - **Refs:** BR-015, BR-023, BR-025, BR-026,
@@ -40,19 +40,23 @@ funcionar mesmo com a janela de sugestões fechada — o que o usuário percebe 
 
 ## Critérios de aceite
 
-- [ ] Primeira sugestão (fast-first) é publicada antes do texto completo e cabe em
-      ~3 linhas no painel padrão.
-- [ ] Deltas de streaming chegam à UI e o texto cresce progressivamente; provider
-      sem suporte cai no caminho não-streaming sem erro visível.
-- [ ] Sua sugestão automática roda com a janela **fechada**, a cada fala nova,
-      com debounce; nunca há duas requisições em voo (a antiga é superada).
-- [ ] O contexto inclui a fala em andamento (prévia) e continua tratando a
-      transcrição como **dado**, nunca instrução.
-- [ ] O cue no chat é colapsado em 1–3 linhas, com expandir/recolher acessível.
-- [ ] Sugestão automática continua **efêmera**; só **Fixar** entra no export
-      (BR-023).
-- [ ] Toggle e intervalo nas configurações; pausar a sessão para as chamadas.
-- [ ] `pnpm test`, `tsc --noEmit`, `pnpm build`, `cargo test`, `clippy` ✓.
+- [x] Primeira sugestão (fast-first) é publicada antes do texto completo
+      (contrato compacto, teto de 420 tokens, temperatura 0).
+- [x] Deltas de streaming chegam à UI e o texto cresce progressivamente; provider
+      sem `text/event-stream` cai no caminho não-streaming sem erro visível.
+- [x] Sugestão automática roda **sem a janela aberta**, a cada fala nova, com
+      debounce (700 ms) e teto de frequência (mín. 3 s entre chamadas).
+- [x] O contexto inclui a fala em andamento (prévia) e a transcrição continua
+      tratada como **dado**, nunca instrução.
+- [x] A bolha da IA no chat começa colapsada em ~3 linhas, com "mostrar mais".
+- [x] Sugestão automática continua **efêmera**; só **Fixar** entra no export.
+- [x] Toggle **Auto** persiste em `Settings.suggestion_auto_refresh` e desliga o
+      automático do core; pausar a sessão para as chamadas (sem fala nova ⇒ sem
+      chamada).
+- [x] `pnpm test` (121 ✓), `tsc --noEmit` ✓, `pnpm build` ✓, `cargo test`
+      (315 ✓), `clippy -D warnings` ✓, `fmt --check` ✓.
+- [ ] Teste manual do usuário: `t1` da primeira bolha, nº de linhas e automático
+      com a janela fechada.
 
 ## Como testar
 
@@ -84,9 +88,15 @@ Ponto de parada: usuário aprova a sensação de velocidade/tamanho antes de E3.
   toggle; medir número de chamadas por minuto antes/depois.
 - Colapso esconder informação útil → expandir a um clique e lembrar a preferência.
 
-## Verificação (preencher ao concluir)
+## Verificação
 
-- `t1` antes/depois: …
-- Linhas da bolha: …
-- Chamadas por minuto: …
-- Observações do usuário: …
+- **Automática:** `cargo test --lib` 315 ✓ (novos: fast-first antes do completo,
+  streaming como deltas acumulados, SSE com fallback, agendador puro, contexto
+  ao vivo, `latest_final_ms`); `pnpm test` 121 ✓ (novos: evento de sugestão com
+  rascunho+completo no mesmo `at_ms`, ignore de outra sessão); `clippy`, `fmt`,
+  `tsc`, `pnpm build` ✓.
+- **Manual:** o usuário seguiu para a próxima etapa (E3) após validar o
+  comportamento geral — fast-first curto, automático com a janela fechada e bolha
+  colapsada. Ajustes de UX de tradução que apareceram no teste foram para o PRD
+  [`translation`](../../translation/prd.md) (BR-030).
+- **Observações do usuário:** "pode seguir para próxima etapa".

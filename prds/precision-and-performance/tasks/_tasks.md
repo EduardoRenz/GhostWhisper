@@ -7,9 +7,9 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 
 | # | Resumo | Entregável | Status |
 |---|--------|-----------|--------|
-| 01 | Precisão do ASR: prompt de decodificação, idioma, resampler anti-alias, catálogo de modelos, detecção de GPU | E1 | IN PROGRESS |
-| 02 | Bolha compacta e sugestão fast-first: streaming, prévias no contexto, insights automáticos, UI colapsável | E2 | PENDING |
-| 03 | Áudio limpo e engine rápida: GPU + flash attention, modelo por hardware, AEC, reuso do final, commits | E3 | PENDING |
+| 01 | Precisão do ASR: prompt de decodificação, idioma, resampler anti-alias, catálogo de modelos, detecção de GPU | E1 | CONCLUDED |
+| 02 | Bolha compacta e sugestão fast-first: streaming, prévias no contexto, insights automáticos, UI colapsável | E2 | CONCLUDED |
+| 03 | Áudio limpo e engine rápida: GPU + flash attention, modelo por hardware, AEC, reuso do final, commits | E3 | CONCLUDED |
 
 ## Dependências
 

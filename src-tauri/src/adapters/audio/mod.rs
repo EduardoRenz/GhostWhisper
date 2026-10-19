@@ -9,3 +9,4 @@ pub mod pactl_sink_helper;
 pub mod pcm_resampler;
 pub mod pulse_delayed_monitor;
 pub mod pulse_system_audio_source;
+pub mod shared_audio_reference;

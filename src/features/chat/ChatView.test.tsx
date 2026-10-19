@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "./ChatView";
-import type { ChatBubble } from "../../core/domain/chat";
+import { buildChatTimeline, type ChatBubble } from "../../core/domain/chat";
 import type { TranscriptSegment } from "../../core/domain/transcript";
 
 const copyText = vi.fn();
@@ -32,6 +32,18 @@ const pendingSegment = (text: string, speaker: "ME" | "THEY" = "ME"): Transcript
   start_ms: 9_000,
   end_ms: 10_000,
   final: false,
+});
+
+const segment = (
+  overrides: Partial<TranscriptSegment> & { id: string },
+): TranscriptSegment => ({
+  session_id: "s1",
+  speaker: "ME",
+  text: "fala",
+  start_ms: 1_000,
+  end_ms: 2_000,
+  final: true,
+  ...overrides,
 });
 
 describe("ChatView", () => {
@@ -104,6 +116,37 @@ describe("ChatView", () => {
     expect(screen.getByText("…")).toBeDefined();
   });
 
+  it("divide fala longa em continuações, sem repetir rótulo nem tempo", () => {
+    const long = `${"a".repeat(100)}. ${"b".repeat(100)}.`;
+    // Mesmo caminho da tela: a linha temporal corta a fala antes da renderização.
+    const { bubbles } = buildChatTimeline([
+      segment({ id: "t1", speaker: "THEY", start_ms: 5_000, text: long }),
+    ]);
+    render(<ChatView bubbles={bubbles} />);
+
+    const first = screen.getByText(`${"a".repeat(100)}.`);
+    const second = screen.getByText(`${"b".repeat(100)}.`);
+    expect(first.closest(".chat__row")?.className).toContain("chat__row--they");
+    expect(second.closest(".chat__row")?.className).toContain(
+      "chat__row--continues",
+    );
+    // Rótulo e tempo só na primeira parte.
+    expect(screen.getAllByText("Interlocutor")).toHaveLength(1);
+    expect(screen.getAllByText("00:05")).toHaveLength(1);
+  });
+
+  it("corta a prévia longa em continuações, com o `…` só na última", () => {
+    const long = `${"a".repeat(100)}. ${"b".repeat(100)}.`;
+    render(<ChatView bubbles={[]} pending={[pendingSegment(long, "THEY")]} />);
+
+    expect(screen.getAllByText("…")).toHaveLength(1);
+    const rows = screen.getAllByText(/^a+\.$|^b+\.$/);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]?.closest(".chat__row")?.className).toContain(
+      "chat__row--continues",
+    );
+  });
+
   it("mostra o estado vazio e respeita o cabeçalho", () => {
     render(
       <ChatView
@@ -115,6 +158,35 @@ describe("ChatView", () => {
 
     expect(screen.getByRole("button", { name: "Sugerir" })).toBeDefined();
     expect(screen.getByText("Sem falas")).toBeDefined();
+  });
+
+  it("pede tradução ao clicar e alterna a linha traduzida na bolha", () => {
+    const onTranslate = vi.fn();
+    const props = {
+      bubbles: [speech("a", "ME", "bom dia", 1_000)],
+      translationEnabled: true,
+      translationTarget: "en",
+      onTranslate,
+    };
+    const { rerender } = render(<ChatView {...props} translations={{}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Traduzir para en" }));
+    expect(onTranslate).toHaveBeenCalledWith({ id: "a", text: "bom dia" });
+
+    rerender(<ChatView {...props} translations={{ a: "good morning" }} />);
+    expect(screen.getByText("good morning")).toBeDefined();
+    // A tradução fica abaixo, com separador tracejado.
+    expect(
+      screen.getByText("good morning").className,
+    ).toContain("chat__translation");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ocultar tradução" }));
+    expect(screen.queryByText("good morning")).toBeNull();
+  });
+
+  it("não mostra o botão de traduzir quando a tradução está desligada", () => {
+    render(<ChatView bubbles={[speech("a", "ME", "bom dia", 1_000)]} />);
+    expect(screen.queryByRole("button", { name: /Traduzir/ })).toBeNull();
   });
 
   it("renderiza a sugestão da IA como Markdown, com código colorido", () => {

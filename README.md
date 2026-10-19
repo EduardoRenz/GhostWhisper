@@ -88,6 +88,34 @@ cargo test --manifest-path src-tauri/Cargo.toml   # testes do core
 > (`undefined symbol: __libc_pthread_init, version GLIBC_PRIVATE`). Use
 > `pnpm tauri:dev:clean` (ou rode de um terminal nativo, sem o sandbox do snap).
 
+### Aceleração por GPU (Vulkan)
+
+O Whisper roda no **backend Vulkan** do `whisper.cpp` (flash attention), e o
+**pacote de release já vem com ele** — um binário só:
+
+```bash
+pnpm tauri:build           # release com Vulkan (padrão) + loader embutido
+pnpm tauri:build:cpu       # release CPU-only (escape hatch)
+pnpm tauri:dev:vulkan      # dev com GPU
+pnpm tauri:dev             # dev em CPU (build mais rápido)
+```
+
+- O binário com Vulkan **escolhe a GPU em runtime** e **cai para CPU sozinho**
+  quando não há dispositivo Vulkan — a mesma build serve para todos.
+- O **loader** `libvulkan.so.1` é embutido no AppImage (`scripts/ensure-libvulkan.sh`),
+  então o app abre mesmo sem o loader no sistema; os drivers/ICDs continuam vindo
+  da máquina. No `.deb`, `libvulkan1` é dependência.
+- `scripts/vulkan-env.sh` monta o SDK de build: usa `libvulkan-dev`/`glslc` do
+  sistema (`sudo apt install libvulkan-dev glslc`) ou baixa os `.deb` e extrai em
+  `.vulkan-sdk/` — **sem sudo**.
+- Nas **Configurações → Transcrição & Áudio** há o seletor **Aceleração**
+  (`auto`/`CPU`/`GPU`). Se um driver instável derrubar o app com a GPU ativa, o
+  próximo boot **desliga a GPU** por conta própria (marca de crash, como o Perssua).
+- Modelo sugerido com GPU: **`small`** (o `large-v3-turbo` funciona, mas pede GPU
+  mais forte).
+- Os artefatos saem em `src-tauri/target/release/bundle/{appimage,deb}/` — o build
+  de GPU compila em `target-vulkan/` e o script publica no caminho de sempre.
+
 ### Empacotamento
 
 ```bash

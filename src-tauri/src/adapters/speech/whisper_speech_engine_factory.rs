@@ -28,6 +28,7 @@ use super::whisper_speech_to_text::WhisperSpeechToText;
 struct CachedEngine {
     model: String,
     language: String,
+    use_gpu: bool,
     whisper: Arc<WhisperSpeechToText>,
     asr: Arc<dyn SpeechToText>,
 }
@@ -38,6 +39,8 @@ pub struct WhisperSpeechEngineFactory {
     settings: Arc<dyn SettingsStore>,
     gate: Arc<Mutex<()>>,
     publisher: Option<Arc<dyn EventPublisher>>,
+    /// A GPU foi desabilitada após um encerramento sujo (marca de crash do boot).
+    force_cpu: bool,
     cached: Mutex<Option<CachedEngine>>,
 }
 
@@ -49,6 +52,7 @@ impl WhisperSpeechEngineFactory {
             settings,
             gate: Arc::new(Mutex::new(())),
             publisher: None,
+            force_cpu: false,
             cached: Mutex::new(None),
         }
     }
@@ -56,6 +60,12 @@ impl WhisperSpeechEngineFactory {
     /// Liga um publicador para reportar download/carga do modelo à UI.
     pub fn with_publisher(mut self, publisher: Arc<dyn EventPublisher>) -> Self {
         self.publisher = Some(publisher);
+        self
+    }
+
+    /// Desabilita a GPU nesta execução (marca de crash do boot anterior).
+    pub fn with_force_cpu(mut self, force_cpu: bool) -> Self {
+        self.force_cpu = force_cpu;
         self
     }
 }
@@ -66,37 +76,51 @@ struct EngineParams {
     model: String,
     language: String,
     prompt: String,
+    use_gpu: bool,
 }
 
-/// Resolve (modelo, idioma, prompt) do whisper a partir das configurações.
-fn engine_params(settings: &Settings) -> EngineParams {
+/// Resolve (modelo, idioma, prompt, gpu) do whisper a partir das configurações.
+///
+/// `force_cpu` vem do composition root quando o boot detectou um encerramento sujo
+/// com GPU ativa (marca de crash) — nesse caso `auto`/`gpu` rodam em CPU.
+fn engine_params(settings: &Settings, force_cpu: bool) -> EngineParams {
     let model = match settings.whisper_model.trim() {
         "" => "tiny".to_string(),
         value => value.to_string(),
     };
     let language = map_whisper_language(&settings.source_language);
     let prompt = decode_prompt(&settings.whisper_prompt, &settings.source_language);
+    let use_gpu = match settings.acceleration.trim() {
+        "cpu" => false,
+        "gpu" => !force_cpu,
+        // `auto` (e qualquer valor inválido já saneado): GPU, salvo após crash.
+        _ => !force_cpu,
+    };
     EngineParams {
         model,
         language,
         prompt,
+        use_gpu,
     }
 }
 
 impl SpeechEngineFactory for WhisperSpeechEngineFactory {
     fn create(&self) -> Result<Arc<dyn SpeechToText>> {
         let settings = self.settings.load().unwrap_or_default();
-        let params = engine_params(&settings);
+        let params = engine_params(&settings, self.force_cpu);
 
         let mut cache = self
             .cached
             .lock()
             .map_err(|_| GhostWhisperError::Other("cache do ASR envenenado".into()))?;
 
-        // Mesmo modelo/idioma ⇒ devolve o mesmo contexto (uma carga só). O prompt
-        // muda sem recarregar.
+        // Mesmo modelo/idioma/backend ⇒ devolve o mesmo contexto (uma carga só). O
+        // prompt muda sem recarregar.
         if let Some(engine) = cache.as_ref() {
-            if engine.model == params.model && engine.language == params.language {
+            if engine.model == params.model
+                && engine.language == params.language
+                && engine.use_gpu == params.use_gpu
+            {
                 engine.whisper.update_prompt(params.prompt);
                 return Ok(Arc::clone(&engine.asr));
             }
@@ -107,6 +131,7 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
             params.model.clone(),
             params.language.clone(),
             params.prompt,
+            params.use_gpu,
             self.publisher.clone(),
         ));
         // Baixa/carrega o modelo em background e avisa a UI; enquanto isso o
@@ -119,6 +144,7 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
         *cache = Some(CachedEngine {
             model: params.model,
             language: params.language,
+            use_gpu: params.use_gpu,
             whisper,
             asr: Arc::clone(&asr),
         });
@@ -158,7 +184,7 @@ mod tests {
             source_language: "pt".into(),
             ..Settings::default()
         };
-        let params = engine_params(&custom);
+        let params = engine_params(&custom, false);
         assert_eq!(params.model, "small");
         assert_eq!(params.language, "pt");
         assert!(params.prompt.contains("Transcribe it in Portuguese."));
@@ -169,10 +195,36 @@ mod tests {
             source_language: "  ".into(),
             ..Settings::default()
         };
-        let params = engine_params(&blank);
+        let params = engine_params(&blank, false);
         assert_eq!(params.model, "tiny");
         assert_eq!(params.language, "auto");
         assert_eq!(params.prompt, Settings::default().whisper_prompt);
+    }
+
+    #[test]
+    fn acceleration_mode_resolves_use_gpu() {
+        let auto = Settings::default();
+        assert!(engine_params(&auto, false).use_gpu);
+        assert!(
+            !engine_params(&auto, true).use_gpu,
+            "crash do boot força CPU"
+        );
+
+        let cpu = Settings {
+            acceleration: "cpu".into(),
+            ..Settings::default()
+        };
+        assert!(!engine_params(&cpu, false).use_gpu);
+
+        let gpu = Settings {
+            acceleration: "gpu".into(),
+            ..Settings::default()
+        };
+        assert!(engine_params(&gpu, false).use_gpu);
+        assert!(
+            !engine_params(&gpu, true).use_gpu,
+            "a marca de crash vence o modo gpu"
+        );
     }
 
     #[test]
@@ -181,14 +233,14 @@ mod tests {
             source_language: "pt".into(),
             ..Settings::default()
         };
-        assert_eq!(engine_params(&settings).language, "pt");
+        assert_eq!(engine_params(&settings, false).language, "pt");
     }
 
     #[test]
     fn whisper_asr_exposes_configured_language() {
         let dir = tempfile::tempdir().expect("tempdir");
         let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(dir.path().to_path_buf()));
-        let asr = WhisperSpeechToText::new(models, "tiny", "en", "prompt base", None);
+        let asr = WhisperSpeechToText::new(models, "tiny", "en", "prompt base", false, None);
         assert_eq!(asr.language(), "en");
         assert_eq!(asr.prompt(), "prompt base");
         asr.update_prompt("outro");

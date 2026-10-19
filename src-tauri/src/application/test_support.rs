@@ -143,6 +143,11 @@ impl FakeLlmController {
         self.requests.lock().unwrap().last().cloned()
     }
 
+    /// Todos os pedidos recebidos, em ordem.
+    pub fn requests(&self) -> Vec<CompletionRequest> {
+        self.requests.lock().unwrap().clone()
+    }
+
     /// Quantidade de chamadas.
     pub fn call_count(&self) -> usize {
         self.requests.lock().unwrap().len()

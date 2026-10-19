@@ -80,6 +80,14 @@ impl LlmController for LlmRouter {
     fn complete(&self, request: &CompletionRequest) -> Result<Completion> {
         self.provider()?.complete(request)
     }
+
+    fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Completion> {
+        self.provider()?.complete_streaming(request, on_text)
+    }
 }
 
 #[cfg(test)]

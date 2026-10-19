@@ -1,28 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { llmTranslate } from "../../adapters/ipc/llm";
-import type { TranscriptSegment } from "../domain/transcript";
 
 /** Traduções por id de segmento. */
 export type TranslationMap = Record<string, string>;
 
+/** Texto traduzível (o que a bolha conhece: id + texto). */
+export interface TranslatableText {
+  id: string;
+  text: string;
+}
+
 /**
- * Traduz os segmentos finalizados em fila (uma por vez), quando habilitado.
+ * Tradução **sob demanda**: quem pede é a bolha (botão no canto), não um
+ * processo automático.
  *
- * A fila serial evita estourar rate limit do provider; o resultado é indexado
- * pelo id do segmento para exibição lado a lado.
+ * A fila é serial (uma chamada por vez) para não estourar rate limit do provider;
+ * o resultado fica em cache por id e é reusado no toggle original/tradução.
  */
-export function useTranslation(
-  segments: TranscriptSegment[],
-  enabled: boolean,
-): {
+export function useTranslation(): {
   translations: TranslationMap;
+  pending: Record<string, boolean>;
   error: string | null;
+  translate: (input: TranslatableText) => Promise<string | null>;
   reset: () => void;
 } {
   const [translations, setTranslations] = useState<TranslationMap>({});
+  const [pending, setPending] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
-  const pending = useRef<Set<string>>(new Set());
-  const queue = useRef<TranscriptSegment[]>([]);
+  const cache = useRef<TranslationMap>({});
+  const queue = useRef<TranslatableText[]>([]);
   const running = useRef(false);
 
   const drain = useCallback(async () => {
@@ -32,19 +38,24 @@ export function useTranslation(
     running.current = true;
     try {
       while (queue.current.length > 0) {
-        const segment = queue.current.shift();
-        if (!segment) {
+        const item = queue.current.shift();
+        if (!item) {
           continue;
         }
         try {
-          const translated = await llmTranslate(segment.text);
-          if (translated !== undefined) {
-            setTranslations((prev) => ({ ...prev, [segment.id]: translated }));
+          const translated = await llmTranslate(item.text);
+          if (translated !== undefined && translated.trim().length > 0) {
+            cache.current = { ...cache.current, [item.id]: translated };
+            setTranslations((prev) => ({ ...prev, [item.id]: translated }));
           }
         } catch (caught) {
           setError(String(caught));
         } finally {
-          pending.current.delete(segment.id);
+          setPending((prev) => {
+            const next = { ...prev };
+            delete next[item.id];
+            return next;
+          });
         }
       }
     } finally {
@@ -52,31 +63,29 @@ export function useTranslation(
     }
   }, []);
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-    for (const segment of segments) {
-      if (!segment.final || translations[segment.id] || pending.current.has(segment.id)) {
-        continue;
+  const translate = useCallback(
+    async (input: TranslatableText): Promise<string | null> => {
+      const cached = cache.current[input.id];
+      if (cached !== undefined) {
+        return cached;
       }
-      // Final de texto vazio é retratação de prévia (ISS-021), não fala: não gasta
-      // uma chamada de tradução.
-      if (segment.text.trim().length === 0) {
-        continue;
+      if (!queue.current.some((item) => item.id === input.id)) {
+        queue.current.push(input);
+        setPending((prev) => ({ ...prev, [input.id]: true }));
       }
-      pending.current.add(segment.id);
-      queue.current.push(segment);
-    }
-    void drain();
-  }, [segments, enabled, translations, drain]);
+      await drain();
+      return cache.current[input.id] ?? null;
+    },
+    [drain],
+  );
 
   const reset = useCallback(() => {
-    setTranslations({});
-    setError(null);
-    pending.current.clear();
+    cache.current = {};
     queue.current = [];
+    setTranslations({});
+    setPending({});
+    setError(null);
   }, []);
 
-  return { translations, error, reset };
+  return { translations, pending, error, translate, reset };
 }

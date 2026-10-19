@@ -27,6 +27,8 @@ import {
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
 import {
+  ACCELERATION_LABELS,
+  ACCELERATION_MODES,
   LANGUAGES,
   MAX_MIC_GAIN,
   MIN_MIC_GAIN,
@@ -39,6 +41,7 @@ import {
   DEFAULT_MIC_GAIN,
   defaultSettings,
   providerRequiresBaseUrl,
+  type AccelerationMode,
   type Language,
   type ProviderKind,
   type Settings,
@@ -397,6 +400,23 @@ export function SettingsPage() {
           )}
 
           {gpu &&
+            gpu.available &&
+            gpu.acceleration_enabled &&
+            settings.whisper_model !== gpu.recommended_model && (
+              <div className="settings__actions">
+                <button
+                  type="button"
+                  className="settings__button"
+                  onClick={() =>
+                    update("whisper_model", gpu.recommended_model)
+                  }
+                >
+                  Usar {gpu.recommended_model} (recomendado para a sua GPU)
+                </button>
+              </div>
+            )}
+
+          {gpu &&
             !gpu.acceleration_enabled &&
             WHISPER_GPU_MODELS.includes(settings.whisper_model) && (
               <p className="settings__hint">
@@ -404,6 +424,29 @@ export function SettingsPage() {
                 real; em CPU a transcrição fica lenta.
               </p>
             )}
+
+          <label className="settings__field">
+            <span>Aceleração</span>
+            <select
+              value={settings.acceleration}
+              onChange={(event) =>
+                update("acceleration", event.target.value as AccelerationMode)
+              }
+            >
+              {ACCELERATION_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {ACCELERATION_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="settings__hint">
+            {gpu?.acceleration_enabled
+              ? gpu.available
+                ? "Este build acelera por GPU (Vulkan). “Auto” usa a GPU quando ela está disponível."
+                : "Este build acelera por GPU, mas nenhuma GPU foi detectada: a transcrição roda em CPU."
+              : "Este build não inclui aceleração por GPU — a transcrição roda em CPU."}
+          </p>
 
           <label className="settings__field">
             <span>Prompt de decodificação (opcional)</span>
@@ -419,6 +462,22 @@ export function SettingsPage() {
           <p className="settings__hint">
             Instrui o Whisper a não inventar quando não tem certeza; a regra de
             idioma é acrescentada automaticamente. Deixar vazio desliga o prompt.
+          </p>
+
+          <label className="settings__field settings__field--row">
+            <input
+              type="checkbox"
+              checked={settings.aec_enabled}
+              onChange={(event) =>
+                update("aec_enabled", event.target.checked)
+              }
+            />
+            <span>Cancelar eco (AEC)</span>
+          </label>
+          <p className="settings__hint">
+            Subtrai do microfone o áudio que sai pelo alto-falante (o outro lado da
+            chamada), usando o áudio do sistema como referência. Vale a partir da
+            próxima captura; com fones não faz diferença.
           </p>
 
           <div className="settings__field">

@@ -5,10 +5,20 @@ import type { Suggestion } from "../domain/assistant";
 
 const suggestionGenerate = vi.fn();
 const suggestionPin = vi.fn();
+const subscribeMock = vi.hoisted(() => ({
+  emit: null as null | ((payload: unknown) => void),
+}));
 
 vi.mock("../../adapters/ipc/suggestions", () => ({
   suggestionGenerate: (...args: unknown[]) => suggestionGenerate(...args),
   suggestionPin: (...args: unknown[]) => suggestionPin(...args),
+}));
+
+vi.mock("../../adapters/ipc/events", () => ({
+  subscribe: (_event: string, handler: (payload: unknown) => void) => {
+    subscribeMock.emit = handler;
+    return Promise.resolve(() => {});
+  },
 }));
 
 const suggestion = (
@@ -30,9 +40,6 @@ const options = {
   sessionId: "s1",
   opened: true,
   modeId: "meeting",
-  auto: false,
-  intervalSecs: 20,
-  active: true,
   extraContext: "",
 };
 
@@ -110,5 +117,37 @@ describe("useSuggestions", () => {
     renderHook(() => useSuggestions({ ...options, sessionId: null }));
     await Promise.resolve();
     expect(suggestionGenerate).not.toHaveBeenCalled();
+  });
+
+  it("mostra a sugestão automática que chega por evento (streaming)", async () => {
+    const { result } = renderHook(() => useSuggestions(options));
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> rascunho", 5_000));
+      subscribeMock.emit!(suggestion("> rascunho completo", 5_000));
+    });
+
+    await waitFor(() =>
+      expect(result.current.current?.text).toContain("rascunho completo"),
+    );
+    // O rascunho e o texto completo compartilham `at_ms`: uma entrada só.
+    const entries = result.current.history.filter((item) => item.at_ms === 5_000);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.text).toContain("rascunho completo");
+  });
+
+  it("ignora evento de outra sessão", async () => {
+    const { result } = renderHook(() => useSuggestions(options));
+    await waitFor(() => expect(result.current.current).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!({
+        ...suggestion("> de outra sessão", 9_000),
+        session_id: "s2",
+      });
+    });
+
+    expect(result.current.current?.text).toContain("prazo");
   });
 });

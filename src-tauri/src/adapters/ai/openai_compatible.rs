@@ -3,6 +3,7 @@
 //! Usado por `OpenAiChatBotProvider`, `OpenRouterChatBotProvider` e
 //! `CustomChatBotProvider`. Nunca registra a chave de API em logs/erros.
 
+use std::io::BufRead;
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -92,6 +93,115 @@ pub fn chat_completion(
             Err(other) => return Err(map_transport_error(other)),
         }
     }
+}
+
+/// Resultado de uma tentativa de streaming.
+enum StreamOutcome {
+    /// O provider transmitiu o texto; a completude está pronta.
+    Done(Completion),
+    /// O provider não suporta/ignorou o streaming — cair para a chamada normal.
+    Fallback,
+}
+
+/// Executa `POST {base_url}/chat/completions` com `stream: true` (SSE),
+/// reportando o **texto acumulado** a cada pedaço.
+///
+/// Cai para [`chat_completion`] (sem streaming) quando o provider não devolve
+/// `text/event-stream` ou quando não há conteúdo — assim a sugestão funciona em
+/// qualquer endpoint OpenAI-compatível (BR-028).
+pub fn chat_completion_streaming(
+    config: &ProviderConfig,
+    base_url: &str,
+    request: &CompletionRequest,
+    extra_headers: &[(&str, &str)],
+    on_text: &mut dyn FnMut(&str),
+) -> Result<Completion> {
+    match try_stream(config, base_url, request, extra_headers, on_text)? {
+        StreamOutcome::Done(completion) => Ok(completion),
+        StreamOutcome::Fallback => {
+            let completion = chat_completion(config, base_url, request, extra_headers)?;
+            on_text(&completion.text);
+            Ok(completion)
+        }
+    }
+}
+
+/// Tenta o streaming uma vez; erros de status viram `Fallback` (o retry por
+/// parâmetro rejeitado vive na chamada normal).
+fn try_stream(
+    config: &ProviderConfig,
+    base_url: &str,
+    request: &CompletionRequest,
+    extra_headers: &[(&str, &str)],
+    on_text: &mut dyn FnMut(&str),
+) -> Result<StreamOutcome> {
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let mut body = build_body(config, request);
+    body["stream"] = json!(true);
+
+    let mut call = ureq::post(&url)
+        .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .set("Content-Type", "application/json")
+        .set("Accept", "text/event-stream")
+        .set("Authorization", &format!("Bearer {}", config.api_key));
+    for (name, value) in extra_headers {
+        call = call.set(name, value);
+    }
+
+    let response = match call.send_json(body) {
+        Ok(response) => response,
+        // 4xx/5xx: deixa a chamada normal tratar (inclusive o retry de parâmetro).
+        Err(ureq::Error::Status(_, _)) => return Ok(StreamOutcome::Fallback),
+        Err(other) => return Err(map_transport_error(other)),
+    };
+    let content_type = response
+        .header("Content-Type")
+        .unwrap_or_default()
+        .to_string();
+    if !content_type.contains("text/event-stream") {
+        return Ok(StreamOutcome::Fallback);
+    }
+
+    let reader = response.into_reader();
+    let mut accumulated = String::new();
+    let mut emitted = String::new();
+    let mut saw_data = false;
+    for line in std::io::BufReader::new(reader).lines() {
+        let Ok(line) = line else { break };
+        let Some(payload) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let payload = payload.trim();
+        if payload.is_empty() {
+            continue;
+        }
+        if payload == "[DONE]" {
+            break;
+        }
+        saw_data = true;
+        let Ok(value) = serde_json::from_str::<Value>(payload) else {
+            continue;
+        };
+        if let Some(delta) = value["choices"]
+            .get(0)
+            .and_then(|choice| choice["delta"]["content"].as_str())
+        {
+            accumulated.push_str(delta);
+            let current = accumulated.trim_start();
+            if current != emitted {
+                on_text(current);
+                emitted = current.to_string();
+            }
+        }
+    }
+
+    if !saw_data || accumulated.trim().is_empty() {
+        return Ok(StreamOutcome::Fallback);
+    }
+    Ok(StreamOutcome::Done(Completion {
+        text: accumulated.trim().to_string(),
+        model: config.model.clone(),
+    }))
 }
 
 /// Monta o corpo da requisição a partir do pedido.
@@ -237,6 +347,98 @@ mod tests {
 
     fn body_with_max_tokens() -> Value {
         json!({ "model": "m", "messages": [], "max_tokens": 16, "temperature": 0.0 })
+    }
+
+    #[test]
+    fn streams_sse_deltas_as_accumulated_text() {
+        use crate::domain::settings::ProviderKind;
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut discard = [0u8; 4096];
+            let _ = std::io::Read::read(&mut stream, &mut discard);
+            let body = concat!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"> olá\"}}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{\"content\":\", tudo bem?\"}}]}\n\n",
+                "data: [DONE]\n\n"
+            );
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{body}"
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        });
+
+        let config = ProviderConfig {
+            kind: ProviderKind::OpenAi,
+            model: "m".into(),
+            base_url: None,
+            api_key: "k".into(),
+        };
+        let mut seen: Vec<String> = Vec::new();
+        let completion = chat_completion_streaming(
+            &config,
+            &format!("http://{addr}"),
+            &CompletionRequest::user("oi"),
+            &[],
+            &mut |text| seen.push(text.to_string()),
+        )
+        .expect("stream");
+
+        assert_eq!(completion.text, "> olá, tudo bem?");
+        assert_eq!(seen, vec!["> olá", "> olá, tudo bem?"]);
+    }
+
+    #[test]
+    fn falls_back_when_the_provider_is_not_sse() {
+        use crate::domain::settings::ProviderKind;
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            // Duas conexões: a tentativa de streaming e a chamada normal.
+            for _ in 0..2 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut discard = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut discard);
+                let body = r#"{"choices":[{"message":{"content":"resposta única"}}]}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        let config = ProviderConfig {
+            kind: ProviderKind::OpenAi,
+            model: "m".into(),
+            base_url: None,
+            api_key: "k".into(),
+        };
+        let mut seen: Vec<String> = Vec::new();
+        let completion = chat_completion_streaming(
+            &config,
+            &format!("http://{addr}"),
+            &CompletionRequest::user("oi"),
+            &[],
+            &mut |text| seen.push(text.to_string()),
+        )
+        .expect("fallback");
+
+        assert_eq!(completion.text, "resposta única");
+        assert_eq!(seen, vec!["resposta única"]);
     }
 
     #[test]

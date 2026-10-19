@@ -24,7 +24,7 @@ pub use error::{GhostWhisperError, Result};
 pub fn run() {
     init_tracing();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -131,10 +131,44 @@ pub fn run() {
             spawn_overlay_position_tracker(app.handle().clone());
             spawn_panel_position_tracker(app.handle().clone(), "summary");
             spawn_panel_position_tracker(app.handle().clone(), "suggestions");
+            spawn_suggestion_scheduler(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("falha ao executar o GhostWhisper");
+        .build(tauri::generate_context!())
+        .expect("falha ao construir o GhostWhisper");
+
+    // Saída limpa: apaga a marca de GPU (BR-029). Um crash não passa por aqui, e
+    // é justamente isso que o próximo boot detecta.
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            if let Some(path) = gpu_marker_path(app_handle) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    });
+}
+
+/// Arquivo-marca de "GPU ativa" (padrão Perssua: `whisper-gpu-active.json`).
+const GPU_MARKER_FILE: &str = "whisper-gpu-active.json";
+
+/// Caminho da marca de GPU no diretório de dados.
+fn gpu_marker_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join(GPU_MARKER_FILE))
+}
+
+/// Grava a marca enquanto a GPU estiver habilitada nesta execução.
+fn write_gpu_marker(data_dir: &std::path::Path, model: &str) {
+    let payload = serde_json::json!({
+        "pid": std::process::id(),
+        "model": model,
+        "started_at_ms": chrono::Utc::now().timestamp_millis(),
+    });
+    if let Err(error) = std::fs::write(data_dir.join(GPU_MARKER_FILE), payload.to_string()) {
+        tracing::warn!("não foi possível gravar a marca de GPU: {error}");
+    }
 }
 
 /// Composition root: monta adaptadores concretos e injeta nas portas.
@@ -146,6 +180,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::audio::pactl_sink_helper::PactlVirtualSinkManager;
     use adapters::audio::pulse_delayed_monitor::PulseDelayedMonitor;
     use adapters::audio::pulse_system_audio_source::PulseSystemAudioSource;
+    use adapters::audio::shared_audio_reference::{SharedAudioReference, SystemAudioReferenceTap};
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
@@ -172,6 +207,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use application::summary_service::SummaryService;
     use application::translation_service::TranslationService;
     use ports::audio_monitor::AudioMonitor;
+    use ports::audio_reference::AudioReference;
     use ports::audio_source::AudioSource;
     use ports::click_through::ClickThroughController;
     use ports::clock::Clock;
@@ -232,6 +268,17 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         .map_err(|e| GhostWhisperError::Other(format!("diretório de dados indisponível: {e}")))?;
     migrate_legacy_data_dir(&data_dir)?;
 
+    // Marca de crash de GPU (BR-029): se sobrou no disco, o app morreu enquanto a
+    // GPU estava ativa — desliga a GPU nesta execução e limpa a marca.
+    let gpu_marker = data_dir.join(GPU_MARKER_FILE);
+    let force_cpu_after_crash = if gpu_marker.exists() {
+        tracing::warn!("encerramento anterior com GPU ativa; desabilitando a GPU nesta execução");
+        let _ = std::fs::remove_file(&gpu_marker);
+        true
+    } else {
+        false
+    };
+
     // Configurações primeiro: o estágio de ganho do microfone as lê na captura.
     let settings: Arc<dyn SettingsStore> =
         Arc::new(FileSettingsStore::new(data_dir.join("settings.json")));
@@ -240,14 +287,20 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     // de escuta para o monitor atrasado (task 15); o áudio do sistema (loopback)
     // segue sem amplificação.
     let monitor: Arc<dyn AudioMonitor> = Arc::new(PulseDelayedMonitor::new());
+    // Referência do AEC (BR-029): o áudio do sistema (loopback) é guardado numa
+    // janela recente e consumido pelo cancelador de eco do microfone.
+    let reference: Arc<dyn AudioReference> = Arc::new(SharedAudioReference::new());
     let audio: Arc<dyn AudioSource> = Arc::new(MonitoredAudioSource::new(
-        Arc::new(MicrophoneFrontEnd::new(
-            Arc::new(CpalMicrophoneSource::new()),
-            Arc::clone(&settings),
-        )),
+        Arc::new(
+            MicrophoneFrontEnd::new(Arc::new(CpalMicrophoneSource::new()), Arc::clone(&settings))
+                .with_reference(Arc::clone(&reference)),
+        ),
         Arc::clone(&monitor),
     ));
-    let system_audio: Arc<dyn AudioSource> = Arc::new(PulseSystemAudioSource::new());
+    let system_audio: Arc<dyn AudioSource> = Arc::new(SystemAudioReferenceTap::new(
+        Arc::new(PulseSystemAudioSource::new()),
+        Arc::clone(&reference),
+    ));
     let virtual_sink: Arc<dyn VirtualSinkManager> = Arc::new(PactlVirtualSinkManager);
 
     let models: Arc<dyn ModelStore> = Arc::new(FileModelStore::new(data_dir.join("models")));
@@ -327,6 +380,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&transcriptions),
         Arc::clone(&messages),
         Arc::clone(&clock),
+        Arc::clone(&publisher),
     ));
 
     // Atalhos globais: o despachante resolve o `AppState` em tempo de execução.
@@ -376,8 +430,17 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     // Modelo e idioma do whisper vêm das configurações (lidas a cada sessão).
     let engines: Arc<dyn SpeechEngineFactory> = Arc::new(
         WhisperSpeechEngineFactory::new(Arc::clone(&models), Arc::clone(&settings))
-            .with_publisher(Arc::clone(&publisher)),
+            .with_publisher(Arc::clone(&publisher))
+            .with_force_cpu(force_cpu_after_crash),
     );
+
+    // GPU ligada nesta execução ⇒ marca no disco até a saída limpa (BR-029).
+    if gpu_info.acceleration_enabled
+        && !force_cpu_after_crash
+        && current_settings.acceleration != "cpu"
+    {
+        write_gpu_marker(&data_dir, &current_settings.whisper_model);
+    }
 
     let session: Arc<dyn SessionController> = Arc::new(SessionService::new(
         Arc::clone(&audio),
@@ -492,6 +555,85 @@ fn open_panel(app: &tauri::AppHandle, label: &str) {
     if let Err(error) = ipc::panel_commands::panel_open(app.clone(), label.to_string()) {
         tracing::warn!("falha ao abrir painel {label}: {error}");
     }
+}
+
+/// Intervalo de verificação do agendador de sugestões (ms).
+const SUGGESTION_TICK_MS: u64 = 1_000;
+/// Espera depois do início da última fala finalizada antes de sugerir.
+const SUGGESTION_DEBOUNCE_MS: i64 = 700;
+/// Frequência máxima das sugestões automáticas (limita custo de API).
+const SUGGESTION_MIN_INTERVAL_MS: i64 = 3_000;
+
+/// Gera sugestões automáticas **sem depender da janela aberta** (BR-028).
+///
+/// Roda no composition root: a decisão é pura
+/// ([`application::suggestion_scheduler::should_trigger`]) e aqui só há o polling
+/// e a chamada ao caso de uso. A sugestão é efêmera e chega à UI pelo evento
+/// `suggestion`.
+fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
+    use application::suggestion_scheduler::{should_trigger, SchedulerTick};
+    use ports::suggestion_generator::SuggestionRequest;
+
+    std::thread::spawn(move || {
+        let mut cursor: Option<i64> = None;
+        let mut current_session: Option<String> = None;
+        let mut last_run: Option<std::time::Instant> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(SUGGESTION_TICK_MS));
+            let state = app.state::<state::AppState>();
+            let Ok(settings) = state.settings.load() else {
+                continue;
+            };
+            let session_id = state.session.current_session_id();
+            if session_id != current_session {
+                current_session = session_id.clone();
+                cursor = None;
+            }
+            let Some(session_id) = session_id else {
+                continue;
+            };
+            let Ok(Some(session)) = state.sessions.get(&session_id) else {
+                continue;
+            };
+            let latest_final_ms = state
+                .transcriptions
+                .latest_final_ms(&session_id)
+                .unwrap_or(None);
+            let now_rel = (state.clock.now_ms() - session.started_at_ms).max(0);
+            let tick = SchedulerTick {
+                enabled: settings.suggestion_auto_refresh,
+                has_session: true,
+                cursor_ms: cursor,
+                latest_final_ms,
+                ms_since_last_run: last_run
+                    .map(|instant| instant.elapsed().as_millis() as i64)
+                    .unwrap_or(i64::MAX),
+                ms_since_latest_final: latest_final_ms
+                    .map(|latest| now_rel - latest)
+                    .unwrap_or(i64::MAX),
+            };
+            if !should_trigger(&tick, SUGGESTION_DEBOUNCE_MS, SUGGESTION_MIN_INTERVAL_MS) {
+                continue;
+            }
+            last_run = Some(std::time::Instant::now());
+            let request =
+                SuggestionRequest::ephemeral(Some(session_id), settings.assistant_mode_id.clone())
+                    .with_since_ms(cursor)
+                    .with_fast_first(true);
+            match state.suggestions.generate(request) {
+                Ok(suggestion) if !suggestion.skipped => {
+                    cursor = Some(suggestion.context_until_ms);
+                }
+                // `skipped` = nada novo; erro (sem chave, provider fora) não deve
+                // repetir a mesma fala a cada tick: avança o cursor e segue.
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::debug!("sugestão automática indisponível: {error}");
+                    cursor = latest_final_ms;
+                }
+            }
+        }
+    });
 }
 
 /// Persiste a posição das janelas de painel enquanto o usuário as move.

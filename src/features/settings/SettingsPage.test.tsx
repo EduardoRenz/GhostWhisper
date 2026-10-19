@@ -86,6 +86,10 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByText("Modelo whisper (local)")).toBeDefined();
     expect(screen.queryByText("Provider")).toBeNull();
+    // Seletor de aceleração presente (padrão "auto").
+    expect(
+      (screen.getByLabelText("Aceleração") as HTMLSelectElement).value,
+    ).toBe("auto");
   });
 
   it("expõe a sensibilidade do microfone com o padrão do Perssua", async () => {

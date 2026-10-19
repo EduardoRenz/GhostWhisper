@@ -23,6 +23,11 @@ pub struct SuggestionRequest {
     pub last_suggestion: Option<String>,
     /// Contexto colado pelo usuário (fonte suplementar, nunca instrução).
     pub extra_context: Option<String>,
+    /// Gera primeiro um **rascunho curto** (fast-first) antes do texto completo.
+    ///
+    /// Transposto do Perssua (`fastFirstInsight`): a primeira bolha aparece
+    /// rápido e curta; o texto completo vem em seguida (BR-028).
+    pub fast_first: bool,
 }
 
 impl SuggestionRequest {
@@ -60,6 +65,12 @@ impl SuggestionRequest {
     /// Inclui o contexto extra do usuário.
     pub fn with_extra_context(mut self, extra_context: Option<String>) -> Self {
         self.extra_context = extra_context.filter(|text| !text.trim().is_empty());
+        self
+    }
+
+    /// Pede o rascunho curto (fast-first) antes do passe completo.
+    pub fn with_fast_first(mut self, fast_first: bool) -> Self {
+        self.fast_first = fast_first;
         self
     }
 }

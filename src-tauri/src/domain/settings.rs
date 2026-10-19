@@ -36,6 +36,18 @@ pub const DEFAULT_WHISPER_PROMPT: &str =
 /// Teto de caracteres do prompt de decodificação.
 pub const MAX_WHISPER_PROMPT_CHARS: usize = 1_000;
 
+/// Modos de aceleração do ASR (`Settings.acceleration`).
+///
+/// - `auto` (padrão): usa GPU se o build tiver o backend e houver dispositivo;
+/// - `cpu`: força CPU (útil para driver instável);
+/// - `gpu`: exige GPU (o adapter tenta e cai em CPU se não houver dispositivo).
+pub const ACCELERATION_MODES: [&str; 3] = ["auto", "cpu", "gpu"];
+
+/// Indica se o modo de aceleração é suportado.
+pub fn is_supported_acceleration(mode: &str) -> bool {
+    ACCELERATION_MODES.contains(&mode.trim())
+}
+
 /// Provider de LLM suportado (BYO key).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -117,6 +129,14 @@ pub struct Settings {
     /// [`DEFAULT_WHISPER_PROMPT`] e BR-027.
     #[serde(default = "default_whisper_prompt")]
     pub whisper_prompt: String,
+    /// Aceleração do ASR: `auto` | `cpu` | `gpu` (ver [`ACCELERATION_MODES`]).
+    #[serde(default = "default_acceleration")]
+    pub acceleration: String,
+    /// Cancelamento de eco (AEC) no microfone, usando o áudio do sistema como
+    /// referência. Ligado por padrão; desligue se usar fones e quiser evitar
+    /// qualquer processamento extra.
+    #[serde(default = "default_enabled")]
+    pub aec_enabled: bool,
     /// Ganho aplicado ao microfone antes da transcrição (1×–16×).
     ///
     /// O áudio do sistema nunca é amplificado. Ver BR-018 e
@@ -184,6 +204,8 @@ impl Default for Settings {
             translation_enabled: false,
             whisper_model: "tiny".to_string(),
             whisper_prompt: default_whisper_prompt(),
+            acceleration: default_acceleration(),
+            aec_enabled: true,
             mic_gain: default_mic_gain(),
             stealth: false,
             shortcuts: crate::domain::shortcuts::default_bindings(),
@@ -233,6 +255,11 @@ fn default_whisper_prompt() -> String {
     DEFAULT_WHISPER_PROMPT.to_string()
 }
 
+/// Aceleração padrão: `auto` (GPU quando o build/hardware permitir).
+fn default_acceleration() -> String {
+    "auto".to_string()
+}
+
 impl Settings {
     /// Valida invariantes antes de persistir/usar.
     pub fn validate(&self) -> Result<()> {
@@ -249,6 +276,12 @@ impl Settings {
         if self.whisper_prompt.chars().count() > MAX_WHISPER_PROMPT_CHARS {
             return Err(GhostWhisperError::Config(format!(
                 "prompt de decodificação deve ter no máximo {MAX_WHISPER_PROMPT_CHARS} caracteres"
+            )));
+        }
+        if !is_supported_acceleration(&self.acceleration) {
+            return Err(GhostWhisperError::Config(format!(
+                "aceleração inválida: {} (use auto, cpu ou gpu)",
+                self.acceleration
             )));
         }
         if self.provider.requires_base_url() {
@@ -312,6 +345,9 @@ impl Settings {
 
     /// Corrige valores fora do contrato (ex.: settings antigas com idioma livre).
     pub fn sanitized(mut self) -> Self {
+        if !is_supported_acceleration(&self.acceleration) {
+            self.acceleration = default_acceleration();
+        }
         if !is_supported_language(&self.source_language) {
             self.source_language = "auto".to_string();
         }
@@ -595,6 +631,46 @@ mod tests {
         };
         assert!(dirty.validate().is_err());
         assert_eq!(dirty.sanitized().whisper_prompt, "ab");
+    }
+
+    #[test]
+    fn acceleration_defaults_to_auto_and_is_validated() {
+        assert_eq!(Settings::default().acceleration, "auto");
+        assert!(Settings::default().validate().is_ok());
+
+        for mode in ACCELERATION_MODES {
+            let settings = Settings {
+                acceleration: mode.into(),
+                ..Settings::default()
+            };
+            assert!(settings.validate().is_ok(), "modo {mode}");
+        }
+
+        let invalid = Settings {
+            acceleration: "turbo".into(),
+            ..Settings::default()
+        };
+        assert!(invalid.validate().is_err());
+        assert_eq!(invalid.sanitized().acceleration, "auto");
+    }
+
+    #[test]
+    fn aec_is_enabled_by_default_and_survives_legacy_settings() {
+        assert!(Settings::default().aec_enabled);
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json.replace("\"aec_enabled\":true,", "");
+        assert!(!legacy.contains("aec_enabled"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert!(parsed.aec_enabled);
+    }
+
+    #[test]
+    fn legacy_settings_get_acceleration_default() {
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json.replace("\"acceleration\":\"auto\",", "");
+        assert!(!legacy.contains("acceleration"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert_eq!(parsed.acceleration, "auto");
     }
 
     #[test]

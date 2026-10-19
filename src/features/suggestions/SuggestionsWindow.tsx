@@ -17,14 +17,13 @@ export function SuggestionsWindow() {
   const { settings, reload } = useSettings();
   const { modes } = useAssistantModes(opened);
   const [modeId, setModeId] = useState(settings.assistant_mode_id);
-  const [auto, setAuto] = useState(true);
   const [extraContext, setExtraContext] = useState("");
   const [copied, setCopied] = useState(false);
+  const auto = settings.suggestion_auto_refresh;
 
   useEffect(() => {
     setModeId(settings.assistant_mode_id);
-    setAuto(settings.suggestion_auto_refresh);
-  }, [settings.assistant_mode_id, settings.suggestion_auto_refresh]);
+  }, [settings.assistant_mode_id]);
 
   const {
     current,
@@ -40,9 +39,6 @@ export function SuggestionsWindow() {
     sessionId: state.session_id,
     opened,
     modeId,
-    auto,
-    intervalSecs: settings.suggestion_interval_secs,
-    active: state.listening && !state.paused,
     extraContext,
   });
 
@@ -51,6 +47,15 @@ export function SuggestionsWindow() {
     void saveSettings({ ...settings, assistant_mode_id: id }).then(() =>
       reload(),
     );
+  };
+
+  // O automático vive no core (reage a fala nova, mesmo com a janela fechada);
+  // aqui só ligamos/desligamos.
+  const toggleAuto = () => {
+    void saveSettings({
+      ...settings,
+      suggestion_auto_refresh: !settings.suggestion_auto_refresh,
+    }).then(() => reload());
   };
 
   const onCopy = async () => {
@@ -84,10 +89,10 @@ export function SuggestionsWindow() {
       <button
         type="button"
         className={`panel__toggle${auto ? " panel__toggle--on" : ""}`}
-        onClick={() => setAuto((previous) => !previous)}
-        title="Sugestões automáticas enquanto a janela estiver aberta"
+        onClick={toggleAuto}
+        title="Sugestões automáticas a cada fala nova (funcionam mesmo com esta janela fechada)"
       >
-        {auto ? `Auto ${settings.suggestion_interval_secs}s` : "Auto off"}
+        {auto ? "Auto" : "Auto off"}
       </button>
       <button
         type="button"

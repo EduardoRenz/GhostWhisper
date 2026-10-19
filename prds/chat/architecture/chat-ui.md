@@ -30,11 +30,12 @@ sessão com tempo e confirmação).
 
 ```ts
 type ChatBubble =
-  | { kind: "speech"; id: string; speaker: Speaker; text: string; at_ms: number; end_ms: number }
+  | { kind: "speech"; id: string; speaker: Speaker; text: string; at_ms: number; end_ms: number; continues?: boolean }
   | { kind: "suggestion"; id: string; text: string; at_ms: number };
 
 splitChatTimeline(segments) -> { committed, pending }   // pending: não finalizados
 buildChatTimeline(segments, suggestions) -> { bubbles, pending }
+splitSpeechText(text, limit = MAX_SPEECH_BUBBLE_CHARS) -> string[]
 ```
 
 Regras (testadas):
@@ -51,6 +52,16 @@ Regras (testadas):
    `ME`, `THEY` — como o Perssua (`gn(me)` antes de `gn(they)`).
 5. Sugestões: dedupe por `message_id` (o atalho empurra a mesma sugestão que o
    banco devolve).
+6. **Teto da bolha de fala** (`splitSpeechText`, ISS-031/BR-031): fala com mais de
+   `MAX_SPEECH_BUBBLE_CHARS = 180` caracteres vira **várias bolhas** — a primeira
+   com o id do segmento e as demais com `#N` e `continues: true`. Corta no fim da
+   frase (`.!?…`, `\n`) e, se a frase sozinha passar do teto, no fim da **palavra**
+   (nunca no meio dela). O `pending` sai **cru** do domínio e a `ChatView` aplica a
+   mesma função na prévia.
+
+O teto é de **exibição**: o texto do ASR e o áudio não mudam (nenhum corte de
+turno — o `max_turn_ms` de 25 s continua sendo só o teto de custo do whisper,
+BR-029).
 
 ## 3. Contrato visual (paridade medida no Perssua)
 
@@ -66,6 +77,7 @@ Regras (testadas):
 | Rótulo | `11px; font-weight:600; rgba(255,255,255,.5); uppercase; letter-spacing:.5px` | `.unified-message-label` |
 | Texto | `14px; rgba(255,255,255,.9); line-height:1.5; word-wrap:break-word` | `.unified-message-text` |
 | Em andamento | bolha `opacity:.7`, `…` piscando 1.4s, texto `opacity:.8` | `.unified-message-current`, `.unified-typing-indicator` |
+| Continuação (BR-031) | mesma bolha do falante, **sem** rótulo/tempo repetidos, `margin-top:-6px` (cola na de cima) | desvio próprio (ver §5) |
 | Rolagem | auto-scroll suave **só** se o usuário está a ≲40 px do fim | `scrollIntoView` condicional |
 | Blur por bolha | **não usar** (N camadas de blur re-renderizando por token) | comentário no CSS do Perssua |
 | Pílula de controle | `gap:2px; padding:2px; border-radius:999px`; botão `28×28` redondo; ícone `16px`; `:disabled{opacity:.4}`; stop com hover vermelho | `.unified-session-controls`, `.unified-control-button` |
@@ -107,6 +119,7 @@ useInsightFeed() ──── insight (atalho) ──────────┴
 | `mm:ss` em cada bolha (o Perssua não mostra tempo no ao vivo) | BR-019: toda mensagem tem seu tempo na linha temporal |
 | Ícones SVG próprios (triângulo, barras, quadrado) | BR-008: não copiar assets de terceiros (a fonte Material Icons é de terceiros) |
 | `cross-spawn` de busca/label: rótulos em PT-BR ("Você", "Interlocutor", "Sugestão da IA") | i18n do produto (BR-010); o Perssua usa "You"/"Others"/"Assistant" |
+| **Teto de 180 caracteres por bolha de fala**, com continuação (BR-031) | o Perssua não limita a bolha (`.unified-message-bubble` sem `max-height`): lá o *commit* em nuvem é de ~2 s e a bolha não cresce. No whisper **local** o commit é por silêncio (1 s) e o teto do turno é 25 s — sem o teto visual, o Interlocutor que fala sem pausas gerava uma bolha gigante (ISS-031, reclamação do usuário). Cortar o **turno** por tempo degradaria a transcrição (frase cortada ao meio); cortar a **exibição** não. |
 
 ## 6. Evidência no bundle do Perssua
 
@@ -121,6 +134,7 @@ Extração: `/tmp/opencode/perssua/asar` (asar de `Perssua-0.27.5-x86_64.AppImag
 | Pílula de sessão (tempo) + confirmação de encerramento | `build/static/js/main.f180d025.js` | offset ≈ 164200–168100 |
 | CSS da pílula de sessão, confirmação e bolinha de status | `build/static/css/3558.e4862c6d.css` | `.actionbar-session-*`, `.actionbar-end-*` |
 | Bolhas do histórico | `build/static/css/2748.65782e3f.chunk.css` | `.transcript-message`, `.message-bubble` |
+| **Sem teto de bolha** (evidência do desvio BR-031) | `build/static/css/4598.dc3b562d.css` | `.unified-message-bubble` (só `max-width:75%` — nenhum `max-height`/`line-clamp`; o `line-clamp` do bundle é de onboarding/legendas) |
 
 > As **sugestões da IA** nas bolhas agora renderizam **Markdown** com código
 > colorido (BR-025), pelo `MarkdownView`; os contratos de resumo/agente e as

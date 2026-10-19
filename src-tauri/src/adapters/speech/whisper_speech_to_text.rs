@@ -174,10 +174,38 @@ struct LoadedWhisper {
 
 impl LoadedWhisper {
     /// Carrega o contexto e o estado a partir do caminho do modelo.
-    fn load(model_path: &str) -> Result<Self> {
-        let context =
-            WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
-                .map_err(|e| GhostWhisperError::Other(format!("falha ao carregar whisper: {e}")))?;
+    fn load(model_path: &str, use_gpu: bool) -> Result<Self> {
+        // GPU/flash attention: `use_gpu` vem da configuração (`auto`/`cpu`/`gpu`),
+        // mas só tem efeito se o build trouxer o backend (`vulkan`/`cuda`/…). Flash
+        // attention é ligado junto (Perssua: `--no-flash-attn` só no macOS).
+        let gpu_build = cfg!(any(
+            feature = "vulkan",
+            feature = "cuda",
+            feature = "hipblas",
+            feature = "metal"
+        ));
+        let effective_gpu = use_gpu && gpu_build;
+        let flash_attn = effective_gpu
+            && cfg!(any(
+                feature = "vulkan",
+                feature = "cuda",
+                feature = "hipblas"
+            ));
+        let mut context_params = WhisperContextParameters::default();
+        if effective_gpu {
+            context_params.use_gpu(true);
+        }
+        if flash_attn {
+            context_params.flash_attn(true);
+        }
+        tracing::info!(
+            backend = if effective_gpu { "gpu" } else { "cpu" },
+            gpu_build,
+            flash_attn,
+            "carregando modelo whisper"
+        );
+        let context = WhisperContext::new_with_params(model_path, context_params)
+            .map_err(|e| GhostWhisperError::Other(format!("falha ao carregar whisper: {e}")))?;
         let state = context
             .create_state()
             .map_err(|e| GhostWhisperError::Other(format!("falha ao criar estado: {e}")))?;
@@ -199,6 +227,9 @@ pub struct WhisperSpeechToText {
     /// Fica atrás de um `Mutex` para poder trocar **sem recarregar o modelo**: o
     /// contexto carregado é caro e o prompt é só um parâmetro de cada passe.
     prompt: Mutex<String>,
+    /// Usar GPU neste contexto (resolvido das configurações; só vale se o build
+    /// tiver o backend).
+    use_gpu: bool,
     threads: i32,
     /// Publicador opcional para o status de download/carga (feedback da UI).
     publisher: Option<Arc<dyn EventPublisher>>,
@@ -212,6 +243,7 @@ impl WhisperSpeechToText {
         model_name: impl Into<String>,
         language: impl Into<String>,
         prompt: impl Into<String>,
+        use_gpu: bool,
         publisher: Option<Arc<dyn EventPublisher>>,
     ) -> Self {
         Self {
@@ -219,6 +251,7 @@ impl WhisperSpeechToText {
             model_name: model_name.into(),
             language: language.into(),
             prompt: Mutex::new(prompt.into()),
+            use_gpu,
             threads: asr_threads(),
             publisher,
             state: Mutex::new(WorkerState::NotStarted),
@@ -407,8 +440,21 @@ fn run_worker(
         }
     };
 
-    let mut loaded = match LoadedWhisper::load(&model_path) {
+    // GPU primeiro (quando pedido); se o driver recusar, cai para CPU na hora —
+    // melhor perder a aceleração do que não transcrever (BR-029).
+    let mut loaded = match LoadedWhisper::load(&model_path, this.use_gpu) {
         Ok(loaded) => loaded,
+        Err(error) if this.use_gpu => {
+            tracing::warn!("GPU indisponível ({error}); caindo para CPU");
+            match LoadedWhisper::load(&model_path, false) {
+                Ok(loaded) => loaded,
+                Err(error) => {
+                    this.emit_status(AsrPhase::Failed, error.to_string());
+                    failed.store(true, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
         Err(error) => {
             this.emit_status(AsrPhase::Failed, error.to_string());
             failed.store(true, Ordering::Relaxed);
@@ -617,7 +663,7 @@ mod tests {
                 dir.path().to_path_buf(),
             ),
         );
-        let asr = WhisperSpeechToText::new(models, "tiny", "auto", "", None);
+        let asr = WhisperSpeechToText::new(models, "tiny", "auto", "", false, None);
         match asr.transcribe(&[0.1; 100], SpeechQuality::Preview) {
             Err(GhostWhisperError::AsrNotReady) => {}
             other => panic!("esperava AsrNotReady, veio {other:?}"),
@@ -632,7 +678,7 @@ mod tests {
                 dir.path().to_path_buf(),
             ),
         );
-        let asr = WhisperSpeechToText::new(models, "tiny", "auto", "", None);
+        let asr = WhisperSpeechToText::new(models, "tiny", "auto", "", false, None);
         assert!(asr
             .transcribe(&[], SpeechQuality::Preview)
             .unwrap()

@@ -10,7 +10,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
-| ISS-023 | Bolhas de sugestão longas e sugestão tardia/ausente (paridade Perssua) | Alta | OPEN |
+| ISS-023 | Bolhas de sugestão longas e sugestão tardia/ausente (paridade Perssua) | Alta | FIXED |
 | ISS-024 | Transcrição menos precisa: sem `initial_prompt` de decodificação | Alta | OPEN |
 | ISS-025 | Reamostragem linear do microfone (aliasing) e gate de ruído permissivo | Média | OPEN |
 | ISS-026 | Microfone sem AEC referenciado (eco/duplicata em viva-voz) | Média | OPEN |
@@ -21,16 +21,18 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 ## ISS-023 — Bolhas de sugestão longas e sugestão tardia/ausente
 
-- **Severidade:** Alta · **Status:** OPEN
+- **Severidade:** Alta · **Status:** FIXED (a validar no teste manual da task 02)
 - **Sintoma:** no Perssua a bolha tem ~3 linhas e aparece rápido; aqui a sugestão
   sai longa, demora e, fora da janela de sugestões, não aparece.
 - **Causa raiz:** 1 chamada não-streaming de 900–1400 tokens a cada 20 s, só com
   a janela aberta; contexto só de falas finalizadas; sem *fast-first*; cue não
   colapsado; painel `540×680` contra notch `436×212`.
-- **Correção:** E2 — fast-first + streaming + prévias no contexto + auto contínuo
-  + UI compacta.
-- **Arquivos:** `suggestion_service.rs`, `context.rs`, `ports/llm_controller.rs`,
-  `ChatBubble.tsx`, `SuggestionsWindow.tsx`, `useSuggestions.ts`
+- **Correção:** E2 — fast-first + streaming + prévias no contexto + agendador no
+  core (sem depender da janela) + bolha colapsada (BR-028).
+- **Arquivos:** `suggestion_service.rs`, `context.rs`, `suggestion_scheduler.rs`,
+  `ports/{llm_controller,chat_bot_provider,event_publisher}.rs`,
+  `openai_compatible.rs`, `lib.rs`, `ChatBubble.tsx`, `SuggestionsWindow.tsx`,
+  `useSuggestions.ts`
 - **Task:** [`tasks/02-task.md`](tasks/02-task.md)
 
 ## ISS-024 — Transcrição menos precisa: sem `initial_prompt` de decodificação

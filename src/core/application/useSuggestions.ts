@@ -3,6 +3,7 @@ import {
   suggestionGenerate,
   suggestionPin,
 } from "../../adapters/ipc/suggestions";
+import { subscribe } from "../../adapters/ipc/events";
 import type { Suggestion } from "../domain/assistant";
 
 interface UseSuggestionsOptions {
@@ -10,9 +11,6 @@ interface UseSuggestionsOptions {
   opened: boolean;
   /** Agente selecionado. */
   modeId: string;
-  auto: boolean;
-  intervalSecs: number;
-  active: boolean;
   /** Contexto colado pelo usuário (enviado como fonte suplementar). */
   extraContext: string;
 }
@@ -20,16 +18,17 @@ interface UseSuggestionsOptions {
 const HISTORY_LIMIT = 8;
 
 /**
- * Sugestão viva da janela: gera ao abrir/trocar de agente, atualiza no
- * intervalo (só com fala nova), permite forçar, fixar e navegar no histórico.
+ * Sugestão viva da janela.
+ *
+ * A geração **automática** vive no core (reage a fala nova, sem depender da
+ * janela aberta) e chega pelo evento `suggestion` como texto em construção
+ * (fast-first + deltas do streaming). A janela só pede uma sugestão ao abrir
+ * (para não começar vazia), permite forçar, fixar e navegar no histórico.
  */
 export function useSuggestions({
   sessionId,
   opened,
   modeId,
-  auto,
-  intervalSecs,
-  active,
   extraContext,
 }: UseSuggestionsOptions) {
   const [current, setCurrent] = useState<Suggestion | null>(null);
@@ -45,6 +44,16 @@ export function useSuggestions({
   const extraRef = useRef(extraContext);
   const contextUntil = useRef<number | null>(null);
   const lastText = useRef<string | null>(null);
+
+  /** Aplica uma sugestão recebida (streaming) e atualiza o histórico por `at_ms`. */
+  const applyIncoming = useCallback((incoming: Suggestion) => {
+    setCurrent(incoming);
+    lastText.current = incoming.text;
+    setHistory((previous) => {
+      const rest = previous.filter((item) => item.at_ms !== incoming.at_ms);
+      return [incoming, ...rest].slice(0, HISTORY_LIMIT);
+    });
+  }, []);
 
   useEffect(() => {
     sessionRef.current = sessionId;
@@ -67,57 +76,80 @@ export function useSuggestions({
     extraRef.current = extraContext;
   }, [extraContext]);
 
-  const generate = useCallback(async (force: boolean) => {
-    if (inFlight.current || !sessionRef.current) {
-      return;
-    }
-    inFlight.current = true;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await suggestionGenerate({
-        sessionId: sessionRef.current,
-        modeId: modeRef.current,
-        sinceMs: force ? null : contextUntil.current,
-        lastSuggestion: lastText.current,
-        extraContext: extraRef.current.trim() ? extraRef.current : null,
-      });
-      if (!result || result.session_id !== sessionRef.current) {
-        return;
-      }
-      contextUntil.current = result.context_until_ms;
-      if (result.skipped) {
-        setSkipped(true);
+  // Sugestões do core (fast-first + streaming), inclusive sem a janela aberta.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    void subscribe<Suggestion>("suggestion", (incoming) => {
+      if (
+        cancelled ||
+        !incoming ||
+        incoming.skipped ||
+        !incoming.text.trim() ||
+        incoming.session_id !== sessionRef.current
+      ) {
         return;
       }
       setSkipped(false);
-      setCurrent(result);
-      lastText.current = result.text;
-      setHistory((previous) => [result, ...previous].slice(0, HISTORY_LIMIT));
-    } catch (caught) {
-      setError(String(caught));
-    } finally {
-      inFlight.current = false;
-      setLoading(false);
-    }
-  }, []);
+      applyIncoming(incoming);
+    }).then((stop) => {
+      if (cancelled) {
+        stop();
+      } else {
+        unlisten = stop;
+      }
+    });
 
-  // Gera ao abrir, ao trocar de sessão e ao trocar de agente.
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [applyIncoming]);
+
+  const generate = useCallback(
+    async (force: boolean) => {
+      if (inFlight.current || !sessionRef.current) {
+        return;
+      }
+      inFlight.current = true;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await suggestionGenerate({
+          sessionId: sessionRef.current,
+          modeId: modeRef.current,
+          sinceMs: force ? null : contextUntil.current,
+          lastSuggestion: lastText.current,
+          extraContext: extraRef.current.trim() ? extraRef.current : null,
+          fastFirst: true,
+        });
+        if (!result || result.session_id !== sessionRef.current) {
+          return;
+        }
+        contextUntil.current = result.context_until_ms;
+        if (result.skipped) {
+          setSkipped(true);
+          return;
+        }
+        setSkipped(false);
+        applyIncoming(result);
+      } catch (caught) {
+        setError(String(caught));
+      } finally {
+        inFlight.current = false;
+        setLoading(false);
+      }
+    },
+    [applyIncoming],
+  );
+
+  // Gera ao abrir e ao trocar de sessão/agente, para a janela não começar vazia.
   useEffect(() => {
     if (opened && sessionId) {
       void generate(true);
     }
   }, [opened, sessionId, modeId, generate]);
-
-  // Atualização periódica (só com a janela aberta e sessão gravando).
-  useEffect(() => {
-    if (!opened || !auto || !active) {
-      return;
-    }
-    const ms = Math.max(10, intervalSecs) * 1_000;
-    const id = window.setInterval(() => void generate(false), ms);
-    return () => window.clearInterval(id);
-  }, [opened, auto, active, intervalSecs, generate]);
 
   const suggestNow = useCallback(() => generate(true), [generate]);
 

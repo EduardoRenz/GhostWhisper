@@ -54,4 +54,45 @@ impl TranscriptionsRepository for InMemoryTranscriptionsRepository {
         found.truncate(limit);
         Ok(found)
     }
+
+    fn latest_final_ms(&self, session_id: &str) -> Result<Option<i64>> {
+        Ok(self
+            .all()
+            .into_iter()
+            .filter(|segment| {
+                segment.session_id == session_id
+                    && segment.is_final
+                    && !segment.text.trim().is_empty()
+            })
+            .map(|segment| segment.start_ms)
+            .max())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::transcription::Speaker;
+
+    fn segment(id: &str, at: i64, text: &str, is_final: bool) -> TranscriptSegment {
+        TranscriptSegment {
+            id: id.to_string(),
+            session_id: "s1".to_string(),
+            speaker: Speaker::Me,
+            text: text.to_string(),
+            start_ms: at,
+            end_ms: at + 500,
+            is_final,
+        }
+    }
+
+    #[test]
+    fn latest_final_ms_ignores_previews_and_empty_text() {
+        let repo = InMemoryTranscriptionsRepository::new();
+        repo.insert(&segment("1", 1_000, "final", true)).unwrap();
+        repo.insert(&segment("2", 2_000, "prévia", false)).unwrap();
+        repo.insert(&segment("3", 3_000, "  ", true)).unwrap();
+        assert_eq!(repo.latest_final_ms("s1").expect("latest"), Some(1_000));
+        assert_eq!(repo.latest_final_ms("s2").expect("latest"), None);
+    }
 }

@@ -13,4 +13,19 @@ pub trait LlmController: Send + Sync {
     fn validate(&self) -> Result<String>;
     /// Executa uma completude com a configuração ativa.
     fn complete(&self, request: &CompletionRequest) -> Result<Completion>;
+
+    /// Executa uma completude reportando o **texto acumulado** a cada pedaço.
+    ///
+    /// Implementação padrão: sem streaming — chama [`complete`](Self::complete) e
+    /// reporta o texto inteiro uma única vez. Providers com SSE sobrescrevem para
+    /// a UI mostrar a sugestão crescendo (BR-028).
+    fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Completion> {
+        let completion = self.complete(request)?;
+        on_text(&completion.text);
+        Ok(completion)
+    }
 }

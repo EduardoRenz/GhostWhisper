@@ -16,9 +16,14 @@ tauri-build = { version = "2", features = [] }
 [features]
 default = []
 # Aceleração do Whisper por GPU (repassa para o `whisper-rs`). Por padrão o app é
-# CPU; ligar GPU é o entregável E3 do PRD `precision-and-performance` (BR-027).
+# CPU; ligar GPU é o entregável E3 do PRD `precision-and-performance` (BR-029).
 # A detecção de GPU (`ports::gpu_probe`) usa estas features em `cfg!` para saber
 # se o build acelera.
+#
+# Linux sem ROCm/CUDA (ex.: AMD Polaris): use `vulkan` — é o caminho que o
+# `whisper.cpp` suporta via Vulkan e funciona com o driver Mesa/RADV.
+# Build: `scripts/vulkan-env.sh` monta o SDK e `pnpm tauri:dev:vulkan` compila.
+vulkan = ["whisper-rs/vulkan"]
 cuda = ["whisper-rs/cuda"]
 hipblas = ["whisper-rs/hipblas"]
 metal = ["whisper-rs/metal"]

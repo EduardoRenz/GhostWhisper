@@ -7,7 +7,12 @@
 use serde::Serialize;
 
 /// Modelo recomendado quando há GPU **e** aceleração disponível no build.
-pub const GPU_RECOMMENDED_MODEL: &str = "large-v3-turbo";
+///
+/// É o `small`, não o `large-v3-turbo`: medido na RX 480 (Vulkan/RADV), o turbo
+/// tem um piso de ~2,4 s por chamada (RTF < 1 em falas curtas), o que atrasa as
+/// prévias; o `small` fica em ~0,5–0,7 s para 8 s de áudio e é bem mais preciso
+/// que o `tiny`. Ver o benchmark em `prds/precision-and-performance/memory.md`.
+pub const GPU_RECOMMENDED_MODEL: &str = "small";
 /// Modelo recomendado quando não há GPU utilizável (caminho CPU).
 pub const CPU_RECOMMENDED_MODEL: &str = "tiny";
 
@@ -65,9 +70,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recommends_the_large_model_only_with_acceleration() {
+    fn recommends_the_bigger_model_only_with_acceleration() {
         let with_gpu = GpuInfo::new(true, "vulkan", "AMD (RADV)", true);
         assert_eq!(with_gpu.recommended_model, GPU_RECOMMENDED_MODEL);
+        assert_eq!(with_gpu.recommended_model, "small");
 
         // GPU presente mas build CPU: continua recomendando o modelo leve.
         let without_accel = GpuInfo::new(true, "vulkan", "AMD (RADV)", false);

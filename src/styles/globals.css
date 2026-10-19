@@ -485,6 +485,28 @@ body,
   overflow-wrap: anywhere;
 }
 
+/* Sugestão da IA: começa em ~3 linhas, com "mostrar mais" (BR-028). */
+.chat__clamp {
+  max-height: 4.7em;
+  overflow: hidden;
+}
+
+.chat__clamp--open {
+  max-height: none;
+}
+
+.chat__expand {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 11px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(167, 139, 250, 0.95);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .chat__foot {
   display: flex;
   align-items: center;
@@ -518,6 +540,11 @@ body,
   opacity: 0.8;
 }
 
+/* Continuação de fala longa: cola na bolha de cima (mesma fala). */
+.chat__row--continues {
+  margin-top: -6px;
+}
+
 @keyframes chat-blink {
   0%,
   100% {
@@ -534,47 +561,53 @@ body,
   color: #f87171;
 }
 
-/* Tradução ------------------------------------------------------------- */
+/* Tradução sob demanda na bolha (BR-030) -------------------------------- */
 
-.translation {
-  max-height: 32%;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+.chat__translate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+}
+
+.chat__translate:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat__translate--on {
+  color: rgba(167, 139, 250, 0.95);
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.chat__translate:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.chat__translate-busy {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.chat__translation {
+  margin: 6px 0 0;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 0.78rem;
-}
-
-.translation--empty {
-  color: var(--ghostwhisper-text-muted);
-}
-
-.translation__line {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-}
-
-.translation__source {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.72rem;
-  color: var(--ghostwhisper-text-muted);
-}
-
-.translation__text {
-  flex: 1 1 auto;
-  color: var(--ghostwhisper-text);
-}
-
-.translation__copy {
-  flex: 0 0 auto;
+  border-top: 1px dashed rgba(255, 255, 255, 0.28);
+  font-size: 12px;
+  line-height: 1.45;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.72);
+  overflow-wrap: anywhere;
 }
 
 /* Insights ------------------------------------------------------------- */

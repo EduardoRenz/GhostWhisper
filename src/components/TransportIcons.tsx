@@ -59,6 +59,32 @@ export function StopIcon({ className }: IconProps) {
   );
 }
 
+/** Globo/idioma: botão de traduzir a bolha. */
+export function TranslateIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      >
+        <circle cx="12" cy="12" r="8.2" />
+        <path d="M3.8 12h16.4" />
+        <path d="M12 3.8c2.6 3.1 2.6 13.3 0 16.4" />
+        <path d="M12 3.8c-2.6 3.1-2.6 13.3 0 16.4" />
+      </g>
+    </svg>
+  );
+}
+
 /** Faísca: identifica a sugestão da IA na conversa. */
 export function SparkIcon({ className }: IconProps) {
   return (

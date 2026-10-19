@@ -116,24 +116,39 @@ pub fn chunks_after(
     chunks
 }
 
-/// Contexto dos “últimos momentos”: janela de tempo, teto de falas e de chars.
+/// `true` quando a fala entra no contexto **ao vivo** (final **ou** prévia).
+fn is_usable_live(segment: &TranscriptSegment) -> bool {
+    !segment.text.trim().is_empty()
+}
+
+/// Falas utilizáveis **incluindo prévias**: dedupe por id (o final vence).
 ///
-/// Se a janela não tiver nenhuma fala, devolve `None`.
-pub fn recent_context(
-    segments: &[TranscriptSegment],
-    now_rel_ms: i64,
-    window_ms: i64,
+/// É o que permite a sugestão reagir à fala em andamento, como o Perssua
+/// (`questionsRequireFinalizedTranscript: false`), sem perder o texto final
+/// quando ele chega.
+fn usable_sorted_live(segments: &[TranscriptSegment]) -> Vec<&TranscriptSegment> {
+    let mut by_id: std::collections::BTreeMap<&str, &TranscriptSegment> =
+        std::collections::BTreeMap::new();
+    for segment in segments.iter().filter(|segment| is_usable_live(segment)) {
+        match by_id.get(segment.id.as_str()) {
+            // Um final nunca é rebaixado por uma prévia atrasada.
+            Some(existing) if existing.is_final && !segment.is_final => {}
+            _ => {
+                by_id.insert(segment.id.as_str(), segment);
+            }
+        }
+    }
+    let mut usable: Vec<&TranscriptSegment> = by_id.into_values().collect();
+    usable.sort_by(|a, b| a.start_ms.cmp(&b.start_ms).then_with(|| a.id.cmp(&b.id)));
+    usable
+}
+
+/// Monta o contexto a partir das falas já filtradas (janela + tetos).
+fn build_recent(
+    mut window: Vec<&TranscriptSegment>,
     max_segments: usize,
     max_chars: usize,
 ) -> Option<RecentContext> {
-    if max_segments == 0 || max_chars == 0 {
-        return None;
-    }
-    let cutoff = now_rel_ms.saturating_sub(window_ms.max(0));
-    let mut window: Vec<&TranscriptSegment> = usable_sorted(segments)
-        .into_iter()
-        .filter(|segment| segment.start_ms >= cutoff)
-        .collect();
     if window.is_empty() {
         return None;
     }
@@ -164,6 +179,30 @@ pub fn recent_context(
         text: lines.join("\n"),
         until_ms,
     })
+}
+
+/// Contexto dos “últimos momentos” da sugestão ao vivo, **incluindo a fala em
+/// andamento** (prévias).
+///
+/// Sem as prévias a sugestão só apareceria depois de o turno fechar (BR-028);
+/// um final sempre vence a prévia do mesmo turno. Janela de tempo + tetos de
+/// falas e de caracteres; `None` quando não há fala utilizável.
+pub fn recent_context_live(
+    segments: &[TranscriptSegment],
+    now_rel_ms: i64,
+    window_ms: i64,
+    max_segments: usize,
+    max_chars: usize,
+) -> Option<RecentContext> {
+    if max_segments == 0 || max_chars == 0 {
+        return None;
+    }
+    let cutoff = now_rel_ms.saturating_sub(window_ms.max(0));
+    let window: Vec<&TranscriptSegment> = usable_sorted_live(segments)
+        .into_iter()
+        .filter(|segment| segment.start_ms >= cutoff)
+        .collect();
+    build_recent(window, max_segments, max_chars)
 }
 
 /// Início do último segmento final utilizável (para saber se há conteúdo novo).
@@ -248,13 +287,13 @@ mod tests {
     }
 
     #[test]
-    fn recent_context_takes_the_last_moments() {
+    fn live_context_takes_the_last_moments() {
         let segments = vec![
             seg("1", 1_000, Speaker::They, "antigo", true),
             seg("2", 60_000, Speaker::They, "pergunta técnica", true),
             seg("3", 61_000, Speaker::Me, "resposta", true),
         ];
-        let context = recent_context(&segments, 62_000, 5_000, 40, 1_000).expect("contexto");
+        let context = recent_context_live(&segments, 62_000, 5_000, 40, 1_000).expect("contexto");
         assert!(!context.text.contains("antigo"));
         assert!(context.text.contains("pergunta técnica"));
         assert!(context.text.contains("ME: resposta"));
@@ -262,20 +301,44 @@ mod tests {
     }
 
     #[test]
-    fn recent_context_prefers_the_tail_within_the_char_budget() {
+    fn live_context_prefers_the_tail_within_the_char_budget() {
         let segments = vec![
             seg("1", 1_000, Speaker::Me, &"a".repeat(200), true),
             seg("2", 2_000, Speaker::Me, "falta recente", true),
         ];
-        let context = recent_context(&segments, 3_000, 10_000, 40, 30).expect("contexto");
+        let context = recent_context_live(&segments, 3_000, 10_000, 40, 30).expect("contexto");
         assert!(context.text.contains("falta recente"));
         assert!(!context.text.contains(&"a".repeat(200)));
     }
 
     #[test]
-    fn recent_context_is_none_without_usable_speech() {
-        let segments = vec![seg("1", 0, Speaker::Me, "x", false)];
-        assert!(recent_context(&segments, 1_000, 5_000, 40, 100).is_none());
+    fn live_context_includes_the_speech_in_progress() {
+        let segments = vec![
+            seg("1", 1_000, Speaker::They, "pergunta", true),
+            seg("2", 2_000, Speaker::Me, "estou respon", false),
+        ];
+        let live = recent_context_live(&segments, 3_000, 10_000, 40, 1_000).expect("contexto");
+        assert!(live.text.contains("THEY: pergunta"));
+        assert!(live.text.contains("ME: estou respon"));
+    }
+
+    #[test]
+    fn live_context_prefers_the_final_over_a_stale_preview() {
+        let segments = vec![
+            seg("t0", 1_000, Speaker::Me, "prévia errada", false),
+            seg("t0", 1_000, Speaker::Me, "texto final", true),
+        ];
+        let live = recent_context_live(&segments, 2_000, 10_000, 40, 1_000).expect("contexto");
+        assert!(live.text.contains("ME: texto final"));
+        assert!(!live.text.contains("prévia errada"));
+    }
+
+    #[test]
+    fn live_context_is_none_without_usable_speech() {
+        // Sem fala nenhuma (texto vazio) ⇒ nada para sugerir.
+        let segments = vec![seg("1", 0, Speaker::Me, "   ", false)];
+        assert!(recent_context_live(&segments, 1_000, 5_000, 40, 100).is_none());
+        assert!(recent_context_live(&[], 1_000, 5_000, 40, 100).is_none());
     }
 
     #[test]

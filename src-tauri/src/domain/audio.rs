@@ -177,6 +177,89 @@ pub fn has_sustained_speech(samples: &[f32], threshold: f32) -> bool {
     false
 }
 
+// --- Cancelamento de eco (AEC) ---------------------------------------------
+
+/// Atraso padrão da referência em relação ao microfone (ms).
+///
+/// Transposto do Perssua (`explicit_aec_capture_delay_ms = 60`): cobre a latência
+/// de captura/entrega das duas fontes (mic e loopback do sistema).
+pub const DEFAULT_AEC_DELAY_MS: i64 = 60;
+/// Comprimento do filtro adaptativo (amostras a 16 kHz ⇒ 512 ≈ 32 ms).
+pub const DEFAULT_AEC_TAPS: usize = 512;
+/// Passo do NLMS (0 < μ ≤ 2 garante estabilidade; 0,3 converge rápido sem oscilar).
+const AEC_STEP: f32 = 0.3;
+/// Piso de energia para não dividir por quase zero nem adaptar com silêncio.
+const AEC_EPSILON: f32 = 1e-6;
+/// Fator da guarda de *double-talk* (fala local domina a referência).
+const AEC_DOUBLE_TALK_RATIO: f32 = 4.0;
+
+/// Cancelador de eco acústico adaptativo (NLMS) com guarda de fala dupla.
+///
+/// O microfone reouve o áudio que saiu pelo alto-falante (o "outro lado" da
+/// chamada). Com uma **referência** — o áudio do sistema — o filtro aprende o
+/// caminho alto-falante→microfone e subtrai a estimativa do sinal do microfone.
+///
+/// - `reference` recebe a janela de referência **já atrasada** (`aec_delay_ms`) e
+///   alinhada ao bloco: `reference[i]` corresponde a `mic[i]`.
+/// - A adaptação é congelada quando a energia do microfone domina a referência
+///   (guarda de *double-talk*): assim a fala local não é cancelada junto.
+/// - Referência muda ⇒ saída idêntica à entrada (sem adaptação, sem dano).
+#[derive(Debug, Clone)]
+pub struct EchoCanceller {
+    weights: Vec<f32>,
+    /// Últimas `weights.len()` amostras da referência (mais antiga primeiro).
+    history: VecDeque<f32>,
+    step: f32,
+}
+
+impl EchoCanceller {
+    /// Cria o cancelador com `taps` coeficientes.
+    pub fn new(taps: usize) -> Self {
+        let taps = taps.max(1);
+        Self {
+            weights: vec![0.0; taps],
+            history: VecDeque::with_capacity(taps),
+            step: AEC_STEP,
+        }
+    }
+
+    /// Número de coeficientes (usado em testes).
+    #[cfg(test)]
+    pub fn taps(&self) -> usize {
+        self.weights.len()
+    }
+
+    /// Processa um bloco do microfone **in place** usando a referência alinhada.
+    pub fn process(&mut self, mic: &mut [f32], reference: &[f32]) {
+        for (index, sample) in mic.iter_mut().enumerate() {
+            let value = reference.get(index).copied().unwrap_or(0.0);
+            self.history.push_back(value);
+            while self.history.len() > self.weights.len() {
+                self.history.pop_front();
+            }
+
+            // Estimativa do eco: produto interno dos pesos com a referência recente.
+            let mut echo = 0.0f32;
+            for (weight, past) in self.weights.iter().zip(self.history.iter()) {
+                echo += weight * past;
+            }
+            let residual = *sample - echo;
+            *sample = residual;
+
+            // NLMS com guarda de double-talk.
+            let reference_power: f32 = self.history.iter().map(|value| value * value).sum();
+            let frozen = reference_power <= AEC_EPSILON
+                || residual * residual > AEC_DOUBLE_TALK_RATIO * reference_power;
+            if !frozen {
+                let gain = self.step * residual / (reference_power + AEC_EPSILON);
+                for (weight, past) in self.weights.iter_mut().zip(self.history.iter()) {
+                    *weight += gain * past;
+                }
+            }
+        }
+    }
+}
+
 /// Um dispositivo de entrada de áudio.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioDevice {
@@ -533,6 +616,109 @@ mod tests {
         assert_eq!(
             DelayedAudioQueue::new(DEFAULT_MONITOR_DELAY_MS).delay_ms(),
             400
+        );
+    }
+
+    // --- AEC ---------------------------------------------------------------
+
+    /// Ruído determinístico (LCG) para os testes de eco.
+    fn pseudo_noise(len: usize, amplitude: f32, seed: u32) -> Vec<f32> {
+        let mut state = seed;
+        (0..len)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let unit = (state >> 8) as f32 / (1u32 << 24) as f32 - 0.5;
+                unit * 2.0 * amplitude
+            })
+            .collect()
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        if samples.is_empty() {
+            return 0.0;
+        }
+        (samples.iter().map(|value| value * value).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn aec_cancels_the_delayed_echo() {
+        let len = TARGET_SAMPLE_RATE as usize * 2;
+        let delay = (TARGET_SAMPLE_RATE as usize * DEFAULT_AEC_DELAY_MS as usize) / 1_000;
+        let reference = pseudo_noise(len, 0.3, 7);
+        // Eco: 35% da referência, atrasada (alto-falante → microfone).
+        let echo: Vec<f32> = (0..len)
+            .map(|index| {
+                reference
+                    .get(index.wrapping_sub(delay))
+                    .copied()
+                    .unwrap_or(0.0)
+                    * 0.35
+            })
+            .collect();
+        let mut mic = echo.clone();
+
+        let mut canceller = EchoCanceller::new(DEFAULT_AEC_TAPS);
+        let delayed: Vec<f32> = (0..len)
+            .map(|index| {
+                reference
+                    .get(index.wrapping_sub(delay))
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .collect();
+        canceller.process(&mut mic, &delayed);
+        // Descarta o aquecimento (o filtro precisa aprender o caminho).
+        let residual = rms(&mic[delay + DEFAULT_AEC_TAPS..]);
+        let echo_rms = rms(&echo[delay + DEFAULT_AEC_TAPS..]);
+        assert!(
+            residual < echo_rms * 0.3,
+            "eco devia cair ≥10 dB: eco={echo_rms} residual={residual}"
+        );
+    }
+
+    #[test]
+    fn aec_keeps_local_speech_when_the_reference_is_silent() {
+        let speech = pseudo_noise(TARGET_SAMPLE_RATE as usize, 0.25, 11);
+        let mut mic = speech.clone();
+        let mut canceller = EchoCanceller::new(256);
+        // Referência muda (ninguém falando no áudio do sistema).
+        canceller.process(&mut mic, &vec![0.0; speech.len()]);
+        let difference = rms(&mic
+            .iter()
+            .zip(speech.iter())
+            .map(|(a, b)| a - b)
+            .collect::<Vec<_>>());
+        assert!(
+            difference < 1e-6,
+            "sem referência a saída não muda: {difference}"
+        );
+    }
+
+    #[test]
+    fn aec_freezes_adaptation_on_double_talk() {
+        // Referência fraca e fala local forte: nada deve ser subtraído.
+        let reference = pseudo_noise(TARGET_SAMPLE_RATE as usize, 0.002, 13);
+        let speech = pseudo_noise(TARGET_SAMPLE_RATE as usize, 0.4, 17);
+        let mut mic = speech.clone();
+        let mut canceller = EchoCanceller::new(256);
+        canceller.process(&mut mic, &reference);
+        let difference = rms(&mic
+            .iter()
+            .zip(speech.iter())
+            .map(|(a, b)| a - b)
+            .collect::<Vec<_>>());
+        assert!(
+            difference < rms(&speech) * 0.2,
+            "double-talk não pode comer a fala: {difference}"
+        );
+    }
+
+    #[test]
+    fn aec_taps_are_bounded() {
+        assert_eq!(EchoCanceller::new(0).taps(), 1);
+        assert_eq!(
+            EchoCanceller::new(DEFAULT_AEC_TAPS).taps(),
+            DEFAULT_AEC_TAPS
         );
     }
 }

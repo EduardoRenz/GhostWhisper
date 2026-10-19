@@ -8,6 +8,19 @@ export type ProviderKind = "openai" | "gemini" | "openrouter" | "custom";
 /** Idiomas suportados em origem e destino (`auto` = detectar / não traduzir). */
 export type Language = "auto" | "pt" | "en";
 
+/** Aceleração do ASR (espelha `domain::settings::ACCELERATION_MODES`). */
+export type AccelerationMode = "auto" | "cpu" | "gpu";
+
+/** Opções de aceleração, na ordem de exibição. */
+export const ACCELERATION_MODES: AccelerationMode[] = ["auto", "cpu", "gpu"];
+
+/** Rótulos de aceleração. */
+export const ACCELERATION_LABELS: Record<AccelerationMode, string> = {
+  auto: "Auto (GPU se disponível)",
+  cpu: "CPU (sem GPU)",
+  gpu: "GPU (Vulkan/CUDA)",
+};
+
 /** Opções de idioma, na ordem de exibição. */
 export const LANGUAGES: Language[] = ["auto", "pt", "en"];
 
@@ -41,6 +54,10 @@ export interface Settings {
    * core (BR-027).
    */
   whisper_prompt: string;
+  /** Aceleração do ASR: `auto` (GPU se disponível), `cpu` ou `gpu`. */
+  acceleration: AccelerationMode;
+  /** Cancelamento de eco (AEC) no microfone, usando o áudio do sistema. */
+  aec_enabled: boolean;
   /** Ganho do microfone (1×–12×); não afeta o áudio do sistema. */
   mic_gain: number;
   /** Modo stealth (sem barra de tarefas / sem título). */
@@ -129,6 +146,8 @@ export const defaultSettings = (): Settings => ({
   translation_enabled: false,
   whisper_model: "tiny",
   whisper_prompt: DEFAULT_WHISPER_PROMPT,
+  acceleration: "auto",
+  aec_enabled: true,
   mic_gain: DEFAULT_MIC_GAIN,
   stealth: false,
   shortcuts: defaultBindings(),

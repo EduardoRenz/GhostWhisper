@@ -4,9 +4,15 @@ use crate::domain::llm::{Completion, CompletionRequest, ProviderConfig};
 use crate::error::Result;
 use crate::ports::chat_bot_provider::ChatBotProvider;
 
-use super::openai_compatible::chat_completion;
+use super::openai_compatible::{chat_completion, chat_completion_streaming};
 
 const BASE_URL: &str = "https://openrouter.ai/api/v1";
+
+/// Cabeçalhos opcionais de atribuição recomendados pelo OpenRouter.
+const ATTRIBUTION_HEADERS: [(&str, &str); 2] = [
+    ("HTTP-Referer", "https://github.com/ghostwhisper"),
+    ("X-Title", "GhostWhisper"),
+];
 
 /// Provider OpenRouter (agrega vários modelos).
 pub struct OpenRouterChatBotProvider {
@@ -26,11 +32,20 @@ impl ChatBotProvider for OpenRouterChatBotProvider {
     }
 
     fn complete(&self, request: &CompletionRequest) -> Result<Completion> {
-        // Cabeçalhos opcionais de atribuição recomendados pelo OpenRouter.
-        let headers = [
-            ("HTTP-Referer", "https://github.com/ghostwhisper"),
-            ("X-Title", "GhostWhisper"),
-        ];
-        chat_completion(&self.config, BASE_URL, request, &headers)
+        chat_completion(&self.config, BASE_URL, request, &ATTRIBUTION_HEADERS)
+    }
+
+    fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Completion> {
+        chat_completion_streaming(
+            &self.config,
+            BASE_URL,
+            request,
+            &ATTRIBUTION_HEADERS,
+            on_text,
+        )
     }
 }

@@ -25,6 +25,8 @@ export interface SpeechBubble {
   at_ms: number;
   /** Fim da fala (ms); ausente quando a origem não informa (histórico). */
   end_ms?: number;
+  /** Continuação de uma fala longa (mesma fala, parte seguinte). */
+  continues?: boolean;
 }
 
 /** Bolha de sugestão da IA (BR-020). */
@@ -44,6 +46,79 @@ export const SPEAKER_ORDER: Speaker[] = ["ME", "THEY"];
 
 /** Teto de bolhas em tela (cada bolha é mais pesada que uma linha de texto). */
 export const MAX_BUBBLES = 300;
+
+/**
+ * Teto de caracteres de uma bolha de fala (≈4–5 linhas no painel).
+ *
+ * Fala contínua — o Interlocutor falando sem pausas — só fecha o turno no silêncio
+ * ou no teto do turno (`max_turn_ms`, 25 s), e a bolha crescia sem fim. O excesso
+ * **continua numa bolha seguinte** (`continues`), sem mexer no áudio: a
+ * transcrição sai inteira e o corte é só de exibição.
+ */
+export const MAX_SPEECH_BUBBLE_CHARS = 180;
+
+/**
+ * Corta `text` em pedaços de até `limit` caracteres **em fim de palavra**.
+ *
+ * Usado quando uma única frase não cabe: nunca devolve uma palavra partida (só
+ * corta no meio se a "palavra" sozinha já passar do limite, ex.: uma URL).
+ */
+function chopAtWords(text: string, limit: number): string[] {
+  const parts: string[] = [];
+  let rest = text.trim();
+  while (rest.length > limit) {
+    // Janela com um caractere a mais: um espaço exatamente no limite conta.
+    const cut = rest.slice(0, limit + 1).lastIndexOf(" ");
+    const end = cut > 0 ? cut : limit;
+    parts.push(rest.slice(0, end).trim());
+    rest = rest.slice(end).trim();
+  }
+  if (rest.length > 0) {
+    parts.push(rest);
+  }
+  return parts;
+}
+
+/**
+ * Quebra uma fala em partes de no máximo `limit` caracteres.
+ *
+ * Prefere o **fim da frase** (`.!?…` ou quebra de linha) e só recorre ao limite de
+ * palavra quando a frase sozinha passa do teto — fala curta continua sendo uma
+ * bolha só (`["fala"]`), então nada muda no caso comum.
+ */
+export function splitSpeechText(
+  text: string,
+  limit: number = MAX_SPEECH_BUBBLE_CHARS,
+): string[] {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+  if (trimmed.length <= limit) {
+    return [trimmed];
+  }
+
+  // Frases com o terminador junto (o `\n` também separa).
+  const sentences = trimmed.match(/[^.!?…\n]+[.!?…]*\s*|\n+/gu) ?? [trimmed];
+  const parts: string[] = [];
+  let current = "";
+  for (const sentence of sentences) {
+    if (current.length > 0 && (current + sentence).trim().length > limit) {
+      parts.push(current.trim());
+      current = "";
+    }
+    current += sentence;
+    if (current.trim().length > limit) {
+      // A frase (ou o trecho sem pontuação) sozinha passou do teto.
+      parts.push(...chopAtWords(current, limit));
+      current = "";
+    }
+  }
+  if (current.trim().length > 0) {
+    parts.push(current.trim());
+  }
+  return parts.filter((part) => part.length > 0);
+}
 
 /** Fala em branco (só ruído/pontuação do ASR) não vira bolha. */
 const hasContent = (text: string): boolean => text.trim().length > 0;
@@ -124,16 +199,22 @@ export function buildChatTimeline(
 
   const bubbles: ChatBubble[] = [];
   for (const segment of committed) {
-    if (hasContent(segment.text)) {
+    const text = segment.text.trim();
+    if (!hasContent(text)) {
+      continue;
+    }
+    // Fala longa continua na bolha seguinte (continuação da mesma fala).
+    splitSpeechText(text).forEach((part, index) => {
       bubbles.push({
         kind: "speech",
-        id: segment.id,
+        id: index === 0 ? segment.id : `${segment.id}#${index}`,
         speaker: segment.speaker,
-        text: segment.text.trim(),
+        text: part,
         at_ms: segment.start_ms,
         end_ms: segment.end_ms,
+        continues: index > 0,
       });
-    }
+    });
   }
 
   const seenSuggestions = new Set<string>();
@@ -176,22 +257,27 @@ export function bubblesFromTimeline(
     if (!hasContent(text)) {
       return;
     }
-    bubbles.push(
-      entry.kind === "speech"
-        ? {
-            kind: "speech",
-            id: `speech-${entry.at_ms}-${index}`,
-            speaker: entry.speaker,
-            text,
-            at_ms: entry.at_ms,
-          }
-        : {
-            kind: "suggestion",
-            id: `suggestion-${entry.at_ms}-${index}`,
-            text,
-            at_ms: entry.at_ms,
-          },
-    );
+    if (entry.kind !== "speech") {
+      bubbles.push({
+        kind: "suggestion",
+        id: `suggestion-${entry.at_ms}-${index}`,
+        text,
+        at_ms: entry.at_ms,
+      });
+      return;
+    }
+    // Mesma regra do ao vivo: fala longa continua na bolha seguinte.
+    const id = `speech-${entry.at_ms}-${index}`;
+    splitSpeechText(text).forEach((part, partIndex) => {
+      bubbles.push({
+        kind: "speech",
+        id: partIndex === 0 ? id : `${id}#${partIndex}`,
+        speaker: entry.speaker,
+        text: part,
+        at_ms: entry.at_ms,
+        continues: partIndex > 0,
+      });
+    });
   });
   bubbles.sort(byTimeThenKind);
   return bubbles.slice(-cap);

@@ -25,12 +25,14 @@ pub fn suggestion_generate(
     since_ms: Option<i64>,
     last_suggestion: Option<String>,
     extra_context: Option<String>,
+    fast_first: Option<bool>,
 ) -> Result<Suggestion> {
     state.suggestions.generate(
         SuggestionRequest::ephemeral(session_id, mode_id.unwrap_or_default())
             .with_since_ms(since_ms)
             .with_last_suggestion(last_suggestion)
-            .with_extra_context(extra_context),
+            .with_extra_context(extra_context)
+            .with_fast_first(fast_first.unwrap_or(false)),
     )
 }
 

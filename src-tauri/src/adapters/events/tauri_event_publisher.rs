@@ -17,6 +17,8 @@ pub const AUDIO_LEVEL_EVENT: &str = "audio_level";
 pub const SESSION_STATE_EVENT: &str = "session_state";
 /// Nome do evento de sugestão gerada (painel ou atalho).
 pub const INSIGHT_EVENT: &str = "insight";
+/// Nome do evento de sugestão efêmera em andamento (fast-first/streaming).
+pub const SUGGESTION_EVENT: &str = "suggestion";
 /// Nome do evento de status do motor de transcrição.
 pub const ASR_STATUS_EVENT: &str = "asr_status";
 
@@ -62,6 +64,10 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_insight(&self, suggestion: &Suggestion) {
         let _ = self.app.emit(INSIGHT_EVENT, suggestion);
+    }
+
+    fn emit_suggestion(&self, suggestion: &Suggestion) {
+        let _ = self.app.emit(SUGGESTION_EVENT, suggestion);
     }
 
     fn emit_asr_status(&self, status: &AsrStatus) {

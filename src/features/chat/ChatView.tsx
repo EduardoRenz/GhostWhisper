@@ -3,12 +3,14 @@ import type { ReactNode } from "react";
 import { copyText } from "../../core/application/clipboard";
 import {
   MAX_BUBBLES,
+  splitSpeechText,
   type ChatBubble,
 } from "../../core/domain/chat";
 import {
   speakerLabel,
   type TranscriptSegment,
 } from "../../core/domain/transcript";
+import type { TranslationMap } from "../../core/application/useTranslation";
 import { ChatBubble as Bubble } from "./ChatBubble";
 
 interface ChatViewProps {
@@ -19,6 +21,15 @@ interface ChatViewProps {
   /** Cabeçalho do chat (ex.: botão "Sugerir"). */
   header?: ReactNode;
   emptyLabel?: string;
+  /** Tradução sob demanda nas bolhas de fala (botão no canto). */
+  translationEnabled?: boolean;
+  translations?: TranslationMap;
+  translationPending?: Record<string, boolean>;
+  translationTarget?: string;
+  onTranslate?: (input: {
+    id: string;
+    text: string;
+  }) => Promise<string | null> | void;
 }
 
 /** Distância do fim (px) em que a rolagem continua "grudada" no fim. */
@@ -39,6 +50,11 @@ export const ChatView = memo(function ChatView({
   pending = [],
   header,
   emptyLabel = "Nenhuma fala ainda…",
+  translationEnabled = false,
+  translations,
+  translationPending,
+  translationTarget,
+  onTranslate,
 }: ChatViewProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -87,7 +103,20 @@ export const ChatView = memo(function ChatView({
               text={bubble.text}
               label={speakerLabel(bubble.speaker)}
               side={bubble.speaker === "ME" ? "me" : "they"}
-              atMs={bubble.at_ms}
+              atMs={bubble.continues ? undefined : bubble.at_ms}
+              translation={
+                translationEnabled ? translations?.[bubble.id] : undefined
+              }
+              translating={
+                translationEnabled ? translationPending?.[bubble.id] : undefined
+              }
+              translationTarget={translationEnabled ? translationTarget : undefined}
+              onTranslate={
+                translationEnabled && onTranslate
+                  ? () => onTranslate({ id: bubble.id, text: bubble.text })
+                  : undefined
+              }
+              continues={bubble.continues}
             />
           ) : (
             <Bubble
@@ -102,16 +131,23 @@ export const ChatView = memo(function ChatView({
             />
           ),
         )}
-        {pending.map((segment) => (
-          <Bubble
-            key={`pending-${segment.id}`}
-            text={segment.text}
-            label={speakerLabel(segment.speaker)}
-            side={segment.speaker === "ME" ? "me" : "they"}
-            atMs={segment.start_ms}
-            pending
-          />
-        ))}
+        {pending.flatMap((segment) => {
+          // A prévia cresce enquanto o Interlocutor fala: mesma regra de teto, com
+          // o `…` só na última parte.
+          const parts = splitSpeechText(segment.text);
+          return parts.map((part, index) => (
+            <Bubble
+              key={`pending-${segment.id}#${index}`}
+              text={part}
+              label={speakerLabel(segment.speaker)}
+              side={segment.speaker === "ME" ? "me" : "they"}
+              atMs={index === 0 ? segment.start_ms : undefined}
+              pending
+              typing={index === parts.length - 1}
+              continues={index > 0}
+            />
+          ));
+        })}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–05 `CONCLUDED`)
+- **Status:** Implementado (tasks 01–06 `CONCLUDED`); 07–09 `PENDING`
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/chat-ui.md`](architecture/chat-ui.md),
@@ -53,6 +53,10 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 - **CU-04 — Controlar a sessão por ícones:** play (retomar), pause e stop, mais o
   tempo decorrido; encerrar pede confirmação.
 - **CU-05 — Revisar no histórico:** o detalhe da sessão usa as mesmas bolhas.
+- **CU-06 — Assistir ao lado:** manter a conversa numa janela própria, movível e
+  redimensionável, sobre a reunião, sem ocupar o overlay.
+- **CU-07 — Revisar sessões antigas:** abrir o histórico numa janela própria e
+  continuar/renomear/exportar sem sair do fluxo.
 
 ## 4. Estórias de usuário (com critérios de aceite)
 
@@ -95,10 +99,38 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
   - **CA-04.6** A bolinha de status acompanha o estado (vermelha pulsando gravando,
     âmbar pausado, cinza parado).
   - **CA-04.7** Trocar os canais continua permitido em qualquer estado (BR-019).
+  > Revisada pela **US-08** (task 09): o transporte passa a ser um toggle único e o
+  > encerramento acontece só pela pílula de sessão.
 - **US-05 — Histórico em bolhas.** Como usuário, quero o detalhe da sessão no
   histórico com as mesmas bolhas da conversa ao vivo.
   - **CA-05.1** O detalhe usa a linha temporal do backend (falas + sugestões) e o
     mesmo componente de bolha.
+- **US-06 — Conversa em janela própria.** Como usuário, quero a conversa numa
+  janela separada, ao lado da reunião, sem depender do overlay expandido.
+  - **CA-06.1** A conversa ao vivo (bolhas, fala em andamento e sugestões) roda na
+    janela `chat`, com a linha temporal das US-01–US-03.
+  - **CA-06.2** Um botão **Chat** alterna esconder/mostrar a janela; o ✕ esconde
+    (não destrói) e reabrir mantém a sessão.
+  - **CA-06.3** A janela é arrastável pelo cabeçalho e redimensionável (mínimo
+    360×320); **posição e tamanho voltam** ao reabrir o app (BR-026).
+  - **CA-06.4** Os medidores de nível ficam na janela de Chat.
+  - **CA-06.5** O overlay deixa de expandir: a `Surface` fica `actionbar`/`hidden`
+    e o click-through segue preservado (RNF-02).
+- **US-07 — Histórico em janela própria.** Como usuário, quero revisar sessões
+  antigas numa janela própria, movível e redimensionável.
+  - **CA-07.1** Um botão **Histórico** alterna esconder/mostrar a janela.
+  - **CA-07.2** A lista (continuar/renomear/excluir) e o detalhe em bolhas
+    funcionam como antes.
+  - **CA-07.3** **Continuar sessão** volta a capturar e o resultado aparece na
+    janela de Chat, sem reabrir o painel do overlay.
+  - **CA-07.4** Posição e tamanho voltam ao reabrir o app.
+- **US-08 — Transporte com um só stop.** Como usuário, quero um único controle de
+  start/pause e um único stop, para não me confundir com dois botões de parar.
+  - **CA-08.1** Parado: o controle único mostra `▶ Iniciar escuta` e inicia.
+  - **CA-08.2** Gravando: mostra `⏸` e pausa; pausado: mostra `▶` e retoma (sem
+    zerar o relógio — BR-019).
+  - **CA-08.3** Só a pílula de sessão encerra, via "Encerrar sessão? Sim / Não";
+    não existe encerramento sem confirmação (revisa a CA-04.5).
 
 ## 5. Requisitos não funcionais
 
@@ -120,7 +152,7 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
   Perssua).
 - Agrupamento de bolhas consecutivas do mesmo falante.
 - Tradução dentro da bolha (o painel de tradução continua separado).
-- Busca no histórico, paginação, novas superfícies de janela.
+- Busca no histórico, paginação.
 - Export: o Markdown continua com uma linha por item da linha temporal.
 
 ## 7. Riscos

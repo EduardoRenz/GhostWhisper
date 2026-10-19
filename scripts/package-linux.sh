@@ -22,7 +22,7 @@ if [ ! -d node_modules ]; then
 fi
 
 echo "[package-linux] build (release) + bundle..."
-pnpm tauri build --bundles "${targets}"
+bash scripts/tauri-build-linux.sh --bundles "${targets}"
 
 echo "[package-linux] artefatos:"
 find src-tauri/target/release/bundle -maxdepth 3 -type f \

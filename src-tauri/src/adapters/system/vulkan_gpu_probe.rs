@@ -40,6 +40,7 @@ impl Default for VulkanGpuProbe {
 /// padrão o app é CPU. Ligar GPU é o entregável E3 do PRD `precision-and-performance`.
 pub fn acceleration_enabled() -> bool {
     cfg!(any(
+        feature = "vulkan",
         feature = "cuda",
         feature = "hipblas",
         feature = "metal"

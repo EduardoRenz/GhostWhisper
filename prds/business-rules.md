@@ -334,3 +334,107 @@ uma nota de revisão.
 - **Detalhes:** [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md)
   §2/§5; [`precision-and-performance/tasks/01-task.md`](precision-and-performance/tasks/01-task.md).
 - **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 01, aguardando teste manual)
+
+## BR-028 — Sugestão ao vivo: fast-first, streaming e automático por fala nova
+- **Decisão:** a sugestão ao vivo tem **dois passes**: um **fast-first** curto
+  (≈3 linhas, teto de 420 tokens, temperatura 0, contrato compacto) publicado
+  assim que fica pronto, e o **passe completo** em seguida. O texto chega à UI em
+  **streaming** pelo evento `suggestion` (texto acumulado; a janela substitui a
+  bolha a cada delta). O contexto inclui **falas em andamento** (prévias), não só
+  as finalizadas. Os **insights automáticos** rodam no core a cada **fala nova**
+  (debounce de 700 ms, no máximo uma chamada a cada 3 s) e **não dependem de a
+  janela estar aberta**; o toggle é `Settings.suggestion_auto_refresh` e a janela
+  apenas exibe/força/fixa. No chat, a bolha da IA começa **colapsada em ~3 linhas**
+  com "mostrar mais".
+- **Motivo:** paridade com o Perssua (`fastFirstInsight`, `streamAutomaticInsights`,
+  `questionsRequireFinalizedTranscript: false`, notch compacto) e o pedido do
+  usuário ("bolhas menores, mais rápido e mais preciso"). **Revoga** a parte do
+  BR-026 que exigia a janela aberta para o automático.
+- **Consequência:** `suggestion_interval_secs` deixa de controlar o ritmo do
+  automático (o critério passa a ser fala nova, com teto de frequência); providers
+  sem SSE caem no passe único sem erro visível; falha do rascunho ou do streaming
+  não derruba a sugestão final; sugestões automáticas continuam **efêmeras** (só
+  **Fixar** entra no export, BR-023).
+- **Detalhes:** [`precision-and-performance/tasks/02-task.md`](precision-and-performance/tasks/02-task.md),
+  [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §3.
+- **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 02, aguardando teste manual)
+
+## BR-030 — Tradução sob demanda dentro da bolha
+- **Decisão:** a tradução de uma fala é **sob demanda** e vive **dentro da bolha**:
+  um ícone no canto superior direito pede a tradução, que aparece **abaixo** do
+  original, separada por **linha tracejada**, em **itálico e menor**; um novo
+  clique **volta ao original**. O painel de tradução abaixo da conversa é
+  **removido** e não há botão de copiar por tradução. Quando o idioma detectado
+  pelo ASR (origem `auto`) é igual ao destino, a tradução **não** é oferecida. A
+  tradução **automática em massa** fica fora (pode voltar, amadurecida, depois).
+- **Motivo:** feedback do usuário — o painel duplicado repetia a conversa e era
+  ruim de ler/testar; e com origem `auto` + destino pt o app traduzia pt→pt.
+  **Revoga** o não-objetivo do PRD `chat` ("tradução dentro da bolha continua
+  separada").
+- **Consequência:** a fala só vai ao provider quando o usuário **clica** (BR-005);
+  a tradução é **efêmera** (não vai ao banco nem ao export); a fila é serial e o
+  resultado é cacheado por fala.
+- **Detalhes:** [`translation/prd.md`](translation/prd.md),
+  [`translation/tasks/01-task.md`](translation/tasks/01-task.md),
+  [`translation/tasks/02-task.md`](translation/tasks/02-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (T1 implementado; T2 pendente)
+
+## BR-031 — Teto da bolha de fala: fala longa continua em bolha seguinte
+- **Decisão:** a bolha de fala tem **teto de 180 caracteres**
+  (`MAX_SPEECH_BUBBLE_CHARS`) e o excedente **continua numa bolha seguinte** da
+  mesma fala (`continues`, id `#N`), sem repetir rótulo nem tempo. A divisão é
+  **pura e determinística** (`splitSpeechText`), aplicada na fala finalizada, na
+  **prévia em andamento** e no **histórico**. O corte prefere o fim da frase
+  (`.!?…`, quebra de linha) e, quando a frase sozinha passa do teto, cai no limite
+  de **palavra** — nunca no meio de uma palavra. É um teto de **exibição**: o texto
+  do ASR e o áudio continuam inteiros, e o `max_turn_ms` (25 s) segue como teto de
+  custo do whisper (BR-029).
+- **Motivo:** o Interlocutor fala sem pausas e o turno só fecha no silêncio (1 s)
+  ou no teto do turno (25 s): a bolha crescia sem limite (ISS-031, reclamação do
+  usuário no teste). O Perssua não sofre disso porque o *commit* em nuvem é de ~2 s;
+  no whisper local, cortar o **áudio** por tempo picaria frase no meio e pioraria a
+  transcrição — cortar a **exibição** não custa nada.
+- **Consequência:** fala curta continua em uma bolha só (caso comum inalterado); a
+  tradução passa a ser por parte da fala; o tamanho da bolha se ajusta editando uma
+  constante no domínio.
+- **Detalhes:** [`chat/tasks/06-task.md`](chat/tasks/06-task.md),
+  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §2–§6,
+  [`chat/issues.md`](chat/issues.md) ISS-031.
+- **Data:** 2026-10-18 · **Status:** Ativa
+
+## BR-029 — Engine: GPU/flash attention, modelo por hardware e reuso do passe final
+- **Decisão:** o build declara features de GPU (`vulkan`/`cuda`/`hipblas`/`metal`)
+  e, quando compilado com elas, o Whisper roda em **GPU com flash attention** —
+  desligado no macOS, como o Perssua (`--no-flash-attn`); sem elas, CPU (nada
+  muda). No **Linux sem ROCm/CUDA** (o caso desta máquina: AMD Polaris), o caminho
+  é **Vulkan** (`whisper-rs/vulkan` → `whisper-rs-sys/vulkan`, backend Vulkan do
+  ggml via RADV/Mesa); o SDK de build é montado por `scripts/vulkan-env.sh`
+  (usa `libvulkan-dev`/`glslc` do sistema ou baixa os `.deb` **sem sudo**), e os
+  scripts `pnpm tauri:dev:vulkan` / `tauri:build:vulkan` compilam com a feature.
+  **Um artefato só**: o pacote de release (`pnpm tauri:build`) já vem com Vulkan e
+  o **loader `libvulkan.so.1` embutido** (AppImage; `libvulkan1` como dependência
+  no `.deb`), então o app **escolhe a GPU em runtime e cai para CPU sozinho** sem
+  dispositivo. O usuário escolhe o modo em **Aceleração** (`auto`/`cpu`/`gpu`); se
+  o app morrer com a GPU ativa, uma **marca de crash** desliga a GPU no próximo
+  boot (padrão Perssua). O modelo recomendado com GPU é o **`small`** — sugerido
+  com um clique na tela de transcrição, **sem** troca automática (override
+  manual). O `large-v3-turbo` continua disponível, mas na RX 480 mediu **piso de
+  ~2,4 s por chamada** (RTF < 1 em fala curta), então não é o default de GPU; o
+  `small` decodifica 8 s em ~0,7 s contra ~1,5–2 s do `tiny` na CPU. Quando
+  o VAD nativo do Whisper fecha o turno dentro da própria prévia, o texto já
+  decodificado é **promovido a final**, sem um segundo passe beam search
+  (Perssua: `endedInNoise`).
+- **Motivo:** paridade com o Perssua e o pedido do usuário ("mais rápido"); o
+  passe duplicado era trabalho jogado fora no fim de cada turno.
+- **Consequência:** em CPU o comportamento é idêntico ao anterior; falha de driver
+  cai em CPU (`use_gpu` do `whisper-rs`); a promoção só acontece quando a prévia
+  **cobre o turno inteiro** (o VAD marcou o fim), preservando o passe autoritativo
+  quando não cobre. **AEC** e ajuste de **commits** ficam pendentes na task 03.
+  No áudio, o microfone ganha **AEC referenciado** no áudio do sistema (NLMS com
+  guarda de *double-talk*, ligado por padrão com toggle), aplicado **antes** do
+  ganho. Os **commits** de turno ficam em **1 s de silêncio** — paridade com o
+  `local_whisper_vad_silence_duration_ms` do Perssua; os 650 ms são do provider
+  realtime em nuvem, e cortar mais picaria frase no meio.
+- **Detalhes:** [`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md),
+  [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §4.
+- **Data:** 2026-10-18 · **Status:** Ativa (E3 completo: reuso do passe final + GPU/Vulkan + AEC + commits avaliados)

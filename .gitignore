@@ -12,3 +12,8 @@ src-tauri/gen/
 
 # Sistema
 .DS_Store
+
+# SDK Vulkan local (build com --features vulkan)
+.vulkan-sdk/
+src-tauri/target-vulkan/
+src-tauri/resources/libvulkan.so.1

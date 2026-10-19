@@ -4,7 +4,7 @@ use crate::domain::llm::{Completion, CompletionRequest, ProviderConfig};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::chat_bot_provider::ChatBotProvider;
 
-use super::openai_compatible::chat_completion;
+use super::openai_compatible::{chat_completion, chat_completion_streaming};
 
 /// Provider para `base_url` configurável (ex.: Ollama, LM Studio, vLLM).
 pub struct CustomChatBotProvider {
@@ -16,6 +16,17 @@ impl CustomChatBotProvider {
     pub fn new(config: ProviderConfig) -> Self {
         Self { config }
     }
+
+    /// `base_url` obrigatória do endpoint custom.
+    fn base_url(&self) -> Result<&str> {
+        self.config
+            .base_url
+            .as_deref()
+            .filter(|url| !url.trim().is_empty())
+            .ok_or_else(|| {
+                GhostWhisperError::Config("provider custom exige base_url configurada".to_string())
+            })
+    }
 }
 
 impl ChatBotProvider for CustomChatBotProvider {
@@ -24,15 +35,17 @@ impl ChatBotProvider for CustomChatBotProvider {
     }
 
     fn complete(&self, request: &CompletionRequest) -> Result<Completion> {
-        let base_url = self
-            .config
-            .base_url
-            .as_deref()
-            .filter(|url| !url.trim().is_empty())
-            .ok_or_else(|| {
-                GhostWhisperError::Config("provider custom exige base_url configurada".to_string())
-            })?;
+        let base_url = self.base_url()?;
         chat_completion(&self.config, base_url, request, &[])
+    }
+
+    fn complete_streaming(
+        &self,
+        request: &CompletionRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Completion> {
+        let base_url = self.base_url()?;
+        chat_completion_streaming(&self.config, base_url, request, &[], on_text)
     }
 }
 

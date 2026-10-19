@@ -22,7 +22,6 @@ import { AsrStatusBanner } from "./AsrStatusBanner";
 import { LevelMeters } from "./LevelMeters";
 import { ChatView } from "../chat/ChatView";
 import { HistoryPanel } from "../history/HistoryPanel";
-import { TranslationView } from "../translation/TranslationView";
 
 /** Visão mostrada no painel expandido. */
 type PanelView = "live" | "history";
@@ -42,12 +41,20 @@ export function Overlay() {
   const { segments } = useLiveTranscription(state.session_id);
   const asrStatus = useAsrStatus();
   const { settings } = useSettings();
-  // Destino "auto" ou igual à origem = não traduz.
-  const translationApplies =
-    settings.translation_enabled &&
-    settings.target_language !== "auto" &&
-    settings.target_language !== settings.source_language;
-  const { translations } = useTranslation(segments, translationApplies);
+  // Tradução **sob demanda** (botão na bolha). O destino "auto" desliga.
+  const translationEnabled =
+    settings.translation_enabled && settings.target_language !== "auto";
+  const {
+    translations,
+    pending: translationPending,
+    translate: translateSegment,
+    reset: resetTranslations,
+  } = useTranslation();
+
+  // Trocar de sessão invalida o cache de traduções.
+  useEffect(() => {
+    resetTranslations();
+  }, [state.session_id, resetTranslations]);
   // As sugestões (inclusive as do atalho, que chegam por evento) entram na mesma
   // conversa das falas — BR-020.
   const {
@@ -211,14 +218,12 @@ export function Overlay() {
                 bubbles={bubbles}
                 pending={pending}
                 header={chatHeader}
+                translationEnabled={translationEnabled}
+                translations={translations}
+                translationPending={translationPending}
+                translationTarget={settings.target_language}
+                onTranslate={translateSegment}
               />
-              {translationApplies && (
-                <TranslationView
-                  segments={segments}
-                  translations={translations}
-                  targetLanguage={settings.target_language}
-                />
-              )}
             </>
           )}
         </div>

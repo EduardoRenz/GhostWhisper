@@ -70,5 +70,170 @@ Perssua faz na decodificação e no sinal.
 ### Verificação
 - `cargo test --lib` 300 ✓ (8 `ignored`) · `clippy -D warnings` ✓ · `fmt --check`
   ✓ · `pnpm test` 119 ✓ · `tsc --noEmit` ✓.
-- Pendente: teste manual pt-BR com/sem prompt e benchmark de RTF (release);
-  task 01 segue `IN PROGRESS` até a aprovação.
+- Aprovado pelo usuário em sessão real pt-BR (aviso de GPU `vulkan` presente,
+  prompt editável, modelos grandes listados, sem regressão de latência). Task 01
+  `CONCLUDED`; E2 iniciado.
+
+### Descoberta de ambiente
+- Terminal do VS Code via **snap** exporta `GTK_PATH`/`GIO_MODULE_DIR`/`LOCPATH`/
+  `XDG_DATA_DIRS` do sandbox e o binário quebra ao carregar o `libpthread` do
+  `core20` (`__libc_pthread_init, version GLIBC_PRIVATE`). Solução:
+  `pnpm tauri:dev:clean` (`scripts/tauri-dev-clean.sh`) ou terminal nativo;
+  documentado no `README.md`.
+
+---
+
+## 2026-10-18 — E2: fast-first, streaming e automático por fala nova
+
+- **IDs:** ISS-023, BR-028
+- **Refs:** BR-023, BR-026 (revogada em parte), BR-015,
+  [`tasks/02-task.md`](tasks/02-task.md),
+  [`architecture/precision-and-performance.md`](architecture/precision-and-performance.md)
+
+### Contexto
+Entregável E2: fazer a sugestão aparecer **rápida e curta** (~3 linhas) e
+funcionar sem a janela aberta — o que o usuário percebe como velocidade.
+
+### Implementado
+- **Contrato fast-first** (`prompts::assistant::fast_first_system_prompt`): só a
+  próxima fala, ≤3 linhas, sem seções, temperatura 0, teto de 420 tokens
+  (Perssua `fastFirstInsight*`).
+- **Streaming**: `LlmController::complete_streaming` / `ChatBotProvider::complete_streaming`
+  (padrão sem streaming) e SSE real no `openai_compatible`
+  (`chat_completion_streaming`, acumulado, com fallback para o passe único quando
+  o provider não devolve `text/event-stream`). Gemini/custom caem no fallback.
+- **Evento `suggestion`** (`EventPublisher::emit_suggestion`) leva o rascunho e
+  cada delta acumulado; a janela substitui a bolha.
+- **Contexto ao vivo**: `context::recent_context_live` inclui a fala em andamento
+  (o final sempre vence a prévia do mesmo turno).
+- **Automático no core**: `application::suggestion_scheduler` (decisão pura) +
+  `spawn_suggestion_scheduler` no composition root; `TranscriptionsRepository::
+  latest_final_ms` dá o cursor barato. Debounce 700 ms, mínimo 3 s entre chamadas,
+  respeita `Settings.suggestion_auto_refresh` — **sem depender da janela aberta**.
+- **UI**: a janela assina o evento (rascunho + deltas), o toggle Auto persiste em
+  `suggestion_auto_refresh` e a bolha da IA no chat começa colapsada em ~3 linhas
+  com "mostrar mais".
+
+### Verificação
+- `cargo test --lib` 315 ✓ (8 `ignored`) · `clippy -D warnings` ✓ · `fmt --check`
+  ✓ · `pnpm test` 121 ✓ · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- Manual: o usuário validou o comportamento geral e seguiu para o E3. Ajustes de
+  UX de **tradução** que apareceram no teste foram para outra PRD
+  ([`../translation/prd.md`](../translation/prd.md), BR-030). Task 02 `CONCLUDED`.
+
+---
+
+## 2026-10-18 — E3 (parcial): reuso do passe final e plumbing de GPU
+
+- **IDs:** ISS-027, ISS-028, BR-029
+- **Refs:** BR-015,
+  [`tasks/03-task.md`](tasks/03-task.md),
+  [`architecture/precision-and-performance.md`](architecture/precision-and-performance.md) §4
+
+### Contexto
+Entregável E3 ("engine rápida"): GPU/flash attention, modelo por hardware, AEC e
+menos trabalho por turno.
+
+### Implementado
+- **Reuso do passe final** (`transcription_pipeline`): quando o VAD nativo fecha o
+  turno dentro da prévia (`speech_end_ms` + silêncio), o texto já decodificado é
+  promovido a final (`begin_final_reusing`), sem o segundo beam search
+  (Perssua: `endedInNoise`). Teste novo prova **1** decodificação no caso.
+- **GPU/flash attention** (`whisper_speech_to_text`): `flash_attn(true)` só em
+  builds com `cuda`/`hipblas` (nunca macOS/CPU); log do backend no carregamento;
+  `GpuInfo.acceleration_enabled` reflete o build.
+- **Modelo por hardware (sugestão)**: botão "Usar large-v3-turbo" na tela de
+  transcrição quando há GPU + aceleração. Desvio consciente: é **sugestão com um
+  clique**, não troca automática (evita surpreender e não temos GPU para validar).
+
+### Verificação
+- `cargo test --lib` 316 ✓ · `clippy -D warnings` ✓ · `fmt --check` ✓ ·
+  `pnpm test` 122 ✓ · `tsc` ✓ · `pnpm build` ✓. Boot CPU segue idêntico.
+- **Pendente na task 03:** AEC referenciado e ajuste de commits.
+
+### GPU por Vulkan — build e medição (mesma data)
+
+Hardware: **AMD Radeon RX 480 (RADV POLARIS10)**, i5-6400, sem ROCm/CUDA.
+
+- `whisper-rs 0.16` tem feature **`vulkan`** (→ `whisper-rs-sys/vulkan`); não é
+  preciso trocar de engine nem rodar processo externo.
+- O build exige headers do Vulkan + `glslc`. Sem sudo, `scripts/vulkan-env.sh`
+  baixa `libvulkan-dev`/`glslc`/`libshaderc1` e monta `.vulkan-sdk/`. Ajustes que
+  o build precisou: copiar também `include/vk_video/`, apontar `libvulkan.so` para
+  a lib real do sistema e `RUSTFLAGS=-L .vulkan-sdk/lib` (o `whisper-rs-sys` 0.15
+  emite `-lvulkan` sem o `-L`).
+- Comandos: `pnpm tauri:dev:vulkan` / `pnpm tauri:build:vulkan` (1º build ~8 min).
+- **Verificado em execução:** `ggml_vulkan: 0 = AMD Radeon RX 480 ... (radv)` e
+  `whisper_backend_init_gpu: using Vulkan0 backend`.
+
+Benchmark (RTF, amostra JFK, dev `RelWithDebInfo`):
+
+| modelo | 1 s | 8 s | 20 s | 30 s |
+|---|---|---|---|---|
+| `tiny` | 99 ms | 241 ms | 580 ms | 791 ms |
+| `small` | 541 ms | 725 ms | 1 156 ms | 2 107 ms |
+| `large-v3-turbo` | 2 432 ms | 2 573 ms | 2 973 ms | 4 511 ms |
+
+Conclusão: **`small` na GPU** tem a latência que o `tiny` tinha na CPU (~1,5–2 s
+por chamada) com precisão muito maior → passa a ser o modelo recomendado quando
+há GPU. O `large-v3-turbo` tem piso de ~2,4 s por chamada nesta placa (sem
+fp16/matrix cores) e fica como opção, não default.
+
+### Um artefato só (decisão do usuário: embutir o loader)
+
+- O backend é **de compilação**: um binário sem a feature nunca usa GPU. Por isso
+  o **release padrão passou a ser Vulkan** (`pnpm tauri:build` → `--features
+  vulkan`), com fallback automático para CPU (confirmado no `whisper.cpp`: sem
+  dispositivo ele loga `no GPU found` e segue).
+- O binário Vulkan **linka** `libvulkan.so.1` (o ggml não faz `dlopen`), então o
+  AppImage **embute o loader** (`scripts/ensure-libvulkan.sh` → `resources/` →
+  `usr/lib/libvulkan.so.1`); os drivers/ICDs continuam do sistema. `.deb` declara
+  `libvulkan1`.
+- Novo seletor **Aceleração** (`auto`/`cpu`/`gpu`) em `Settings`; `auto` = GPU se
+  o build tiver backend. `cpu` para driver instável.
+- **Marca de crash** (`whisper-gpu-active.json`, padrão Perssua): gravada no boot
+  quando a GPU pode rodar, apagada no `RunEvent::Exit`; se sobrar, o próximo boot
+  desliga a GPU. Também há queda para CPU se a **carga** da GPU falhar.
+- Builds isolados: `CARGO_TARGET_DIR=src-tauri/target-vulkan` no ambiente Vulkan,
+  para alternar CPU/GPU sem invalidar cache.
+
+### Empacotamento verificado
+
+`pnpm tauri:build` (release + Vulkan): AppImage **92 MB** com
+`usr/lib/libvulkan.so.1` embutido, `.deb` **16 MB** com `libvulkan1` em Depends,
+binário **55 MB** com `NEEDED libvulkan.so.1`. O `appimage.files` do Tauri usa
+**destino → origem** (a primeira tentativa invertida falhou no bundler: "does not
+exist"). O AppImage rodou com `VK_ICD_FILENAMES=/nonexistent` sem crash e logou
+`acceleration_enabled=true recommended_model=small`. Fallback para CPU sem
+dispositivo é garantido pelo `whisper_backend_init` (loga `no GPU found` e segue).
+
+---
+
+## 2026-10-18 — E3 (fim): AEC referenciado e commits avaliados
+
+- **IDs:** ISS-026, BR-029
+- **Refs:** BR-018, [`tasks/03-task.md`](tasks/03-task.md),
+  [`architecture/precision-and-performance.md`](architecture/precision-and-performance.md) §4
+
+### Implementado — AEC
+- `domain::audio::EchoCanceller`: **NLMS** (passo 0,3) com piso de energia e
+  **guarda de double-talk** (congela a adaptação quando a fala local domina a
+  referência); referência muda ⇒ saída idêntica à entrada.
+- `ports::audio_reference::AudioReference` + `SharedAudioReference` (anel de ~2 s)
+  e `SystemAudioReferenceTap` (decorador que alimenta a referência e repassa o
+  áudio do sistema ao pipeline de sempre).
+- `MicrophoneFrontEnd`: AEC **antes** do ganho e do gate; `Settings.aec_enabled`
+  (padrão ligado), atraso/taps por env (`GHOSTWHISPER_AEC_DELAY_MS` = 60,
+  `GHOSTWHISPER_AEC_TAPS` = 512, ambos com clamp).
+- Testes: eco atrasado cai **≥10 dB**; fala local preservada no double-talk;
+  remoção comprovada através do estágio de entrada; anel/atraso com padding.
+
+### Decisão — commits
+- Mantido **1 s de silêncio**: é o `local_whisper_vad_silence_duration_ms` do
+  Perssua. Os 650 ms valem para o provider realtime em nuvem; reduzir picaria
+  pausa natural de frase. As bolhas grandes de **sugestão** já foram tratadas no
+  E2. `GHOSTWHISPER_VAD_SILENCE_MS` continua como override.
+
+### Verificação
+- `cargo test --lib` **330 ✓** · `clippy -D warnings` ✓ · `fmt --check` ✓ ·
+  `pnpm test` 123 ✓ · `tsc` ✓. E3 encerrado (task 03 `CONCLUDED`).

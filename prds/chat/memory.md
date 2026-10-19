@@ -8,6 +8,7 @@ Histórico deste PRD no formato fixo do
 | Palavra-chave | `rg -n -i 'bolha' prds/chat/memory.md` |
 | Entrada do dia | `rg -n '^## 2026-10-18' prds/chat/memory.md` |
 | Por ID | `rg -n 'ISS-018\|BR-021' prds/chat/memory.md` |
+| Teto da bolha | `rg -n -i 'teto da bolha\|continuação' prds/chat/memory.md` |
 
 ---
 
@@ -72,3 +73,37 @@ uma frase antiga continuava sendo preenchida enquanto outra fonte de áudio fala
 - Tradução dentro da bolha, busca no histórico e paginação continuam fora de escopo.
 - Loop de frase do Whisper: corrigido no núcleo de ASR — ver **ISS-019** em
   [`../mvp/issues.md`](../mvp/issues.md) (task 21 do PRD do MVP).
+
+## 2026-10-18 — Teto da bolha de fala: fala longa continua em bolha seguinte
+
+- **IDs:** ISS-031, BR-031, T06
+- **Refs:** [`issues.md`](issues.md), [`business-rules.md`](../business-rules.md),
+  [`architecture/chat-ui.md`](architecture/chat-ui.md) §2–§6,
+  [`tasks/06-task.md`](tasks/06-task.md)
+
+### Problema (relato no teste)
+O **Interlocutor** fala sem pausas e o turno só fecha no silêncio (1 s) ou no teto
+do turno (**25 s**) — a bolha virava um bloco gigante. O usuário pediu "um limite
+do tamanho do balão, e continua em um próximo".
+
+### Decisão
+- Teto de **180 caracteres** por bolha (`MAX_SPEECH_BUBBLE_CHARS`), com
+  **continuação** em bolha seguinte (`SpeechBubble.continues`, id `#N`), sem
+  repetir rótulo/tempo (`chat__row--continues`).
+- Corte **puro e determinístico** (`splitSpeechText`): fim de frase primeiro
+  (`.!?…`, `\n`), fim de **palavra** quando a frase sozinha passa do teto — nunca
+  no meio de uma palavra.
+- Aplicado na fala finalizada, na **prévia em andamento** e no **histórico**
+  (`bubblesFromTimeline`); o `…` fica só na última parte.
+- É **exibição**: o áudio e o texto do ASR não mudam; `max_turn_ms` continua sendo
+  só o teto de custo do whisper (BR-029).
+
+### Evidência do desvio (R12)
+O Perssua **não** limita a bolha: `.unified-message-bubble` (CSS
+`4598.dc3b562d.css`) só tem `max-width:75%` — nenhum `max-height`/`line-clamp`.
+Lá o *commit* em nuvem (~2 s) mantém a bolha curta; no whisper local o commit é por
+silêncio, então o teto visual faz o papel que o *commit* faz lá em cima.
+
+### Verificação
+- `pnpm test` **134 ✓** (24 arquivos, +11) · `tsc --noEmit` ✓ · `cargo test --lib`
+  330 ✓ (backend intocado) · AppImage/deb reconstruídos.

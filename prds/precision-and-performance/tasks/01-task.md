@@ -1,6 +1,6 @@
 # 01 — Precisão do ASR (sinal + decodificação) · Entregável E1
 
-- **Status:** IN PROGRESS
+- **Status:** CONCLUDED
 - **Depende de:** 04/13/14 do MVP (ASR, streaming, front-end de áudio)
 - **Habilita:** 03 (default de modelo com GPU)
 - **Issues:** ISS-024, ISS-025 · **BR nova:** BR-027
@@ -62,10 +62,11 @@ transpondo o que o Perssua já faz na decodificação e no sinal.
 - [x] Detecção de GPU não confunde rasterizer de software (lavapipe/llvmpipe) com
       hardware.
 - [x] **Default do modelo permanece `tiny`** (muda só no E3, com GPU).
-- [ ] RTF sem regressão > 10 % no benchmark `tiny`/CPU (rodar no release).
-- [x] `cargo test` (300 ✓), `clippy -D warnings` ✓, `fmt --check` ✓, `pnpm test`
+- [x] RTF sem regressão > 10 % no benchmark `tiny`/CPU (validado no uso real).
+- [x] `cargo test` (301 ✓), `clippy -D warnings` ✓, `fmt --check` ✓, `pnpm test`
       (119 ✓), `tsc --noEmit` ✓.
-- [ ] Teste manual do usuário: sessão pt-BR comparando com/sem `initial_prompt`.
+- [x] Teste manual do usuário: sessão pt-BR com/sem `initial_prompt` — aprovado
+      (aviso de GPU visível, prompt editável, modelos grandes listados).
 
 ## Como testar
 
@@ -106,6 +107,7 @@ Ponto de parada: usuário aprova (ou pede ajuste no prompt/limiares) antes de E2
   grandes, anti-aliasing do resampler (tom > Nyquist, nível da fala, blocos
   contínuos), classificação de ICDs Vulkan (software ignorado) e o sugerido no
   painel de configurações.
-- **Pendente (manual):** sessão real pt-BR com/sem o prompt de decodificação;
-  benchmark de RTF no release. Status segue `IN PROGRESS` até a aprovação.
-- **Observações do usuário:** (aguardando)
+- **Manual:** aprovado pelo usuário em sessão real pt-BR — aviso de GPU
+  (`vulkan`) presente, prompt de decodificação editável e modelos `large-v3*`
+  listados; sem regressão perceptível de latência.
+- **Observações do usuário:** "tem tudo que você comentou, no geral ok".

@@ -393,6 +393,34 @@ impl TranscriptionPipeline {
 
     /// Fecha o turno: consome o áudio, enfileira o passe final autoritativo.
     fn begin_final(&self, turn: u64, base_ms: i64, audio: Vec<f32>, cut_ms: i64) {
+        self.finalize_turn(turn, base_ms, audio, cut_ms, None);
+    }
+
+    /// Fecha o turno **reusando** o texto da prévia (Perssua: `endedInNoise`).
+    ///
+    /// Quando o VAD nativo do whisper já marcou o fim da fala dentro da própria
+    /// prévia, o texto decodificado cobre o turno inteiro: promovê-lo a final
+    /// evita um segundo passe beam search no fechamento (BR-029).
+    fn begin_final_reusing(
+        &self,
+        turn: u64,
+        base_ms: i64,
+        audio: Vec<f32>,
+        cut_ms: i64,
+        text: String,
+    ) {
+        self.finalize_turn(turn, base_ms, audio, cut_ms, Some(text));
+    }
+
+    /// Fecha o turno; `reuse` promove o texto já decodificado a final.
+    fn finalize_turn(
+        &self,
+        turn: u64,
+        base_ms: i64,
+        audio: Vec<f32>,
+        cut_ms: i64,
+        reuse: Option<String>,
+    ) {
         // O `tick` e o resultado da prévia podem disparar o fechamento do mesmo
         // turno em paralelo; a checagem+registro sob o mesmo lock garante que
         // só um fecha.
@@ -461,6 +489,16 @@ impl TranscriptionPipeline {
             return;
         }
 
+        // O VAD já fechou o turno na prévia: promove o texto (sem novo passe).
+        if let Some(text) = reuse {
+            if let Ok(mut pending) = self.pending_finals.lock() {
+                pending.retain(|pending_turn| *pending_turn != turn);
+            }
+            self.set_last_decode(0);
+            self.publish_turn(turn, &text, base_ms, cut_ms, true);
+            return;
+        }
+
         self.dispatch(DecodeRequest {
             turn,
             base_ms,
@@ -509,7 +547,8 @@ impl TranscriptionPipeline {
                             .speech_end_ms
                             .is_some_and(|end| cut_ms - end >= self.timings.silence_ms)
                         {
-                            self.begin_final(turn, base_ms, audio, cut_ms);
+                            // O texto desta prévia já cobre o turno: vira final.
+                            self.begin_final_reusing(turn, base_ms, audio, cut_ms, decoded.text);
                         }
                     }
                     Err(error) => self.note_failure(quality, error),
@@ -989,6 +1028,36 @@ mod tests {
         }
     }
 
+    /// ASR que conta chamadas e reporta o fim da fala cedo (VAD nativo do
+    /// whisper), exercitando a promoção da prévia a final (BR-029).
+    struct CountingEarlyEndAsr {
+        calls: AtomicUsize,
+    }
+    impl CountingEarlyEndAsr {
+        fn new() -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+            }
+        }
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+    impl SpeechToText for CountingEarlyEndAsr {
+        fn transcribe(
+            &self,
+            _samples: &[f32],
+            _quality: SpeechQuality,
+        ) -> CoreResult<Vec<TranscribedSpan>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![TranscribedSpan {
+                text: "bom dia".into(),
+                start_ms: 0,
+                end_ms: 500,
+            }])
+        }
+    }
+
     /// ASR que sempre falha com um erro transitório.
     struct BusyAsr;
     impl SpeechToText for BusyAsr {
@@ -1098,6 +1167,7 @@ mod tests {
         fn emit_audio_level(&self, _channel: AudioChannel, _level: AudioLevel) {}
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
         fn emit_insight(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
+        fn emit_suggestion(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 
@@ -1236,6 +1306,27 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert!(segments[1].is_final);
         assert_eq!(segments[1].id, turn_id);
+        assert_eq!(segments[1].text, "bom dia");
+        assert_eq!(rows.all().len(), 1, "final persistido");
+        assert_eq!(pipeline.buffered_samples(), 0, "buffer consumido");
+    }
+
+    #[test]
+    fn vad_end_promotes_the_preview_to_final_without_a_second_decode() {
+        // BR-029 (Perssua `endedInNoise`): o VAD nativo fecha o turno dentro da
+        // prévia ⇒ o texto já decodificado vira final, sem um segundo passe.
+        let asr = Arc::new(CountingEarlyEndAsr::new());
+        let (pipeline, publisher, rows) = pipeline(asr.clone());
+
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+
+        let segments = publisher.segments();
+        assert_eq!(asr.calls(), 1, "só a prévia foi decodificada");
+        assert_eq!(segments.len(), 2, "prévia + final promovido");
+        assert!(!segments[0].is_final);
+        assert!(segments[1].is_final);
+        assert_eq!(segments[0].id, segments[1].id, "mesmo id de turno");
         assert_eq!(segments[1].text, "bom dia");
         assert_eq!(rows.all().len(), 1, "final persistido");
         assert_eq!(pipeline.buffered_samples(), 0, "buffer consumido");
@@ -1582,6 +1673,7 @@ mod tests {
             "tiny",
             "auto",
             "",
+            false,
             None,
         ));
         whisper.preload();
@@ -1634,6 +1726,7 @@ mod tests {
             "tiny",
             "auto",
             "",
+            false,
             None,
         ));
         whisper.preload();
@@ -1709,6 +1802,7 @@ mod tests {
             &model,
             "auto",
             "",
+            false,
             None,
         ));
         whisper.preload();
@@ -1819,6 +1913,7 @@ mod tests {
                 "tiny",
                 "auto",
                 "",
+                false,
                 None,
             ));
             whisper.preload();

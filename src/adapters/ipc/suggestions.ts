@@ -14,6 +14,8 @@ export interface SuggestionGenerateParams {
   sinceMs: number | null;
   lastSuggestion: string | null;
   extraContext: string | null;
+  /** Pede o rascunho curto (fast-first) antes do texto completo. */
+  fastFirst: boolean;
 }
 
 /** Gera uma sugestão efêmera (não grava nada). */

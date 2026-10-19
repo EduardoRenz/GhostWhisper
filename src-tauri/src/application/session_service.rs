@@ -595,6 +595,7 @@ mod tests {
             self.states.lock().unwrap().push(state.clone());
         }
         fn emit_insight(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
+        fn emit_suggestion(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 

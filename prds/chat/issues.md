@@ -4,10 +4,12 @@ Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a de
 [`../mvp/issues.md`](../mvp/issues.md) para o ID ser único no repositório).
+Próximo ID livre: **ISS-032**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
 | ISS-018 | Falas de canais diferentes colidiam na linha temporal (id sem canal) | Alta | FIXED |
+| ISS-031 | Bolha de fala crescia sem limite em fala contínua (Interlocutor) | Média | FIXED |
 
 ---
 
@@ -40,3 +42,27 @@ arquivo de PRD; a numeração **continua** a de
 - **Task:** [`01-task.md`](tasks/01-task.md)
 - **Dano em dados existentes:** sessões antigas com fala simultânea podem ter
   apenas um dos lados no banco; não é recuperável (o áudio não é gravado).
+
+---
+
+## ISS-031 — Bolha de fala crescia sem limite em fala contínua
+
+- **Severidade:** Média · **Status:** FIXED (task 06)
+- **Sintoma (relato do usuário):** *"ainda estou incomodado com o Interlocutor,
+  como eles falam direto sem interrupções, o balão da mensagem cresce demais;
+  queria que tivesse um limite do tamanho do balão, e continua em um próximo"*.
+- **Causa raiz:** o turno só fecha com **1 s de silêncio** (`silence_ms`) ou no
+  **teto do turno** (`max_turn_ms = 25 s`). Quem fala sem pausas (o outro lado da
+  chamada) acumulava até 25 s de texto numa única bolha — e, durante a fala, a
+  prévia já ia crescendo do mesmo jeito.
+- **Correção (task 06):** teto de **180 caracteres** por bolha de fala
+  (`MAX_SPEECH_BUBBLE_CHARS`) com **continuação em bolha seguinte**
+  (`splitSpeechText` + `SpeechBubble.continues`), aplicado na fala finalizada, na
+  prévia e no histórico. O corte é **de exibição**: o áudio e o texto do ASR não
+  mudam. Prefere o fim de frase e nunca parte uma palavra.
+- **Arquivos:** `src/core/domain/chat.ts`, `src/features/chat/ChatView.tsx`,
+  `src/features/chat/ChatBubble.tsx`, `src/styles/globals.css`.
+- **Task:** [`06-task.md`](tasks/06-task.md)
+- **Dano em dados existentes:** nenhum (o texto persistido segue inteiro; a
+  divisão acontece só na renderização).
+

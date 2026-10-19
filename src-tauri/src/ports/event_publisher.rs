@@ -36,6 +36,9 @@ pub trait EventPublisher: Send + Sync {
     fn emit_session_state(&self, state: &SessionStateEvent);
     /// Emite uma sugestão já persistida (painel ou atalho global).
     fn emit_insight(&self, suggestion: &Suggestion);
+    /// Emite a sugestão **efêmera em andamento** (rascunho fast-first + deltas do
+    /// streaming). A janela de sugestões substitui o texto a cada evento (BR-028).
+    fn emit_suggestion(&self, suggestion: &Suggestion);
     /// Emite o status de preparação do motor de transcrição (download/carga).
     fn emit_asr_status(&self, status: &AsrStatus);
 }

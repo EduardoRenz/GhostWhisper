@@ -37,6 +37,11 @@ pub trait TranscriptionsRepository: Send + Sync {
     fn insert(&self, segment: &TranscriptSegment) -> Result<()>;
     fn list_by_session(&self, session_id: &str) -> Result<Vec<TranscriptSegment>>;
     fn search(&self, query: &str, limit: usize) -> Result<Vec<TranscriptSegment>>;
+    /// Início da última fala **finalizada** com texto.
+    ///
+    /// Consulta barata para o agendador saber se há conteúdo novo sem carregar a
+    /// sessão inteira a cada tick (BR-028).
+    fn latest_final_ms(&self, session_id: &str) -> Result<Option<i64>>;
 }
 
 /// Persistência de mensagens da sessão (sugestões da IA).

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCELERATION_LABELS,
+  ACCELERATION_MODES,
   LANGUAGES,
   PROVIDERS,
   SOURCE_LANGUAGE_LABELS,
@@ -26,6 +28,13 @@ describe("settings (domínio)", () => {
 
   it("lista de modelos whisper não é vazia", () => {
     expect(WHISPER_MODELS.length).toBeGreaterThan(0);
+  });
+
+  it("aceleração padrão é auto com rótulos", () => {
+    expect(defaultSettings().acceleration).toBe("auto");
+    for (const mode of ACCELERATION_MODES) {
+      expect(ACCELERATION_LABELS[mode]).toBeTruthy();
+    }
   });
 
   it("idiomas suportados são auto/pt/en com rótulos", () => {

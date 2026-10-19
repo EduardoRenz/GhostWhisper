@@ -12,6 +12,7 @@ use crate::domain::llm::CompletionRequest;
 use crate::domain::message::{ConversationMessage, MessageRole};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::clock::Clock;
+use crate::ports::event_publisher::EventPublisher;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::settings_store::SettingsStore;
@@ -47,6 +48,10 @@ const MEETING_MAX_TOKENS: u32 = 900;
 const TECHNICAL_MAX_TOKENS: u32 = 1_400;
 const MEETING_TEMPERATURE: f32 = 0.4;
 const TECHNICAL_TEMPERATURE: f32 = 0.2;
+/// Teto do rascunho *fast-first* (Perssua: `maxOutputTokens: 240–420`).
+const FAST_FIRST_MAX_TOKENS: u32 = 420;
+/// Temperatura do rascunho *fast-first* (determinístico, como o Perssua).
+const FAST_FIRST_TEMPERATURE: f32 = 0.0;
 
 /// Gera sugestões contextuais por agente.
 pub struct SuggestionService {
@@ -56,6 +61,7 @@ pub struct SuggestionService {
     transcriptions: Arc<dyn TranscriptionsRepository>,
     messages: Arc<dyn MessagesRepository>,
     clock: Arc<dyn Clock>,
+    publisher: Arc<dyn EventPublisher>,
     limits: SuggestionLimits,
 }
 
@@ -69,6 +75,7 @@ impl SuggestionService {
         transcriptions: Arc<dyn TranscriptionsRepository>,
         messages: Arc<dyn MessagesRepository>,
         clock: Arc<dyn Clock>,
+        publisher: Arc<dyn EventPublisher>,
     ) -> Self {
         Self {
             llm,
@@ -77,6 +84,7 @@ impl SuggestionService {
             transcriptions,
             messages,
             clock,
+            publisher,
             limits: SuggestionLimits::default(),
         }
     }
@@ -147,7 +155,9 @@ impl SuggestionGenerator for SuggestionService {
         let segments = self.transcriptions.list_by_session(&session.id)?;
         let now_rel = (self.clock.now_ms() - session.started_at_ms).max(0);
 
-        let recent = context::recent_context(
+        // Contexto **ao vivo**: inclui a fala em andamento, para a sugestão não
+        // esperar o turno fechar (BR-028).
+        let recent = context::recent_context_live(
             &segments,
             now_rel,
             self.limits.window_ms,
@@ -176,7 +186,6 @@ impl SuggestionGenerator for SuggestionService {
         let last = Self::clamp(request.last_suggestion, LAST_SUGGESTION_MAX_CHARS);
         let extra = Self::clamp(request.extra_context, EXTRA_CONTEXT_MAX_CHARS);
         let language = Some(settings.source_language.as_str());
-        let system = assistant_prompts::suggestion_system_prompt(&mode, language);
         let user = assistant_prompts::suggestion_user_prompt(
             &recent.text,
             last.as_deref(),
@@ -184,12 +193,63 @@ impl SuggestionGenerator for SuggestionService {
         );
         let (max_tokens, temperature) = sampling(&mode);
 
-        let completion = self.llm.complete(
-            &CompletionRequest::user(user)
-                .with_system(system)
-                .with_temperature(temperature)
-                .with_max_tokens(max_tokens),
-        )?;
+        // 1) Fast-first: rascunho curto publicado antes do texto completo.
+        //    Falha aqui não derruba a sugestão (o passe completo segue).
+        if request.fast_first {
+            let draft_system = assistant_prompts::fast_first_system_prompt(&mode, language);
+            match self.llm.complete(
+                &CompletionRequest::user(user.clone())
+                    .with_system(draft_system)
+                    .with_temperature(FAST_FIRST_TEMPERATURE)
+                    .with_max_tokens(FAST_FIRST_MAX_TOKENS),
+            ) {
+                Ok(completion) => {
+                    let text = prompts::normalize_markdown(&completion.text);
+                    if !text.is_empty() {
+                        self.publisher.emit_suggestion(&Suggestion {
+                            session_id: session.id.clone(),
+                            mode_id: mode.id.clone(),
+                            mode_name: mode.name.clone(),
+                            text,
+                            at_ms: now_rel,
+                            context_until_ms: recent.until_ms,
+                            message_id: None,
+                            skipped: false,
+                        });
+                    }
+                }
+                Err(error) => tracing::warn!("rascunho fast-first falhou: {error}"),
+            }
+        }
+
+        // 2) Passe completo, com deltas de streaming (texto acumulado).
+        let system = assistant_prompts::suggestion_system_prompt(&mode, language);
+        let completion_request = CompletionRequest::user(user)
+            .with_system(system)
+            .with_temperature(temperature)
+            .with_max_tokens(max_tokens);
+        let session_id = session.id.clone();
+        let mode_id = mode.id.clone();
+        let mode_name = mode.name.clone();
+        let until_ms = recent.until_ms;
+        let mut emit = |partial: &str| {
+            let text = prompts::normalize_markdown(partial);
+            if !text.is_empty() {
+                self.publisher.emit_suggestion(&Suggestion {
+                    session_id: session_id.clone(),
+                    mode_id: mode_id.clone(),
+                    mode_name: mode_name.clone(),
+                    text,
+                    at_ms: now_rel,
+                    context_until_ms: until_ms,
+                    message_id: None,
+                    skipped: false,
+                });
+            }
+        };
+        let completion = self
+            .llm
+            .complete_streaming(&completion_request, &mut emit)?;
         let text = prompts::normalize_markdown(&completion.text);
         if text.is_empty() {
             return Err(GhostWhisperError::Other(
@@ -256,10 +316,15 @@ mod tests {
     use crate::adapters::settings::memory::InMemorySettingsStore;
     use crate::adapters::system::system_clock::FixedClock;
     use crate::application::test_support::FakeLlmController;
+    use crate::domain::audio::AudioLevel;
     use crate::domain::session::{Session, SessionStatus};
     use crate::domain::settings::Settings;
     use crate::domain::transcription::{Speaker, TranscriptSegment};
+    use std::sync::Mutex;
+
+    use crate::ports::event_publisher::EventPublisher;
     use crate::ports::repositories::{MessagesRepository, TranscriptionsRepository};
+    use crate::ports::session_controller::AudioChannel;
 
     fn segment(id: &str, at: i64, text: &str) -> TranscriptSegment {
         TranscriptSegment {
@@ -288,11 +353,45 @@ mod tests {
         }
     }
 
+    /// Publicador que registra as sugestões efêmeras emitidas.
+    struct RecordingPublisher {
+        suggestions: Mutex<Vec<Suggestion>>,
+    }
+    impl RecordingPublisher {
+        fn new() -> Self {
+            Self {
+                suggestions: Mutex::new(Vec::new()),
+            }
+        }
+        fn texts(&self) -> Vec<String> {
+            self.suggestions
+                .lock()
+                .expect("suggestions")
+                .iter()
+                .map(|suggestion| suggestion.text.clone())
+                .collect()
+        }
+    }
+    impl EventPublisher for RecordingPublisher {
+        fn emit_segment(&self, _segment: &TranscriptSegment) {}
+        fn emit_audio_level(&self, _channel: AudioChannel, _level: AudioLevel) {}
+        fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
+        fn emit_insight(&self, _suggestion: &Suggestion) {}
+        fn emit_suggestion(&self, suggestion: &Suggestion) {
+            self.suggestions
+                .lock()
+                .expect("suggestions")
+                .push(suggestion.clone());
+        }
+        fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
+    }
+
     struct Fixture {
         service: SuggestionService,
         llm: Arc<FakeLlmController>,
         transcriptions: Arc<InMemoryTranscriptionsRepository>,
         messages: Arc<InMemoryMessagesRepository>,
+        publisher: Arc<RecordingPublisher>,
     }
 
     fn fixture(settings: Settings, response: &str) -> Fixture {
@@ -301,6 +400,7 @@ mod tests {
         let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
         let messages = Arc::new(InMemoryMessagesRepository::new());
         let llm = Arc::new(FakeLlmController::new().with_response(response));
+        let publisher = Arc::new(RecordingPublisher::new());
         let service = SuggestionService::new(
             llm.clone(),
             Arc::new(InMemorySettingsStore::with_settings(settings)),
@@ -308,12 +408,14 @@ mod tests {
             transcriptions.clone(),
             messages.clone(),
             Arc::new(FixedClock(65_000)),
+            publisher.clone(),
         );
         Fixture {
             service,
             llm,
             transcriptions,
             messages,
+            publisher,
         }
     }
 
@@ -345,6 +447,118 @@ mod tests {
         assert!(request.prompt.contains("<last_suggestion>"));
         assert!(request.prompt.contains("sugestão anterior"));
         assert!(request.system.unwrap().contains("live meeting copilot"));
+    }
+
+    #[test]
+    fn fast_first_emits_a_short_draft_before_the_full_suggestion() {
+        // BR-028: o rascunho (fast-first) é publicado antes do texto completo.
+        let fixture = fixture(Settings::default(), "> peça o prazo");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "e o prazo?"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(
+                SuggestionRequest::ephemeral(None, "meeting".to_string()).with_fast_first(true),
+            )
+            .expect("generate");
+
+        let requests = fixture.llm.requests();
+        assert_eq!(requests.len(), 2, "rascunho + passe completo");
+        assert_eq!(requests[0].max_tokens, Some(FAST_FIRST_MAX_TOKENS));
+        assert_eq!(requests[0].temperature, Some(FAST_FIRST_TEMPERATURE));
+        assert!(requests[0]
+            .system
+            .as_deref()
+            .unwrap_or_default()
+            .contains("ONLY the first useful suggestion"));
+        assert_eq!(requests[1].max_tokens, Some(MEETING_MAX_TOKENS));
+
+        // Os dois passes chegam à UI (rascunho + acumulado final).
+        let texts = fixture.publisher.texts();
+        assert_eq!(texts, vec!["> peça o prazo", "> peça o prazo"]);
+    }
+
+    #[test]
+    fn without_fast_first_only_the_full_pass_runs() {
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("generate");
+
+        assert_eq!(fixture.llm.call_count(), 1);
+        assert_eq!(fixture.publisher.texts(), vec!["> uma linha"]);
+    }
+
+    #[test]
+    fn streams_the_accumulated_text_to_the_ui() {
+        use crate::domain::llm::{Completion, CompletionRequest};
+        use crate::ports::llm_controller::LlmController;
+
+        /// Provider que emite o texto em pedaços (como o SSE real).
+        struct ChunkedLlm;
+        impl LlmController for ChunkedLlm {
+            fn provider_label(&self) -> crate::error::Result<String> {
+                Ok("chunked".into())
+            }
+            fn validate(&self) -> crate::error::Result<String> {
+                Ok("ok".into())
+            }
+            fn complete(&self, _request: &CompletionRequest) -> crate::error::Result<Completion> {
+                Ok(Completion {
+                    text: "> completo".into(),
+                    model: "chunked".into(),
+                })
+            }
+            fn complete_streaming(
+                &self,
+                _request: &CompletionRequest,
+                on_text: &mut dyn FnMut(&str),
+            ) -> crate::error::Result<Completion> {
+                on_text("> olá");
+                on_text("> olá, tudo bem?");
+                Ok(Completion {
+                    text: "> olá, tudo bem?".into(),
+                    model: "chunked".into(),
+                })
+            }
+        }
+
+        let sessions = Arc::new(InMemorySessionRepository::new());
+        sessions.create(&session()).expect("create session");
+        let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
+        transcriptions
+            .insert(&segment("1", 64_000, "oi, tudo bem?"))
+            .unwrap();
+        let publisher = Arc::new(RecordingPublisher::new());
+        let service = SuggestionService::new(
+            Arc::new(ChunkedLlm),
+            Arc::new(InMemorySettingsStore::with_settings(Settings::default())),
+            sessions,
+            transcriptions,
+            Arc::new(InMemoryMessagesRepository::new()),
+            Arc::new(FixedClock(65_000)),
+            publisher.clone(),
+        );
+
+        let suggestion = service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("generate");
+
+        assert_eq!(suggestion.text, "> olá, tudo bem?");
+        assert_eq!(
+            publisher.texts(),
+            vec!["> olá", "> olá, tudo bem?"],
+            "cada delta vira uma atualização da bolha"
+        );
     }
 
     #[test]

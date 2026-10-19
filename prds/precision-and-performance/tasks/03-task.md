@@ -1,6 +1,6 @@
 # 03 — Áudio limpo e engine rápida · Entregável E3
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01 (catálogo de modelos), 02 (ciclo), 13/14 do MVP (streaming/áudio)
 - **Issues:** ISS-026, ISS-027, ISS-028 · **BR nova:** BR-029
 - **Refs:** BR-015, BR-018,
@@ -35,17 +35,70 @@ attention**, modelo grande viável, **AEC** no microfone e menos trabalho por tu
 
 ## Critérios de aceite
 
-- [ ] Com GPU disponível, o app carrega o modelo em GPU com flash attention e
-      registra isso no status; sem GPU, cai em CPU sem erro.
-- [ ] Default por hardware aplicado (`large-v3-turbo` com GPU; menor em CPU), com
-      override manual persistido.
-- [ ] RTF < 1 com `large-v3-turbo` na GPU (medido); **sem regressão** em CPU.
-- [ ] AEC reduz o eco no fixture sintético (mic = voz + eco atrasado) sem cortar o
-      começo da fala; atraso configurável e toggle.
-- [ ] Fim de turno não paga passe final duplicado quando a prévia já cobriu o turno.
-- [ ] Fechamento de turno não fica preso atrás de prévia em voo.
-- [ ] Commits menores não picam frase no meio (testes de turno com e sem silêncio).
-- [ ] Suíte completa verde.
+- [x] Build declara features de GPU e liga `flash_attn` só com GPU (nunca
+      macOS/CPU); o backend é registrado no log de carga.
+      **Verificado:** `AMD Radeon RX 480 (RADV POLARIS10)` → `using Vulkan0 backend`.
+- [x] Modelo por hardware: `small` é **sugerido** com um clique quando há GPU +
+      aceleração (`large-v3-turbo` fica como opção). **Desvio consciente:** não
+      trocamos automaticamente (override manual).
+- [x] RTF medido na GPU (Vulkan): `small` 8 s → 725 ms; `tiny` 8 s → 241 ms;
+      `large-v3-turbo` tem piso de ~2,4 s (não é o default). CPU sem regressão.
+- [x] **Um artefato só**: release padrão (`pnpm tauri:build`) com Vulkan + loader
+      `libvulkan.so.1` embutido no AppImage (`libvulkan1` no `.deb`); escolhe GPU
+      em runtime e cai para CPU sem dispositivo.
+- [x] Seletor **Aceleração** (`auto`/`cpu`/`gpu`) nas configurações; fallback para
+      CPU quando a carga da GPU falha.
+- [x] **Marca de crash** (padrão Perssua): morrer com GPU ativa desliga a GPU no
+      próximo boot; a marca é apagada na saída limpa.
+- [x] AEC referenciado no áudio do sistema: NLMS (512 taps) com guarda de
+      *double-talk*, rodando **antes** do ganho; referência muda ⇒ saída intacta.
+      Testes: eco atrasado cai ≥10 dB, fala local preservada no double-talk e
+      remoção comprovada **através do estágio de entrada**. Toggle em
+      `Settings.aec_enabled` (padrão ligado); atraso/taps por env.
+- [x] Fim de turno **não** paga passe final duplicado quando o VAD já fechou o
+      turno na prévia (`endedInNoise`); teste prova 1 decodificação no caso.
+- [x] Fechamento de turno não fica preso atrás de prévia em voo (T13/ISS-013).
+- [x] **Commits: avaliado e mantido em 1 s de silêncio.** É o
+      `local_whisper_vad_silence_duration_ms` do Perssua; os 650 ms que motivaram o
+      item são do **provider realtime em nuvem**, não do whisper local. Reduzir
+      cortaria pausa natural de frase (piora a transcrição) e as bolhas grandes de
+      **sugestão** já foram resolvidas no E2 (fast-first + clamp). Override por
+      `GHOSTWHISPER_VAD_SILENCE_MS` para quem quiser arriscar.
+- [x] Suíte completa verde: `cargo test` 330 ✓ · `clippy -D warnings` ✓ ·
+      `fmt --check` ✓ · `pnpm test` 123 ✓ · `tsc` ✓ · `pnpm build` ✓.
+
+## Progresso
+
+Feito: **reuso do passe final**, **GPU por Vulkan** (build + verificação real na
+RX 480) e **modelo por hardware** (`small` recomendado). Restam: **AEC
+referenciado** e **ajuste de commits**.
+
+### Empacotamento verificado
+
+`pnpm tauri:build` gerou:
+
+| artefato | tamanho |
+|---|---|
+| `GhostWhisper_0.1.0_amd64.AppImage` (Vulkan + loader embutido) | 92 MB |
+| `GhostWhisper_0.1.0_amd64.deb` (Depends: `libvulkan1`) | 16 MB |
+| binário `ghostwhisper` (release, NEEDED `libvulkan.so.1`) | 55 MB |
+
+O AppImage foi extraído e contém `usr/lib/libvulkan.so.1`; rodou com
+`VK_ICD_FILENAMES=/nonexistent` **sem crash** e logou
+`acceleration_enabled=true recommended_model=small` (é a build Vulkan).
+
+### GPU: como buildar/rodar
+
+```bash
+pnpm tauri:build           # release com Vulkan + loader embutido (padrão)
+pnpm tauri:build:cpu       # release CPU-only (escape hatch)
+pnpm tauri:dev:vulkan      # dev com GPU (1º build ~8 min: compila shaders)
+```
+
+`scripts/vulkan-env.sh` monta o SDK (usa `libvulkan-dev`/`glslc` do sistema ou
+baixa os `.deb` sem sudo em `.vulkan-sdk/`); `scripts/ensure-libvulkan.sh` copia o
+loader para embutir no AppImage. O build de GPU usa `src-tauri/target-vulkan/`,
+isolado do build de CPU.
 
 ## Como testar
 

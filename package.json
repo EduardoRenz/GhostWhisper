@@ -12,7 +12,9 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:dev:clean": "bash scripts/tauri-dev-clean.sh",
-    "tauri:build": "tauri build"
+    "tauri:dev:vulkan": "bash scripts/tauri-dev-vulkan.sh",
+    "tauri:build": "bash scripts/tauri-build-linux.sh",
+    "tauri:build:cpu": "bash scripts/tauri-build-cpu.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
