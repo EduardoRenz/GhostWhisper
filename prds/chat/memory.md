@@ -7,8 +7,9 @@ Histórico deste PRD no formato fixo do
 |----------|---------|
 | Palavra-chave | `rg -n -i 'bolha' prds/chat/memory.md` |
 | Entrada do dia | `rg -n '^## 2026-10-18' prds/chat/memory.md` |
-| Por ID | `rg -n 'ISS-018\|BR-021' prds/chat/memory.md` |
+| Por ID | `rg -n 'ISS-018\|BR-021\|BR-022\|BR-026' prds/chat/memory.md` |
 | Teto da bolha | `rg -n -i 'teto da bolha\|continuação' prds/chat/memory.md` |
+| Janelas de chat/histórico | `rg -n -i 'janela de chat\|janela de histórico\|toggle único' prds/chat/memory.md` |
 
 ---
 
@@ -107,3 +108,39 @@ silêncio, então o teto visual faz o papel que o *commit* faz lá em cima.
 ### Verificação
 - `pnpm test` **134 ✓** (24 arquivos, +11) · `tsc --noEmit` ✓ · `cargo test --lib`
   330 ✓ (backend intocado) · AppImage/deb reconstruídos.
+
+## 2026-10-18 — Janelas de Chat/Histórico e transporte com um só stop
+
+- **IDs:** BR-022, BR-026, T07–T09
+- **Refs:** [`prd.md`](prd.md), [`tasks/_tasks.md`](tasks/_tasks.md),
+  [`architecture/chat-ui.md`](architecture/chat-ui.md) §7,
+  [`../business-rules.md`](../business-rules.md) BR-022/BR-026
+
+### Pedido (respostas do usuário)
+- A conversa ao vivo vira uma **janela própria**, movível e redimensionável "como o
+  resumo"; um botão no overlay esconde/mostra.
+- O **histórico de sessões** (aba do painel que saiu) também virou janela própria —
+  decisão entre três alternativas, escolhida a que mantém cada superfície isolada.
+- O stop estava **duplicado** (⏹ do transporte + pílula vermelha): remover o do
+  transporte, deixar play/pause como **um switch** e o encerrar com vermelho +
+  confirmação "como funciona hoje".
+
+### Entregue
+- **T07** janela `chat`: `ChatWindow` (`PanelFrame` + medidores + `ChatView`) e
+  `ChatHeaderActions` (Sugerir/Resumo/Sugestões); rota `chat`; `Settings.chat_*`; o
+  overlay virou **só a ActionBar** (`Surface` = `actionbar|hidden`, sem painel,
+  abas ou `expanded-tall`).
+- **T08** janela `history`: `HistoryWindow` embrulha o `HistoryPanel`;
+  `Settings.history_*`; "Continuar sessão" volta a capturar e abre a janela de Chat.
+- **T09** `SessionControls` com **um** controle (parado → "Iniciar escuta";
+  gravando → ⏸; pausado → ▶); o encerrar ficou **só** na `SessionPill`. BR-022
+  revisada.
+- Layout dos quatro painéis unificado em `domain::settings::PANEL_LABELS` + acessores
+  (`panel_position`/`panel_size`), usados por boot, tracker, fechar-da-janela e
+  `panel_open`/`panel_hide`; `capabilities` e `tauri.conf.json` ganharam `chat` e
+  `history`.
+
+### Verificação
+- **331 testes Rust** (8 `ignored`) · clippy/fmt limpos.
+- **138 testes frontend** (+20: `ChatWindow`, `HistoryWindow`, rotas, matriz de
+  `SessionControls` reescrita) · `tsc --noEmit` e `pnpm build` ok.

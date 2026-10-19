@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–06 `CONCLUDED`); 07–09 `PENDING`
+- **Status:** Implementado (tasks 01–09 `CONCLUDED`)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/chat-ui.md`](architecture/chat-ui.md),

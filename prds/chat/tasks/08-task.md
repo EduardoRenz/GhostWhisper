@@ -1,6 +1,6 @@
 # 08 — Janela de Histórico (sessões anteriores)
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 07
 - **Habilita:** —
 
@@ -57,3 +57,13 @@ linha temporal em bolhas.
 
 - Sem mudança de schema nem de export (RNF-03); o detalhe continua lendo a linha
   temporal do backend (CA-05.1).
+
+## Resultado (2026-10-18)
+
+- Janela `history` declarada e liberada em `capabilities`; `PanelLabel` ganhou
+  `"history"`; rota `history` (e `?window=history`).
+- `Settings.history_position`/`history_size` com clamp.
+- `HistoryWindow` embrulha o `HistoryPanel` no `PanelFrame`; o cabeçalho interno
+  virou só o botão "Atualizar" (o título é do painel). "Continuar sessão" volta a
+  capturar e abre a janela de Chat.
+- Testes: `HistoryWindow.test.tsx` (2) cobrindo moldura e `onContinue`.

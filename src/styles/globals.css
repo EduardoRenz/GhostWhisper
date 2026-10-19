@@ -198,11 +198,6 @@ body,
   cursor: default;
 }
 
-.transport__button--stop:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.18);
-  color: #f87171;
-}
-
 .transport__icon {
   pointer-events: none;
 }
@@ -340,17 +335,10 @@ body,
   cursor: default;
 }
 
-.overlay__panel {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  background: var(--ghostwhisper-bg-transparent);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  color: var(--ghostwhisper-text);
+/* Toggle ligado (janela de Chat/Histórico aberta). */
+.overlay__button--on {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.55);
 }
 
 .levels {
@@ -662,26 +650,13 @@ body,
   -webkit-user-select: text;
 }
 
-/* Abas do painel expandido --------------------------------------------- */
+/* Ações do cabeçalho da conversa (Sugerir / Resumo / Sugestões) ---------- */
 
-.overlay__tabs {
+.chat__head-actions {
   display: flex;
-  gap: 0.3rem;
-}
-
-.overlay__tab {
-  border: 0;
-  border-radius: 4px;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.74rem;
-  background: transparent;
-  color: var(--ghostwhisper-text-muted);
-  cursor: pointer;
-}
-
-.overlay__tab--active {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--ghostwhisper-text);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 /* Histórico ------------------------------------------------------------ */
@@ -699,6 +674,11 @@ body,
   display: flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* Só o botão "Atualizar": o título vive no cabeçalho do painel. */
+.history__head--toolbar {
+  justify-content: flex-end;
 }
 
 .history__title {

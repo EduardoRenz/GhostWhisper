@@ -22,6 +22,12 @@ describe("resolveRoute", () => {
     windowLabel.current = "suggestions";
     expect(resolveRoute()).toBe("suggestions");
 
+    windowLabel.current = "chat";
+    expect(resolveRoute()).toBe("chat");
+
+    windowLabel.current = "history";
+    expect(resolveRoute()).toBe("history");
+
     windowLabel.current = "desconhecida";
     expect(resolveRoute()).toBe("unknown");
   });

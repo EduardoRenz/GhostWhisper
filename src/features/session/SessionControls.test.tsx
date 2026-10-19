@@ -11,7 +11,6 @@ const base = {
   onStart: vi.fn(),
   onPause: vi.fn(),
   onResume: vi.fn(),
-  onRequestStop: vi.fn(),
   onChannelsChange: vi.fn(),
 };
 
@@ -30,6 +29,7 @@ describe("SessionControls", () => {
 
     expect(button("Iniciar escuta")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Pausar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retomar" })).toBeNull();
 
     fireEvent.change(channelsSelect(), { target: { value: "system" } });
     fireEvent.click(button("Iniciar escuta"));
@@ -39,49 +39,41 @@ describe("SessionControls", () => {
     expect(base.onChannelsChange).not.toHaveBeenCalled();
   });
 
-  it("gravando: play esmaecido, pause e stop ativos", () => {
+  it("gravando: o toggle único pausa e não há botão de encerrar", () => {
     const onPause = vi.fn();
-    const onRequestStop = vi.fn();
     render(
-      <SessionControls
-        {...base}
-        onPause={onPause}
-        onRequestStop={onRequestStop}
-        listening
-        paused={false}
-      />,
+      <SessionControls {...base} onPause={onPause} listening paused={false} />,
     );
 
-    expect(button("Retomar").disabled).toBe(true);
     expect(button("Pausar").disabled).toBe(false);
-    expect(button("Encerrar sessão").disabled).toBe(false);
+    // O stop saiu do transporte: encerrar é só a pílula de sessão (BR-022).
+    expect(screen.queryByRole("button", { name: /encerrar/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retomar" })).toBeNull();
 
     fireEvent.click(button("Pausar"));
     expect(onPause).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(button("Encerrar sessão"));
-    expect(onRequestStop).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Nova sessão" })).toBeDefined();
   });
 
-  it("pausado: play ativo e pause esmaecido (mesma sessão)", () => {
+  it("pausado: o mesmo controle retoma (mesma sessão)", () => {
     const onResume = vi.fn();
-    render(
-      <SessionControls {...base} onResume={onResume} listening paused />,
-    );
+    render(<SessionControls {...base} onResume={onResume} listening paused />);
 
     expect(button("Retomar").disabled).toBe(false);
-    expect(button("Pausar").disabled).toBe(true);
-    expect(button("Encerrar sessão").disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "Pausar" })).toBeNull();
 
     fireEvent.click(button("Retomar"));
     expect(onResume).toHaveBeenCalledTimes(1);
   });
 
-  it("pílula de transporte não usa rótulo de texto (só ícone)", () => {
-    render(<SessionControls {...base} listening paused={false} />);
+  it("o toggle único não usa rótulo de texto (só ícone)", () => {
+    const { rerender } = render(
+      <SessionControls {...base} listening paused={false} />,
+    );
     expect(button("Pausar").textContent).toBe("");
-    expect(button("Encerrar sessão").textContent).toBe("");
+
+    rerender(<SessionControls {...base} listening paused />);
+    expect(button("Retomar").textContent).toBe("");
   });
 
   it("deixa trocar os canais com a sessão gravando ou pausada", () => {
@@ -142,7 +134,6 @@ describe("SessionControls", () => {
   it("desabilita as ações durante uma operação em curso", () => {
     render(<SessionControls {...base} busy listening paused={false} />);
     expect(button("Pausar").disabled).toBe(true);
-    expect(button("Encerrar sessão").disabled).toBe(true);
     expect(screen.getByRole("button", { name: "Nova sessão" })).toHaveProperty(
       "disabled",
       true,

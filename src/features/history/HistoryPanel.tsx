@@ -198,8 +198,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
 
   return (
     <div className="history" data-interactive>
-      <div className="history__head">
-        <span className="history__title">Histórico</span>
+      <div className="history__head history__head--toolbar">
         <button
           type="button"
           className="overlay__button"

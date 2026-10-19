@@ -110,8 +110,8 @@ pub fn run() {
                     }
                 });
             }
-            // Painéis de resumo/sugestões: fechar esconde e avisa a UI.
-            for label in ["summary", "suggestions"] {
+            // Painéis: fechar esconde e avisa a UI.
+            for label in domain::settings::PANEL_LABELS {
                 if let Some(panel) = app.get_webview_window(label) {
                     let window = panel.clone();
                     panel.on_window_event(move |event| {
@@ -129,8 +129,9 @@ pub fn run() {
                 tracing::warn!("bandeja indisponível: {error}");
             }
             spawn_overlay_position_tracker(app.handle().clone());
-            spawn_panel_position_tracker(app.handle().clone(), "summary");
-            spawn_panel_position_tracker(app.handle().clone(), "suggestions");
+            for label in domain::settings::PANEL_LABELS {
+                spawn_panel_position_tracker(app.handle().clone(), label);
+            }
             spawn_suggestion_scheduler(app.handle().clone());
             Ok(())
         })
@@ -407,21 +408,15 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         // Posição escolhida pelo usuário: não reancorar pela base.
         overlay.set_anchor_bottom(false);
     }
-    // Painéis (resumo/sugestões): reaplica a última posição conhecida.
-    for (label, position) in [
-        ("summary", current_settings.summary_position),
-        ("suggestions", current_settings.suggestions_position),
-    ] {
-        if let (Some(window), Some((x, y))) = (app.get_webview_window(label), position) {
+    // Painéis: reaplica a última posição e o último tamanho (px físicos).
+    for label in domain::settings::PANEL_LABELS {
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        if let Some((x, y)) = current_settings.panel_position(label) {
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         }
-    }
-    // ...e o último tamanho (px físicos) do painel.
-    for (label, size) in [
-        ("summary", current_settings.summary_size),
-        ("suggestions", current_settings.suggestions_size),
-    ] {
-        if let (Some(window), Some((width, height))) = (app.get_webview_window(label), size) {
+        if let Some((width, height)) = current_settings.panel_size(label) {
             let _ = window.set_size(tauri::PhysicalSize::new(width, height));
         }
     }
@@ -505,11 +500,23 @@ fn build_tray(app: &tauri::App) -> Result<()> {
         MenuItem::with_id(app, "summary", "Abrir resumo", true, None::<&str>).map_err(to_err)?;
     let suggestions = MenuItem::with_id(app, "suggestions", "Abrir sugestões", true, None::<&str>)
         .map_err(to_err)?;
+    let chat = MenuItem::with_id(app, "chat", "Abrir chat", true, None::<&str>).map_err(to_err)?;
+    let history =
+        MenuItem::with_id(app, "history", "Abrir histórico", true, None::<&str>).map_err(to_err)?;
     let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>).map_err(to_err)?;
 
     let menu = Menu::with_items(
         app,
-        &[&toggle, &session, &summary, &suggestions, &settings, &quit],
+        &[
+            &toggle,
+            &session,
+            &summary,
+            &suggestions,
+            &chat,
+            &history,
+            &settings,
+            &quit,
+        ],
     )
     .map_err(to_err)?;
 
@@ -523,6 +530,8 @@ fn build_tray(app: &tauri::App) -> Result<()> {
             "settings" => open_settings(app),
             "summary" => open_panel(app, "summary"),
             "suggestions" => open_panel(app, "suggestions"),
+            "chat" => open_panel(app, "chat"),
+            "history" => open_panel(app, "history"),
             "quit" => app.exit(0),
             _ => {}
         });
@@ -660,21 +669,13 @@ fn spawn_panel_position_tracker(app: tauri::AppHandle, label: &'static str) {
         };
         let current = (position.x, position.y);
         let current_size = (size.width, size.height);
-        let (position_slot, size_slot) = match label {
-            "summary" => (&mut settings.summary_position, &mut settings.summary_size),
-            "suggestions" => (
-                &mut settings.suggestions_position,
-                &mut settings.suggestions_size,
-            ),
-            _ => continue,
-        };
         let mut changed = false;
-        if *position_slot != Some(current) {
-            *position_slot = Some(current);
+        if settings.panel_position(label) != Some(current) {
+            settings.set_panel_position(label, Some(current));
             changed = true;
         }
-        if *size_slot != Some(current_size) {
-            *size_slot = Some(current_size);
+        if settings.panel_size(label) != Some(current_size) {
+            settings.set_panel_size(label, Some(current_size));
             changed = true;
         }
         if changed {

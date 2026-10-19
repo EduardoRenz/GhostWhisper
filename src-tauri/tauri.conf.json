@@ -68,6 +68,40 @@
       "focus": false,
       "visible": false,
       "center": true
+    },
+    {
+      "label": "chat",
+      "title": "GhostWhisper — Chat",
+      "width": 560,
+      "height": 720,
+      "minWidth": 360,
+      "minHeight": 320,
+      "resizable": true,
+      "decorations": false,
+      "transparent": true,
+      "alwaysOnTop": true,
+      "skipTaskbar": true,
+      "shadow": false,
+      "focus": false,
+      "visible": false,
+      "center": true
+    },
+    {
+      "label": "history",
+      "title": "GhostWhisper — Histórico",
+      "width": 560,
+      "height": 680,
+      "minWidth": 320,
+      "minHeight": 240,
+      "resizable": true,
+      "decorations": false,
+      "transparent": true,
+      "alwaysOnTop": true,
+      "skipTaskbar": true,
+      "shadow": false,
+      "focus": false,
+      "visible": false,
+      "center": true
     }
     ],
     "security": {

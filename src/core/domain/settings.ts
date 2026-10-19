@@ -86,6 +86,14 @@ export interface Settings {
   summary_size: [number, number] | null;
   /** Tamanho (px físicos) da janela de sugestões. */
   suggestions_size: [number, number] | null;
+  /** Posição da janela de chat. */
+  chat_position: [number, number] | null;
+  /** Posição da janela de histórico. */
+  history_position: [number, number] | null;
+  /** Tamanho (px físicos) da janela de chat. */
+  chat_size: [number, number] | null;
+  /** Tamanho (px físicos) da janela de histórico. */
+  history_size: [number, number] | null;
 }
 
 /** Providers na ordem de exibição. */
@@ -162,6 +170,10 @@ export const defaultSettings = (): Settings => ({
   suggestions_position: null,
   summary_size: null,
   suggestions_size: null,
+  chat_position: null,
+  history_position: null,
+  chat_size: null,
+  history_size: null,
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */

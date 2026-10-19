@@ -197,7 +197,8 @@ uma nota de revisão.
   vivo, no histórico e no export. O export de uma sessão é um **Markdown** da linha
   temporal: cabeçalho (título, início/fim, duração) + `- **[mm:ss] Você:** fala` +
   a sugestão como bloco destacado `> 🤖 **Sugestão [mm:ss]** — texto`. O histórico
-  vive no **painel expandido do overlay** (aba `Ao vivo | Histórico`).
+  vive numa **janela própria** (`history`) e a conversa ao vivo na janela `chat`
+  (tasks 07/08 do PRD chat).
 - **Motivo:** pedido do usuário — sem tempo não há linha temporal, e sugestão não
   persistida desaparece ao fechar o painel. O Perssua guarda as mensagens na mesma
   tabela, mas **não exporta arquivo** (só "copiar resumo/chat/transcrição"); o
@@ -232,25 +233,29 @@ uma nota de revisão.
   [`chat/tasks/02-task.md`](chat/tasks/02-task.md).
 - **Data:** 2026-10-18 · **Status:** Ativa (tasks 01/02)
 
-## BR-022 — Transporte da sessão em ícones, com encerramento confirmado
-- **Decisão:** o transporte da sessão são **ícones clássicos** numa pílula: play
-  (retomar), pause e stop, com o botão inativo esmaecido; com a sessão parada, a
-  pílula dá lugar a "Iniciar escuta" (play + rótulo). O **tempo desde o início da
-  sessão** aparece numa pílula vermelha e o encerramento — pelo ⏹ ou pela pílula —
-  pede confirmação inline ("Encerrar sessão? Sim / Não"). Uma bolinha de status
-  acompanha o estado (vermelha pulsando gravando, âmbar pausado, cinza parado). Os
-  ícones são SVG desenhados no projeto (não a fonte Material Icons do Perssua,
-  BR-008).
-- **Motivo:** pedido do usuário ("play e pause juntos, e o stop"), com a referência
-  de produto como base. **Desvios conscientes** do Perssua (R12): play e pause são
-  dois botões (o Perssua alterna num só) e o ⏹ também confirma o encerramento (no
-  Perssua a confirmação vive só na pílula de sessão) — assim não existe caminho que
-  encerre a sessão sem confirmação.
+## BR-022 — Transporte da sessão: toggle único e encerramento confirmado
+- **Decisão:** o transporte é **um único controle** que alterna start/pausa/retomar,
+  como o `[play_arrow ↔ pause]` do Perssua: parado mostra "Iniciar escuta" (play +
+  rótulo); gravando mostra ⏸; pausado mostra ▶. O **encerrar** existe **só** na
+  pílula de sessão vermelha, com o tempo desde o início e confirmação inline
+  ("Encerrar sessão? Sim / Não"). Uma bolinha de status acompanha o estado (vermelha
+  pulsando gravando, âmbar pausado, cinza parado). Os ícones são SVG desenhados no
+  projeto (não a fonte Material Icons do Perssua, BR-008).
+- **Motivo:** pedido do usuário — um só stop (havia dois) e um controle de
+  start/pause "como um switch", como o Perssua (evidência:
+  `unified-session-controls` = `[play_arrow ↔ pause]` + `[stop]`, e o "End session?"
+  na `.actionbar-session-pill`). **Desvio consciente** restante (R12): "Iniciar
+  escuta" acumula "Start Listening" e "Restart" (não temos a janela pós-sessão do
+  Perssua).
+- **Histórico:** a versão original (tasks 03/04) tinha play e pause como **dois**
+  botões e o ⏹ do transporte **também** confirmando; a task 09 alinhou ao Perssua
+  mantendo a garantia de que o encerramento sempre pede confirmação.
 - **Consequência:** `SessionStateEvent` carrega `started_at_ms` para a UI calcular o
   tempo decorrido; pausar/retomar **não** zeram o relógio (BR-019).
 - **Detalhes:** [`chat/tasks/03-task.md`](chat/tasks/03-task.md),
-  [`chat/tasks/04-task.md`](chat/tasks/04-task.md).
-- **Data:** 2026-10-18 · **Status:** Ativa (tasks 03/04)
+  [`chat/tasks/04-task.md`](chat/tasks/04-task.md),
+  [`chat/tasks/09-task.md`](chat/tasks/09-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (tasks 03/04/09)
 
 ## BR-023 — Resumo vivo, incremental e em janela separada
 - **Decisão:** o resumo da sessão vive numa **janela própria e móvel**

@@ -1,6 +1,6 @@
 # 07 — Janela de Chat própria (movível e redimensionável)
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01
 - **Habilita:** 08
 
@@ -77,3 +77,15 @@ mesmo desvio consciente já registrado para as janelas de assistente
 
 - Wayland nativo: o resize por alça depende do compositor e pode não funcionar; em
   X11/XWayland funciona (BR-007).
+
+## Resultado (2026-10-18)
+
+- Janela `chat` declarada no `tauri.conf.json` e liberada em `capabilities`
+  (além de `chat` no `PANEL_LABELS`, agora com os quatro painéis).
+- `Settings.chat_position`/`chat_size` (Rust + TS) com clamp; boot e tracker
+  passaram a iterar `domain::settings::PANEL_LABELS` (menos duplicação).
+- `ChatWindow` + `ChatHeaderActions`; `App` roteia `chat` (e `?window=chat`).
+- Overlay reduzido à ActionBar: `Surface` = `actionbar | hidden` (Rust e TS);
+  saíram o painel expansível, as abas, os medidores do overlay e o `expanded-tall`.
+- Testes: `ChatWindow.test.tsx` (2), `App.test.tsx` (rotas `chat`/`history`),
+  `Settings` (acessores por rótulo + clamp). **331 Rust** · **138 frontend**.

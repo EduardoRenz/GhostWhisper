@@ -182,7 +182,22 @@ pub struct Settings {
     /// Tamanho (px físicos) da janela de sugestões.
     #[serde(default)]
     pub suggestions_size: Option<(u32, u32)>,
+    /// Posição da janela de chat.
+    #[serde(default)]
+    pub chat_position: Option<(i32, i32)>,
+    /// Posição da janela de histórico.
+    #[serde(default)]
+    pub history_position: Option<(i32, i32)>,
+    /// Tamanho (px físicos) da janela de chat.
+    #[serde(default)]
+    pub chat_size: Option<(u32, u32)>,
+    /// Tamanho (px físicos) da janela de histórico.
+    #[serde(default)]
+    pub history_size: Option<(u32, u32)>,
 }
+
+/// Rótulos das janelas de painel (ordem de boot e de persistência do layout).
+pub const PANEL_LABELS: [&str; 4] = ["summary", "suggestions", "chat", "history"];
 
 /// Intervalo mínimo aceito para atualizações automáticas (segundos).
 pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
@@ -220,6 +235,10 @@ impl Default for Settings {
             suggestions_position: None,
             summary_size: None,
             suggestions_size: None,
+            chat_position: None,
+            history_position: None,
+            chat_size: None,
+            history_size: None,
         }
     }
 }
@@ -377,7 +396,53 @@ impl Settings {
             .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
         self.summary_size = clamp_panel_size(self.summary_size);
         self.suggestions_size = clamp_panel_size(self.suggestions_size);
+        self.chat_size = clamp_panel_size(self.chat_size);
+        self.history_size = clamp_panel_size(self.history_size);
         self
+    }
+
+    /// Posição persistida de um painel pelo rótulo (`None` se desconhecido).
+    pub fn panel_position(&self, label: &str) -> Option<(i32, i32)> {
+        match label {
+            "summary" => self.summary_position,
+            "suggestions" => self.suggestions_position,
+            "chat" => self.chat_position,
+            "history" => self.history_position,
+            _ => None,
+        }
+    }
+
+    /// Atualiza a posição persistida de um painel pelo rótulo.
+    pub fn set_panel_position(&mut self, label: &str, position: Option<(i32, i32)>) {
+        match label {
+            "summary" => self.summary_position = position,
+            "suggestions" => self.suggestions_position = position,
+            "chat" => self.chat_position = position,
+            "history" => self.history_position = position,
+            _ => {}
+        }
+    }
+
+    /// Tamanho persistido (px físicos) de um painel pelo rótulo.
+    pub fn panel_size(&self, label: &str) -> Option<(u32, u32)> {
+        match label {
+            "summary" => self.summary_size,
+            "suggestions" => self.suggestions_size,
+            "chat" => self.chat_size,
+            "history" => self.history_size,
+            _ => None,
+        }
+    }
+
+    /// Atualiza o tamanho persistido (px físicos) de um painel pelo rótulo.
+    pub fn set_panel_size(&mut self, label: &str, size: Option<(u32, u32)>) {
+        match label {
+            "summary" => self.summary_size = size,
+            "suggestions" => self.suggestions_size = size,
+            "chat" => self.chat_size = size,
+            "history" => self.history_size = size,
+            _ => {}
+        }
     }
 
     /// `base_url` efetiva para providers OpenAI-compatíveis.
@@ -579,6 +644,8 @@ mod tests {
         let dirty = Settings {
             summary_size: Some((100, 100)),
             suggestions_size: Some((900, 700)),
+            chat_size: Some((10, 10)),
+            history_size: Some((640, 480)),
             ..Settings::default()
         }
         .sanitized();
@@ -587,7 +654,30 @@ mod tests {
             Some((MIN_PANEL_WIDTH, MIN_PANEL_HEIGHT))
         );
         assert_eq!(dirty.suggestions_size, Some((900, 700)));
+        assert_eq!(dirty.chat_size, Some((MIN_PANEL_WIDTH, MIN_PANEL_HEIGHT)));
+        assert_eq!(dirty.history_size, Some((640, 480)));
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn panel_layout_accessors_round_trip_for_every_label() {
+        let mut settings = Settings::default();
+        for label in PANEL_LABELS {
+            assert_eq!(settings.panel_position(label), None);
+            assert_eq!(settings.panel_size(label), None);
+
+            settings.set_panel_position(label, Some((10, 20)));
+            settings.set_panel_size(label, Some((640, 480)));
+            assert_eq!(settings.panel_position(label), Some((10, 20)));
+            assert_eq!(settings.panel_size(label), Some((640, 480)));
+        }
+
+        // Rótulo desconhecido não inventa um slot.
+        assert_eq!(settings.panel_position("desconhecido"), None);
+        assert_eq!(settings.panel_size("desconhecido"), None);
+        settings.set_panel_position("desconhecido", Some((1, 1)));
+        settings.set_panel_size("desconhecido", Some((1, 1)));
+        assert_eq!(settings.panel_position("desconhecido"), None);
     }
 
     #[test]
@@ -678,11 +768,20 @@ mod tests {
         let json = serde_json::to_string(&Settings::default()).expect("json");
         let legacy = json
             .replace("\"summary_size\":null,", "")
-            .replace("\"suggestions_size\":null,", "");
+            .replace("\"suggestions_size\":null,", "")
+            .replace("\"chat_size\":null,", "")
+            .replace("\"history_size\":null,", "")
+            .replace("\"chat_position\":null,", "")
+            .replace("\"history_position\":null,", "");
         assert!(!legacy.contains("summary_size"));
+        assert!(!legacy.contains("chat_size"));
         let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
         assert_eq!(parsed.summary_size, None);
         assert_eq!(parsed.suggestions_size, None);
+        assert_eq!(parsed.chat_size, None);
+        assert_eq!(parsed.history_size, None);
+        assert_eq!(parsed.chat_position, None);
+        assert_eq!(parsed.history_position, None);
         assert!(parsed.validate().is_ok());
     }
 

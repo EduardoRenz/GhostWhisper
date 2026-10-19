@@ -84,9 +84,11 @@ janela, mas o **X11** expõe a extensão **SHAPE** (`ShapeRectangles` com
 
 ## 6. Alternância de superfície
 
-- **Estados:** `hidden`, `actionbar` (barra fina), `expanded` (conversa em
-  bolhas/tradução), `expanded-tall` (histórico). A UI alterna via evento; o core
-  ajusta tamanho/posição da janela.
+- **Estados:** `hidden` e `actionbar` (barra fina). As superfícies `expanded`
+  (conversa) e `expanded-tall` (histórico) **saíram na task 07 do PRD chat**: a
+  conversa e o histórico agora vivem em janelas próprias (`chat`/`history`) — ver
+  [`../../chat/architecture/chat-ui.md`](../../chat/architecture/chat-ui.md) §7. A
+  UI alterna via evento; o core ajusta tamanho/posição da janela.
 - **Arraste:** a ActionBar tem um handle (`overlay_start_drag`) que chama
   `start_dragging()`; após o usuário mover, a janela **para de reancorar** pela
   base e a posição é **persistida** (`settings.overlay_position`) e restaurada no

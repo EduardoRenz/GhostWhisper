@@ -9,8 +9,13 @@ Paridade com o **Perssua 0.27.5** (BR-015): valores e comportamento extraídos d
 ## 1. Componentes
 
 ```
-features/chat/ChatView.tsx        # scroller, cabeçalho ("Sugerir"), bolhas + em andamento
+features/chat/ChatWindow.tsx         # janela própria da conversa (task 07)
+features/chat/ChatHeaderActions.tsx  # cabeçalho: "Sugerir" + atalhos Resumo/Sugestões
+features/chat/ChatView.tsx        # scroller, bolhas + em andamento
 features/chat/ChatBubble.tsx      # uma bolha (rótulo, texto, tempo, copiar opcional)
+features/history/HistoryWindow.tsx # janela própria do histórico (task 08)
+features/history/HistoryPanel.tsx  # lista/detalhe/export (reusado pela janela)
+features/panels/PanelFrame.tsx     # moldura comum (cabeçalho, corpo, alças de resize)
 components/TransportIcons.tsx     # SVG próprios: play, pause, stop, faísca
 core/domain/chat.ts               # linha temporal (puro)
 core/application/useLiveTranscription.ts  # eventos + histórico da sessão (já existe)
@@ -18,11 +23,14 @@ core/application/useLiveTranscription.ts  # eventos + histórico da sessão (já
 
 `ChatView` recebe `segments` (de `useLiveTranscription`) e `suggestions` (do
 `useInsight` + evento do atalho) e não conhece IPC nem portas — só tipos de
-domínio.
+domínio. Desde a task 07 ele vive na janela **`chat`**, não mais no painel do
+overlay.
 
-Estado do transporte continua em `features/session/SessionControls.tsx` (pílula de
-ícones) dentro do `features/overlay/ActionBar.tsx` (bolinha de status, pílula de
-sessão com tempo e confirmação).
+Estado do transporte em `features/session/SessionControls.tsx`: **um só** controle
+que alterna start/pause/retomar, ao lado do seletor de canais e de "Nova sessão".
+O encerrar é **só** a pílula de sessão (`SessionPill`, com `mm:ss` e confirmação),
+dentro do `features/overlay/ActionBar.tsx` — que virou uma barra sem painel, com os
+toggles **Chat** e **Histórico** (tasks 07–09).
 
 ## 2. Linha temporal (puro)
 
@@ -80,7 +88,7 @@ BR-029).
 | Continuação (BR-031) | mesma bolha do falante, **sem** rótulo/tempo repetidos, `margin-top:-6px` (cola na de cima) | desvio próprio (ver §5) |
 | Rolagem | auto-scroll suave **só** se o usuário está a ≲40 px do fim | `scrollIntoView` condicional |
 | Blur por bolha | **não usar** (N camadas de blur re-renderizando por token) | comentário no CSS do Perssua |
-| Pílula de controle | `gap:2px; padding:2px; border-radius:999px`; botão `28×28` redondo; ícone `16px`; `:disabled{opacity:.4}`; stop com hover vermelho | `.unified-session-controls`, `.unified-control-button` |
+| Pílula de controle | `gap:2px; padding:2px; border-radius:999px`; botão `28×28` redondo; ícone `16px`; `:disabled{opacity:.4}`; **um só botão** que alterna `play_arrow ↔ pause` (o encerrar vive na pílula de sessão) | `.unified-session-controls`, `.unified-control-button` |
 | Pílula de sessão | fundo `rgba(239,68,68,.15)`, borda `rgba(239,68,68,.4)`, texto `rgba(239,68,68,1)`, `radius:50vh`, tempo `tabular-nums` | `.actionbar-session-pill`, `.actionbar-session-timer` |
 | Confirmação | texto + botões em pílula (`padding:3px 10px`) | `.actionbar-end-confirmation`, `.actionbar-end-btn` |
 | Bolinha de status | 8px, vermelha pulsando (1.6s) / âmbar pausado | `.transcription-preview-dot.live/.paused` |
@@ -113,8 +121,6 @@ useInsightFeed() ──── insight (atalho) ──────────┴
 
 | Desvio | Por quê |
 |---|---|
-| Play e pause como **dois botões** na pílula | pedido do usuário; mais descobrível que o toggle do Perssua |
-| ⏹ **também** pede confirmação (e não só a pílula de sessão) | não existir caminho que encerra sessão sem confirmação |
 | "Iniciar escuta" cobre "Start Listening" + "Restart" | não temos a janela pós-sessão do Perssua; um controle só evita dois botões com a mesma ação |
 | `mm:ss` em cada bolha (o Perssua não mostra tempo no ao vivo) | BR-019: toda mensagem tem seu tempo na linha temporal |
 | Ícones SVG próprios (triângulo, barras, quadrado) | BR-008: não copiar assets de terceiros (a fonte Material Icons é de terceiros) |
@@ -143,3 +149,34 @@ Extração: `/tmp/opencode/perssua/asar` (asar de `Perssua-0.27.5-x86_64.AppImag
 
 Reproduzir: `python3 /tmp/opencode/asar.py cat <caminho>` ou ler os arquivos já
 extraídos nesse diretório.
+
+## 7. Janelas próprias (chat e histórico) — tasks 07/08
+
+A conversa e o histórico deixaram o painel do overlay e viraram janelas da mesma
+família de `summary`/`suggestions` (BR-026):
+
+- **`chat`** — `ChatWindow`: `PanelFrame` + medidores de nível + `ChatView`; o
+  cabeçalho (`ChatHeaderActions`) traz "Sugerir", "Resumo" e "Sugestões".
+- **`history`** — `HistoryWindow`: `PanelFrame` + `HistoryPanel` (lista, detalhe em
+  bolhas, renomear/exportar/excluir). "Continuar sessão" volta a capturar e traz a
+  janela de `chat` para frente.
+- Ambas: `resizable: true` (mín. 360×320 no chat, 320×240 no histórico), sem
+  moldura, sempre no topo, `skipTaskbar`; arraste pelo cabeçalho e resize por
+  `ResizeHandles` → `startResizeDragging` (X11/XWayland; Wayland nativo pode não
+  pegar, BR-007).
+- Posição/tamanho persistem em `Settings.*_position`/`*_size` (px físicos); o boot
+  reaplica e o tracker do composition root salva enquanto a janela está visível.
+  `domain::settings::PANEL_LABELS` é a lista única usada por boot, tracker, o
+  fechar-da-janela e `panel_open`/`panel_hide`.
+- O overlay virou **só a ActionBar** (`Surface` = `actionbar | hidden`): saíram o
+  painel expansível, as abas Conversa/Histórico e a superfície `expanded-tall`.
+
+### 7.1 Stop único e toggle único (task 09)
+
+- `SessionControls` tem **um** botão: parado → `▶ Iniciar escuta`; gravando → `⏸`;
+  pausado → `▶`. Um clique = start/pause/retomar.
+- Encerrar existe **só** na pílula de sessão (`SessionPill`), com "Encerrar sessão?
+  Sim / Não" — `onRequestStop` saiu do transporte.
+- Evidência (R12): `unified-session-controls` no bundle tem exatamente
+  `[play_arrow ↔ pause]` (o ícone alterna com o estado) + `[stop]`, e o "End
+  session?" vive na pílula do actionbar (`.actionbar-session-pill`).

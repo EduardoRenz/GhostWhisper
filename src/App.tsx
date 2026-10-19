@@ -4,6 +4,8 @@ import { Overlay } from "./features/overlay/Overlay";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SummaryWindow } from "./features/summary/SummaryWindow";
 import { SuggestionsWindow } from "./features/suggestions/SuggestionsWindow";
+import { ChatWindow } from "./features/chat/ChatWindow";
+import { HistoryWindow } from "./features/history/HistoryWindow";
 
 /** Rotas de janela suportadas pelo GhostWhisper. */
 export type Route =
@@ -11,13 +13,16 @@ export type Route =
   | "settings"
   | "summary"
   | "suggestions"
+  | "chat"
+  | "history"
   | "unknown";
 
 /**
  * Resolve a rota a partir do rótulo da janela Tauri.
  *
- * Fora do Tauri (`vite dev` no navegador) aceita `?window=settings|summary|suggestions`
- * para desenvolver a UI de cada janela; caso contrário assume o overlay.
+ * Fora do Tauri (`vite dev` no navegador) aceita
+ * `?window=settings|summary|suggestions|chat|history` para desenvolver a UI de
+ * cada janela; caso contrário assume o overlay.
  */
 export function resolveRoute(): Route {
   try {
@@ -25,6 +30,8 @@ export function resolveRoute(): Route {
     if (label === "settings") return "settings";
     if (label === "summary") return "summary";
     if (label === "suggestions") return "suggestions";
+    if (label === "chat") return "chat";
+    if (label === "history") return "history";
     if (label === "overlay") return "overlay";
     return "unknown";
   } catch {
@@ -33,6 +40,8 @@ export function resolveRoute(): Route {
       if (target === "settings") return "settings";
       if (target === "summary") return "summary";
       if (target === "suggestions") return "suggestions";
+      if (target === "chat") return "chat";
+      if (target === "history") return "history";
     }
     return "overlay";
   }
@@ -59,6 +68,14 @@ export function App() {
 
   if (route === "suggestions") {
     return <SuggestionsWindow />;
+  }
+
+  if (route === "chat") {
+    return <ChatWindow />;
+  }
+
+  if (route === "history") {
+    return <HistoryWindow />;
   }
 
   return (

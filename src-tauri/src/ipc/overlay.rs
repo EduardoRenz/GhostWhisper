@@ -13,9 +13,6 @@ use crate::state::AppState;
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceDto {
     Actionbar,
-    Expanded,
-    #[serde(rename = "expanded-tall")]
-    ExpandedTall,
     Hidden,
 }
 
@@ -23,8 +20,6 @@ impl From<SurfaceDto> for Surface {
     fn from(value: SurfaceDto) -> Self {
         match value {
             SurfaceDto::Actionbar => Surface::ActionBar,
-            SurfaceDto::Expanded => Surface::Expanded,
-            SurfaceDto::ExpandedTall => Surface::ExpandedTall,
             SurfaceDto::Hidden => Surface::Hidden,
         }
     }

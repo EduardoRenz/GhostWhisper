@@ -1,10 +1,6 @@
 import { useState } from "react";
 import type { SessionChannel } from "../../core/domain/transcript";
-import {
-  PauseIcon,
-  PlayIcon,
-  StopIcon,
-} from "../../components/TransportIcons";
+import { PauseIcon, PlayIcon } from "../../components/TransportIcons";
 
 type ChannelChoice = "both" | SessionChannel;
 
@@ -18,8 +14,6 @@ interface SessionControlsProps {
   onStart: (channels: SessionChannel[]) => void;
   onPause: () => void;
   onResume: () => void;
-  /** Pede o encerramento — a confirmação ("Sim/Não") fica com o ActionBar. */
-  onRequestStop: () => void;
   /** Troca os canais **sem** encerrar a sessão. */
   onChannelsChange: (channels: SessionChannel[]) => void;
 }
@@ -45,9 +39,10 @@ const channelsOf = (choice: ChannelChoice): SessionChannel[] =>
  * Seletor de canais + transporte da sessão (paridade com o Perssua,
  * `prds/chat/architecture/chat-ui.md` §3).
  *
- * O transporte é uma **pílula de ícones clássicos**: play (retomar), pause e stop
- * — o inativo fica esmaecido. Parado, a pílula dá lugar a "Iniciar escuta"
- * (cobre o "Start Listening"/"Restart" do Perssua).
+ * O transporte é **um único controle** que alterna start/pause/retomar, como o
+ * `[play_arrow ↔ pause]` do Perssua (task 09): parado vira "Iniciar escuta" (play
+ * + rótulo); gravando mostra ⏸; pausado mostra ▶. O **encerrar** não vive aqui —
+ * é só a pílula de sessão (`SessionPill`), com confirmação (BR-022).
  *
  * O seletor de canais fica **sempre habilitado**: com uma sessão aberta ele troca
  * a captura na hora (mantendo a sessão e a linha temporal), sem precisar pausar
@@ -61,7 +56,6 @@ export function SessionControls({
   onStart,
   onPause,
   onResume,
-  onRequestStop,
   onChannelsChange,
 }: SessionControlsProps) {
   const [choice, setChoice] = useState<ChannelChoice>("both");
@@ -106,36 +100,29 @@ export function SessionControls({
       ) : (
         <>
           <div className="transport" role="group" aria-label="Controles da sessão">
-            <button
-              type="button"
-              className="transport__button"
-              aria-label="Retomar"
-              title="Retoma a captura na mesma sessão"
-              disabled={busy || !paused}
-              onClick={onResume}
-            >
-              <PlayIcon className="transport__icon" />
-            </button>
-            <button
-              type="button"
-              className="transport__button"
-              aria-label="Pausar"
-              title="Suspende a captura; a sessão e as falas continuam"
-              disabled={busy || paused}
-              onClick={onPause}
-            >
-              <PauseIcon className="transport__icon" />
-            </button>
-            <button
-              type="button"
-              className="transport__button transport__button--stop"
-              aria-label="Encerrar sessão"
-              title="Encerra a sessão (pede confirmação)"
-              disabled={busy}
-              onClick={onRequestStop}
-            >
-              <StopIcon className="transport__icon" />
-            </button>
+            {paused ? (
+              <button
+                type="button"
+                className="transport__button"
+                aria-label="Retomar"
+                title="Retoma a captura na mesma sessão"
+                disabled={busy}
+                onClick={onResume}
+              >
+                <PlayIcon className="transport__icon" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="transport__button"
+                aria-label="Pausar"
+                title="Pausa a captura; a sessão e as falas continuam"
+                disabled={busy}
+                onClick={onPause}
+              >
+                <PauseIcon className="transport__icon" />
+              </button>
+            )}
           </div>
           <button
             type="button"

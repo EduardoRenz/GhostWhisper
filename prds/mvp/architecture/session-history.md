@@ -81,8 +81,9 @@ estado da aplicação fica simples (nada de pipeline "meio vivo").
   no export (BR-020).
 - **Linha temporal**: `application/session_timeline.rs` funde falas finais e
   sugestões numa lista ordenada (puro e determinístico — o export depende disso).
-- **UI**: aba `Ao vivo | Histórico` no painel expandido; a superfície passa para
-  `expanded-tall` (900×560) no histórico. Sem busca livre ainda (exigiria um IPC
+- **UI**: a lista e o detalhe vivem na janela própria `history` (task 08 do PRD
+  chat), com a conversa em bolhas em ambas; antes eram a aba `Ao vivo | Histórico`
+  do painel expandido (`expanded-tall`). Sem busca livre ainda (exigiria um IPC
   de foco para o `<input>` não roubar o foco da reunião).
 - **Export**: `application/markdown_export.rs` (puro) +
   `ipc/export_commands.rs`; o front escolhe o destino com o diálogo nativo

@@ -10,8 +10,6 @@ use crate::ports::overlay_window::{OverlayWindowController, Surface};
 
 /// Dimensões lógicas por superfície `(largura, altura)`.
 const ACTIONBAR_SIZE: (f64, f64) = (900.0, 72.0);
-const EXPANDED_SIZE: (f64, f64) = (900.0, 380.0);
-const EXPANDED_TALL_SIZE: (f64, f64) = (900.0, 560.0);
 
 /// Implementa `OverlayWindowController` sobre a janela Tauri.
 pub struct TauriOverlayWindow {
@@ -92,8 +90,6 @@ impl OverlayWindowController for TauriOverlayWindow {
     fn set_surface(&self, surface: Surface) {
         let (width, height) = match surface {
             Surface::ActionBar => ACTIONBAR_SIZE,
-            Surface::Expanded => EXPANDED_SIZE,
-            Surface::ExpandedTall => EXPANDED_TALL_SIZE,
             Surface::Hidden => {
                 self.hide();
                 return;

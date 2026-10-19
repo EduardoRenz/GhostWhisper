@@ -182,19 +182,21 @@ Remapeáveis na tela de configurações; conflitos são reportados sem derrubar 
   (input-shape por região no X11).
 - **Teste de áudio:** na tela de configurações, teste microfone/áudio do sistema
   e veja o nível em tempo real antes de iniciar uma sessão.
-- **Conversa em bolhas:** as falas aparecem como uma conversa — `Você` à direita
-  (azul) e `Interlocutor` à esquerda, **intercaladas pelo tempo da sessão**, com as
-  sugestões da IA na mesma linha do tempo. O que ainda está sendo transcrito
+- **Conversa em janela própria:** as falas aparecem como uma conversa — `Você` à
+  direita (azul) e `Interlocutor` à esquerda, **intercaladas pelo tempo da sessão**,
+  com as sugestões da IA na mesma linha do tempo. O que ainda está sendo transcrito
   aparece no fim como bolha "em andamento" (com `…`) e, ao fechar o turno, entra na
-  posição certa da conversa.
-- **Controles:** pílula de ícones **play / pause / stop** (o ícone inativo fica
-  esmaecido), a pílula de **tempo da sessão** e a bolinha de status
-  (vermelha pulsando = gravando, âmbar = pausado). O ⏹ e a pílula de sessão pedem
-  confirmação (**"Encerrar sessão? Sim / Não"**).
-- **Pausar / Retomar:** "Pausar" suspende a captura **sem encerrar a sessão** — as
-  falas ficam na tela e o relógio continua de onde parou. "Nova sessão" encerra
-  e começa outra (na hora); o **⏹** encerra depois de confirmar (para voltar numa
-  sessão encerrada, use *Histórico → Continuar sessão*).
+  posição certa da conversa. A conversa vive na janela **Chat** (botão *Chat* no
+  overlay, que esconde/mostra): movível, redimensionável e com posição/tamanho
+  lembrados.
+- **Controles:** **um** controle de start/pausa/retomar (parado vira *Iniciar
+  escuta*; gravando mostra ⏸; pausado mostra ▶), a pílula de **tempo da sessão** e a
+  bolinha de status (vermelha pulsando = gravando, âmbar = pausado). O **encerrar**
+  é só a pílula de sessão, com confirmação (**"Encerrar sessão? Sim / Não"**).
+- **Pausar / Retomar:** o toggle suspende a captura **sem encerrar a sessão** — as
+  falas ficam na tela e o relógio continua de onde parou. "Nova sessão" encerra e
+  começa outra (na hora); a **pílula de sessão** encerra depois de confirmar (para
+  voltar numa sessão encerrada, use *Histórico → Continuar sessão*).
 - **Trocar de canal:** o seletor (Ambos / Microfone / Sistema) funciona **sempre**,
   inclusive com a sessão gravando ou pausada — a troca não encerra a sessão nem
   perde a linha temporal.
@@ -203,24 +205,26 @@ Remapeáveis na tela de configurações; conflitos são reportados sem derrubar 
   retorno realimenta o microfone). Você ouve exatamente o que o ASR recebe.
 - **Linha temporal:** cada fala e cada sugestão da IA mostram o tempo desde o
   início da sessão (`mm:ss`) — inclusive no histórico e no export.
-- **Histórico:** na aba *Histórico* do painel expandido ficam as sessões
-  anteriores (com título, data e duração). Dá para **continuar** uma sessão,
+- **Histórico:** a janela **Histórico** (botão *Histórico* no overlay) lista as
+  sessões anteriores (com título, data e duração). Dá para **continuar** uma sessão,
   renomear, excluir, abrir a conversa completa (falas + sugestões em bolhas) e
   **exportar em Markdown** — pelo diálogo nativo "salvar como" ou copiando para a
-  área de transferência.
+  área de transferência. Ela também é movível e redimensionável.
 
 ### Resumo e sugestões (agentes)
 
-Duas **janelas próprias** (movíveis e sempre no topo) complementam o overlay:
+As janelas de assistente (movíveis, redimensionáveis e sempre no topo) complementam
+o overlay:
 
-- **Resumo** (botão *Resumo* no painel/tray): resume a conversa em Markdown e se
-  atualiza **a cada 30 s** enquanto a janela está aberta — sempre de forma
-  **incremental**, sem chamar a IA quando não há fala nova. “Atualizar” regenera
-  do zero e “Copiar” leva o Markdown. A janela guarda um **histórico de versões**
-  (hora + título do tópico): clique numa anterior para ler **congelado** e use
-  “Voltar ao atual” para retomar o ao vivo. O resumo também aparece no histórico e
-  no export da sessão.
-- **Sugestões** (botão *Sugestões* no painel/tray): olha os **últimos momentos**
+- **Resumo** (botão *Resumo* na janela de Chat, no overlay ou no tray): resume a
+  conversa em Markdown e se atualiza **a cada 30 s** enquanto a janela está aberta —
+  sempre de forma **incremental**, sem chamar a IA quando não há fala nova.
+  “Atualizar” regenera do zero e “Copiar” leva o Markdown. A janela guarda um
+  **histórico de versões** (hora + título do tópico): clique numa anterior para ler
+  **congelado** e use “Voltar ao atual” para retomar o ao vivo. O resumo também
+  aparece no histórico e no export da sessão.
+- **Sugestões** (botão *Sugestões* na janela de Chat, no overlay ou no tray): olha
+  os **últimos momentos**
   da conversa e sugere a próxima fala, no **agente** escolhido — **Reunião**,
   **Entrevista Técnica**, **LeetCode** e **System Design**, além dos seus
   **agentes personalizados**. A atualização automática (20 s, configurável) só

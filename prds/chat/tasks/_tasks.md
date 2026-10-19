@@ -12,9 +12,9 @@
 | 04 | Pílula de sessão (tempo + confirmação) e bolinha de status | CONCLUDED |
 | 05 | Documentação (BR-021/022), verificação e pacotes | CONCLUDED |
 | 06 | Teto da bolha de fala (continuação em bolha seguinte) | CONCLUDED |
-| 07 | Janela de Chat própria (movível e redimensionável) | PENDING |
-| 08 | Janela de Histórico (sessões anteriores) | PENDING |
-| 09 | Transporte: toggle único (start/pause) e stop único | PENDING |
+| 07 | Janela de Chat própria (movível e redimensionável) | CONCLUDED |
+| 08 | Janela de Histórico (sessões anteriores) | CONCLUDED |
+| 09 | Transporte: toggle único (start/pause) e stop único | CONCLUDED |
 
 ## Ordem e dependências
 

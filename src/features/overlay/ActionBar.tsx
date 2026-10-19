@@ -2,11 +2,8 @@ import { useEffect, useState } from "react";
 import type { SessionChannel } from "../../core/domain/transcript";
 import { SessionControls } from "../session/SessionControls";
 import { SessionPill } from "../session/SessionPill";
-import type { Surface } from "../../adapters/ipc/overlay";
 
 interface ActionBarProps {
-  surface: Surface;
-  onSurfaceChange: (surface: Surface) => void;
   stealth: boolean;
   onToggleStealth: () => void;
   listening: boolean;
@@ -22,12 +19,23 @@ interface ActionBarProps {
   onChannelsChange: (channels: SessionChannel[]) => void;
   onOpenSettings: () => void;
   onStartDrag: () => void;
+  /** A janela de Chat está visível. */
+  chatOpen: boolean;
+  onToggleChat: () => void;
+  /** A janela de Histórico está visível. */
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  /** Esconde o overlay. */
+  onHide: () => void;
 }
 
-/** Barra de ações do overlay (sempre visível). */
+/**
+ * Barra de ações do overlay (sempre visível).
+ *
+ * A conversa e o histórico vivem em **janelas próprias** (task 07/08): aqui só
+ * ficam os controles da sessão e os toggles que escondem/mostram cada janela.
+ */
 export function ActionBar({
-  surface,
-  onSurfaceChange,
   stealth,
   onToggleStealth,
   listening,
@@ -42,8 +50,12 @@ export function ActionBar({
   onChannelsChange,
   onOpenSettings,
   onStartDrag,
+  chatOpen,
+  onToggleChat,
+  historyOpen,
+  onToggleHistory,
+  onHide,
 }: ActionBarProps) {
-  const expanded = surface !== "actionbar" && surface !== "hidden";
   const status = !listening ? "Parado" : paused ? "Pausado" : "Gravando";
   const tone = !listening ? "idle" : paused ? "paused" : "live";
   const [confirming, setConfirming] = useState(false);
@@ -83,7 +95,6 @@ export function ActionBar({
         onStart={onStart}
         onPause={onPause}
         onResume={onResume}
-        onRequestStop={() => setConfirming(true)}
         onChannelsChange={onChannelsChange}
       />
 
@@ -101,11 +112,22 @@ export function ActionBar({
 
       <button
         type="button"
-        className="overlay__button"
+        className={`overlay__button${chatOpen ? " overlay__button--on" : ""}`}
         data-interactive
-        onClick={() => onSurfaceChange(expanded ? "actionbar" : "expanded")}
+        title="Mostra ou esconde a janela da conversa"
+        onClick={onToggleChat}
       >
-        {expanded ? "Recolher" : "Expandir"}
+        Chat
+      </button>
+
+      <button
+        type="button"
+        className={`overlay__button${historyOpen ? " overlay__button--on" : ""}`}
+        data-interactive
+        title="Mostra ou esconde o histórico de sessões"
+        onClick={onToggleHistory}
+      >
+        Histórico
       </button>
 
       <button
@@ -131,7 +153,7 @@ export function ActionBar({
         type="button"
         className="overlay__button"
         data-interactive
-        onClick={() => onSurfaceChange("hidden")}
+        onClick={onHide}
       >
         Ocultar
       </button>

@@ -1,14 +1,12 @@
-//! Comandos IPC das janelas de painel (resumo e sugestões).
+//! Comandos IPC das janelas de painel (resumo, sugestões, chat e histórico).
 //!
 //! As janelas são declaradas ocultas no `tauri.conf.json`; abrir/fechar aqui
 //! mantém a UI informada pelos eventos `panel_opened` / `panel_hidden`.
 
 use tauri::{Emitter, Manager};
 
+use crate::domain::settings::PANEL_LABELS;
 use crate::error::{GhostWhisperError, Result};
-
-/// Labels de painel aceitos (evita abrir janelas arbitrárias).
-const PANEL_LABELS: [&str; 2] = ["summary", "suggestions"];
 
 /// Evento emitido quando um painel fica visível.
 pub const PANEL_OPENED_EVENT: &str = "panel_opened";

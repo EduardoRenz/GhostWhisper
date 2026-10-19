@@ -1,6 +1,6 @@
 # 09 — Transporte: toggle único (start/pause) e stop único
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 03, 04
 - **Habilita:** —
 
@@ -52,3 +52,12 @@ também confirmando).
 
 - O `StopIcon` permanece em `components/TransportIcons.tsx` (usado pela pílula);
   não confundir com o botão removido.
+
+## Resultado (2026-10-18)
+
+- `SessionControls`: os três botões `[▶][⏸][⏹]` viraram **um** controle que alterna
+  start/pausa/retoma; `onRequestStop` saiu das props.
+- `ActionBar`: o encerramento ficou só na `SessionPill`; removido o caminho do ⏹ do
+  transporte e o CSS `.transport__button--stop`.
+- `SessionControls.test.tsx` reescrito (8 casos), incluindo "não existe ⏹".
+- BR-022 revisada (a deixa de "dois botões"/"⏹ confirma" saiu).

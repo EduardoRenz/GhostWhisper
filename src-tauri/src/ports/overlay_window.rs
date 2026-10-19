@@ -3,14 +3,13 @@
 use crate::domain::geometry::Point;
 
 /// Superfície visível do overlay.
+///
+/// A conversa e o histórico saíram do overlay para janelas próprias (BR-026);
+/// sobraram a barra de ações e o esconder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Surface {
     /// Barra fina (ação rápida).
     ActionBar,
-    /// Painel expandido (transcrição/insights).
-    Expanded,
-    /// Painel expandido ampliado (histórico de sessões).
-    ExpandedTall,
     /// Oculto.
     Hidden,
 }

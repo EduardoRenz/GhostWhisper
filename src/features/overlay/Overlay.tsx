@@ -1,145 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   openSettingsWindow,
   setStealth as setStealthIpc,
   setSurface as setSurfaceIpc,
   startDrag as startDragIpc,
-  type Surface,
 } from "../../adapters/ipc/overlay";
-import { panelOpen } from "../../adapters/ipc/panels";
+import { panelHide, panelOpen } from "../../adapters/ipc/panels";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
-import { useInsight } from "../../core/application/useInsight";
-import { useInsightFeed } from "../../core/application/useInsightFeed";
 import { useInteractiveRegions } from "../../core/application/useInteractiveRegions";
-import { useLiveTranscription } from "../../core/application/useLiveTranscription";
+import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
-import { useTranslation } from "../../core/application/useTranslation";
-import { buildChatTimeline } from "../../core/domain/chat";
-import { ALL_CHANNELS } from "../../core/domain/transcript";
 import { ActionBar } from "./ActionBar";
 import { AsrStatusBanner } from "./AsrStatusBanner";
-import { LevelMeters } from "./LevelMeters";
-import { ChatView } from "../chat/ChatView";
-import { HistoryPanel } from "../history/HistoryPanel";
-
-/** Visão mostrada no painel expandido. */
-type PanelView = "live" | "history";
 
 /**
- * Casca do overlay: ActionBar sempre visível e painel expandido (conversa em
- * bolhas, tradução e histórico). Apenas elementos `[data-interactive]` capturam o
- * mouse; o restante é click-through (input-shape por região no X11).
+ * Casca do overlay: apenas a barra de ações (e o aviso de status do ASR). A
+ * conversa e o histórico saíram para janelas próprias, abertas pelos toggles
+ * **Chat** e **Histórico** (tasks 07/08, BR-026).
+ *
+ * Apenas elementos `[data-interactive]` capturam o mouse; o restante é
+ * click-through (input-shape por região no X11).
  */
 export function Overlay() {
-  const [surface, setSurface] = useState<Surface>("actionbar");
-  const [view, setView] = useState<PanelView>("live");
   const [stealth, setStealth] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const { state, busy, error, start, pause, resume, stop, continueSession, setChannels } =
+  const { state, busy, error, start, pause, resume, stop, setChannels } =
     useSessionState();
-  const { segments } = useLiveTranscription(state.session_id);
   const asrStatus = useAsrStatus();
   const { settings } = useSettings();
-  // Tradução **sob demanda** (botão na bolha). O destino "auto" desliga.
-  const translationEnabled =
-    settings.translation_enabled && settings.target_language !== "auto";
-  const {
-    translations,
-    pending: translationPending,
-    translate: translateSegment,
-    reset: resetTranslations,
-  } = useTranslation();
-
-  // Trocar de sessão invalida o cache de traduções.
-  useEffect(() => {
-    resetTranslations();
-  }, [state.session_id, resetTranslations]);
-  // As sugestões (inclusive as do atalho, que chegam por evento) entram na mesma
-  // conversa das falas — BR-020.
-  const {
-    suggestions,
-    loading: insightLoading,
-    error: insightError,
-    request: requestInsight,
-  } = useInsight(state.session_id);
-  const pushedInsight = useInsightFeed();
-  const { bubbles, pending } = useMemo(
-    () => buildChatTimeline(segments, suggestions),
-    [segments, suggestions],
-  );
-  // O cabeçalho é memoizado: o `ChatView` é memoizado e um elemento novo a cada
-  // render anularia a memoização (o overlay re-renderiza com frequência).
-  const chatHeader = useMemo(
-    () => (
-      <div className="chat__head-actions">
-        <button
-          type="button"
-          className="overlay__button"
-          data-interactive
-          disabled={insightLoading || !state.session_id}
-          title="Pede uma sugestão da IA com base na conversa"
-          onClick={() => void requestInsight()}
-        >
-          {insightLoading ? "Gerando…" : "Sugerir"}
-        </button>
-        <button
-          type="button"
-          className="overlay__button"
-          data-interactive
-          title="Abre a janela de resumo da sessão"
-          onClick={() => void panelOpen("summary")}
-        >
-          Resumo
-        </button>
-        <button
-          type="button"
-          className="overlay__button"
-          data-interactive
-          title="Abre a janela de sugestões por agente"
-          onClick={() => void panelOpen("suggestions")}
-        >
-          Sugestões
-        </button>
-      </div>
-    ),
-    [insightLoading, requestInsight, state.session_id],
-  );
+  const chatOpen = usePanelOpen("chat");
+  const historyOpen = usePanelOpen("history");
   useInteractiveRegions();
-
-  const expanded = surface === "expanded" || surface === "expanded-tall";
-
-  /** Aplica a superfície, respeitando a visão escolhida no painel. */
-  const changeSurface = (next: Surface) => {
-    const resolved: Surface =
-      next === "expanded" && view === "history" ? "expanded-tall" : next;
-    setSurface(resolved);
-    void setSurfaceIpc(resolved);
-  };
-
-  const showLive = () => {
-    setView("live");
-    changeSurface("expanded");
-  };
-
-  const showHistory = () => {
-    setView("history");
-    changeSurface("expanded-tall");
-  };
 
   // Sincroniza o stealth com as settings persistidas.
   useEffect(() => {
     setStealth(settings.stealth);
   }, [settings.stealth]);
-
-  // Insight por atalho: abre o painel da conversa ao vivo para exibi-lo.
-  useEffect(() => {
-    if (pushedInsight) {
-      setView("live");
-      void setSurfaceIpc("expanded");
-      setSurface("expanded");
-    }
-  }, [pushedInsight]);
 
   const toggleStealth = () => {
     const next = !stealth;
@@ -156,18 +53,23 @@ export function Overlay() {
     }
   };
 
-  const onContinueSession = (id: string) => {
-    void continueSession(id, ALL_CHANNELS);
-    showLive();
+  const toggleChat = () => {
+    void (chatOpen ? panelHide("chat") : panelOpen("chat"));
   };
 
-  const shownError = error ?? settingsError ?? insightError;
+  const toggleHistory = () => {
+    void (historyOpen ? panelHide("history") : panelOpen("history"));
+  };
+
+  const hideOverlay = () => {
+    void setSurfaceIpc("hidden");
+  };
+
+  const shownError = error ?? settingsError;
 
   return (
-    <div className="overlay" data-surface={surface}>
+    <div className="overlay">
       <ActionBar
-        surface={surface}
-        onSurfaceChange={changeSurface}
         stealth={stealth}
         onToggleStealth={toggleStealth}
         listening={state.listening}
@@ -182,52 +84,12 @@ export function Overlay() {
         onChannelsChange={(channels) => void setChannels(channels)}
         onOpenSettings={() => void openSettings()}
         onStartDrag={() => void startDragIpc()}
+        chatOpen={chatOpen}
+        onToggleChat={toggleChat}
+        historyOpen={historyOpen}
+        onToggleHistory={toggleHistory}
+        onHide={hideOverlay}
       />
-
-      {expanded && (
-        <div className="overlay__panel">
-          <div className="overlay__tabs" data-interactive>
-            <button
-              type="button"
-              className={`overlay__tab${view === "live" ? " overlay__tab--active" : ""}`}
-              onClick={showLive}
-            >
-              Conversa
-            </button>
-            <button
-              type="button"
-              className={`overlay__tab${view === "history" ? " overlay__tab--active" : ""}`}
-              onClick={showHistory}
-            >
-              Histórico
-            </button>
-          </div>
-
-          {view === "history" ? (
-            <HistoryPanel
-              activeSessionId={state.session_id}
-              onContinue={onContinueSession}
-            />
-          ) : (
-            <>
-              <LevelMeters
-                channels={state.channels}
-                listening={state.listening && !state.paused}
-              />
-              <ChatView
-                bubbles={bubbles}
-                pending={pending}
-                header={chatHeader}
-                translationEnabled={translationEnabled}
-                translations={translations}
-                translationPending={translationPending}
-                translationTarget={settings.target_language}
-                onTranslate={translateSegment}
-              />
-            </>
-          )}
-        </div>
-      )}
 
       <AsrStatusBanner status={asrStatus} />
 
