@@ -8,7 +8,6 @@ import {
   GearIcon,
   GripIcon,
   HistoryIcon,
-  SparkleIcon,
 } from "../../components/icons";
 import { ShortcutBadges } from "../../components/ShortcutBadges";
 import { PlayIcon } from "../../components/TransportIcons";
@@ -54,7 +53,7 @@ interface ActionBarProps {
  * - **Repouso** (sem sessão): marca, **"Começar a ouvir"** (esmeralda + badges),
  *   Histórico, ocultar e — **por último** — Configurações.
  * - **Ativo** (com sessão): marca, **switcher** (Transcrição + waveform ·
- *   play/pause · Histórico · Resumo), **timer**, canais, Sugestões, stealth,
+ *   play/pause · Histórico · Resumo · Sugestões), **timer**, canais, stealth,
  *   ocultar e Configurações (último).
  */
 export function ActionBar({
@@ -136,9 +135,11 @@ export function ActionBar({
             paused={paused}
             busy={busy}
             historyOpen={historyOpen}
+            suggestionsOpen={suggestionsOpen}
             onOpenTranscription={onOpenTranscription}
             onOpenSummary={onOpenSummary}
             onToggleHistory={onToggleHistory}
+            onToggleSuggestions={onToggleSuggestions}
             onPause={onPause}
             onResume={onResume}
           />
@@ -161,16 +162,6 @@ export function ActionBar({
             onChannelsChange={onChannelsChange}
             onNewSession={onStart}
           />
-
-          <IconButton
-            label="Sugestões"
-            title="Mostra ou esconde a janela de sugestões da IA"
-            active={suggestionsOpen}
-            pressed={suggestionsOpen}
-            onClick={onToggleSuggestions}
-          >
-            <SparkleIcon />
-          </IconButton>
 
           <IconButton
             label={stealth ? "Stealth ligado" : "Stealth desligado"}

@@ -45,6 +45,7 @@ describe("ActionBar — notch em dois estados", () => {
     // Nada de sessão em repouso.
     expect(screen.queryByRole("button", { name: "Pausar" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Transcrição" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sugestões" })).toBeNull();
 
     // A engrenagem é o ÚLTIMO botão redondo da direita.
     const trailing = container.querySelectorAll(
@@ -77,7 +78,7 @@ describe("ActionBar — notch em dois estados", () => {
     expect(onStart).toHaveBeenCalledWith(["microphone", "system"]);
   });
 
-  it("ativo: switcher (Transcrição/Histórico/Resumo), pause, timer e ações", () => {
+  it("ativo: switcher (Transcrição/Histórico/Resumo/Sugestões), pause, timer e ações", () => {
     render(<ActionBar {...base} listening paused={false} />);
 
     expect(button("Transcrição")).toBeDefined();
@@ -89,8 +90,42 @@ describe("ActionBar — notch em dois estados", () => {
     expect(button("Configurações")).toBeDefined();
     expect(screen.getByTestId("notch-waveform")).toBeDefined();
 
+    // Sugestões fica no switcher, ao lado de Resumo (não mais como ícone solto).
+    const suggestions = button("Sugestões");
+    const summary = button("Resumo");
+    expect(suggestions.closest(".notch-tabs")).not.toBeNull();
+    expect(suggestions.closest(".notch-tabs")).toBe(summary.closest(".notch-tabs"));
+
     // Sem a ação verde quando já há sessão.
     expect(screen.queryByRole("button", { name: "Começar a ouvir" })).toBeNull();
+  });
+
+  it("Sugestões alterna a janela e só existe com sessão iniciada", () => {
+    const onToggleSuggestions = vi.fn();
+    const { rerender } = render(
+      <ActionBar
+        {...base}
+        onToggleSuggestions={onToggleSuggestions}
+        listening
+        paused={false}
+      />,
+    );
+
+    fireEvent.click(button("Sugestões"));
+    expect(onToggleSuggestions).toHaveBeenCalledTimes(1);
+
+    rerender(<ActionBar {...base} listening={false} paused={false} />);
+    expect(screen.queryByRole("button", { name: "Sugestões" })).toBeNull();
+  });
+
+  it("Sugestões fica destacado enquanto a janela está aberta", () => {
+    render(
+      <ActionBar {...base} suggestionsOpen listening paused={false} />,
+    );
+    expect(button("Sugestões").getAttribute("aria-pressed")).toBe("true");
+    expect(
+      button("Sugestões").classList.contains("notch-tabs__item--active"),
+    ).toBe(true);
   });
 
   it("pausado: o transporte vira Retomar", () => {

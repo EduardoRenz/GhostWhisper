@@ -74,8 +74,8 @@ Como usuário, quero que o overlay fique discreto quando não estou em uma sess�
 - **CA-01.2** Sem sessão, **não** aparecem: seletor de canais, transporte, pílula
   de tempo, "Nova sessão" e os atalhos de janela ligados à sessão.
 - **CA-01.3** Com sessão (gravando ou pausada), a barra mostra o **switcher**
-  (Transcrição + waveform · play/pause · Histórico · Resumo), o **timer**, os
-  canais, Sugestões, stealth, ocultar e a **engrenagem (último)** (ver US-10).
+  (Transcrição + waveform · play/pause · Histórico · Resumo · Sugestões), o
+  **timer**, os canais, stealth, ocultar e a **engrenagem (último)** (ver US-10).
 - **CA-01.4** A superfície continua `actionbar | hidden` (sem painel expansível,
   como já vigente desde a task 07 do PRD chat).
 
@@ -210,8 +210,8 @@ Como usuário, quero que o notch, durante a sessão, mostre o modo ativo e o áu
 sendo captado de forma imediata.
 
 - **CA-10.1** O notch ativo segue a ordem do protótipo: alça · marca (dot cyan +
-  nome) · **switcher** (Transcrição + waveform · play/pause · Histórico · Resumo) ·
-  **timer** · canais · Sugestões · stealth · ocultar · **configurações (engrenagem,
+  nome) · **switcher** (Transcrição + waveform · play/pause · Histórico · Resumo ·
+  Sugestões) · **timer** · canais · stealth · ocultar · **configurações (engrenagem,
   último botão)**.
 - **CA-10.2** **Transcrição** fica **destacada** quando gravando/pausada (ou com o
   painel na aba Transcrição); as inativas usam o tom mutado.
@@ -223,10 +223,11 @@ sendo captado de forma imediata.
 - **CA-10.5** O timer usa **`HH:MM:SS`** em mono/tabular; clique abre a confirmação
   "Encerrar sessão? Sim / Não".
 - **CA-10.6** Clicar **Transcrição**/**Resumo** abre/foca o painel na aba
-  correspondente; **Histórico** mostra/esconde a janela.
-- **CA-10.7** Canais (popover com Ambos/Mic/Sistema + Nova sessão), Sugestões,
-  stealth e ocultar são preservados; a **engrenagem** é o **último botão redondo da
-  direita** e abre as Configurações.
+  correspondente; **Histórico** e **Sugestões** mostram/escondem as respectivas
+  janelas.
+- **CA-10.7** Canais (popover com Ambos/Mic/Sistema + Nova sessão), Sugestões (no
+  switcher), stealth e ocultar são preservados; a **engrenagem** é o **último botão
+  redondo da direita** e abre as Configurações.
 - **CA-10.8** O estado **repouso** mantém a estrutura atual (CA-01.1) — **sem**
   switcher/waveform/timer — com a engrenagem como último botão; só o re-skin.
 - **Detalhes:** [`tasks/08-task.md`](tasks/08-task.md).

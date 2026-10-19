@@ -297,3 +297,32 @@ continua parecido com o de hoje. O HTML do protótipo é referência, não cópi
 ### Pendências
 - Revisão visual do usuário (notch repouso/gravando/pausado e waveform com áudio
   real); ajustes finos de contraste/espaçamento se necessário.
+
+---
+
+## 2026-10-19 — Sugestões movida para o switcher (ao lado de Resumo)
+
+- **IDs:** BR-032, CA-10.6/CA-10.7 · **Refs:**
+  `src/features/overlay/NotchTabs.tsx`, `src/features/overlay/ActionBar.tsx`,
+  `src/features/overlay/ActionBar.test.tsx`
+
+### Contexto
+Feedback visual: o atalho **Sugestões** não deve ser um ícone redondo solto na
+barra; ele pertence ao **switcher**, ao lado de **Resumo**, como no protótipo.
+
+### Entregue
+- `NotchTabs` ganhou o item **Sugestões** (faísca + rótulo), com `aria-pressed` e
+  destaque `--active` enquanto a janela está aberta; o switcher agora tem quatro
+  itens + transporte.
+- `ActionBar` só passa `suggestionsOpen`/`onToggleSuggestions`; o `IconButton`
+  solto foi removido. A janela continua **só no contexto de sessão iniciada**,
+  porque o switcher só existe no estado ativo.
+- `SparkIcon` aceita `size` (default 12) para alinhar aos ícones de 15px do
+  switcher.
+- Layout preservado: a barra de 900px coube sem wrap (~26px de folga, medido em
+  Chrome headless); a engrenagem continua o último botão.
+
+### Verificação
+- `pnpm test` **162 ✓** (2 novos em `ActionBar.test.tsx`: só com sessão + destaque)
+  · `tsc` ✓ · `pnpm build` ✓ · screenshot headless 900×72 conferido.
+- AppImage (Vulkan) reconstruído.

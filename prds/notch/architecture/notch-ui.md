@@ -46,7 +46,7 @@ Estado derivado de `useSessionState()`:
 | Estado | Condição | Conteúdo da barra |
 |---|---|---|
 | **Repouso** | `!state.listening` | alça · marca · **"Começar a ouvir"** (esmeralda + badges) · Histórico · ocultar · **engrenagem (último)** |
-| **Ativo** | `state.listening` | alça · marca · **switcher** (Transcrição + waveform · play/pause · Histórico · Resumo) · **timer** · canais · Sugestões · stealth · ocultar · **engrenagem (último)** |
+| **Ativo** | `state.listening` | alça · marca · **switcher** (Transcrição + waveform · play/pause · Histórico · Resumo · Sugestões) · **timer** · canais · stealth · ocultar · **engrenagem (último)** |
 
 - **Não** há nova `Surface`: continua `actionbar | hidden`
   (`ports/overlay_window.rs`), como já vigente desde a task 07 do PRD chat.
@@ -61,13 +61,14 @@ Estado derivado de `useSessionState()`:
 Layout do protótipo (sem copiar Tailwind/Material — BR-008/BR-035):
 
 ```
-[grip] ● GhostWhisper │ [🎙 Transcrição ▁▃▅▂] [⏸/▶] [🕘 Histórico] [📄 Resumo] │
-[● 00:14:32]  [🎙 canais] [✦ Sugestões] [👁 stealth] [⌄ ocultar] [⚙ configurações]
+[grip] ● GhostWhisper │ [🎙 Transcrição ▁▃▅▂] [⏸/▶] [🕘 Histórico] [📄 Resumo] [✦ Sugestões] │
+[● 00:14:32]  [🎙 canais] [👁 stealth] [⌄ ocultar] [⚙ configurações]
 ```
 
 - **Switcher** (`role="tablist"`): Transcrição/Resumo abrem o painel na aba
-  correspondente (`panel_open` com `tab` → evento `panel_tab`); Histórico alterna a
-  janela. A aba ativa fica em `surface-container-highest` + texto cyan.
+  correspondente (`panel_open` com `tab` → evento `panel_tab`); Histórico e
+  Sugestões alternam as janelas próprias. A aba ativa fica em
+  `surface-container-highest` + texto cyan.
 - **Waveform**: 4 barras cyan; nível vem de `audio_level` (máx. dos canais) por
   `ref`/CSS vars; pausado → estático e esmaecido; sem eventos → baixo (sem fake).
 - **Play/pause**: contextual (gravando → `pause`; pausado → `play`); encerrar
@@ -75,7 +76,7 @@ Layout do protótipo (sem copiar Tailwind/Material — BR-008/BR-035):
 - **Timer**: `HH:MM:SS` mono, tabular, dot esmeralda/outline; clique abre a
   confirmação de encerramento.
 - **Canais**: popover (Ambos/Mic/Sistema) + **Nova sessão**; troca ao vivo (BR-019).
-- **Trailing**: Sugestões, stealth, ocultar e, **por último**, **Configurações**
+- **Trailing**: stealth, ocultar e, **por último**, **Configurações**
   (engrenagem) — correção do protótipo, que a omitiu.
 - **Repouso** mantém a estrutura atual; só o re-skin da task 07.
 - Detalhes, critérios e roteiro: [`../tasks/08-task.md`](../tasks/08-task.md).

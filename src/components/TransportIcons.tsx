@@ -86,13 +86,16 @@ export function TranslateIcon({ className }: IconProps) {
 }
 
 /** Faísca: identifica a sugestão da IA na conversa. */
-export function SparkIcon({ className }: IconProps) {
+export function SparkIcon({
+  className,
+  size = 12,
+}: IconProps & { size?: number }) {
   return (
     <svg
       className={className}
       viewBox="0 0 24 24"
-      width="12"
-      height="12"
+      width={size}
+      height={size}
       aria-hidden="true"
       focusable="false"
     >

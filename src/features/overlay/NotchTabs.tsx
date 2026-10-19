@@ -1,4 +1,9 @@
-import { HistoryIcon, MicIcon, SummaryIcon } from "../../components/icons";
+import {
+  HistoryIcon,
+  MicIcon,
+  SparkleIcon,
+  SummaryIcon,
+} from "../../components/icons";
 import { PauseIcon, PlayIcon } from "../../components/TransportIcons";
 import { NotchWaveform } from "./NotchWaveform";
 
@@ -11,32 +16,39 @@ interface NotchTabsProps {
   busy: boolean;
   /** A janela de histórico está visível. */
   historyOpen: boolean;
+  /** A janela de sugestões está visível. */
+  suggestionsOpen: boolean;
   /** Abre/foca o painel na aba Transcrição. */
   onOpenTranscription: () => void;
   /** Abre/foca o painel na aba Resumo. */
   onOpenSummary: () => void;
   /** Mostra/esconde o histórico. */
   onToggleHistory: () => void;
+  /** Mostra/esconde a janela de sugestões. */
+  onToggleSuggestions: () => void;
   onPause: () => void;
   onResume: () => void;
 }
 
 /**
  * Switcher do notch ativo (BR-032/task 08): **Transcrição** (com waveform),
- * play/pause contextual, **Histórico** e **Resumo**.
+ * play/pause contextual, **Histórico**, **Resumo** e **Sugestões**.
  *
  * A Transcrição fica destacada enquanto a sessão está captando — é o "modo vivo".
- * Clicar nela ou em Resumo abre o painel na aba correspondente; Histórico alterna
- * a janela. O encerrar **não** vive aqui (é só o timer — BR-022).
+ * Clicar nela ou em Resumo abre o painel na aba correspondente; Histórico e
+ * Sugestões alternam as janelas próprias. O encerrar **não** vive aqui (é só o
+ * timer — BR-022).
  */
 export function NotchTabs({
   listening,
   paused,
   busy,
   historyOpen,
+  suggestionsOpen,
   onOpenTranscription,
   onOpenSummary,
   onToggleHistory,
+  onToggleSuggestions,
   onPause,
   onResume,
 }: NotchTabsProps) {
@@ -88,6 +100,17 @@ export function NotchTabs({
       >
         <SummaryIcon className="notch-tabs__icon" size={15} />
         <span className="notch-tabs__label">Resumo</span>
+      </button>
+
+      <button
+        type="button"
+        className={`notch-tabs__item${suggestionsOpen ? " notch-tabs__item--active" : ""}`}
+        aria-pressed={suggestionsOpen}
+        title="Sugestões da IA"
+        onClick={onToggleSuggestions}
+      >
+        <SparkleIcon className="notch-tabs__icon" size={15} />
+        <span className="notch-tabs__label">Sugestões</span>
       </button>
     </nav>
   );

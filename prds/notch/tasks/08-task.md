@@ -18,7 +18,7 @@ o re-skin da task 07).
 | Elemento do protótipo | Decisão no GhostWhisper |
 |---|---|
 | Grip + marca + dot | Adotar (grip existente; dot cyan de presença; nome em `headline-md`) |
-| Switcher **Transcrição / Histórico / Resumo** | Adotar; **Histórico** = janela; **Resumo** = aba do painel; **Transcrição** = aba viva |
+| Switcher **Transcrição / Histórico / Resumo / Sugestões** | Adotar; **Histórico** = janela; **Resumo** = aba do painel; **Transcrição** = aba viva; **Sugestões** = janela, ao lado de Resumo |
 | Waveform animado ao lado de "Transcrição" | Adotar, **dirigido pelo nível de áudio** (`audio_level`), sem re-render da barra |
 | Botão circular de **play/pause** após a aba ativa | Adotar: grava → `pause`; pausado → `play` |
 | Timer `00:14:32` mono | Adotar (`HH:MM:SS`, tabular, dot esmeralda) |
@@ -27,7 +27,7 @@ o re-skin da task 07).
 | Tailwind/Material/Google Fonts via CDN | **Não** adotar: CSS tokens + SVG próprios + fontes locais (BR-008/BR-035) |
 | "Sessão" no comentário do HTML | **Não** existe; o item é **Histórico** (como na imagem) |
 | OCR / contexto de tela / captura | **Fora de escopo** (áudio-only) |
-| Sugestões (ausente no protótipo) | **Preservar** como ícone trailing (janela própria) |
+| Sugestões (ausente no protótipo) | **Preservar** no switcher, ao lado de **Resumo** (janela própria) |
 | Stealth/engrenagem (ausentes no protótipo) | **Preservar** como ícones trailing; a **engrenagem é o último botão redondo da direita** |
 
 ## Estrutura do notch
@@ -37,16 +37,16 @@ Repouso (como hoje, só re-skin):
   [grip] ● GhostWhisper   [▶ Começar a ouvir  Ctrl Shift S]   [Histórico] [⌄] [⚙]
 
 Ativo:
-  [grip] ● GhostWhisper │ [🎙 Transcrição ▁▃▅▂] [⏸/▶] [🕘 Histórico] [📄 Resumo] │
-  [● 00:14:32]  [🎙 canais] [✦ Sugestões] [👁 stealth] [⌄ ocultar] [⚙ configurações]
+  [grip] ● GhostWhisper │ [🎙 Transcrição ▁▃▅▂] [⏸/▶] [🕘 Histórico] [📄 Resumo] [✦ Sugestões] │
+  [● 00:14:32]  [🎙 canais] [👁 stealth] [⌄ ocultar] [⚙ configurações]
 ```
 
-- **Switcher** (segmented, `role="tablist"`): três itens + o toggle de transporte
+- **Switcher** (segmented, `role="tablist"`): quatro itens + o toggle de transporte
   circular ao lado do item ativo.
 - **Timer** clicável: abre a confirmação de encerramento (BR-022 preservada).
 - **Canais**: popover compacto (Ambos / Microfone / Sistema) + **Nova sessão**;
   trocar canal ao vivo continua permitido (BR-019).
-- **Trailing**: Sugestões, stealth, ocultar e — **por último** — **Configurações**
+- **Trailing**: stealth, ocultar e — **por último** — **Configurações**
   (engrenagem). A engrenagem é o **último botão redondo da direita** (correção do
   protótipo, que a omitiu).
 
@@ -120,8 +120,9 @@ Ativo:
 - [ ] Clicar Transcrição/Resumo abre o painel na aba certa; Histórico alterna a
       janela (CA-10.6).
 - [ ] Canais + "Nova sessão" preservados (popover), troca ao vivo (BR-019).
-- [ ] Sugestões, stealth, ocultar e engrenagem preservados; a **engrenagem é o
-      último botão redondo da direita** e abre as Configurações.
+- [ ] **Sugestões** no switcher (ao lado de Resumo) alterna a janela; stealth,
+      ocultar e engrenagem preservados; a **engrenagem é o último botão redondo da
+      direita** e abre as Configurações.
 - [ ] O estado **repouso** mantém a estrutura atual (CA-01.1) — **sem**
       switcher/waveform/timer — com a **engrenagem como último** botão; só o re-skin.
 - [ ] Responsivo: em largura estreita, rótulos do switcher somem e ficam só os
