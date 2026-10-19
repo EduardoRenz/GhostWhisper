@@ -17,3 +17,6 @@ src-tauri/gen/
 .vulkan-sdk/
 src-tauri/target-vulkan/
 src-tauri/resources/libvulkan.so.1
+
+# Examples (AppImages de referência, arquivos grandes)
+examples/
