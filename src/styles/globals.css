@@ -105,17 +105,8 @@ body,
 }
 
 .overlay__drag {
-  cursor: move;
-  padding: 0 0.35rem;
-  font-size: 0.8rem;
-  letter-spacing: -2px;
-  color: var(--ghostwhisper-text-muted);
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.overlay__drag:hover {
-  color: var(--ghostwhisper-text);
+  /* Herda o `.drag-handle`; aqui só o respiro na barra. */
+  margin: 0 var(--oh-space-1);
 }
 
 .levels-group {
@@ -1322,12 +1313,24 @@ body,
   background: var(--oh-surface-container-low);
 }
 
-.panel__drag {
+/* Alça de arraste padrão (componente `DragHandle`). */
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 24px;
+  border-radius: var(--oh-radius-sm);
   cursor: move;
   color: var(--oh-text-muted);
-  font-size: 0.8rem;
-  letter-spacing: -2px;
   user-select: none;
+  -webkit-user-select: none;
+}
+
+.drag-handle:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--oh-text);
 }
 
 .panel__heading {
@@ -1366,9 +1369,9 @@ body,
 }
 
 .panel[data-route="suggestions"] .panel__header {
-  gap: 0.35rem;
-  padding-left: 0.45rem;
-  padding-right: 0.4rem;
+  gap: var(--oh-space-1);
+  padding-left: var(--oh-space-1-5);
+  padding-right: var(--oh-space-1-5);
 }
 
 .panel[data-route="suggestions"] .panel__actions {
@@ -2016,17 +2019,17 @@ body,
 /* Histórico da sessão: seção + accordions (BR-038) -------------------------- */
 
 .history {
-  margin-top: 0.7rem;
-  padding-top: 0.5rem;
+  margin-top: var(--oh-space-3);
+  padding-top: var(--oh-space-2);
   border-top: 1px solid var(--oh-divider);
 }
 
 .history__head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--oh-space-1-5);
   width: 100%;
-  padding: 0.3rem 0.15rem;
+  padding: var(--oh-space-1) 0.15rem;
   border: none;
   background: transparent;
   color: var(--oh-text);
@@ -2058,14 +2061,6 @@ body,
 
 .history__count {
   flex: 0 0 auto;
-  padding: 1px 8px;
-  border-radius: var(--oh-radius-full);
-  border: 1px solid var(--oh-border);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--oh-text-muted);
-  font-size: var(--oh-label-sm-size);
-  line-height: var(--oh-label-sm-line);
-  white-space: nowrap;
 }
 
 .history__chevron {
@@ -2077,11 +2072,11 @@ body,
 
 .history__list {
   list-style: none;
-  margin: 0.35rem 0 0;
+  margin: var(--oh-space-1-5) 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--oh-space-1);
 }
 
 .history__item {
@@ -2094,9 +2089,9 @@ body,
 .history__item-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--oh-space-1-5);
   width: 100%;
-  padding: 0.35rem 0.5rem;
+  padding: var(--oh-space-1-5) var(--oh-space-2);
   border: none;
   background: transparent;
   color: var(--oh-text);
@@ -2125,21 +2120,51 @@ body,
 }
 
 .history__item-body {
-  padding: 0.2rem 0.55rem 0.55rem;
+  padding: var(--oh-space-1) var(--oh-space-2) var(--oh-space-2);
   border-top: 1px solid var(--oh-divider);
 }
 
 .history__item-actions {
   display: flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: var(--oh-space-1);
   justify-content: flex-end;
-  margin-top: 0.3rem;
+  margin-top: var(--oh-space-1);
 }
 
 .history__pinned {
   color: var(--oh-success);
   font-size: var(--oh-label-sm-size);
+}
+
+/* Pill padrão (componente `Pill`) ------------------------------------------ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  padding: var(--oh-space-0-5) var(--oh-space-1-5);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--oh-text-muted);
+  font-size: var(--oh-label-sm-size);
+  line-height: var(--oh-label-sm-line);
+  white-space: nowrap;
+}
+
+.pill--accent {
+  border-color: rgba(0, 242, 254, 0.4);
+  background: rgba(0, 242, 254, 0.1);
+  color: var(--oh-accent);
+}
+
+.pill--mono {
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  line-height: var(--oh-status-line);
+  font-weight: 600;
+  letter-spacing: 0.08em;
 }
 
 /* Seletor de agente: botão full-width + popover (BR-037) ------------------ */
@@ -2153,9 +2178,9 @@ body,
 .agent-selector__button {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--oh-space-2);
   width: 100%;
-  padding: 0.4rem 0.6rem;
+  padding: var(--oh-space-1-5) var(--oh-space-2-5);
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius-sm);
   background: rgba(255, 255, 255, 0.04);
@@ -2190,16 +2215,6 @@ body,
 
 .agent-selector__pill {
   flex: 0 0 auto;
-  padding: 1px 7px;
-  border-radius: var(--oh-radius-full);
-  border: 1px solid rgba(0, 242, 254, 0.4);
-  background: rgba(0, 242, 254, 0.12);
-  color: var(--oh-accent);
-  font-family: var(--oh-font-mono);
-  font-size: var(--oh-status-size);
-  line-height: var(--oh-status-line);
-  font-weight: 600;
-  letter-spacing: 0.08em;
 }
 
 .agent-selector__hint {
@@ -2219,7 +2234,7 @@ body,
   gap: 2px;
   max-height: 240px;
   overflow-y: auto;
-  padding: 0.3rem;
+  padding: var(--oh-space-1);
   border: 1px solid var(--oh-border-strong);
   border-radius: var(--oh-radius-sm);
   background: var(--oh-surface-container-high);
@@ -2229,9 +2244,9 @@ body,
 .agent-selector__item {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--oh-space-2);
   width: 100%;
-  padding: 0.35rem 0.45rem;
+  padding: var(--oh-space-1-5) var(--oh-space-2);
   border: none;
   border-radius: var(--oh-radius-sm);
   background: transparent;
@@ -2262,7 +2277,7 @@ body,
 }
 
 .agent-selector__empty {
-  padding: 0.4rem 0.45rem;
+  padding: var(--oh-space-1-5) var(--oh-space-2);
   color: var(--oh-text-muted);
   font-size: var(--oh-label-sm-size);
 }
@@ -2272,7 +2287,7 @@ body,
 .suggestions-title {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--oh-space-1);
   min-width: 0;
 }
 
@@ -2280,8 +2295,8 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: var(--oh-radius-sm);
   border: 1px solid rgba(0, 242, 254, 0.35);
   background: rgba(0, 242, 254, 0.14);
@@ -2289,20 +2304,7 @@ body,
 }
 
 .live-badge {
-  display: inline-flex;
-  align-items: center;
   flex: 0 0 auto;
-  gap: 0.25rem;
-  padding: 1px 6px;
-  border-radius: var(--oh-radius-full);
-  border: 1px solid rgba(0, 242, 254, 0.4);
-  background: rgba(0, 242, 254, 0.1);
-  color: var(--oh-accent);
-  font-family: var(--oh-font-mono);
-  font-size: var(--oh-status-size);
-  line-height: var(--oh-status-line);
-  font-weight: 600;
-  letter-spacing: 0.08em;
 }
 
 .live-badge__dot {
@@ -2312,18 +2314,12 @@ body,
   background: currentColor;
 }
 
-.live-badge--paused {
-  border-color: var(--oh-border);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--oh-text-muted);
-}
-
 /* Controle do auto-sugerir: anel + rótulo + contagem (BR-039). */
 .auto-control {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.2rem 0.15rem 0.35rem;
+  gap: var(--oh-space-1);
+  padding: var(--oh-space-0-5) var(--oh-space-1);
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius-full);
   background: rgba(255, 255, 255, 0.04);
@@ -2369,39 +2365,18 @@ body,
 /* Contagem regressiva em pill. */
 .auto-control__count {
   flex: 0 0 auto;
-  min-width: 1.9rem;
-  padding: 1px 6px;
-  border-radius: var(--oh-radius-full);
-  border: 1px solid rgba(0, 242, 254, 0.45);
-  background: rgba(0, 242, 254, 0.12);
-  color: var(--oh-accent);
-  font-family: var(--oh-font-mono);
-  font-size: var(--oh-status-size);
-  line-height: var(--oh-status-line);
-  font-weight: 600;
-  text-align: center;
+  min-width: 1.8rem;
+  justify-content: center;
+  padding: 1px var(--oh-space-1);
   font-variant-numeric: tabular-nums;
-}
-
-.auto-control--paused .auto-control__count {
-  border-color: var(--oh-border);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--oh-text-muted);
-}
-
-/* Esperando fala nova: a contagem zera, o anel esvazia. */
-.auto-control--waiting .auto-control__count {
-  border-color: var(--oh-border);
-  background: transparent;
-  color: var(--oh-text-muted);
 }
 
 /* "Sugerir agora": contornado, **sem glow** (pedido explícito). */
 .suggest-now {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.5rem;
+  gap: var(--oh-space-1);
+  padding: var(--oh-space-1) var(--oh-space-1-5);
   border: 1px solid rgba(0, 242, 254, 0.45);
   border-radius: var(--oh-radius-full);
   background: rgba(0, 242, 254, 0.08);
@@ -2428,7 +2403,7 @@ body,
 .suggestion-block__pending {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--oh-space-1-5);
   align-self: flex-start;
   margin: 0;
   color: var(--oh-text-muted);
@@ -2469,8 +2444,8 @@ body,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
-  padding: 1.4rem 1rem;
+  gap: var(--oh-space-1);
+  padding: 1.4rem var(--oh-space-4);
   text-align: center;
 }
 
@@ -2487,7 +2462,7 @@ body,
 }
 
 .suggestion-empty__title {
-  margin: 0.2rem 0 0;
+  margin: var(--oh-space-1) 0 0;
   color: var(--oh-text);
   font-size: var(--oh-body-lg-size);
   line-height: var(--oh-body-lg-line);
@@ -2507,8 +2482,8 @@ body,
 .suggestion-card {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.7rem;
+  gap: var(--oh-space-2);
+  padding: var(--oh-space-2-5);
   border: 1px solid rgba(0, 242, 254, 0.32);
   border-radius: var(--oh-radius);
   background: rgba(0, 242, 254, 0.04);
@@ -2518,13 +2493,13 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: var(--oh-space-1-5);
 }
 
 .suggestion-card__tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--oh-space-1);
   padding: 2px 9px;
   border-radius: var(--oh-radius-full);
   border: 1px solid rgba(0, 242, 254, 0.35);
@@ -2543,8 +2518,8 @@ body,
 
 .suggestion-card__title {
   margin: 0;
-  font-size: var(--oh-headline-md-size);
-  line-height: var(--oh-headline-md-line);
+  font-size: 0.88rem;
+  line-height: 1.32;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--oh-text-strong);
@@ -2554,38 +2529,30 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: var(--oh-space-1-5);
 }
 
 .suggestion-chip {
   flex: 0 0 auto;
-  padding: 1px 8px;
-  border-radius: var(--oh-radius-full);
-  border: 1px solid var(--oh-border);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--oh-text-muted);
-  font-size: var(--oh-label-sm-size);
-  line-height: var(--oh-label-sm-line);
-  white-space: nowrap;
 }
 
 .suggestion-card__actions {
   display: flex;
-  gap: 0.2rem;
+  gap: var(--oh-space-1);
   justify-content: flex-end;
 }
 
 .suggestion-block {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--oh-space-1-5);
   min-width: 0;
 }
 
 .suggestion-block__label {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--oh-space-1);
   color: var(--oh-text-muted);
   font-size: var(--oh-label-sm-size);
   line-height: var(--oh-label-sm-line);
@@ -2595,10 +2562,19 @@ body,
 }
 
 .suggestion-block--quick {
-  padding: 0.5rem 0.65rem;
+  padding: var(--oh-space-2) var(--oh-space-2-5);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   border-left: 2px solid var(--oh-ai);
   border-radius: var(--oh-radius-sm);
-  background: rgba(139, 92, 246, 0.08);
+  background: rgba(139, 92, 246, 0.07);
+}
+
+/* A completa é uma caixa própria, como no protótipo. */
+.suggestion-block--full {
+  padding: var(--oh-space-2) var(--oh-space-2-5);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .suggestion-block--quick .suggestion-block__label {

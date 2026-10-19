@@ -6,9 +6,9 @@ import {
   EyeIcon,
   EyeOffIcon,
   GearIcon,
-  GripIcon,
   HistoryIcon,
 } from "../../components/icons";
+import { DragHandle } from "../../components/DragHandle";
 import { ShortcutBadges } from "../../components/ShortcutBadges";
 import { PlayIcon } from "../../components/TransportIcons";
 import { SessionPill } from "../session/SessionPill";
@@ -95,15 +95,11 @@ export function ActionBar({
       data-state={listening ? "active" : "idle"}
       data-interactive
     >
-      <span
+      <DragHandle
         className="overlay__drag"
-        data-interactive
-        title="Mover overlay"
-        aria-label="Mover overlay"
-        onPointerDown={onStartDrag}
-      >
-        <GripIcon size={16} />
-      </span>
+        label="Mover overlay"
+        onStartDrag={onStartDrag}
+      />
 
       <span className="overlay__brand-core">
         <span

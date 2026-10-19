@@ -4,6 +4,7 @@ import { suggestionTitle } from "../../core/domain/suggestion";
 import { AgentBadge } from "../../components/AgentBadge";
 import { AgentIcon } from "../../components/AgentIcon";
 import { CopyIcon, HistoryIcon, PinIcon } from "../../components/icons";
+import { Pill } from "../../components/Pill";
 import { MarkdownView } from "../../components/MarkdownView";
 
 interface SuggestionHistoryProps {
@@ -62,9 +63,9 @@ export function SuggestionHistory({
           <HistoryIcon size={15} />
         </span>
         <span className="history__title">Histórico de Sugestões da Sessão</span>
-        <span className="history__count">
+        <Pill className="history__count">
           {items.length === 1 ? "1 anterior" : `${items.length} anteriores`}
-        </span>
+        </Pill>
         <span className="history__chevron" aria-hidden="true">
           {sectionOpen ? "⌃" : "⌄"}
         </span>

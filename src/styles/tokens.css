@@ -167,13 +167,25 @@
   --oh-radius-lg: 2rem;
   --oh-radius-xl: 3rem;
   --oh-radius-full: 9999px;
-  --oh-gutter: 0.75rem;
-  --oh-margin: 1rem;
-  --oh-space-xs: 0.25rem;
-  --oh-space-sm: 0.375rem;
-  --oh-space-md: 0.625rem;
-  --oh-space-lg: 1rem;
-  --oh-space-xl: 1.5rem;
+  /* Grade de espaçamento (passos de 2 px) — padrão dos componentes.
+   *
+   * Use estes tokens em padding/margin/gap; evite valores soltos no CSS. Os
+   * nomes antigos (xs…xl) são aliases para manter o CSS legado funcionando. */
+  --oh-space-0-5: 0.125rem; /* 2 */
+  --oh-space-1: 0.25rem; /* 4 */
+  --oh-space-1-5: 0.375rem; /* 6 */
+  --oh-space-2: 0.5rem; /* 8 */
+  --oh-space-2-5: 0.625rem; /* 10 */
+  --oh-space-3: 0.75rem; /* 12 */
+  --oh-space-4: 1rem; /* 16 */
+  --oh-space-6: 1.5rem; /* 24 */
+  --oh-gutter: var(--oh-space-3);
+  --oh-margin: var(--oh-space-4);
+  --oh-space-xs: var(--oh-space-1);
+  --oh-space-sm: var(--oh-space-1-5);
+  --oh-space-md: var(--oh-space-2-5);
+  --oh-space-lg: var(--oh-space-4);
+  --oh-space-xl: var(--oh-space-6);
 
   font-family: var(--oh-font-sans);
 }

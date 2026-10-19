@@ -9,6 +9,7 @@ import {
 } from "../../core/domain/suggestion";
 import { AgentBadge } from "../../components/AgentBadge";
 import { CopyIcon, PinIcon, SparkleIcon } from "../../components/icons";
+import { Pill } from "../../components/Pill";
 import { MarkdownView } from "../../components/MarkdownView";
 
 interface SuggestionCardProps {
@@ -136,9 +137,9 @@ export function SuggestionCard({
         <section className="suggestion-block suggestion-block--full">
           <div className="suggestion-block__head">
             <span className="suggestion-block__label">Resposta completa</span>
-            <span className="suggestion-chip">
+            <Pill className="suggestion-chip">
               Markdown · {suggestionKind(current.text)}
-            </span>
+            </Pill>
           </div>
           <MarkdownView markdown={body ?? ""} meta={meta} />
         </section>

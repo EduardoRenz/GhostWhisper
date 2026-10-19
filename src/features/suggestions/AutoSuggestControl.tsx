@@ -1,4 +1,5 @@
 import type { SuggestionCadence } from "../../core/application/useSuggestionCadence";
+import { Pill } from "../../components/Pill";
 
 interface AutoSuggestControlProps {
   /** Cadência publicada pelo core (BR-039). */
@@ -75,7 +76,13 @@ export function AutoSuggestControl({
         />
       </svg>
       <span className="auto-control__label">Auto-sugerir</span>
-      <span className="auto-control__count">{count}</span>
+      <Pill
+        className="auto-control__count"
+        tone={paused || waiting ? "neutral" : "accent"}
+        mono
+      >
+        {count}
+      </Pill>
     </button>
   );
 }

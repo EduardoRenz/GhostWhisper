@@ -219,6 +219,21 @@ janela aberta e sugestões chegando; não reagia a fala nova.
   `opening_the_window_restarts_the_countdown` (Rust).
 - `cargo test` 372 ✓ · `pnpm test` 249 ✓ · clippy/fmt e `tsc` limpos.
 
+### Padronização (pedido do usuário)
+- **Escala de espaçamento** em tokens (`--oh-space-0-5`…`--oh-space-6`, passos de
+  2px) em `tokens.css`; os nomes antigos (`xs`…`xl`) viraram **aliases** da
+  escala. Os componentes novos (sugestões/agente/histórico) passaram a usar os
+  tokens em padding/margin/gap (45 valores soltos trocados).
+- **`DragHandle`**: componente único (grip de 6 pontos) para o notch e para todos
+  os painéis; antes cada tela repetia o próprio desenho (o painel usava `⋮⋮` de
+  texto, minúsculo).
+- **`Pill`**: componente único para LIVE, ATIVO, contagem, chip e contador —
+  `tone` + `mono`; os casos de uso só acrescentam largura/alinhamento. Removeu
+  borda/fundo/tipografia duplicados do CSS.
+- Convenção registrada em
+  [`../../notch/architecture/design-tokens.md`](../../notch/architecture/design-tokens.md)
+  §4/§6 (BR-035).
+
 ---
 
 ## 2026-10-19 — Duplicatas de sugestões (cursor velho do agendador)

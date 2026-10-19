@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { panelHide, panelStartDrag, type PanelLabel } from "../../adapters/ipc/panels";
+import { DragHandle } from "../../components/DragHandle";
 import { ResizeHandles } from "./ResizeHandles";
 
 interface PanelFrameProps {
@@ -35,17 +36,10 @@ export function PanelFrame({
       <ResizeHandles />
       <div className="panel" data-route={label}>
         <header className="panel__header">
-          <span
+          <DragHandle
             className="panel__drag"
-            title="Mover janela"
-            aria-label="Mover janela"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              void panelStartDrag();
-            }}
-          >
-            ⋮⋮
-          </span>
+            onStartDrag={() => void panelStartDrag()}
+          />
           <div className="panel__heading">
             {heading ?? (
               <>

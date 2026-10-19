@@ -114,15 +114,30 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | `--oh-radius-lg` | `2rem` |
 | `--oh-radius-xl` | `3rem` |
 | `--oh-radius-full` | `9999px` |
-| `--oh-gutter` | `0.75rem` |
-| `--oh-margin` | `1rem` |
-| `--oh-space-xs` | `0.25rem` |
-| `--oh-space-sm` | `0.375rem` |
-| `--oh-space-md` | `0.625rem` |
-| `--oh-space-lg` | `1rem` |
-| `--oh-space-xl` | `1.5rem` |
+| `--oh-gutter` | `var(--oh-space-3)` (12px) |
+| `--oh-margin` | `var(--oh-space-4)` (16px) |
+| `--oh-space-xs` | `var(--oh-space-1)` (4px) — alias |
+| `--oh-space-sm` | `var(--oh-space-1-5)` (6px) — alias |
+| `--oh-space-md` | `var(--oh-space-2-5)` (10px) — alias |
+| `--oh-space-lg` | `var(--oh-space-4)` (16px) — alias |
+| `--oh-space-xl` | `var(--oh-space-6)` (24px) — alias |
 
-- Unidade base **4px**; gaps internos do dock em `space-xs`/`space-sm`.
+**Grade de espaçamento (passos de 2px)** — use nos componentes novos:
+
+| Token | Valor | Uso típico |
+|---|---|---|
+| `--oh-space-0-5` | 2px | respiro vertical de pill/badge |
+| `--oh-space-1` | 4px | gap entre ícone e texto, margem de alça |
+| `--oh-space-1-5` | 6px | padding de controle/pill |
+| `--oh-space-2` | 8px | padding de bloco/item |
+| `--oh-space-2-5` | 10px | padding de cartão/seção |
+| `--oh-space-3` | 12px | gutter entre blocos |
+| `--oh-space-4` | 16px | margem de tela / separação de seções |
+| `--oh-space-6` | 24px | respiro grande (vazio, popover) |
+
+- **Regra:** padding/margin/gap vêm **sempre** dos tokens `--oh-space-*`; valores
+  soltos em `rem` só quando o token não existir (e aí crie o token).
+- Unidade base **4px**; gaps internos do dock em `space-1`/`space-1-5`.
 - Margem de **16px** das bordas da tela (já respeitada pelo overlay).
 
 ## 5. Elevação, vidro e borda
@@ -166,6 +181,9 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | **Markdown/código** | `code-sm` (JetBrains Mono); tabelas/código em `--oh-surface-container-low`; links cyan |
 | **Inputs/selects** | pill/inset `rgba(0,0,0,.35)`; foco `#00f2fe` 30% + glow |
 | **Configurações/Histórico/Sugestões** | mesmos tokens; grupos em `--oh-surface-container-low` + borda hairline |
+| **Alça de arraste** (`DragHandle`) | **um componente** (grip de 6 pontos, `GripIcon` 16px) usado pelo notch e por todos os painéis; alvo 18×24 + hover `rgba(255,255,255,.07)` |
+| **Pill** (`Pill`) | **um componente** para LIVE, ATIVO, contagem, chip e contador: base `.pill` (borda hairline, `--oh-radius-full`, `space-0-5`/`space-1-5`) + `tone` (`neutral`/`accent`) + `mono` (status/contagem); casos de uso só acrescentam largura/alinhamento |
+| **Agente** (`AgentIcon`/`AgentBadge`) | catálogo de 8 ícones SVG do projeto + cor por token (`--oh-agent-*`); a pill do agente usa a cor do snapshot |
 
 ## 7. Acessibilidade e desempenho
 

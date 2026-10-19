@@ -7,6 +7,7 @@ import {
 } from "../../core/domain/assistant";
 import { AgentIcon } from "../../components/AgentIcon";
 import { CheckIcon, ChevronDownIcon } from "../../components/icons";
+import { Pill } from "../../components/Pill";
 
 interface AgentSelectorProps {
   /** Agentes disponíveis (embutidos + personalizados). */
@@ -104,7 +105,9 @@ export function AgentSelector({ modes, modeId, onSelect }: AgentSelectorProps) {
           <AgentIcon icon={agentIconId(selected)} size={15} />
         </span>
         <span className="agent-selector__name">{selected?.name ?? "—"}</span>
-        <span className="agent-selector__pill">ATIVO</span>
+        <Pill className="agent-selector__pill" tone="accent" mono>
+          ATIVO
+        </Pill>
         <span className="agent-selector__hint">Alternar agente</span>
         <ChevronDownIcon size={14} />
       </button>

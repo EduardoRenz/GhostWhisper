@@ -10,6 +10,7 @@ import type { Suggestion } from "../../core/domain/assistant";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
 import { SlidersIcon, SparkleIcon } from "../../components/icons";
+import { Pill } from "../../components/Pill";
 import { StatusPill } from "../../components/StatusPill";
 import { AgentSelector } from "./AgentSelector";
 import { AutoSuggestControl } from "./AutoSuggestControl";
@@ -91,13 +92,15 @@ export function SuggestionsWindow() {
       </span>
       <span className="panel__title">Sugestões</span>
       {state.listening ? (
-        <span
-          className={`live-badge${state.paused ? " live-badge--paused" : ""}`}
+        <Pill
+          className="live-badge"
+          tone={state.paused ? "neutral" : "accent"}
+          mono
           title={status}
         >
           <span className="live-badge__dot" />
           {state.paused ? "PAUSADO" : "LIVE"}
-        </span>
+        </Pill>
       ) : null}
     </div>
   );
