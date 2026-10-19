@@ -17,6 +17,8 @@ const builtin = (id: string, name: string): AssistantMode => ({
   system_prompt: "system",
   suggestion_prompt: "suggestion",
   context: "",
+  icon: "sparkle",
+  color: "slate",
 });
 
 describe("AssistantSettings", () => {

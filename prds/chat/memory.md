@@ -10,6 +10,8 @@ Histórico deste PRD no formato fixo do
 | Por ID | `rg -n 'ISS-018\|BR-021\|BR-022\|BR-026' prds/chat/memory.md` |
 | Teto da bolha | `rg -n -i 'teto da bolha\|continuação' prds/chat/memory.md` |
 | Janelas de chat/histórico | `rg -n -i 'janela de chat\|janela de histórico\|toggle único' prds/chat/memory.md` |
+| Transcrição ao Vivo | `rg -n -i 'transcrição ao vivo\|largura total\|microfone/outros' prds/chat/memory.md` |
+| Sugestão manual | `rg -n -i 'sugestão manual\|manual_context\|contexto por parâmetro' prds/chat/memory.md` |
 
 ---
 
@@ -144,3 +146,59 @@ silêncio, então o teto visual faz o papel que o *commit* faz lá em cima.
 - **331 testes Rust** (8 `ignored`) · clippy/fmt limpos.
 - **138 testes frontend** (+20: `ChatWindow`, `HistoryWindow`, rotas, matriz de
   `SessionControls` reescrita) · `tsc --noEmit` e `pnpm build` ok.
+
+## 2026-10-19 — Planejamento: "Transcrição ao Vivo" e sugestão manual por mensagem
+
+- **IDs:** BR-040, BR-041, T10–T14
+- **Refs:** [`prd.md`](prd.md) §9,
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md),
+  [`tasks/10-task.md`](tasks/10-task.md)…[`tasks/14-task.md`](tasks/14-task.md),
+  [`../suggestions/architecture/suggestions-window.md`](../suggestions/architecture/suggestions-window.md) §5.4
+
+### Pedido (print anexado)
+- Layout o mais fiel possível ao print: **"Transcrição ao Vivo"**, abas
+  **Transcrição | Resumo** em largura total, mensagens em cartões que preenchem a
+  janela.
+- **Microfone** em cor primária com o nome e a **hora da mensagem**; **Outros**
+  na outra cor indicada (violeta).
+- Balões **full-width**, independente do tamanho do texto.
+- Cada mensagem com um botão `[✦]` no canto superior direito; ao clicar, a
+  mensagem vai **via parâmetro** para o Sugestões, onde o usuário gera uma
+  sugestão **Manual**.
+
+### Decisões de planejamento
+- **Sem falsa paridade:** o rodapé do print mostra "Latência: 48ms · WebRTC"; não
+  medimos latência e o produto não usa WebRTC. O espaço equivalente mostra
+  `Whisper {modelo} · {Gravando|Pausado|Sem sessão}` (BR-040).
+- **Hora de parede:** o print mostra `HH:MM:SS`; a UI deriva de
+  `started_at_ms + at_ms`. O banco continua com `at_ms` relativo à sessão
+  (BR-019 revisada), sem migração.
+- **Ação de IA só em fala finalizada e só na primeira parte** do split de 180
+  caracteres (BR-031); a prévia ainda muda e a continuação é a mesma mensagem. O
+  `source_text` do segmento garante que a sugestão receba o texto inteiro.
+- **Clique no ✦ não gera:** abre/foca o Sugestões com o contexto e o usuário
+  aperta **"Gerar sugestão manual"**. Evita custo/LLM surpresa (o pedido diz
+  "pelo usuário").
+- **Rótulo "Manual"** vem de `Suggestion.trigger = manual`, não de heurística de
+  texto; rápida/completa continuam valendo (BR-038).
+
+### Análise da arquitetura (contexto via parâmetro)
+- A intuição do usuário está correta: o caso de uso já recebe contexto por
+  parâmetro (`SuggestionRequest`), e `useSuggestions` já é parametrizado. O que
+  faltava era um **parâmetro tipado de origem manual** e um **handoff robusto**
+  entre duas janelas Tauri.
+- Evento efêmero sozinho seria frágil: se a janela de Sugestões estivesse
+  fechada, o listener ainda não existiria. A solução planejada é um
+  **`ManualSuggestionContextStore`** no núcleo (um contexto por vez, keyed por
+  sessão): o chat grava e chama `panel_open("suggestions")`; a janela busca ao
+  montar e quando recebe `panel_opened`. O **caso de uso** recebe o contexto como
+  `SuggestionRequest.manual_context`; o store é só correio, não estado global de
+  UI.
+- O automático do core não usa `manual_context`; "Sugerir agora" continua a
+  sugestão normal. Sem schema novo, sem backend novo.
+
+### Entregável desta rodada
+- **Nada implementado.** PRD §9, arquitetura `transcription-panel.md`, tasks
+  10–14 (`PENDING`), BR-040/BR-041 e revisões de BR-019/BR-021 registradas.
+- Próximo passo: task 10 (casca) e task 11 (cartões), depois 12 (handoff), 13
+  (Sugestões manual) e 14 (fechamento).

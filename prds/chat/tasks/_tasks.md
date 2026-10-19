@@ -15,6 +15,11 @@
 | 07 | Janela de Chat própria (movível e redimensionável) | CONCLUDED |
 | 08 | Janela de Histórico (sessões anteriores) | CONCLUDED |
 | 09 | Transporte: toggle único (start/pause) e stop único | CONCLUDED |
+| 10 | Casca "Transcrição ao Vivo": cabeçalho, abas e rodapé | PENDING |
+| 11 | Bolhas em largura total: Microfone/Outros, hora e Streaming | PENDING |
+| 12 | Ação de IA por mensagem e handoff de contexto para Sugestões | PENDING |
+| 13 | Sugestão manual no Sugestões (contexto por parâmetro) | PENDING |
+| 14 | Documentação, verificação e pacotes (v0.2) | PENDING |
 
 ## Ordem e dependências
 
@@ -24,7 +29,7 @@
         └─▶ 05
 02 ─▶ 06
 01 ─▶ 07 ─▶ 08
-03 ─▶ 09
+03 ─▶ 09 ─▶ 10 ─▶ 11 ─▶ 12 ─▶ 13 ─▶ 14
 ```
 
 - A **01** corrige o bug de linha temporal e é pré-requisito de todo o resto.
@@ -36,3 +41,9 @@
 - A **07** tira a conversa do overlay para uma janela própria (BR-026) e simplifica
   o overlay; a **08** depende dela (o painel que hospedava o histórico sai).
 - A **09** revisa o transporte das 03/04 (toggle único + stop único, BR-022).
+- A **10** e a **11** são a v0.2 visual (casca e cartões, BR-040); a 10 vem antes
+  para fixar a geometria da janela.
+- A **12** liga o botão de IA ao handoff de contexto (BR-041); a **13** consome o
+  contexto no Sugestões e gera a sugestão manual. A 13 depende da 12.
+- A **14** fecha: documentação, regras, verificação e pacotes. Só começa com
+  10–13 concluídas.

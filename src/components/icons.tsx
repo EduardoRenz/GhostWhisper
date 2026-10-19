@@ -297,6 +297,64 @@ export function CheckIcon({ className, size = 18 }: IconProps) {
   );
 }
 
+/** Controles deslizantes: contexto extra. */
+export function SlidersIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 7.2h9.4" />
+        <path d="M17 7.2h3" />
+        <path d="M4 16.8h3" />
+        <path d="M10.6 16.8h9.4" />
+        <circle cx="15.2" cy="7.2" r="2.2" />
+        <circle cx="8.8" cy="16.8" r="2.2" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Copiar: dois retângulos sobrepostos. */
+export function CopyIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="8.6" y="8.6" width="11" height="11" rx="2" />
+        <path d="M15.4 5.6H6.4a1.8 1.8 0 0 0-1.8 1.8v9" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Fixar: um alfinete. */
+export function PinIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M9.4 3.6h5.2l-.8 5.1 3 3.1H6.2l3-3.1z" />
+        <path d="M12 11.8v8.6" />
+      </g>
+    </Icon>
+  );
+}
+
 /** Recolher/ocultar: duas setas diagonais apontando para o centro (task 13). */
 export function CollapseIcon({ className, size = 18 }: IconProps) {
   return (

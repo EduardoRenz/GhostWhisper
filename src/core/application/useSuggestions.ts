@@ -21,9 +21,13 @@ const HISTORY_LIMIT = 8;
  * Sugestão viva da janela.
  *
  * A geração **automática** vive no core (reage a fala nova, sem depender da
- * janela aberta) e chega pelo evento `suggestion` como texto em construção
- * (fast-first + deltas do streaming). A janela só pede uma sugestão ao abrir
- * (para não começar vazia), permite forçar, fixar e navegar no histórico.
+ * janela aberta) e chega pelo evento `suggestion` em **duas fases** (BR-038):
+ * a resposta curta (`quick`, do passe *fast-first*) e a completa (`full`,
+ * Markdown com deltas do streaming). As duas ficam em blocos próprios — a
+ * rápida **não** substitui a completa.
+ *
+ * A janela só pede uma sugestão ao abrir (para não começar vazia), permite
+ * forçar, fixar e navegar no histórico.
  */
 export function useSuggestions({
   sessionId,
@@ -31,7 +35,11 @@ export function useSuggestions({
   modeId,
   extraContext,
 }: UseSuggestionsOptions) {
+  /** Sugestão completa em destaque (Markdown). */
   const [current, setCurrent] = useState<Suggestion | null>(null);
+  /** Resposta curta da geração atual (fase `quick`). */
+  const [quick, setQuick] = useState<Suggestion | null>(null);
+  /** Histórico: sugestões completas, mais recente primeiro. */
   const [history, setHistory] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +77,22 @@ export function useSuggestions({
     [],
   );
 
-  /** Aplica uma sugestão recebida (streaming) e atualiza o histórico por `at_ms`. */
+  /** Aplica uma sugestão recebida, respeitando a fase (BR-038). */
   const applyIncoming = useCallback((incoming: Suggestion) => {
+    if (incoming.phase === "quick") {
+      // A resposta rápida é o **começo** da nova sugestão: a anterior sai do
+      // topo (já está no histórico) e o cartão passa a mostrar a nova sendo
+      // montada — sem confundir com a antiga.
+      setCurrent((previous) =>
+        previous && previous.at_ms !== incoming.at_ms ? null : previous,
+      );
+      setQuick(incoming);
+      return;
+    }
+    // A completa só convive com a rápida da **mesma** geração.
+    setQuick((previous) =>
+      previous && previous.at_ms === incoming.at_ms ? previous : null,
+    );
     setCurrent(incoming);
     lastText.current = incoming.text;
     setHistory((previous) => {
@@ -84,6 +106,7 @@ export function useSuggestions({
     contextUntil.current = null;
     lastText.current = null;
     setCurrent(null);
+    setQuick(null);
     setHistory([]);
     setError(null);
     setSkipped(false);
@@ -99,6 +122,7 @@ export function useSuggestions({
     modeRef.current = modeId;
     contextUntil.current = null;
     lastText.current = null;
+    // A sugestão atual continua na tela até a nova ficar pronta.
   }, [modeId]);
 
   useEffect(() => {
@@ -153,6 +177,7 @@ export function useSuggestions({
           lastSuggestion: lastText.current,
           extraContext: extraRef.current.trim() ? extraRef.current : null,
           fastFirst: true,
+          force,
         });
         if (!result || result.session_id !== sessionRef.current) {
           return;
@@ -174,45 +199,57 @@ export function useSuggestions({
     [applyIncoming],
   );
 
-  // Gera ao abrir e ao trocar de sessão/agente, para a janela não começar vazia.
+  /**
+   * Gera ao abrir a janela e ao trocar de sessão, para ela não começar vazia.
+   *
+   * Não forçamos: o core devolve a última sugestão quando não houve fala nova
+   * (nenhuma chamada ao LLM — BR-039).
+   *
+   * **Trocar de agente não gera**: a próxima sugestão segue a regra normal
+   * (fala nova + contagem regressiva) ou o botão “Sugerir agora”. O agente
+   * escolhido vale para a próxima geração (as settings são salvas).
+   */
   useEffect(() => {
-    if (opened && sessionId) {
-      void generate(true);
+    if (!opened || !sessionId) {
+      return;
     }
-  }, [opened, sessionId, modeId, generate]);
+    void generate(false);
+  }, [opened, sessionId, generate]);
 
   const suggestNow = useCallback(() => generate(true), [generate]);
 
-  const pin = useCallback(async () => {
-    const suggestion = current;
-    if (!suggestion || !sessionRef.current) {
-      return;
-    }
-    setError(null);
-    try {
-      const pinnedSuggestion = await suggestionPin({
-        sessionId: sessionRef.current,
-        modeId: suggestion.mode_id,
-        text: suggestion.text,
-        atMs: suggestion.at_ms,
-      });
-      if (pinnedSuggestion) {
-        setPinned(pinnedSuggestion.message_id);
-        window.setTimeout(() => setPinned(null), 2_000);
+  /** Fixa uma sugestão (a atual, ou a de um item do histórico). */
+  const pin = useCallback(
+    async (target?: Suggestion | null) => {
+      const suggestion = target ?? current;
+      if (!suggestion || !sessionRef.current) {
+        return;
       }
-    } catch (caught) {
-      setError(String(caught));
-    }
-  }, [current]);
-
-  const select = useCallback((suggestion: Suggestion) => {
-    setCurrent(suggestion);
-    lastText.current = suggestion.text;
-    setSkipped(false);
-  }, []);
+      setError(null);
+      try {
+        const pinnedSuggestion = await suggestionPin({
+          sessionId: sessionRef.current,
+          modeId: suggestion.mode_id,
+          text: suggestion.text,
+          atMs: suggestion.at_ms,
+        });
+        if (pinnedSuggestion) {
+          setPinned(pinnedSuggestion.message_id);
+          window.setTimeout(() => setPinned(null), 2_000);
+        }
+      } catch (caught) {
+        setError(String(caught));
+      }
+    },
+    [current],
+  );
 
   return {
+    /** Sugestão completa em destaque. */
     current,
+    /** Resposta curta da geração atual (fase `quick`). */
+    quick,
+    /** Sugestões completas anteriores (mais recente primeiro). */
     history,
     /** `true` enquanto a IA gera/transmite uma sugestão (manual ou automática). */
     generating: loading || streamActive,
@@ -222,6 +259,5 @@ export function useSuggestions({
     pinned,
     suggestNow,
     pin,
-    select,
   };
 }

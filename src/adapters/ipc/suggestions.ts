@@ -16,6 +16,13 @@ export interface SuggestionGenerateParams {
   extraContext: string | null;
   /** Pede o rascunho curto (fast-first) antes do texto completo. */
   fastFirst: boolean;
+  /**
+   * Gera mesmo sem fala nova (botão “Sugerir agora”).
+   *
+   * Sem `force`, o core não gera de novo quando não houve fala nova — devolve
+   * a última sugestão (BR-039).
+   */
+  force: boolean;
 }
 
 /** Gera uma sugestão efêmera (não grava nada). */

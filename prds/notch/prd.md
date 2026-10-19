@@ -116,6 +116,12 @@ Como usuário, quero que o overlay fique discreto quando não estou em uma sess�
 - **CA-04.1** A aba contém o que era a janela `chat`: medidores de nível, um
   cabeçalho de ações com **apenas o atalho Sugestões** e a conversa em bolhas
   (`ChatView`), com prévia "em andamento" no fim (BR-021).
+  > **Revisão (2026-10-19, chat v0.2/BR-040):** os medidores e o atalho
+  > "Sugestões" **saem** da aba; o waveform e o atalho ficam no notch. O título
+  > do painel passa a **"Transcrição ao Vivo"** (a aba continua "Transcrição").
+  > O layout vigente está em
+  > [`../chat/architecture/transcription-panel.md`](../chat/architecture/transcription-panel.md)
+  > §2.
 - **CA-04.2** O título da aba e o rótulo do produto passam a ser **Transcrição**
   (o termo "Chat" sai da UI, mantendo o label técnico da janela).
 - **CA-04.3** A **barra inferior** da aba contém o **seletor de idioma** (US-06) e

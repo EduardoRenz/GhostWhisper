@@ -18,6 +18,7 @@ pub fn assistant_modes_list(state: State<'_, AppState>) -> Result<Vec<AssistantM
 
 /// Gera uma sugestão **efêmera** para a janela (não grava nada).
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn suggestion_generate(
     state: State<'_, AppState>,
     session_id: Option<String>,
@@ -26,13 +27,17 @@ pub fn suggestion_generate(
     last_suggestion: Option<String>,
     extra_context: Option<String>,
     fast_first: Option<bool>,
+    force: Option<bool>,
 ) -> Result<Suggestion> {
     state.suggestions.generate(
         SuggestionRequest::ephemeral(session_id, mode_id.unwrap_or_default())
             .with_since_ms(since_ms)
             .with_last_suggestion(last_suggestion)
             .with_extra_context(extra_context)
-            .with_fast_first(fast_first.unwrap_or(false)),
+            .with_fast_first(fast_first.unwrap_or(false))
+            // `force` = o usuário pediu (botão “Sugerir agora”); sem ele, o
+            // serviço não gera de novo se não houve fala nova (BR-039).
+            .with_force(force.unwrap_or(false)),
     )
 }
 
@@ -59,9 +64,11 @@ pub fn suggestion_pin(
 }
 
 /// Gera **e persiste** uma sugestão (botão “Sugerir” e atalho global).
+///
+/// Ação explícita do usuário: sempre gera, mesmo sem fala nova.
 #[tauri::command(async)]
 pub fn llm_insight(state: State<'_, AppState>, session_id: Option<String>) -> Result<Suggestion> {
     state
         .suggestions
-        .generate(SuggestionRequest::persist(session_id))
+        .generate(SuggestionRequest::persist(session_id).with_force(true))
 }

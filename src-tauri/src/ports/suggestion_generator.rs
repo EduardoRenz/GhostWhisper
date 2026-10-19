@@ -28,6 +28,11 @@ pub struct SuggestionRequest {
     /// Transposto do Perssua (`fastFirstInsight`): a primeira bolha aparece
     /// rápido e curta; o texto completo vem em seguida (BR-028).
     pub fast_first: bool,
+    /// `true` gera **mesmo sem fala nova** (botão “Sugerir agora”).
+    ///
+    /// Sem `force`, o serviço devolve a última sugestão da sessão quando não
+    /// houve fala nova — nenhuma chamada ao LLM (BR-039).
+    pub force: bool,
 }
 
 impl SuggestionRequest {
@@ -73,6 +78,27 @@ impl SuggestionRequest {
         self.fast_first = fast_first;
         self
     }
+
+    /// Força a geração mesmo sem fala nova (“Sugerir agora”).
+    pub fn with_force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+}
+
+/// Fase da sugestão (BR-038).
+///
+/// A janela de sugestões mostra **dois blocos**: a resposta curta (que chega
+/// primeiro, do passe *fast-first*) e a resposta completa (Markdown). A fase
+/// diz à UI qual bloco o texto pertence — a rápida **não** substitui a
+/// completa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionPhase {
+    /// Rascunho curto (passe *fast-first*).
+    Quick,
+    /// Texto completo (Markdown).
+    Full,
 }
 
 /// Sugestão gerada.
@@ -83,7 +109,18 @@ pub struct Suggestion {
     pub mode_id: String,
     /// Nome do agente (rótulo da UI).
     pub mode_name: String,
-    /// Markdown sugerido.
+    /// Ícone do agente no momento da resposta (snapshot — BR-037).
+    pub mode_icon: String,
+    /// Cor do agente no momento da resposta (snapshot — BR-037).
+    pub mode_color: String,
+    /// Fase da sugestão (BR-038).
+    pub phase: SuggestionPhase,
+    /// Título curto gerado pelo agente (`Subject:`), quando houver (BR-038).
+    ///
+    /// Vem do **retorno estruturado leve** do modelo; vazio nas fases antigas
+    /// e na resposta rápida (a UI cai para o título derivativo).
+    pub title: String,
+    /// Markdown sugerido (sem a linha `Subject:`).
     pub text: String,
     /// Milissegundos desde o início da sessão.
     pub at_ms: i64,

@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
-use crate::ports::event_publisher::{EventPublisher, SessionStateEvent};
+use crate::ports::event_publisher::{EventPublisher, SessionStateEvent, SuggestionCadenceEvent};
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
 
@@ -19,8 +19,10 @@ pub const SESSION_STATE_EVENT: &str = "session_state";
 pub const INSIGHT_EVENT: &str = "insight";
 /// Nome do evento de sugestão efêmera em andamento (fast-first/streaming).
 pub const SUGGESTION_EVENT: &str = "suggestion";
-/// Nome do evento de status do motor de transcrição.
+/// Nome do evento de status do motor de transcricao.
 pub const ASR_STATUS_EVENT: &str = "asr_status";
+/// Nome do evento de cadencia do auto-sugerir (BR-039).
+pub const SUGGESTION_CADENCE_EVENT: &str = "suggestion_cadence";
 
 /// Payload do evento `audio_level` (canal + nível).
 #[derive(Debug, Clone, Serialize)]
@@ -68,6 +70,10 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_suggestion(&self, suggestion: &Suggestion) {
         let _ = self.app.emit(SUGGESTION_EVENT, suggestion);
+    }
+
+    fn emit_suggestion_cadence(&self, cadence: &SuggestionCadenceEvent) {
+        let _ = self.app.emit(SUGGESTION_CADENCE_EVENT, cadence);
     }
 
     fn emit_asr_status(&self, status: &AsrStatus) {

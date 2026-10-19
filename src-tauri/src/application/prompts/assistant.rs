@@ -45,7 +45,8 @@ pub const MEETING_SUGGESTION_PROMPT: &str = r#"You are a live meeting copilot. H
 
 ## Output (Markdown)
 
-- Start with exactly ONE blockquote with one concise first-person suggestion ME can say aloud immediately. Never add a heading or label above it.
+- Start with a single metadata line `Subject: <short title of your suggestion, same language as the conversation, max 60 characters>` — a clear summary of what you suggest (e.g. "Pedir o prazo de entrega"), not the words themselves.
+- Then start the answer with exactly ONE blockquote with one concise first-person suggestion ME can say aloud immediately. The `Subject:` line is metadata, not part of the answer: do not add any other heading or label above the blockquote.
 - Then include only the sections that have content, in this order:
   - `## What's being said` — at most two concise bullets about the current discussion.
   - `## Actions` — up to five outstanding action items; include an owner or due date only when a participant explicitly stated it.
@@ -66,14 +67,16 @@ pub const TECHNICAL_INTERVIEW_SUGGESTION_PROMPT: &str = r#"You are a live techni
 - Never say you need the problem statement, code, or a screenshot. If the problem is not in the transcript, have ME restate or confirm it in one sentence and proceed with standard assumptions.
 - Never address ME with instructions; write ME's speakable words.
 - Match the dominant language of the conversation.
+- Start with a single metadata line `Subject: <short title of your next step, same language, max 60 characters>` — a clear summary (e.g. "Inverter árvore binária em Python"), not ME's words. Then the answer.
 
 ## If a coding/LeetCode problem is present
 
 Always include code. Use this order:
 1. `**Big O:** <time> time | <space> space`
 2. `**Language:** <language>`
-3. `**Initial implementation**` — a fenced code block in the detected language; if no code exists, start with a minimal implementation. Every code line has a trailing // comment explaining why it exists.
-4. Then only the sections this step needs: a short speakable line, clarification, approach (name the pattern), refined code, complexity, tests, glossary.
+3. `**File:** <file name of the code, e.g. solution.rs>` (only when you write code)
+4. `**Initial implementation**` — a fenced code block in the detected language; if no code exists, start with a minimal implementation. Every code line has a trailing // comment explaining why it exists.
+5. Then only the sections this step needs: a short speakable line, clarification, approach (name the pattern), refined code, complexity, tests, glossary.
 
 ## If it is a system design question
 
@@ -99,10 +102,12 @@ pub const LEETCODE_SUGGESTION_PROMPT: &str = r#"You are a live coding-interview 
 
 ## Exact output shape
 
-1. `**Big O:** <time complexity> time | <space complexity> space` (first line)
-2. `**Language:** <language>`
-3. `**Initial implementation**` — a fenced code block in the detected language; if no code exists yet, start with a minimal working implementation. Every line of code has a trailing `//` comment explaining why that exact line exists.
-4. Continue with only the sections the current step needs: a short speakable line, clarification, approach (name the underlying pattern), refined code, complexity details, at least three tests including edge cases, and a one-line glossary of new terms.
+1. `Subject: <short title of the answer, same language, max 60 characters>` — a clear summary of the problem/approach (e.g. "Maior substring sem repetição em Rust").
+2. `**Big O:** <time complexity> time | <space complexity> space`
+3. `**Language:** <language>`
+4. `**File:** <file name of the code, e.g. solution.rs>` (only when you write code)
+5. `**Initial implementation**` — a fenced code block in the detected language; if no code exists yet, start with a minimal working implementation. Every line of code has a trailing `//` comment explaining why that exact line exists.
+6. Continue with only the sections the current step needs: a short speakable line, clarification, approach (name the underlying pattern), refined code, complexity details, at least three tests including edge cases, and a one-line glossary of new terms.
 
 Always produce a useful next step. Return exactly "..." only when there is no usable transcript or it is unintelligible."#;
 
@@ -120,13 +125,17 @@ pub const SYSTEM_DESIGN_SUGGESTION_PROMPT: &str = r#"You are a live system-desig
 
 ## Output shape
 
-1. The speakable line.
-2. The design state, on the following lines: while clarifying/sizing, the running requirements and estimates (e.g. `DAU ~1M | reads ~10k QPS | writes ~100 QPS | read-heavy`); once architecture exists, a compact ASCII sketch updated with the step just taken (e.g. `Clients -> CDN -> LB -> API -> DB`).
+1. `Subject: <short title of your next step, same language, max 60 characters>` — a clear summary (e.g. "Estimar QPS de leitura e escrita").
+2. The speakable line.
+3. The design state, on the following lines: while clarifying/sizing, the running requirements and estimates (e.g. `DAU ~1M | reads ~10k QPS | writes ~100 QPS | read-heavy`); once architecture exists, a compact ASCII sketch updated with the step just taken (e.g. `Clients -> CDN -> LB -> API -> DB`).
 3. A one-line glossary entry for each technical term used for the first time in the session.
 
 Always produce a useful next step. Return exactly "..." only when there is no usable transcript or it is unintelligible."#;
 
 /// Agentes embutidos, na ordem de exibição.
+///
+/// A identidade (ícone + cor) é **fixa** nos embutidos (BR-037): o usuário
+/// reconhece o agente de relance no seletor, no título e no histórico.
 pub fn builtin_modes() -> Vec<AssistantMode> {
     vec![
         AssistantMode {
@@ -136,6 +145,8 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             system_prompt: MEETING_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: MEETING_SUGGESTION_PROMPT.to_string(),
             context: String::new(),
+            icon: "users".to_string(),
+            color: "cyan".to_string(),
         },
         AssistantMode {
             id: "technical_interview".to_string(),
@@ -144,6 +155,8 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: TECHNICAL_INTERVIEW_SUGGESTION_PROMPT.to_string(),
             context: String::new(),
+            icon: "braces".to_string(),
+            color: "violet".to_string(),
         },
         AssistantMode {
             id: "leetcode".to_string(),
@@ -152,6 +165,8 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: LEETCODE_SUGGESTION_PROMPT.to_string(),
             context: String::new(),
+            icon: "code".to_string(),
+            color: "emerald".to_string(),
         },
         AssistantMode {
             id: "system_design".to_string(),
@@ -160,6 +175,8 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: SYSTEM_DESIGN_SUGGESTION_PROMPT.to_string(),
             context: String::new(),
+            icon: "layers".to_string(),
+            color: "coral".to_string(),
         },
     ]
 }
@@ -321,6 +338,8 @@ mod tests {
             system_prompt: "Você ajuda em vendas.".into(),
             suggestion_prompt: "Sugira a próxima fala.".into(),
             context: String::new(),
+            icon: "briefcase".into(),
+            color: "coral".into(),
         }];
         assert_eq!(
             resolve_mode("custom-vendas", &custom).map(|m| m.name),
@@ -352,6 +371,8 @@ mod tests {
             system_prompt: "Contexto de vendas.".into(),
             suggestion_prompt: String::new(),
             context: "Produto: GhostWhisper.".into(),
+            icon: "sparkle".into(),
+            color: "slate".into(),
         };
         let prompt = suggestion_system_prompt(&mode, None);
         assert!(prompt.contains("live meeting copilot"));

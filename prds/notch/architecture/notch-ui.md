@@ -24,8 +24,7 @@ src/features/panel/PanelTabs.tsx         # pill de abas acessível (Transcriçã
 src/features/panel/PanelWindow.tsx       # host das abas (substitui ChatWindow.tsx)
 src/features/panel/TranscriptionView.tsx # conteúdo que hoje é a janela `chat`
 src/features/panel/SummaryView.tsx       # conteúdo que hoje é a janela `summary`
-src/features/panel/LanguageBar.tsx       # barra inferior: seletor de idioma (origem)
-src/features/chat/ChatHeaderActions.tsx  # atalho "Sugestões" (chat é só transcrição)
+src/features/panel/LanguageBar.tsx       # barra inferior: seletor de idioma + estado
 
 src/components/dwell/DwellButton.tsx     # opt-in: fill + clique imediato (BR-036)
 src/components/dwell/DwellPopover.tsx    # "Sem clique" + "Sim"
@@ -56,7 +55,11 @@ Estado derivado de `useSessionState()`:
 - **Não** há nova `Surface`: continua `actionbar | hidden`
   (`ports/overlay_window.rs`), como já vigente desde a task 07 do PRD chat.
 - A **casca** não assina `audio_level`; o waveform tem assinatura própria e escreve
-  CSS vars por `ref` (sem re-render — ISS-020). Os medidores ficam no painel.
+  CSS vars por `ref` (sem re-render — ISS-020).
+  > **Revisão (2026-10-19, chat v0.2/BR-040):** os medidores e o atalho
+  > "Sugestões" saem da aba Transcrição; o waveform e o atalho ficam no notch.
+  > Ver [`../../chat/architecture/transcription-panel.md`](../../chat/architecture/transcription-panel.md)
+  > §2.
 - Cores pelas regras da BR-035: ação primária **esmeralda** (`--oh-success`),
   foco/live **cyan** (`--oh-accent`), IA **violeta** (`--oh-ai`), "pausado" no
   `--oh-outline` (sem âmbar).

@@ -5,10 +5,16 @@ import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useSuggestions } from "../../core/application/useSuggestions";
+import { useSuggestionCadence } from "../../core/application/useSuggestionCadence";
+import type { Suggestion } from "../../core/domain/assistant";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
-import { MarkdownView } from "../../components/MarkdownView";
+import { SlidersIcon, SparkleIcon } from "../../components/icons";
 import { StatusPill } from "../../components/StatusPill";
+import { AgentSelector } from "./AgentSelector";
+import { AutoSuggestControl } from "./AutoSuggestControl";
+import { SuggestionCard } from "./SuggestionCard";
+import { SuggestionHistory } from "./SuggestionHistory";
 import { PanelFrame } from "../panels/PanelFrame";
 
 /** Janela de sugestões com seleção de agente. */
@@ -17,8 +23,11 @@ export function SuggestionsWindow() {
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
   const { modes } = useAssistantModes(opened);
+  const cadence = useSuggestionCadence();
   const [modeId, setModeId] = useState(settings.assistant_mode_id);
   const [extraContext, setExtraContext] = useState("");
+  /** O contexto extra fica recolhido por padrão (abre pelo ícone do header). */
+  const [extraOpen, setExtraOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const auto = settings.suggestion_auto_refresh;
 
@@ -28,6 +37,7 @@ export function SuggestionsWindow() {
 
   const {
     current,
+    quick,
     history,
     generating,
     loading,
@@ -36,7 +46,6 @@ export function SuggestionsWindow() {
     pinned,
     suggestNow,
     pin,
-    select,
   } = useSuggestions({
     sessionId: state.session_id,
     opened,
@@ -60,8 +69,10 @@ export function SuggestionsWindow() {
     }).then(() => reload());
   };
 
-  const onCopy = async () => {
-    if (current && (await copyText(current.text))) {
+  /** Copia uma sugestão (a atual, ou a de um item do histórico). */
+  const onCopy = async (target?: Suggestion | null) => {
+    const suggestion = target ?? current;
+    if (suggestion && (await copyText(suggestion.text))) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1_500);
     }
@@ -73,79 +84,69 @@ export function SuggestionsWindow() {
       ? "Pausado"
       : "Gravando";
 
+  // Cabeçalho: faísca + título + badge de estado (BR-039).
+  const heading = (
+    <div className="suggestions-title">
+      <span className="suggestions-title__spark" aria-hidden="true">
+        <SparkleIcon size={14} />
+      </span>
+      <span className="panel__title">Sugestões</span>
+      {state.listening ? (
+        <span
+          className={`live-badge${state.paused ? " live-badge--paused" : ""}`}
+          title={status}
+        >
+          <span className="live-badge__dot" />
+          {state.paused ? "PAUSADO" : "LIVE"}
+        </span>
+      ) : null}
+    </div>
+  );
+
   const actions = (
     <>
-      <select
-        className="panel__select"
-        aria-label="Agente"
-        value={modeId}
-        onChange={(event) => selectMode(event.target.value)}
-      >
-        {modes.length === 0 && <option value={modeId}>{modeId}</option>}
-        {modes.map((mode) => (
-          <option key={mode.id} value={mode.id}>
-            {mode.name}
-          </option>
-        ))}
-      </select>
       <button
         type="button"
-        className={`panel__toggle${auto ? " panel__toggle--on" : ""}`}
-        onClick={toggleAuto}
-        title="Sugestões automáticas a cada fala nova (funcionam mesmo com esta janela fechada)"
+        className={`icon-button${extraOpen ? " icon-button--on" : ""}`}
+        onClick={() => setExtraOpen((previous) => !previous)}
+        aria-expanded={extraOpen}
+        title="Contexto extra (opcional)"
+        aria-label="Contexto extra (opcional)"
       >
-        {auto ? "Auto" : "Auto off"}
+        <SlidersIcon size={16} />
       </button>
+      <AutoSuggestControl
+        cadence={cadence}
+        paused={!auto}
+        onToggle={toggleAuto}
+      />
       <button
         type="button"
-        className="panel__button"
+        className="suggest-now"
         disabled={loading || !state.session_id}
         onClick={() => void suggestNow()}
+        title="Gerar uma sugestão agora"
       >
+        <SparkleIcon size={12} />
         {loading ? "Analisando…" : "Sugerir agora"}
-      </button>
-      <button
-        type="button"
-        className="panel__button"
-        disabled={!current}
-        onClick={() => void pin()}
-      >
-        {pinned ? "Fixada" : "Fixar"}
-      </button>
-      <button
-        type="button"
-        className="panel__button"
-        disabled={!current}
-        onClick={() => void onCopy()}
-      >
-        {copied ? "Copiado" : "Copiar"}
       </button>
     </>
   );
 
-  const footer = current && (
-    <span className="panel__meta">
-      {current.mode_name} · contexto até {Math.round(current.context_until_ms / 1000)}s
-    </span>
-  );
-
   return (
-    <PanelFrame
-      label="suggestions"
-      title="Sugestões"
-      subtitle={status}
-      actions={actions}
-      footer={footer}
-    >
-      <details className="panel__extra">
-        <summary>Contexto extra (opcional)</summary>
-        <textarea
-          className="panel__textarea"
-          placeholder="Cole aqui o enunciado ou trecho de código para dar mais contexto ao agente."
-          value={extraContext}
-          onChange={(event) => setExtraContext(event.target.value)}
-        />
-      </details>
+    <PanelFrame label="suggestions" heading={heading} actions={actions}>
+      <AgentSelector modes={modes} modeId={modeId} onSelect={selectMode} />
+      {extraOpen && (
+        <label className="panel__extra">
+          <span className="panel__extra-label">Contexto extra (opcional)</span>
+          <textarea
+            className="panel__textarea"
+            placeholder="Cole aqui o enunciado ou trecho de código para dar mais contexto ao agente."
+            value={extraContext}
+            onChange={(event) => setExtraContext(event.target.value)}
+          />
+        </label>
+      )}
       <div className="panel__scroll">
         {error ? (
           <div className="panel__error">
@@ -159,18 +160,32 @@ export function SuggestionsWindow() {
             </button>
           </div>
         ) : !state.session_id ? (
-          <p className="panel__empty">
-            Inicie uma escuta para receber sugestões.
-          </p>
-        ) : current ? (
+          <div className="suggestion-empty">
+            <span className="suggestion-empty__icon">
+              <SparkleIcon size={18} />
+            </span>
+            <p className="suggestion-empty__title">Nenhuma escuta ativa</p>
+            <p className="suggestion-empty__hint">
+              Inicie uma escuta no notch para receber sugestões.
+            </p>
+          </div>
+        ) : current || quick ? (
           <>
-            {generating && (
+            {generating && current && (
               <StatusPill
                 label="Gerando uma nova sugestão…"
                 title="A sugestão atual continua na tela até a nova ficar pronta; a anterior vai para o histórico"
               />
             )}
-            <MarkdownView markdown={current.text} />
+            <SuggestionCard
+              current={current}
+              quick={quick}
+              pinned={Boolean(pinned)}
+              copied={copied}
+              generating={generating}
+              onCopy={() => void onCopy()}
+              onPin={() => void pin()}
+            />
             {skipped && (
               <p className="panel__hint">Aguardando nova fala…</p>
             )}
@@ -181,34 +196,23 @@ export function SuggestionsWindow() {
             <p className="panel__empty">Analisando a conversa…</p>
           </>
         ) : (
-          <p className="panel__empty">
-            Ainda não há fala suficiente para sugerir.
-          </p>
+          <div className="suggestion-empty">
+            <span className="suggestion-empty__icon">
+              <SparkleIcon size={18} />
+            </span>
+            <p className="suggestion-empty__title">Ainda sem sugestão</p>
+            <p className="suggestion-empty__hint">
+              Fale na reunião: o agente sugere o que dizer a cada fala nova.
+            </p>
+          </div>
         )}
 
-        {history.length > 1 && (
-          <details className="panel__history">
-            <summary>Sugestões anteriores ({history.length - 1})</summary>
-            <ul>
-              {history.slice(1).map((suggestion) => (
-                <li key={`${suggestion.at_ms}-${suggestion.message_id ?? suggestion.text.slice(0, 12)}`}>
-                  <button
-                    type="button"
-                    className="panel__history-item"
-                    onClick={() => select(suggestion)}
-                  >
-                    <span className="panel__history-time">
-                      {Math.round(suggestion.at_ms / 1000)}s
-                    </span>
-                    <span className="panel__history-text">
-                      {suggestion.text.replace(/[#>*`]/g, "").slice(0, 90)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
+        <SuggestionHistory
+          items={history.filter((item) => item.at_ms !== current?.at_ms)}
+          pinnedId={pinned}
+          onCopy={(suggestion) => void onCopy(suggestion)}
+          onPin={(suggestion) => void pin(suggestion)}
+        />
       </div>
     </PanelFrame>
   );

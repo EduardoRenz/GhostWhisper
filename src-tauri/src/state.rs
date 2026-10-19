@@ -137,7 +137,7 @@ mod tests {
     use crate::ports::overlay_window::Surface;
     use crate::ports::session_controller::AudioChannel;
     use crate::ports::suggestion_generator::{
-        PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionRequest,
+        PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionPhase, SuggestionRequest,
     };
     use crate::ports::summary_generator::{SummaryGenerator, SummaryRequest, SummaryResult};
 
@@ -343,6 +343,10 @@ mod tests {
                 session_id: "s1".into(),
                 mode_id: "meeting".into(),
                 mode_name: "Reunião".into(),
+                mode_icon: "users".into(),
+                mode_color: "cyan".into(),
+                phase: SuggestionPhase::Full,
+                title: "Sugestão".into(),
                 text: "sugestão".into(),
                 at_ms: 0,
                 context_until_ms: 0,
@@ -355,6 +359,10 @@ mod tests {
                 session_id: request.session_id,
                 mode_id: request.mode_id,
                 mode_name: "Reunião".into(),
+                mode_icon: "users".into(),
+                mode_color: "cyan".into(),
+                phase: SuggestionPhase::Full,
+                title: String::new(),
                 text: request.text,
                 at_ms: request.at_ms,
                 context_until_ms: request.at_ms,
@@ -376,6 +384,11 @@ mod tests {
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
         fn emit_insight(&self, _suggestion: &Suggestion) {}
         fn emit_suggestion(&self, _suggestion: &Suggestion) {}
+        fn emit_suggestion_cadence(
+            &self,
+            _cadence: &crate::ports::event_publisher::SuggestionCadenceEvent,
+        ) {
+        }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
 

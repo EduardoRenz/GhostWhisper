@@ -4,7 +4,8 @@
 //! (botão “Sugerir”, atalho global e “Fixar”). O contexto são os últimos
 //! momentos da conversa; um `since_ms` evita chamar o LLM sem fala nova.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
@@ -17,7 +18,7 @@ use crate::ports::llm_controller::LlmController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::suggestion_generator::{
-    PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionRequest,
+    PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionPhase, SuggestionRequest,
 };
 
 use super::context;
@@ -53,6 +54,19 @@ const FAST_FIRST_MAX_TOKENS: u32 = 420;
 /// Temperatura do rascunho *fast-first* (determinístico, como o Perssua).
 const FAST_FIRST_TEMPERATURE: f32 = 0.0;
 
+/// Última sugestão gerada de uma sessão (o "cursor" do contexto).
+///
+/// Serve para duas coisas (BR-039):
+/// - **não** gerar de novo sem fala nova (nenhuma chamada ao LLM);
+/// - a janela que abre no meio da conversa mostra a sugestão existente.
+#[derive(Debug, Clone)]
+struct LastSuggestion {
+    /// Fim do contexto considerado (cursor da próxima janela).
+    cursor_ms: i64,
+    /// A sugestão em si (com a fase e o snapshot do agente).
+    suggestion: Suggestion,
+}
+
 /// Gera sugestões contextuais por agente.
 pub struct SuggestionService {
     llm: Arc<dyn LlmController>,
@@ -63,6 +77,8 @@ pub struct SuggestionService {
     clock: Arc<dyn Clock>,
     publisher: Arc<dyn EventPublisher>,
     limits: SuggestionLimits,
+    /// Última sugestão por sessão (em memória).
+    last: Arc<Mutex<HashMap<String, LastSuggestion>>>,
 }
 
 impl SuggestionService {
@@ -86,6 +102,7 @@ impl SuggestionService {
             clock,
             publisher,
             limits: SuggestionLimits::default(),
+            last: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -121,6 +138,19 @@ impl SuggestionService {
             return Some(trimmed.to_string());
         }
         Some(trimmed.chars().take(max_chars).collect())
+    }
+
+    /// Guarda a última sugestão da sessão (cursor + texto).
+    fn remember(&self, session_id: &str, suggestion: &Suggestion) {
+        if let Ok(mut last) = self.last.lock() {
+            last.insert(
+                session_id.to_string(),
+                LastSuggestion {
+                    cursor_ms: suggestion.context_until_ms,
+                    suggestion: suggestion.clone(),
+                },
+            );
+        }
     }
 
     /// Persiste a sugestão e devolve o id da mensagem.
@@ -168,18 +198,38 @@ impl SuggestionGenerator for SuggestionService {
             GhostWhisperError::Config("transcrição vazia: nada para sugerir".to_string())
         })?;
 
-        if let Some(since) = request.since_ms {
-            if recent.until_ms <= since {
-                return Ok(Suggestion {
-                    session_id: session.id.clone(),
-                    mode_id: mode.id,
-                    mode_name: mode.name,
-                    text: String::new(),
-                    at_ms: since,
-                    context_until_ms: recent.until_ms,
-                    message_id: None,
-                    skipped: true,
-                });
+        // O cursor da sessão: o pedido traz o dele; senão, o da última sugestão
+        // gerada. Sem fala nova, **não** há nova sugestão (BR-039).
+        let cached = self
+            .last
+            .lock()
+            .ok()
+            .and_then(|last| last.get(&session.id).cloned());
+        let since = request
+            .since_ms
+            .or_else(|| cached.as_ref().map(|entry| entry.cursor_ms));
+        if !request.force {
+            if let Some(since) = since {
+                if recent.until_ms <= since {
+                    // Reaproveita a última sugestão: nenhuma chamada ao LLM.
+                    if let Some(entry) = cached {
+                        return Ok(entry.suggestion);
+                    }
+                    return Ok(Suggestion {
+                        session_id: session.id.clone(),
+                        mode_id: mode.id,
+                        mode_name: mode.name,
+                        mode_icon: mode.icon,
+                        mode_color: mode.color,
+                        phase: SuggestionPhase::Full,
+                        title: String::new(),
+                        text: String::new(),
+                        at_ms: since,
+                        context_until_ms: recent.until_ms,
+                        message_id: None,
+                        skipped: true,
+                    });
+                }
             }
         }
 
@@ -204,12 +254,17 @@ impl SuggestionGenerator for SuggestionService {
                     .with_max_tokens(FAST_FIRST_MAX_TOKENS),
             ) {
                 Ok(completion) => {
-                    let text = prompts::normalize_markdown(&completion.text);
+                    // O rápido não pede `Subject:`, mas se vier, ele é o título.
+                    let (title, text) = prompts::parse_suggestion_response(&completion.text);
                     if !text.is_empty() {
                         self.publisher.emit_suggestion(&Suggestion {
                             session_id: session.id.clone(),
                             mode_id: mode.id.clone(),
                             mode_name: mode.name.clone(),
+                            mode_icon: mode.icon.clone(),
+                            mode_color: mode.color.clone(),
+                            phase: SuggestionPhase::Quick,
+                            title: title.unwrap_or_default(),
                             text,
                             at_ms: now_rel,
                             context_until_ms: recent.until_ms,
@@ -231,14 +286,21 @@ impl SuggestionGenerator for SuggestionService {
         let session_id = session.id.clone();
         let mode_id = mode.id.clone();
         let mode_name = mode.name.clone();
+        let mode_icon = mode.icon.clone();
+        let mode_color = mode.color.clone();
         let until_ms = recent.until_ms;
         let mut emit = |partial: &str| {
-            let text = prompts::normalize_markdown(partial);
+            // O `Subject:` é o título gerado pelo agente (BR-038): sai do corpo.
+            let (title, text) = prompts::parse_suggestion_response(partial);
             if !text.is_empty() {
                 self.publisher.emit_suggestion(&Suggestion {
                     session_id: session_id.clone(),
                     mode_id: mode_id.clone(),
                     mode_name: mode_name.clone(),
+                    mode_icon: mode_icon.clone(),
+                    mode_color: mode_color.clone(),
+                    phase: SuggestionPhase::Full,
+                    title: title.unwrap_or_default(),
                     text,
                     at_ms: now_rel,
                     context_until_ms: until_ms,
@@ -250,7 +312,7 @@ impl SuggestionGenerator for SuggestionService {
         let completion = self
             .llm
             .complete_streaming(&completion_request, &mut emit)?;
-        let text = prompts::normalize_markdown(&completion.text);
+        let (title, text) = prompts::parse_suggestion_response(&completion.text);
         if text.is_empty() {
             return Err(GhostWhisperError::Other(
                 "o modelo devolveu uma sugestão vazia".to_string(),
@@ -263,16 +325,22 @@ impl SuggestionGenerator for SuggestionService {
             None
         };
 
-        Ok(Suggestion {
-            session_id: session.id,
+        let suggestion = Suggestion {
+            session_id: session.id.clone(),
             mode_id: mode.id,
             mode_name: mode.name,
+            mode_icon: mode.icon,
+            mode_color: mode.color,
+            phase: SuggestionPhase::Full,
+            title: title.unwrap_or_default(),
             text,
             at_ms: now_rel,
             context_until_ms: recent.until_ms,
             message_id,
             skipped: false,
-        })
+        };
+        self.remember(&session.id, &suggestion);
+        Ok(suggestion)
     }
 
     fn pin(&self, request: PinSuggestionRequest) -> Result<Suggestion> {
@@ -280,10 +348,20 @@ impl SuggestionGenerator for SuggestionService {
         let session = self.sessions.get(&request.session_id)?.ok_or_else(|| {
             GhostWhisperError::Config(format!("sessão {} não encontrada", request.session_id))
         })?;
-        let mode_name =
-            assistant_prompts::resolve_mode(&request.mode_id, &settings.custom_assistant_modes)
-                .map(|mode| mode.name)
-                .unwrap_or_else(|| request.mode_id.clone());
+        let mode =
+            assistant_prompts::resolve_mode(&request.mode_id, &settings.custom_assistant_modes);
+        let mode_name = mode
+            .as_ref()
+            .map(|mode| mode.name.clone())
+            .unwrap_or_else(|| request.mode_id.clone());
+        // Identidade do agente no momento da fixação (BR-037).
+        let (mode_icon, mode_color) =
+            mode.map(|mode| (mode.icon, mode.color)).unwrap_or_else(|| {
+                (
+                    crate::domain::assistant::default_agent_icon(),
+                    crate::domain::assistant::default_agent_color(),
+                )
+            });
 
         let text = request.text.trim();
         if text.is_empty() {
@@ -298,6 +376,10 @@ impl SuggestionGenerator for SuggestionService {
             session_id: session.id,
             mode_id: request.mode_id,
             mode_name,
+            mode_icon,
+            mode_color,
+            phase: SuggestionPhase::Full,
+            title: String::new(),
             text: text.to_string(),
             at_ms,
             context_until_ms: at_ms,
@@ -371,6 +453,19 @@ mod tests {
                 .map(|suggestion| suggestion.text.clone())
                 .collect()
         }
+        /// Fases publicadas, na ordem (BR-038).
+        fn phases(&self) -> Vec<SuggestionPhase> {
+            self.suggestions
+                .lock()
+                .expect("suggestions")
+                .iter()
+                .map(|suggestion| suggestion.phase)
+                .collect()
+        }
+        /// Sugestões publicadas, na ordem.
+        fn all(&self) -> Vec<Suggestion> {
+            self.suggestions.lock().expect("suggestions").clone()
+        }
     }
     impl EventPublisher for RecordingPublisher {
         fn emit_segment(&self, _segment: &TranscriptSegment) {}
@@ -382,6 +477,11 @@ mod tests {
                 .lock()
                 .expect("suggestions")
                 .push(suggestion.clone());
+        }
+        fn emit_suggestion_cadence(
+            &self,
+            _cadence: &crate::ports::event_publisher::SuggestionCadenceEvent,
+        ) {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
     }
@@ -479,6 +579,138 @@ mod tests {
         // Os dois passes chegam à UI (rascunho + acumulado final).
         let texts = fixture.publisher.texts();
         assert_eq!(texts, vec!["> peça o prazo", "> peça o prazo"]);
+        // Fases distintas (BR-038): a rápida não substitui a completa.
+        assert_eq!(
+            fixture.publisher.phases(),
+            vec![SuggestionPhase::Quick, SuggestionPhase::Full]
+        );
+    }
+
+    #[test]
+    fn does_not_generate_again_without_new_speech() {
+        // BR-039: sem fala nova, não há nova sugestão (e nenhuma chamada ao LLM).
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        let first = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("primeira");
+        assert!(!first.skipped);
+        assert_eq!(fixture.llm.call_count(), 1);
+
+        let second = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("segunda");
+        assert_eq!(fixture.llm.call_count(), 1, "não chama o LLM de novo");
+        assert_eq!(second.text, first.text, "reaproveita a última sugestão");
+        assert!(!second.skipped);
+    }
+
+    #[test]
+    fn force_generates_even_without_new_speech() {
+        // O botão "Sugerir agora" sempre gera.
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("primeira");
+        let forced = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()).with_force(true))
+            .expect("forçada");
+        assert_eq!(fixture.llm.call_count(), 2);
+        assert!(!forced.skipped);
+    }
+
+    #[test]
+    fn new_speech_after_the_cursor_generates_again() {
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("primeira");
+        fixture
+            .transcriptions
+            .insert(&segment("2", 70_000, "mais fala"))
+            .unwrap();
+        fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("segunda");
+        assert_eq!(fixture.llm.call_count(), 2, "fala nova gera de novo");
+    }
+
+    #[test]
+    fn parses_the_ai_title_and_strips_it_from_the_body() {
+        // BR-038: o `Subject:` do agente vira o título e sai do Markdown.
+        let fixture = fixture(
+            Settings::default(),
+            "Subject: Como inverter uma árvore binária em Python\n\n## Easy\n\nEu faria assim.",
+        );
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "como inverto uma árvore?"))
+            .unwrap();
+
+        let suggestion = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("generate");
+
+        assert_eq!(
+            suggestion.title,
+            "Como inverter uma árvore binária em Python"
+        );
+        assert!(!suggestion.text.contains("Subject:"));
+        assert!(suggestion.text.contains("## Easy"));
+
+        // O evento de streaming também leva o título.
+        assert!(fixture
+            .publisher
+            .all()
+            .iter()
+            .any(|item| item.title == "Como inverter uma árvore binária em Python"));
+    }
+
+    #[test]
+    fn publishes_the_agent_identity_snapshot_with_the_suggestion() {
+        // BR-037: o histórico precisa mostrar quem respondeu, mesmo que o agente
+        // atual seja outro.
+        let fixture = fixture(Settings::default(), "> fala");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "e o prazo?"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(
+                SuggestionRequest::ephemeral(None, "leetcode".to_string()).with_fast_first(true),
+            )
+            .expect("generate");
+
+        let published = fixture.publisher.all();
+        assert!(!published.is_empty());
+        for suggestion in published {
+            assert_eq!(suggestion.mode_icon, "code");
+            assert_eq!(suggestion.mode_color, "emerald");
+            assert_eq!(suggestion.mode_id, "leetcode");
+        }
     }
 
     #[test]
@@ -496,6 +728,7 @@ mod tests {
 
         assert_eq!(fixture.llm.call_count(), 1);
         assert_eq!(fixture.publisher.texts(), vec!["> uma linha"]);
+        assert_eq!(fixture.publisher.phases(), vec![SuggestionPhase::Full]);
     }
 
     #[test]
@@ -616,6 +849,8 @@ mod tests {
                 system_prompt: "Você ajuda em vendas B2B.".into(),
                 suggestion_prompt: "Sugira a próxima fala de vendas.".into(),
                 context: "Produto: GhostWhisper.".into(),
+                icon: "briefcase".into(),
+                color: "coral".into(),
             }],
             ..Settings::default()
         };

@@ -73,6 +73,15 @@ BR-029).
 
 ## 3. Contrato visual (paridade medida no Perssua)
 
+> **Revisão 0.2 (2026-10-19, BR-040):** o painel **ao vivo** passou a seguir o
+> print de referência do usuário — cartões em **largura total**, rótulos
+> **Microfone/Outros**, hora ao lado do nome e ação de IA por mensagem. O
+> contrato vigente está em
+> [`transcription-panel.md`](transcription-panel.md) §2–§3; a tabela abaixo é a
+> **evidência histórica** da paridade Perssua 0.27.5 (v0.1) e não deve ser usada
+> como especificação do ao vivo. O histórico continua usando o mesmo componente
+> de bolha, com os valores novos.
+
 | Elemento | Valor | Origem |
 |---|---|---|
 | Lista | `flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:8px 4px` | `.unified-messages-container` |

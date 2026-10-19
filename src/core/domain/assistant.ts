@@ -11,6 +11,10 @@ export interface AssistantMode {
   suggestion_prompt: string;
   /** Contexto fixo do agente. */
   context: string;
+  /** Ícone do agente (catálogo — BR-037). */
+  icon: string;
+  /** Cor do agente (token do design system — BR-037). */
+  color: string;
 }
 
 /** IDs reservados dos agentes embutidos. */
@@ -20,6 +24,55 @@ export const BUILTIN_MODE_IDS = [
   "leetcode",
   "system_design",
 ] as const;
+
+/** Catálogo de ícones do agente (espelha `domain::assistant`). */
+export const AGENT_ICON_IDS = [
+  "sparkle",
+  "users",
+  "braces",
+  "code",
+  "layers",
+  "book",
+  "briefcase",
+  "terminal",
+] as const;
+
+/** Paleta de cores do agente (tokens do design system — espelha o core). */
+export const AGENT_COLOR_TOKENS = [
+  "cyan",
+  "violet",
+  "emerald",
+  "coral",
+  "slate",
+] as const;
+
+/** Ícone padrão de um agente sem identidade definida. */
+export const DEFAULT_AGENT_ICON = "sparkle";
+
+/** Cor padrão de um agente sem identidade definida. */
+export const DEFAULT_AGENT_COLOR = "slate";
+
+/** `true` quando o id de ícone existe no catálogo. */
+export const isAgentIconId = (icon: string): boolean =>
+  (AGENT_ICON_IDS as readonly string[]).includes(icon);
+
+/** `true` quando o token de cor existe na paleta. */
+export const isAgentColorToken = (color: string): boolean =>
+  (AGENT_COLOR_TOKENS as readonly string[]).includes(color);
+
+/** Ícone do agente com fallback (settings antigas não têm o campo). */
+export const agentIconId = (
+  mode: { icon?: string | null } | null | undefined,
+): string =>
+  mode && mode.icon && isAgentIconId(mode.icon) ? mode.icon : DEFAULT_AGENT_ICON;
+
+/** Cor do agente com fallback (settings antigas não têm o campo). */
+export const agentColorToken = (
+  mode: { color?: string | null } | null | undefined,
+): string =>
+  mode && mode.color && isAgentColorToken(mode.color)
+    ? mode.color
+    : DEFAULT_AGENT_COLOR;
 
 /** Limite de caracteres de cada prompt do agente (espelha o core). */
 export const MODE_PROMPT_MAX_CHARS = 16_384;
@@ -49,11 +102,22 @@ export interface SummaryResult {
   has_more: boolean;
 }
 
+/** Fase da sugestão (BR-038): resposta curta ou completa. */
+export type SuggestionPhase = "quick" | "full";
+
 /** Sugestão gerada (`ports::suggestion_generator::Suggestion`). */
 export interface Suggestion {
   session_id: string;
   mode_id: string;
   mode_name: string;
+  /** Snapshot do ícone do agente (BR-037). */
+  mode_icon: string;
+  /** Snapshot da cor do agente (BR-037). */
+  mode_color: string;
+  /** Fase da sugestão (BR-038). */
+  phase: SuggestionPhase;
+  /** Título curto gerado pelo agente (`Subject:`); vazio = derive do texto. */
+  title: string;
   text: string;
   at_ms: number;
   context_until_ms: number;

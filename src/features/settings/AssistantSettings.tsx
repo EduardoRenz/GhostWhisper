@@ -6,11 +6,17 @@ import {
   type Settings,
 } from "../../core/domain/settings";
 import {
+  AGENT_COLOR_TOKENS,
+  DEFAULT_AGENT_COLOR,
+  DEFAULT_AGENT_ICON,
   MODE_NAME_MAX_CHARS,
   MODE_PROMPT_MAX_CHARS,
+  agentColorToken,
+  agentIconId,
   isBuiltinMode,
   type AssistantMode,
 } from "../../core/domain/assistant";
+import { AgentIcon, AGENT_ICON_LABELS, AGENT_ICON_OPTIONS } from "../../components/AgentIcon";
 
 interface AssistantSettingsProps {
   settings: Settings;
@@ -48,6 +54,8 @@ export function AssistantSettings({ settings, update }: AssistantSettingsProps) 
       system_prompt: "",
       suggestion_prompt: "",
       context: "",
+      icon: DEFAULT_AGENT_ICON,
+      color: DEFAULT_AGENT_COLOR,
     });
   };
 
@@ -175,7 +183,12 @@ export function AssistantSettings({ settings, update }: AssistantSettingsProps) 
         )}
         {custom.map((mode) => (
           <li key={mode.id} className="settings__mode">
-            <span className="settings__mode-name">{mode.name}</span>
+            <span
+              className={`settings__mode-name agent-color--${agentColorToken(mode)}`}
+            >
+              <AgentIcon icon={agentIconId(mode)} size={14} />
+              {mode.name}
+            </span>
             <button
               type="button"
               className="settings__button settings__button--small"
@@ -246,6 +259,56 @@ export function AssistantSettings({ settings, update }: AssistantSettingsProps) 
               }
             />
           </label>
+          <div className="settings__field">
+            <span>Ícone</span>
+            <div
+              className="settings__icons"
+              role="radiogroup"
+              aria-label="Ícone do agente"
+            >
+              {AGENT_ICON_OPTIONS.map((icon) => (
+                <button
+                  key={icon}
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.icon === icon}
+                  aria-label={AGENT_ICON_LABELS[icon] ?? icon}
+                  title={AGENT_ICON_LABELS[icon] ?? icon}
+                  className={`settings__icon${
+                    draft.icon === icon ? " settings__icon--on" : ""
+                  }`}
+                  onClick={() => setDraft({ ...draft, icon })}
+                >
+                  <AgentIcon icon={icon} size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings__field">
+            <span>Cor</span>
+            <div
+              className="settings__colors"
+              role="radiogroup"
+              aria-label="Cor do agente"
+            >
+              {AGENT_COLOR_TOKENS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.color === color}
+                  aria-label={color}
+                  title={color}
+                  className={`settings__color settings__color--${color}${
+                    draft.color === color ? " settings__color--on" : ""
+                  }`}
+                  onClick={() => setDraft({ ...draft, color })}
+                >
+                  <AgentIcon icon={draft.icon} size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="settings__field">
             <span>Prompt de sistema (respostas escritas / critérios)</span>
             <textarea

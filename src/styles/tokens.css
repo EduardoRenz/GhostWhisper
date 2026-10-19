@@ -109,6 +109,14 @@
   --oh-dwell-fill: rgba(0, 242, 254, 0.2);
   --oh-dwell-line: #00f2fe;
 
+  /* --- Identidade do agente (BR-037) ------------------------------------ */
+  /* Cores por token de agente: o agente carrega o *nome* do token, nunca hex. */
+  --oh-agent-cyan: #22d3ee;
+  --oh-agent-violet: #a78bfa;
+  --oh-agent-emerald: #34d399;
+  --oh-agent-coral: #fb7185;
+  --oh-agent-slate: #94a3b8;
+
   /* --- Elevação, vidro e foco ------------------------------------------ */
   --oh-glass-bar: rgba(11, 15, 23, 0.78);
   --oh-glass-card: rgba(19, 27, 46, 0.85);

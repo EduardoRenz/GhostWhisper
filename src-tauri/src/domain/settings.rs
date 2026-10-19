@@ -218,9 +218,11 @@ pub const DEFAULT_DWELL_MS: u32 = 500;
 pub const MIN_DWELL_MS: u32 = 300;
 /// Tempo máximo aceito do drill-hover (ms).
 pub const MAX_DWELL_MS: u32 = 2_000;
-/// Largura mínima dos painéis (paridade com o `tauri.conf.json`).
+/// Largura mínima dos painéis (piso salvo; o mínimo real de cada janela está
+/// no `tauri.conf.json` — o de Sugestões é 520 px, para o código caber).
 pub const MIN_PANEL_WIDTH: u32 = 320;
-/// Altura mínima dos painéis (paridade com o `tauri.conf.json`).
+/// Altura mínima dos painéis (piso salvo; o mínimo real de cada janela está no
+/// `tauri.conf.json`).
 pub const MIN_PANEL_HEIGHT: u32 = 240;
 
 impl Default for Settings {
@@ -422,7 +424,13 @@ impl Settings {
             .take(MAX_WHISPER_PROMPT_CHARS)
             .collect();
         // Agentes inválidos são descartados ao carregar um arquivo antigo/Manual;
-        // no save, `validate` recusa em vez de descartar.
+        // no save, `validate` recusa em vez de descartar. A identidade (ícone/cor)
+        // é normalizada antes: um ícone desconhecido não derruba o agente (BR-037).
+        self.custom_assistant_modes = self
+            .custom_assistant_modes
+            .into_iter()
+            .map(|mode| mode.with_valid_identity())
+            .collect();
         self.custom_assistant_modes
             .retain(|mode| crate::domain::assistant::validate_mode(mode).is_ok());
         if !self.selected_mode_exists() {
@@ -902,6 +910,8 @@ mod tests {
                 system_prompt: "p".into(),
                 suggestion_prompt: String::new(),
                 context: String::new(),
+                icon: "sparkle".into(),
+                color: "slate".into(),
             }],
             ..Settings::default()
         };
@@ -927,11 +937,38 @@ mod tests {
                 system_prompt: "Você ajuda em vendas.".into(),
                 suggestion_prompt: "Sugira a próxima fala.".into(),
                 context: String::new(),
+                icon: "sparkle".into(),
+                color: "slate".into(),
             }],
             ..Settings::default()
         }
         .sanitized();
         assert_eq!(settings.assistant_mode_id, "custom-vendas");
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_normalizes_an_unknown_agent_identity() {
+        use crate::domain::assistant::AssistantMode;
+
+        let settings = Settings {
+            custom_assistant_modes: vec![AssistantMode {
+                id: "custom-vendas".into(),
+                name: "Vendas".into(),
+                category: "custom".into(),
+                system_prompt: "Você ajuda em vendas.".into(),
+                suggestion_prompt: "Sugira a próxima fala.".into(),
+                context: String::new(),
+                icon: "rocket".into(),
+                color: "#00f2fe".into(),
+            }],
+            ..Settings::default()
+        }
+        .sanitized();
+        // O agente sobrevive: só a identidade volta ao padrão (BR-037).
+        assert_eq!(settings.custom_assistant_modes.len(), 1);
+        assert_eq!(settings.custom_assistant_modes[0].icon, "sparkle");
+        assert_eq!(settings.custom_assistant_modes[0].color, "slate");
         assert!(settings.validate().is_ok());
     }
 

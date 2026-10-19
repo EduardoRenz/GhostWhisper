@@ -4,8 +4,10 @@ import { ResizeHandles } from "./ResizeHandles";
 
 interface PanelFrameProps {
   label: PanelLabel;
-  title: string;
+  title?: string;
   subtitle?: string;
+  /** Cabeçalho próprio (substitui título + subtítulo). */
+  heading?: ReactNode;
   /** Botões do cabeçalho (antes do fechar). */
   actions?: ReactNode;
   children: ReactNode;
@@ -23,6 +25,7 @@ export function PanelFrame({
   label,
   title,
   subtitle,
+  heading,
   actions,
   children,
   footer,
@@ -44,8 +47,12 @@ export function PanelFrame({
             ⋮⋮
           </span>
           <div className="panel__heading">
-            <span className="panel__title">{title}</span>
-            {subtitle && <span className="panel__subtitle">{subtitle}</span>}
+            {heading ?? (
+              <>
+                <span className="panel__title">{title}</span>
+                {subtitle && <span className="panel__subtitle">{subtitle}</span>}
+              </>
+            )}
           </div>
           <div className="panel__actions">{actions}</div>
           <button

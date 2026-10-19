@@ -596,10 +596,12 @@ fn open_panel_tab(app: &tauri::AppHandle, label: &str, tab: &str) {
 
 /// Intervalo de verificação do agendador de sugestões (ms).
 const SUGGESTION_TICK_MS: u64 = 1_000;
-/// Espera depois do início da última fala finalizada antes de sugerir.
-const SUGGESTION_DEBOUNCE_MS: i64 = 700;
-/// Frequência máxima das sugestões automáticas (limita custo de API).
-const SUGGESTION_MIN_INTERVAL_MS: i64 = 3_000;
+/// Piso do silêncio depois da fala antes de sugerir (ms).
+///
+/// O silêncio real vem das settings (`suggestion_interval_secs`, 10–120 s) —
+/// é o "timer" que a janela de Sugestões mostra na contagem regressiva
+/// (BR-039). Uma fala nova reinicia a contagem.
+const SUGGESTION_MIN_INTERVAL_MS: i64 = 1_000;
 
 /// Gera sugestões automáticas **sem depender da janela aberta** (BR-028).
 ///
@@ -614,7 +616,6 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut cursor: Option<i64> = None;
         let mut current_session: Option<String> = None;
-        let mut last_run: Option<std::time::Instant> = None;
         loop {
             std::thread::sleep(Duration::from_millis(SUGGESTION_TICK_MS));
             let state = app.state::<state::AppState>();
@@ -623,10 +624,19 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
             };
             let session_id = state.session.current_session_id();
             if session_id != current_session {
+                // Sessao nova: o cursor recomeca (a primeira sugestao nao
+                // compara com a fala da sessao anterior).
                 current_session = session_id.clone();
                 cursor = None;
             }
             let Some(session_id) = session_id else {
+                // Sem sessao: publica a cadencia ociosa (a UI mostra "pausado").
+                publish_cadence(
+                    &state,
+                    None,
+                    SUGGESTION_MIN_INTERVAL_MS,
+                    settings.suggestion_auto_refresh,
+                );
                 continue;
             };
             let Ok(Some(session)) = state.sessions.get(&session_id) else {
@@ -642,17 +652,25 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
                 has_session: true,
                 cursor_ms: cursor,
                 latest_final_ms,
-                ms_since_last_run: last_run
-                    .map(|instant| instant.elapsed().as_millis() as i64)
-                    .unwrap_or(i64::MAX),
                 ms_since_latest_final: latest_final_ms
                     .map(|latest| now_rel - latest)
                     .unwrap_or(i64::MAX),
             };
-            if !should_trigger(&tick, SUGGESTION_DEBOUNCE_MS, SUGGESTION_MIN_INTERVAL_MS) {
+            // O silêncio das settings é o timer do automático (BR-039): uma
+            // fala nova reinicia a contagem.
+            let silence_ms = (settings.suggestion_interval_secs as i64)
+                .saturating_mul(1_000)
+                .max(SUGGESTION_MIN_INTERVAL_MS);
+            // BR-039: o agendador publica o proprio timer; a UI apenas mostra.
+            publish_cadence(
+                &state,
+                Some(&tick),
+                silence_ms,
+                settings.suggestion_auto_refresh,
+            );
+            if !should_trigger(&tick, silence_ms) {
                 continue;
             }
-            last_run = Some(std::time::Instant::now());
             let request =
                 SuggestionRequest::ephemeral(Some(session_id), settings.assistant_mode_id.clone())
                     .with_since_ms(cursor)
@@ -671,6 +689,49 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+/// Publica a cadencia do auto-sugerir para a janela de sugestoes (BR-039).
+///
+/// Publica **sempre** (o evento e barato e a UI so assina quando a janela esta
+/// montada): assim a tela fica reativa a fala nova sem depender do estado de
+/// visibilidade do SO.
+fn publish_cadence(
+    state: &state::AppState,
+    tick: Option<&application::suggestion_scheduler::SchedulerTick>,
+    silence_ms: i64,
+    enabled: bool,
+) {
+    use application::suggestion_scheduler::cadence;
+    use ports::event_publisher::SuggestionCadenceEvent;
+
+    let event = match tick {
+        Some(tick) => {
+            let cadence = cadence(tick, silence_ms);
+            SuggestionCadenceEvent {
+                enabled: cadence.enabled,
+                running: cadence.running,
+                remaining_ms: cadence.remaining_ms,
+                awaiting_speech: cadence.awaiting_speech,
+                window_ms: cadence.window_ms,
+            }
+        }
+        None => SuggestionCadenceEvent {
+            enabled,
+            running: false,
+            remaining_ms: 0,
+            awaiting_speech: false,
+            window_ms: silence_ms,
+        },
+    };
+    tracing::debug!(
+        enabled = event.enabled,
+        running = event.running,
+        remaining_ms = event.remaining_ms,
+        awaiting_speech = event.awaiting_speech,
+        "cadencia do auto-sugerir"
+    );
+    state.publisher.emit_suggestion_cadence(&event);
 }
 
 /// Persiste a posição das janelas de painel enquanto o usuário as move.

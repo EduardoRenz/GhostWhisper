@@ -188,6 +188,10 @@ uma nota de revisão.
   encerrar a sessão (task 20).
 - **Detalhes:** [`mvp/tasks/16-task.md`](mvp/tasks/16-task.md);
   [`mvp/architecture/session-history.md`](mvp/architecture/session-history.md).
+- **Revisão (2026-10-19, BR-040):** o **dado** persistido continua em
+  milissegundos relativos ao início da sessão; a UI do painel ao vivo mostra a
+  **hora de parede** (`HH:MM:SS`) derivada de `started_at_ms + at_ms`, com
+  fallback para `mm:ss` quando o início não é conhecido. Não há migração.
 - **Data:** 2026-10-18 · **Status:** Ativa (task 16)
 
 ## BR-020 — Sugestões da IA entram na linha temporal; export é Markdown
@@ -238,6 +242,12 @@ uma nota de revisão.
   o "Sugerir" e as bolhas de sugestão ao vivo saíram (a feature será revista na aba
   **Sugestões**). Sugestões **persistidas** ("Fixar") continuam no histórico e no
   export, que usam esta mesma linha temporal.
+- **Revisão (2026-10-19, BR-040):** o **formato** das bolhas do ao vivo passa a
+  ser o do print de referência: **largura total** (sem `max-width:75%` e sem
+  alinhamento à direita/esquerda), rótulos **Microfone**/**Outros** com cores
+  distintas, hora ao lado do nome e ação de IA por fala (BR-041). A **linha
+  temporal** (ordenação, prévia fora da linha, final vence a prévia) e o teto de
+  180 caracteres (BR-031) **não mudam**; o histórico usa o mesmo cartão.
 - **Data:** 2026-10-18 · **Status:** Ativa (tasks 01/02)
 
 ## BR-022 — Transporte da sessão: toggle único e encerramento confirmado
@@ -600,3 +610,166 @@ uma nota de revisão.
   [`notch/architecture/drill-hover.md`](notch/architecture/drill-hover.md),
   [`notch/tasks/09-task.md`](notch/tasks/09-task.md)…[`12-task.md`](notch/tasks/12-task.md).
 - **Data:** 2026-10-19 · **Status:** Ativa (tasks 09–12)
+
+## BR-037 — Identidade visual do agente (ícone + cor)
+- **Decisão:** todo agente de sugestão (embutido **e** personalizado) tem **ícone**
+  (catálogo: `sparkle`, `users`, `braces`, `code`, `layers`, `book`, `briefcase`,
+  `terminal`) e **cor** (tokens do design system: `cyan`, `violet`, `emerald`,
+  `coral`, `slate`). Os embutidos são fixos (Reunião `users/cyan`, Entrevista
+  Técnica `braces/violet`, LeetCode `code/emerald`, System Design `layers/coral`);
+  os personalizados escolhem nas Configurações (default `sparkle/slate`). A identidade
+  é **snapshotada** na sugestão, para o histórico mostrar quem respondeu. Ícones são
+  SVG do projeto (BR-008); a cor é o **nome do token** (não hex), então o tema
+  continua sendo a fonte da verdade.
+- **Motivo:** pedido do usuário — o agente precisa ser reconhecível de relance
+  (ícone + cor) no seletor, no título da sugestão e no histórico.
+- **Consequência:** `AssistantMode` ganha `icon`/`color` (Rust + TS), com
+  `serde(default)`/`sanitized()` (settings antigos seguem válidos); validação de
+  catálogo/paleta em `validate_mode`; novos `AgentIcon`/`AgentBadge`; **sem
+  mudança de schema** do banco.
+- **Detalhes:** [`suggestions/prd.md`](suggestions/prd.md) §4/§5 (US-02),
+  [`suggestions/architecture/agent-identity.md`](suggestions/architecture/agent-identity.md),
+  [`suggestions/tasks/01-task.md`](suggestions/tasks/01-task.md),
+  [`suggestions/tasks/04-task.md`](suggestions/tasks/04-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 01 concluída)
+
+## BR-038 — Sugestão em duas fases: título, resposta rápida e resposta completa
+- **Decisão:** a sugestão passa a ter **resposta rápida** e **resposta completa**,
+  com **fase explícita** no modelo (`quick` | `full`). A rápida (curta, gerada
+  primeiro, com o **contrato de prompt que já existe**) fica em **bloco próprio** e
+  **permanece** quando a completa chega; a completa é Markdown livre, com chip de
+  metadados e blocos de código com cabeçalho/rodapé. O **título** exibido é
+  **gerado pelo agente** via retorno estruturado leve: a resposta começa com
+  `Subject: <título curto>` (mesmo padrão do resumo), que o core extrai para
+  `Suggestion.title` e remove do Markdown. Sem `Subject:` (ou em sugestões
+  antigas), cai para o título derivado (`subject` → primeira linha
+  significativa → rótulo neutro), que **pula seções genéricas** (`## Easy`,
+  `## Practical`, `**Initial implementation**`, `**Big O:**`…) — sem isso,
+  perguntas diferentes viravam “Easy”, “Easy”, “Easy”. O cartão e o histórico
+  usam o mesmo título. O **histórico** é uma
+  seção colapsável (“Histórico de Sugestões da Sessão” + contador) com accordions
+  (ícone do agente + título + pill do agente): expandir **rola até** o bloco e
+  **nunca** substitui a sugestão do topo. A resposta rápida é **efêmera** (só a
+  completa é fixada/copiada/exportada).
+- **Motivo:** pedido do usuário — a resposta curta “do que falar agora” não pode
+  sumir quando o material completo chega, e o histórico não pode roubar a
+  leitura. O editor do protótipo (que cobria o histórico) não é adotado.
+- **Consequência:** `Suggestion` ganha `phase`, `mode_icon` e `mode_color`; o
+  evento `suggestion` transporta a fase; **sem** mudança de contrato de prompt e
+  **sem migração** do banco (`messages.content` continua com o Markdown
+  completo). Ao chegar a **rápida de uma geração nova**, a sugestão anterior sai
+  do topo (já está no histórico) e o cartão mostra a nova sendo montada — nunca
+  se confunde a nova com a antiga. Enquanto só existe a rápida, o cartão mostra
+  **“Gerando resposta completa…”**.
+- **Detalhes:** [`suggestions/prd.md`](suggestions/prd.md) §4/§5 (US-03/US-04),
+  [`suggestions/architecture/suggestions-window.md`](suggestions/architecture/suggestions-window.md),
+  [`suggestions/tasks/02-task.md`](suggestions/tasks/02-task.md),
+  [`suggestions/tasks/05-task.md`](suggestions/tasks/05-task.md),
+  [`suggestions/tasks/06-task.md`](suggestions/tasks/06-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 02/05/06 concluídas)
+
+## BR-039 — Cadência visível do auto-sugerir (progress circular)
+- **Decisão:** o cabeçalho da janela de Sugestões mostra **LIVE** e o controle de
+  **auto-sugerir** com **texto, contagem regressiva e progress circular** (anel
+  que esvazia). O controle é: anel + rótulo **“Auto-sugerir”** + pill com a
+  contagem (“12s”); pausado, a pill vira **“Pausado”**. A cadência vem do
+  **agendador** (evento `suggestion_cadence`: `enabled`, `running`,
+  `remaining_ms`, `awaiting_speech`, `window_ms`) — a UI **não** recalcula.
+  O intervalo das **settings** (`suggestion_interval_secs`, 10–120 s) é o
+  **tempo de silêncio** depois da última fala: **cada fala nova reinicia a
+  contagem**; quando o silêncio completa o intervalo, a sugestão é gerada.
+  Uma sequência de perguntas próximas vira **uma** sugestão (não uma por
+  balão). **Trocar de agente não gera** sugestão: o agente escolhido vale para
+  a próxima geração (fala nova + contagem, ou “Sugerir agora”). “Sugerir agora”
+  fica sem glow.
+- **Sem fala nova, não há nova sugestão:** nenhuma chamada ao LLM. O serviço
+  guarda a última sugestão da sessão e a devolve; o botão “Sugerir agora” (e o
+  atalho/chat “Sugerir”) **forçam** a geração.
+- **Motivo:** pedido do usuário — o usuário precisa ver **quando** a próxima
+  sugestão vem e se o automático está rodando; e o automático não deve gastar
+  chamada (nem repetir sugestão) sem conteúdo novo.
+- **Consequência:** novo evento no `EventPublisher`/agendador; hook
+  `useSuggestionCadence`; círculo em SVG (`stroke-dashoffset`, sem re-render por
+  quadro); a pausa/retomada continua em `settings.suggestion_auto_refresh`;
+  `SuggestionRequest.force` + cache da última sugestão no serviço; o agendador
+  passa a usar `settings.suggestion_interval_secs` (que antes era configuração
+  morta).
+- **Detalhes:** [`suggestions/prd.md`](suggestions/prd.md) §4/§5 (US-01),
+  [`suggestions/architecture/suggestions-window.md`](suggestions/architecture/suggestions-window.md) §3.3,
+  [`suggestions/tasks/03-task.md`](suggestions/tasks/03-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 03 concluída)
+
+## BR-040 — "Transcrição ao Vivo": cartões em largura total e identidade por canal
+
+- **Decisão:** o painel ao vivo (`chat`, aba **Transcrição**) passa a seguir o
+  print de referência do usuário (2026-10-19):
+  - cabeçalho com **ícone + "Transcrição ao Vivo"** e *pill* de abas
+    **Transcrição | Resumo** em **largura total**, com a ativa em contorno
+    **cyan**;
+  - **toda mensagem** é um cartão de **largura total** (sem `max-width:75%` nem
+    alinhamento à direita/esquerda), independente do tamanho do texto;
+  - **Microfone** (canal do usuário) em cor **primária/cyan** e **Outros** (canal
+    do sistema) em **violeta**, com a **hora da mensagem** ao lado do nome;
+  - a hora exibida é **de parede** (`HH:MM:SS`, derivada de
+    `started_at_ms + at_ms`), com fallback `mm:ss`; o dado persistido continua
+    **relativo à sessão** (BR-019);
+  - a fala em andamento tem borda/fundo cyan, **"Falando agora…"** e selo
+    **Streaming**; continuação não repete nome/hora;
+  - cada fala **finalizada** ganha a ação de IA no canto superior direito
+    (BR-041); prévia/continuação não;
+  - o rodapé mostra **"Idioma de Entrada:"** + seletor e o **estado real** do
+    Whisper à direita. **Não** exibir latência/“WebRTC” inventados;
+  - a linha de medidores e o botão de texto "Sugestões" **saem** da aba (o
+    waveform e o atalho ficam no notch); o header arrasta pelo título/ícone, sem
+    grip visível;
+  - o histórico usa o mesmo cartão e a mesma hora, sem a ação de IA.
+- **Motivo:** pedido do usuário — "deixe o layout o mais fiel possível" ao print
+  anexado, com microfone/outros em cores distintas, hora por mensagem e cartões
+  que preenchem a janela.
+- **Consequência:** a parte visual da BR-021 (alinhamento direita/esquerda e
+  `max-width:75%`) é **revisada** para o ao vivo; a linha temporal,
+  prévia/final e o teto de 180 caracteres (BR-031) não mudam. O layout do print
+  é a fonte desta revisão; a evidência Perssua 0.27.5 em
+  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §3 fica como
+  histórica. Sem mudança de schema.
+- **Detalhes:** [`chat/prd.md`](chat/prd.md) §9,
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
+  §2–§3, [`chat/tasks/10-task.md`](chat/tasks/10-task.md),
+  [`chat/tasks/11-task.md`](chat/tasks/11-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 10/11 planejadas)
+
+## BR-041 — Sugestão manual a partir de uma mensagem (contexto por parâmetro)
+
+- **Decisão:** cada mensagem finalizada da Transcrição tem uma ação de **IA** que
+  leva a mensagem (sessão, falante, texto inteiro e instante) para a janela de
+  **Sugestões**, onde o usuário vê um bloco de **contexto manual** e só gera a
+  sugestão ao clicar em **"Gerar sugestão manual"**. O clique no `[✦]` **não**
+  chama o LLM.
+  - O contexto é um **parâmetro explícito** do caso de uso
+    (`SuggestionRequest.manual_context`), não um estado global de UI; o store
+    entre as janelas é apenas o correio (preparar → abrir/buscar).
+  - A sugestão gerada é marcada com `trigger = manual` e exibida como
+    **"Sugestão Manual"** no cartão e no histórico; as fases rápida/completa
+    (BR-038) valem normalmente.
+  - O **automático** do core **não** usa o contexto manual; "Sugerir agora"
+    continua sendo a sugestão normal.
+  - A sugestão manual é **efêmera**; "Fixar" continua sendo o caminho para a
+    linha temporal/export (BR-020). Sem migração de banco e sem backend novo.
+- **Motivo:** pedido do usuário — "ao clicar, a mensagem é levada via parâmetro
+  para o Sugestões, e dali será gerada uma sugestão Manual pelo usuário"; e a
+  arquitetura já recebe contexto por parâmetro, então o handoff deve preservar
+  isso.
+- **Consequência:** novo valor `ManualSuggestionContext`, porta
+  `ManualSuggestionContextStore` + adaptador em memória, comandos IPC
+  `suggestion_prepare_manual` / `suggestion_manual_context` /
+  `suggestion_clear_manual_context`; `SuggestionRequest.manual_context` e
+  `Suggestion.trigger`; prompt com bloco `<selected_message>` (fonte não
+  confiável). O evento `panel_opened` acorda a janela e ela busca o store — um
+  evento efêmero sozinho poderia se perder com a janela fechada.
+- **Detalhes:** [`chat/prd.md`](chat/prd.md) §9,
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
+  §4–§6, [`chat/tasks/12-task.md`](chat/tasks/12-task.md),
+  [`chat/tasks/13-task.md`](chat/tasks/13-task.md),
+  [`suggestions/architecture/suggestions-window.md`](suggestions/architecture/suggestions-window.md)
+  §5.4.
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 12/13 planejadas)

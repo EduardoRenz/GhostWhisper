@@ -1,11 +1,13 @@
 # PRD — GhostWhisper Chat (paridade de conversa com o Perssua)
 
-- **Versão:** 0.1
-- **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–09 `CONCLUDED`)
+- **Versão:** 0.2
+- **Data:** 2026-10-19
+- **Status:** v0.1 implementada (tasks 01–09 `CONCLUDED`); **v0.2 planejada**
+  (tasks 10–14 `PENDING`) — ver §9
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/chat-ui.md`](architecture/chat-ui.md),
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md),
   [`tasks/_tasks.md`](tasks/_tasks.md), PRD anterior: [`../mvp/prd.md`](../mvp/prd.md)
 
 ---
@@ -21,6 +23,11 @@ Perssua (referência de produto, BR-015) e trocar os controles de sessão por
 O MVP (`prds/mvp`) entregou captura, streaming, sessão contínua, histórico, export e
 stealth. O que falta é **forma**: hoje as falas são linhas de texto e os controles
 são botões de texto, o que não corresponde ao produto de referência.
+
+> **Revisão 0.2 (2026-10-19):** a v0.1 entregou bolhas, transporte e janelas. A
+> v0.2 revisa a **forma do painel ao vivo** (print de referência anexado pelo
+> usuário) e adiciona a **sugestão manual a partir de uma mensagem** — ver §9. A
+> linha temporal, o transporte e as janelas da v0.1 não mudam.
 
 ## 2. Problema
 
@@ -114,6 +121,8 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
   - **CA-06.3** A janela é arrastável pelo cabeçalho e redimensionável (mínimo
     360×320); **posição e tamanho voltam** ao reabrir o app (BR-026).
   - **CA-06.4** Os medidores de nível ficam na janela de Chat.
+    > **Revisão 0.2 (BR-040):** os medidores **saem** da aba Transcrição; o
+    > waveform do notch continua. Ver §9 (CA-09.5).
   - **CA-06.5** O overlay deixa de expandir: a `Surface` fica `actionbar`/`hidden`
     e o click-through segue preservado (RNF-02).
 - **US-07 — Histórico em janela própria.** Como usuário, quero revisar sessões
@@ -171,3 +180,179 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 - Nenhum `warn` de "falha ao persistir segmento" em sessão de dois canais.
 - Os valores visuais conferem com a tabela de paridade
   ([`architecture/chat-ui.md`](architecture/chat-ui.md) §3).
+
+---
+
+## 9. Revisão 0.2 — "Transcrição ao Vivo" e sugestão manual por mensagem
+
+> **Escopo:** tasks 10–14 (`PENDING`). O layout vem do **print de referência
+> anexado pelo usuário** (2026-10-19); não é uma nova extração do Perssua. O
+> contrato técnico vigente fica em
+> [`architecture/transcription-panel.md`](architecture/transcription-panel.md);
+> a tabela de `chat-ui.md` §3 permanece como evidência histórica da v0.1.
+
+### 9.1 Objetivo
+
+1. **Forma fiel ao print:** painel **"Transcrição ao Vivo"**, abas
+   **Transcrição | Resumo** em largura total, bolhas de mensagem em **largura
+   total** e rodapé com idioma + estado real do motor.
+2. **Identidade por canal:** **Microfone** em cor primária/cyan e **Outros** em
+   violeta, com a **hora da mensagem** ao lado do nome.
+3. **Ação de IA por mensagem:** botão `[✦]` no canto superior direito de cada
+   fala finalizada; o clique leva a mensagem como **contexto** para a janela de
+   Sugestões.
+4. **Sugestão Manual:** no Sugestões, o usuário vê a mensagem selecionada e
+   dispara a geração manual; a resposta é marcada como **"Sugestão Manual"**.
+
+### 9.2 Problema
+
+- O painel ao vivo ainda usa o contrato da v0.1: bolhas de até **75%**, alinhadas
+  à direita ("Você")/esquerda ("Interlocutor"), sem a leitura de cartão do print.
+- Não existe caminho para pedir uma sugestão **a partir de uma fala específica**:
+  a janela de Sugestões só recebe o contexto recente e a caixa de contexto extra.
+- O rodapé do print mostra "Latência: 48ms · WebRTC"; o produto **não** mede essa
+  latência e **não** usa WebRTC — não inventar o número.
+
+### 9.3 Casos de uso
+
+- **CU-08 — Ler a conversa no formato do print:** cada fala é um cartão de
+  largura total, com nome/cor do canal e hora.
+- **CU-09 — Acompanhar a fala em curso:** a prévia aparece como cartão cyan com
+  "Falando agora…" e selo **Streaming**.
+- **CU-10 — Pedir uma sugestão sobre uma mensagem:** clicar no `[✦]` da fala,
+  revisar o contexto no Sugestões e gerar uma sugestão manual.
+- **CU-11 — Revisar no histórico:** o detalhe da sessão usa os mesmos cartões e a
+  mesma hora; a ação de IA fica só no ao vivo.
+
+### 9.4 Estórias de usuário e critérios de aceite
+
+#### US-09 — Casca "Transcrição ao Vivo"
+
+Como usuário, quero que o painel da sessão siga o layout do print.
+
+- **CA-09.1** O cabeçalho da aba Transcrição mostra **ícone + "Transcrição ao
+  Vivo"**; a aba Resumo mostra **"Resumo"**. O subtítulo `id · status` sai do
+  cabeçalho.
+- **CA-09.2** A pill de abas ocupa a **largura total**, com duas colunas iguais;
+  a aba ativa usa **contorno/texto cyan** (não fundo preenchido). A navegação por
+  teclado e o estado persistido (`Settings.panel_tab`) continuam.
+- **CA-09.3** O rodapé mostra **"Idioma de Entrada:"** + seletor à esquerda e, à
+  direita, **"Whisper {modelo} · {Gravando|Pausado|Sem sessão}"** — sem latência
+  inventada e sem "WebRTC".
+- **CA-09.4** O layout se mantém em 360×320, sem overflow; só tokens `--oh-*`.
+- **CA-09.5** A aba Transcrição **não** mostra a linha de medidores de nível nem
+  o botão de texto "Sugestões": o waveform e o atalho para Sugestões ficam no
+  notch (BR-032/BR-033). O header arrasta pelo título/ícone, sem o grip visível.
+
+#### US-10 — Bolhas em largura total, com identidade e hora
+
+Como usuário, quero ler a conversa em cartões largos e saber quem falou e quando.
+
+- **CA-10.1** Toda bolha preenche a **largura da lista**; não há `max-width:
+  75%`, alinhamento à direita/esquerda nem diferença de largura pelo tamanho do
+  texto.
+- **CA-10.2** **Microfone** usa a cor primária/cyan; **Outros** usa violeta. A
+  **hora** aparece ao lado do nome em `HH:MM:SS` (hora de parede derivada de
+  `started_at_ms + at_ms`); sem `started_at_ms`, cai em `mm:ss`.
+- **CA-10.3** A fala em andamento mostra **"Falando agora…"**, selo **Streaming**
+  com ponto cyan, borda/fundo cyan e caret; **não** mostra a ação de IA.
+- **CA-10.4** A continuação de fala longa (BR-031) não repete nome/hora/ações e
+  fica colada na parte anterior.
+- **CA-10.5** O histórico usa o mesmo contrato visual e a mesma hora; a ação de
+  IA não aparece nele.
+- **CA-10.6** A tradução sob demanda (BR-030) continua no canto superior direito,
+  ao lado do espaço da IA, sem sobrepor o texto.
+
+#### US-11 — Ação de IA em cada mensagem
+
+Como usuário, quero pedir uma sugestão sobre uma fala específica.
+
+- **CA-11.1** Cada fala **finalizada** tem um botão `[✦]` no canto superior
+  direito, com `aria-label`/`title`.
+- **CA-11.2** O clique envia **sessão, falante, texto inteiro do segmento e
+  instante** ao núcleo, abre/foca a janela de **Sugestões** e **não** chama o
+  LLM.
+- **CA-11.3** Prévia em andamento, continuação, bolha de sugestão e ausência de
+  sessão não oferecem a ação.
+- **CA-11.4** O contexto é substituído a cada novo clique; se a janela estava
+  fechada, ele continua disponível ao abrir (store + busca no `panel_opened`).
+- **CA-11.5** O botão é acessível por teclado e tem estado de foco visível.
+
+#### US-12 — Sugestão Manual no Sugestões
+
+Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
+
+- **CA-12.1** O Sugestões mostra um bloco **"Contexto manual"** com falante, hora
+  e trecho, mais o botão **"Gerar sugestão manual"**. Só o clique do usuário
+  chama o LLM (sem custo surpresa ao abrir).
+- **CA-12.2** A sugestão gerada é marcada como **"Sugestão Manual"** no cartão e
+  no histórico, preservando as fases rápida/completa (BR-038). Ela é efêmera;
+  "Fixar" continua sendo o caminho para a linha temporal/export.
+- **CA-12.3** O contexto chega ao caso de uso como **parâmetro explícito**
+  (`SuggestionRequest.manual_context`), não como estado global de UI. O
+  automático do core **não** usa o contexto manual.
+- **CA-12.4** O ✕ limpa o contexto; trocar de sessão não devolve contexto de
+  outra; o bloco não some no estado vazio.
+- **CA-12.5** Sem chave/erro do provider, a mensagem amigável existente aparece e
+  o contexto continua disponível para nova tentativa.
+- **CA-12.6** Nenhuma migração de banco e nenhum backend novo (BR-002/BR-004).
+
+### 9.5 Requisitos
+
+**Funcionais**
+
+- **RF-01** Cabeçalho, abas e rodapé do print.
+- **RF-02** Bolhas full-width com rótulos Microfone/Outros, hora e Streaming.
+- **RF-03** Botão de IA por fala finalizada + handoff de contexto.
+- **RF-04** Bloco de contexto manual + geração manual no Sugestões.
+- **RF-05** `Suggestion.trigger` (`auto | now | manual`) e rótulo "Manual".
+- **RF-06** Contexto por parâmetro no `SuggestionRequest`; auto-sugerir imune.
+
+**Não funcionais**
+
+- **RNF-01 — Testabilidade (BR-013):** `formatMessageClock`, store do contexto,
+  prompt manual, `trigger` e regras do hook são puros/testáveis.
+- **RNF-02 — Desempenho:** sem blur por bolha; a lista segue memoizada
+  (`ChatView`), com teto de itens (BR-021).
+- **RNF-03 — Sem métrica falsa:** o rodapé não mostra latência/WebRTC; só dados
+  reais.
+- **RNF-04 — Acessibilidade:** `aria-label`, foco visível, teclado.
+- **RNF-05 — Sem dependência nova** (BR-008) e **sem schema**.
+- **RNF-06 — Documentação única (BR-016):** IDs `BR-040`/`BR-041`, `T10–T14`;
+  contrato em `transcription-panel.md`.
+
+### 9.6 Não-objetivos
+
+- Gerar a sugestão **automaticamente** no clique do `[✦]` (o usuário decide no
+  Sugestões; evita custo/LLM surpresa).
+- Persistir o contexto manual entre reinícios do app.
+- Instrumentar latência real de decodificação ou trocar o rótulo técnico do
+  rodapé por "WebRTC".
+- Mudar o teto de 180 caracteres/continuação (BR-031), a linha temporal (BR-021)
+  ou a captura de áudio.
+- Ação de IA no histórico de sessões encerradas.
+- i18n além de PT-BR (BR-010).
+
+### 9.7 Riscos
+
+| Risco | Mitigação |
+|---|---|
+| Evento de contexto perdido com a janela fechada | store no núcleo + busca ao montar e no `panel_opened`; não depender de evento efêmero |
+| Contexto velho de outra sessão | store keyed por `session_id`; `get` só devolve se bater; troca de sessão limpa |
+| Injeção de prompt pelo texto da mensagem | o texto vai num bloco `<selected_message>` e o system prompt já trata fala como fonte não confiável (nunca instrução) |
+| Custo de LLM ao abrir o Sugestões | com contexto manual, a janela **não** gera automaticamente; só o botão gera |
+| Bolha full-width com texto longo | teto de 180 caracteres + continuação (BR-031); scroll do painel |
+| Hora de parede sem `started_at_ms` | fallback determinístico para `mm:ss` |
+| Dois ícones no canto superior direito (tradução + IA) | grupo de ações com espaçamento; o texto nunca fica por baixo |
+
+### 9.8 Métricas de sucesso
+
+- Nenhum cartão do ao vivo tem `max-width: 75%` ou alinhamento lateral.
+- Microfone/Outros e a hora aparecem em todas as falas; a prévia mostra
+  Streaming.
+- Clicar no `[✦]` abre o Sugestões com o contexto **sem** chamada ao LLM; o
+  clique em "Gerar sugestão manual" gera e rotula **Manual**.
+- O automático do core continua com `trigger = auto` mesmo com contexto manual
+  ativo.
+- `cargo test`, `cargo clippy`, `cargo fmt --check`, `pnpm test`, `tsc --noEmit`
+  e `pnpm build` verdes.
