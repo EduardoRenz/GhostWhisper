@@ -1842,8 +1842,8 @@ body,
   color: var(--ghostwhisper-text-muted);
 }
 
-/* Progresso do resumo: o título chega antes; o texto completo vem depois. */
-.summary-view__status {
+/* Pill de progresso (resumo/sugestão) — dentro do bloco de conteúdo. */
+.status-pill {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
@@ -1851,22 +1851,38 @@ body,
   padding: 3px 10px;
   border-radius: var(--oh-radius-full);
   font-size: var(--oh-label-sm-size);
+  line-height: var(--oh-label-sm-line);
+}
+
+.status-pill--ai {
   color: var(--oh-on-secondary-container);
   background: rgba(139, 92, 246, 0.14);
   border: 1px solid rgba(139, 92, 246, 0.4);
 }
 
-.summary-view__spinner {
+.status-pill--accent {
+  color: var(--oh-accent);
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+}
+
+.status-pill--success {
+  color: var(--oh-success);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.status-pill__spinner {
   width: 0.65rem;
   height: 0.65rem;
   flex: 0 0 auto;
   border-radius: 50%;
   border: 2px solid currentColor;
   border-top-color: transparent;
-  animation: summary-spin 0.9s linear infinite;
+  animation: status-spin 0.9s linear infinite;
 }
 
-@keyframes summary-spin {
+@keyframes status-spin {
   to {
     transform: rotate(360deg);
   }
@@ -1881,7 +1897,7 @@ body,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .summary-view__spinner {
+  .status-pill__spinner {
     animation: none;
     opacity: 0.6;
   }

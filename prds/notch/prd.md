@@ -142,7 +142,8 @@ Como usuário, quero que o overlay fique discreto quando não estou em uma sess�
   "Gerando resumo completo…" durante a chamada e "Processando o restante do
   resumo…" quando ainda há trechos pendentes — para não confundir o título/primeiro
   trecho com o resumo inteiro. Quando o resumo tem `subject`, ele aparece como
-  **título** acima do Markdown.
+  **título** acima do Markdown; o rodapé indica **"Resumo completo"** (ou **"Resumo
+  parcial"** enquanto processa).
 
 ### US-06 — Seletor de idioma na barra inferior (troca em tempo real)
 

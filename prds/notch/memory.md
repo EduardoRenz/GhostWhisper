@@ -180,7 +180,9 @@ usuário confundia a primeira frase com o resumo inteiro. Pediu um **pill**
     restante do resumo…".
 - O **`subject`** do resumo aparece como **título** acima do Markdown (quando
   existe), separando "panorama" de "conteúdo".
-- O rodapé deixou de repetir "processando o restante…" (agora é o pill).
+- O rodapé passou a indicar **"Resumo completo"** (ou **"Resumo parcial"** enquanto
+  há trechos pendentes) + hora da atualização, em vez de repetir "processando o
+  restante…".
 - CSS: `.summary-view__status`, spinner com `prefers-reduced-motion`.
 
 ### Verificação

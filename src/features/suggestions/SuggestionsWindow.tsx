@@ -8,6 +8,7 @@ import { useSuggestions } from "../../core/application/useSuggestions";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
 import { MarkdownView } from "../../components/MarkdownView";
+import { StatusPill } from "../../components/StatusPill";
 import { PanelFrame } from "../panels/PanelFrame";
 
 /** Janela de sugestões com seleção de agente. */
@@ -28,6 +29,7 @@ export function SuggestionsWindow() {
   const {
     current,
     history,
+    generating,
     loading,
     error,
     skipped,
@@ -162,13 +164,22 @@ export function SuggestionsWindow() {
           </p>
         ) : current ? (
           <>
+            {generating && (
+              <StatusPill
+                label="Gerando uma nova sugestão…"
+                title="A sugestão atual continua na tela até a nova ficar pronta; a anterior vai para o histórico"
+              />
+            )}
             <MarkdownView markdown={current.text} />
             {skipped && (
               <p className="panel__hint">Aguardando nova fala…</p>
             )}
           </>
         ) : loading ? (
-          <p className="panel__empty">Analisando a conversa…</p>
+          <>
+            <StatusPill label="Gerando sugestão…" />
+            <p className="panel__empty">Analisando a conversa…</p>
+          </>
         ) : (
           <p className="panel__empty">
             Ainda não há fala suficiente para sugerir.

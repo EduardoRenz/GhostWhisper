@@ -37,6 +37,8 @@ export function useSuggestions({
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState(false);
   const [pinned, setPinned] = useState<string | null>(null);
+  /** Há streaming recente (deltas) — o pill some 1,5 s após o último. */
+  const [streamActive, setStreamActive] = useState(false);
 
   const inFlight = useRef(false);
   const sessionRef = useRef<string | null>(sessionId);
@@ -44,6 +46,28 @@ export function useSuggestions({
   const extraRef = useRef(extraContext);
   const contextUntil = useRef<number | null>(null);
   const lastText = useRef<string | null>(null);
+  const streamTimer = useRef<number | null>(null);
+
+  /** Marca atividade de streaming (fast-first + deltas do evento `suggestion`). */
+  const markStreaming = useCallback(() => {
+    setStreamActive(true);
+    if (streamTimer.current !== null) {
+      window.clearTimeout(streamTimer.current);
+    }
+    streamTimer.current = window.setTimeout(() => {
+      setStreamActive(false);
+      streamTimer.current = null;
+    }, 1_500);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (streamTimer.current !== null) {
+        window.clearTimeout(streamTimer.current);
+      }
+    },
+    [],
+  );
 
   /** Aplica uma sugestão recebida (streaming) e atualiza o histórico por `at_ms`. */
   const applyIncoming = useCallback((incoming: Suggestion) => {
@@ -64,6 +88,11 @@ export function useSuggestions({
     setError(null);
     setSkipped(false);
     setPinned(null);
+    setStreamActive(false);
+    if (streamTimer.current !== null) {
+      window.clearTimeout(streamTimer.current);
+      streamTimer.current = null;
+    }
   }, [sessionId]);
 
   useEffect(() => {
@@ -93,6 +122,7 @@ export function useSuggestions({
       }
       setSkipped(false);
       applyIncoming(incoming);
+      markStreaming();
     }).then((stop) => {
       if (cancelled) {
         stop();
@@ -105,7 +135,7 @@ export function useSuggestions({
       cancelled = true;
       unlisten?.();
     };
-  }, [applyIncoming]);
+  }, [applyIncoming, markStreaming]);
 
   const generate = useCallback(
     async (force: boolean) => {
@@ -184,6 +214,8 @@ export function useSuggestions({
   return {
     current,
     history,
+    /** `true` enquanto a IA gera/transmite uma sugestão (manual ou automática). */
+    generating: loading || streamActive,
     loading,
     error,
     skipped,

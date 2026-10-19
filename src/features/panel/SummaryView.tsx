@@ -7,6 +7,7 @@ import { useSummary } from "../../core/application/useSummary";
 import { summaryTopic } from "../../core/domain/assistant";
 import { formatClock } from "../../core/domain/transcript";
 import { MarkdownView } from "../../components/MarkdownView";
+import { StatusPill } from "../../components/StatusPill";
 
 /** Formata o relógio de parede de uma versão do resumo. */
 function formatUpdatedAt(ms: number): string {
@@ -117,14 +118,13 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
       </div>
 
       {(loading || hasMore) && (
-        <div className="summary-view__status" role="status" aria-live="polite">
-          <span className="summary-view__spinner" aria-hidden="true" />
-          <span>
-            {loading
+        <StatusPill
+          label={
+            loading
               ? "Gerando resumo completo…"
-              : "Processando o restante do resumo…"}
-          </span>
-        </div>
+              : "Processando o restante do resumo…"
+          }
+        />
       )}
 
       {viewing && (
@@ -217,7 +217,8 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
 
       {!viewing && summary && (
         <div className="summary-view__meta">
-          Atualizado às {formatUpdatedAt(summary.updated_at_ms)}
+          {hasMore ? "Resumo parcial" : "Resumo completo"} · atualizado às{" "}
+          {formatUpdatedAt(summary.updated_at_ms)}
           {summary.summarized_from_ms > 0
             ? " · resumo a partir do meio da sessão"
             : ""}

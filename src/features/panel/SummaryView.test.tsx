@@ -98,13 +98,15 @@ describe("SummaryView — feedback da geração", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Processando o restante",
     );
+    expect(screen.getByText(/Resumo parcial/)).toBeDefined();
   });
 
-  it("sem pendências, não mostra o pill de progresso", () => {
+  it("sem pendências, marca o resumo como completo", () => {
     state.value.summary = summary();
     render(<SummaryView opened active />);
 
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByText("Planejamento do trimestre")).toBeDefined();
+    expect(screen.getByText(/Resumo completo/)).toBeDefined();
   });
 });

@@ -106,7 +106,8 @@ Ponto de parada: usuário aprova as abas e a remoção da janela `summary`.
   active`); as duas vistas ficam montadas (inativa `hidden`).- Testes: `PanelWindow.test.tsx` (3); Rust `panel_tab`/legacy/acessores de layout.
 - **Feedback do resumo (2026-10-19):** pill "Gerando resumo completo…" durante a
   chamada e "Processando o restante do resumo…" com `hasMore`; o `subject` aparece
-  como título acima do Markdown (`SummaryView.test.tsx`, 3 casos).
+  como título acima do Markdown e o rodapé indica **"Resumo completo"** (ou
+  **"Resumo parcial"** enquanto processa) — `SummaryView.test.tsx`, 3 casos.
 - Verificação: `cargo test` **334 ✓** (8 ignored) · clippy/fmt ✓ · `pnpm test` 155 ✓.
 
 > Nota: `PanelFrame.test.tsx` passou a usar `label="chat"` (o label `summary` não

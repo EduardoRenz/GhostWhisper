@@ -379,6 +379,11 @@ uma nota de revisão.
   **Fixar** entra no export, BR-023).
 - **Detalhes:** [`precision-and-performance/tasks/02-task.md`](precision-and-performance/tasks/02-task.md),
   [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §3.
+- **Revisão (2026-10-19):** a janela de Sugestões mostra um **pill dentro do bloco
+  do texto** ("Gerando uma nova sugestão…") enquanto a IA gera/transmite — a
+  sugestão atual continua visível até a nova chegar e a anterior vai para o
+  histórico. O pill fica junto do conteúdo (não no cabeçalho) para o usuário saber
+  que é *aquela* sugestão sendo substituída, e não uma geração genérica.
 - **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 02, aguardando teste manual)
 
 ## BR-030 — Tradução sob demanda dentro da bolha

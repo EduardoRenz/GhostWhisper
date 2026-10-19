@@ -126,3 +126,31 @@ A resposta HTTP era 200, mas o texto extraído ficava vazio — então o resumo 
 - Se o provider devolver vazio de forma **persistente por contexto grande**, o
   reenvio pode não bastar (o resumo usa 24k caracteres por chunk); um fallback de
   chunk menor fica como próximo passo.
+
+---
+
+## 2026-10-19 — Pill de geração dentro do bloco da sugestão
+
+- **IDs:** BR-028 · **Refs:** `src/features/suggestions/SuggestionsWindow.tsx`,
+  `src/core/application/useSuggestions.ts`, `src/components/StatusPill.tsx`
+
+### Contexto
+Pedido do usuário: o feedback de "gerando" deve ficar **dentro do bloco da
+sugestão**, não no cabeçalho — fora dele fica genérico e não se sabe se a IA está
+gerando outra sugestão ou melhorando a última.
+
+### Entregue
+- Componente reutilizável **`StatusPill`** (role="status", tons IA/cyan/sucesso).
+- `useSuggestions` expõe **`generating`** = `loading || streamActive`; o
+  `streamActive` é marcado por cada evento `suggestion` (fast-first + deltas) e
+  expira 1,5 s após o último — cobre também o automático do core.
+- A janela mostra o pill **dentro do `.panel__scroll`, acima do Markdown**:
+  - com sugestão atual → **"Gerando uma nova sugestão…"** (a atual continua na
+    tela; a anterior vai para o histórico);
+  - sem nenhuma ainda → **"Gerando sugestão…"**.
+- O resumo passou a usar o mesmo `StatusPill` (sem mudança de comportamento).
+
+### Verificação
+- `pnpm test` **160 ✓** (3 novos de `SuggestionsWindow`, 2 de `StatusPill`) ·
+  `tsc --noEmit` ✓ · `pnpm build` ✓.
+- AppImage (Vulkan) reconstruído.
