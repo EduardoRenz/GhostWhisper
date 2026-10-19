@@ -191,6 +191,12 @@ pub struct Settings {
     /// Aba ativa do painel da sessão: `transcription` | `summary` (BR-033).
     #[serde(default = "default_panel_tab")]
     pub panel_tab: String,
+    /// Drill-hover (ativação por permanência) habilitado (BR-036).
+    #[serde(default = "default_enabled")]
+    pub dwell_enabled: bool,
+    /// Tempo de permanência do drill-hover, em milissegundos (BR-036).
+    #[serde(default = "default_dwell_ms")]
+    pub dwell_ms: u32,
 }
 
 /// Rótulos das janelas de painel (ordem de boot e de persistência do layout).
@@ -206,6 +212,12 @@ pub const PANEL_TABS: [&str; 2] = ["transcription", "summary"];
 pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
 /// Intervalo máximo aceito para atualizações automáticas (segundos).
 pub const MAX_AUTO_INTERVAL_SECS: u32 = 120;
+/// Tempo padrão do drill-hover (ms) — BR-036.
+pub const DEFAULT_DWELL_MS: u32 = 500;
+/// Tempo mínimo aceito do drill-hover (ms).
+pub const MIN_DWELL_MS: u32 = 300;
+/// Tempo máximo aceito do drill-hover (ms).
+pub const MAX_DWELL_MS: u32 = 2_000;
 /// Largura mínima dos painéis (paridade com o `tauri.conf.json`).
 pub const MIN_PANEL_WIDTH: u32 = 320;
 /// Altura mínima dos painéis (paridade com o `tauri.conf.json`).
@@ -241,6 +253,8 @@ impl Default for Settings {
             chat_size: None,
             history_size: None,
             panel_tab: default_panel_tab(),
+            dwell_enabled: true,
+            dwell_ms: default_dwell_ms(),
         }
     }
 }
@@ -274,6 +288,10 @@ fn default_summary_interval() -> u32 {
 
 fn default_suggestion_interval() -> u32 {
     20
+}
+
+fn default_dwell_ms() -> u32 {
+    DEFAULT_DWELL_MS
 }
 
 /// Traz um tamanho de painel para o mínimo permitido.
@@ -367,6 +385,11 @@ impl Settings {
                 "intervalo das sugestões deve ficar entre {MIN_AUTO_INTERVAL_SECS} e {MAX_AUTO_INTERVAL_SECS} s"
             )));
         }
+        if !(MIN_DWELL_MS..=MAX_DWELL_MS).contains(&self.dwell_ms) {
+            return Err(GhostWhisperError::Config(format!(
+                "tempo do drill-hover deve ficar entre {MIN_DWELL_MS} e {MAX_DWELL_MS} ms"
+            )));
+        }
         Ok(())
     }
 
@@ -411,6 +434,7 @@ impl Settings {
         self.suggestion_interval_secs = self
             .suggestion_interval_secs
             .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
+        self.dwell_ms = self.dwell_ms.clamp(MIN_DWELL_MS, MAX_DWELL_MS);
         self.suggestions_size = clamp_panel_size(self.suggestions_size);
         self.chat_size = clamp_panel_size(self.chat_size);
         self.history_size = clamp_panel_size(self.history_size);
@@ -649,6 +673,56 @@ mod tests {
         assert_eq!(dirty.summary_interval_secs, MIN_AUTO_INTERVAL_SECS);
         assert_eq!(dirty.suggestion_interval_secs, MAX_AUTO_INTERVAL_SECS);
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn dwell_defaults_are_enabled_at_half_a_second() {
+        let settings = Settings::default();
+        assert!(settings.dwell_enabled);
+        assert_eq!(settings.dwell_ms, DEFAULT_DWELL_MS);
+        assert_eq!(DEFAULT_DWELL_MS, 500);
+    }
+
+    #[test]
+    fn legacy_settings_get_dwell_defaults() {
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json
+            .replace(",\"dwell_enabled\":true", "")
+            .replace(",\"dwell_ms\":500", "");
+        assert!(!legacy.contains("dwell_enabled"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert!(parsed.dwell_enabled);
+        assert_eq!(parsed.dwell_ms, DEFAULT_DWELL_MS);
+        assert!(parsed.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_clamps_dwell_and_weight_validates() {
+        let dirty = Settings {
+            dwell_ms: 1,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(dirty.dwell_ms, MIN_DWELL_MS);
+
+        let dirty = Settings {
+            dwell_ms: 9_999,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(dirty.dwell_ms, MAX_DWELL_MS);
+
+        let invalid = Settings {
+            dwell_ms: MIN_DWELL_MS - 1,
+            ..Settings::default()
+        };
+        assert!(invalid.validate().is_err());
+        let valid = Settings {
+            dwell_ms: MAX_DWELL_MS,
+            dwell_enabled: false,
+            ..Settings::default()
+        };
+        assert!(valid.validate().is_ok());
     }
 
     #[test]

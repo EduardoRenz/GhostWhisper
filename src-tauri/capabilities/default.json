@@ -2,10 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissões mínimas das janelas do OpenSua",
-  "windows": ["overlay", "settings", "suggestions", "chat", "history"],
+  "windows": ["overlay", "settings", "suggestions", "chat", "history", "dwell"],
   "permissions": [
     "core:default",
     "core:window:allow-start-resize-dragging",
+    "core:window:allow-cursor-position",
     "opener:default",
     "store:default",
     "global-shortcut:default",

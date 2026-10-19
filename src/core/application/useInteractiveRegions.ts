@@ -33,6 +33,14 @@ function insideLevelMeters(node: Node | null): boolean {
   return node instanceof Element && node.closest(".levels-group") !== null;
 }
 
+/** Mutação no preenchimento do drill-hover (anima sem mover região clicável). */
+function insideDwellFill(node: Node | null): boolean {
+  return (
+    node instanceof Element &&
+    node.closest(".dwell-fill, .dwell-line") !== null
+  );
+}
+
 /**
  * Publica as regiões interativas ao core e as mantém atualizadas.
  *
@@ -60,8 +68,15 @@ export function useInteractiveRegions(): void {
     window.addEventListener("resize", publish);
 
     const observer = new MutationObserver((mutations) => {
-      // Só a barra de nível mudou: nenhuma região interativa se moveu.
-      if (mutations.every((mutation) => insideLevelMeters(mutation.target))) {
+      // Só a barra de nível ou o fill do drill-hover mudou: nenhuma região
+      // interativa se moveu.
+      if (
+        mutations.every(
+          (mutation) =>
+            insideLevelMeters(mutation.target) ||
+            insideDwellFill(mutation.target),
+        )
+      ) {
         return;
       }
       publish();

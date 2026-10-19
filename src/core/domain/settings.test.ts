@@ -46,4 +46,10 @@ describe("settings (domínio)", () => {
     // Destino "auto" deixa claro que não traduz.
     expect(TARGET_LANGUAGE_LABELS.auto.toLowerCase()).toContain("traduz");
   });
+
+  it("drill-hover começa ligado em 0,5 s", () => {
+    const settings = defaultSettings();
+    expect(settings.dwell_enabled).toBe(true);
+    expect(settings.dwell_ms).toBe(500);
+  });
 });

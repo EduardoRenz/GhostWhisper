@@ -5,6 +5,7 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { SuggestionsWindow } from "./features/suggestions/SuggestionsWindow";
 import { PanelWindow } from "./features/panel/PanelWindow";
 import { HistoryWindow } from "./features/history/HistoryWindow";
+import { DwellPopoverWindow } from "./features/dwell/DwellPopoverWindow";
 
 /** Rotas de janela suportadas pelo GhostWhisper. */
 export type Route =
@@ -13,6 +14,7 @@ export type Route =
   | "suggestions"
   | "chat"
   | "history"
+  | "dwell"
   | "unknown";
 
 /**
@@ -30,6 +32,7 @@ export function resolveRoute(): Route {
     if (label === "suggestions") return "suggestions";
     if (label === "chat") return "chat";
     if (label === "history") return "history";
+    if (label === "dwell") return "dwell";
     if (label === "overlay") return "overlay";
     return "unknown";
   } catch {
@@ -39,13 +42,16 @@ export function resolveRoute(): Route {
       if (target === "suggestions") return "suggestions";
       if (target === "chat") return "chat";
       if (target === "history") return "history";
+      if (target === "dwell") return "dwell";
     }
     return "overlay";
   }
 }
 
 export function App() {
-  const [route, setRoute] = useState<Route>("overlay");
+  // Resolve já na primeira renderização: janelas ocultas não montam o overlay
+  // (e não publicam regiões interativas) antes de trocar de rota.
+  const [route, setRoute] = useState<Route>(() => resolveRoute());
 
   useEffect(() => {
     setRoute(resolveRoute());
@@ -69,6 +75,10 @@ export function App() {
 
   if (route === "history") {
     return <HistoryWindow />;
+  }
+
+  if (route === "dwell") {
+    return <DwellPopoverWindow />;
   }
 
   return (

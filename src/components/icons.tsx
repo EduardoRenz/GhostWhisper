@@ -261,3 +261,60 @@ export function MicOffIcon({ className, size = 18 }: IconProps) {
 // A faísca da IA já existe em `TransportIcons` (usada nas bolhas); reexportada
 // aqui para a barra/abas usarem um só desenho (BR-016/BR-008).
 export { SparkIcon as SparkleIcon } from "./TransportIcons";
+
+/** Dedo/toque: dica "sem clique" do drill-hover (BR-036). */
+export function TouchIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M10 12V5.5a1.6 1.6 0 0 1 3.2 0V11" />
+        <path d="M13.2 10.5V9a1.5 1.5 0 0 1 3 0v2" />
+        <path d="M16.2 11.5V10a1.5 1.5 0 0 1 3 0v5.2c0 3-2 5.3-5.2 5.3h-1.2c-1.7 0-3.1-.8-4.1-2.3l-2.2-3.5a1.6 1.6 0 0 1 2.7-1.7L10 14.5" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Check simples: confirmar do drill-hover. */
+export function CheckIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <path
+        d="M5 12.5l4.2 4.2L19 7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Icon>
+  );
+}
+
+/** Recolher/ocultar: duas setas diagonais apontando para o centro (task 13). */
+export function CollapseIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20 4l-7 7" />
+        <path d="M13 11h3.5" />
+        <path d="M13 11V7.5" />
+        <path d="M4 20l7-7" />
+        <path d="M11 13H7.5" />
+        <path d="M11 13v3.5" />
+      </g>
+    </Icon>
+  );
+}

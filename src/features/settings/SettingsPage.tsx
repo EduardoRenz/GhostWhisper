@@ -26,11 +26,17 @@ import {
 } from "../../core/domain/shortcuts";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
+import { dwellLabel } from "../../core/domain/dwell";
 import {
   ACCELERATION_LABELS,
   ACCELERATION_MODES,
+  DEFAULT_DWELL_MS,
+  DEFAULT_MIC_GAIN,
+  DWELL_STEP_MS,
   LANGUAGES,
+  MAX_DWELL_MS,
   MAX_MIC_GAIN,
+  MIN_DWELL_MS,
   MIN_MIC_GAIN,
   PROVIDERS,
   SOURCE_LANGUAGE_LABELS,
@@ -38,7 +44,6 @@ import {
   WHISPER_GPU_MODELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
-  DEFAULT_MIC_GAIN,
   defaultSettings,
   providerRequiresBaseUrl,
   type AccelerationMode,
@@ -601,6 +606,46 @@ export function SettingsPage() {
             Para reuniões, compartilhe <em>uma janela</em> em vez da tela inteira
             ou deixe o overlay em outro monitor.
           </p>
+
+          <span className="settings__group-title">Drill-hover (sem clique)</span>
+          <label className="settings__field settings__field--row">
+            <input
+              type="checkbox"
+              checked={settings.dwell_enabled}
+              onChange={(event) =>
+                update("dwell_enabled", event.target.checked)
+              }
+            />
+            <span>Ativação por permanência</span>
+          </label>
+          <p className="settings__hint">
+            Mantenha o cursor sobre <strong>Resumo</strong> ou{" "}
+            <strong>Sugestões</strong> para abrir a confirmação sem clicar. O
+            clique continua funcionando normalmente. Padrão:{" "}
+            {dwellLabel(DEFAULT_DWELL_MS)}. (BR-036)
+          </p>
+
+          <label className="settings__field">
+            <span>
+              Duração da permanência:{" "}
+              <strong>{dwellLabel(settings.dwell_ms)}</strong>
+            </span>
+            <input
+              type="range"
+              min={MIN_DWELL_MS / 1000}
+              max={MAX_DWELL_MS / 1000}
+              step={DWELL_STEP_MS / 1000}
+              value={settings.dwell_ms / 1000}
+              disabled={!settings.dwell_enabled}
+              aria-label="Duração do drill-hover em segundos"
+              onChange={(event) =>
+                update(
+                  "dwell_ms",
+                  Math.round(Number(event.target.value) * 1000),
+                )
+              }
+            />
+          </label>
 
           <div className="settings__actions">
             <button

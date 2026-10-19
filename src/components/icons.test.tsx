@@ -2,6 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   ChevronDownIcon,
+  CollapseIcon,
   EyeIcon,
   EyeOffIcon,
   GearIcon,
@@ -22,6 +23,7 @@ const ALL_ICONS = {
   EyeIcon,
   EyeOffIcon,
   ChevronDownIcon,
+  CollapseIcon,
   GripIcon,
   LanguageIcon,
   SparkleIcon,

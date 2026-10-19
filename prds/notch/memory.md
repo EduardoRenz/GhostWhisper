@@ -326,3 +326,117 @@ barra; ele pertence ao **switcher**, ao lado de **Resumo**, como no protótipo.
 - `pnpm test` **162 ✓** (2 novos em `ActionBar.test.tsx`: só com sessão + destaque)
   · `tsc` ✓ · `pnpm build` ✓ · screenshot headless 900×72 conferido.
 - AppImage (Vulkan) reconstruído.
+
+---
+
+## 2026-10-19 — Drill-hover (dwell) no notch (tasks 09–12)
+
+- **IDs:** BR-036, CA-11.1…11.8, ISS-035 · **Refs:**
+  [`architecture/drill-hover.md`](architecture/drill-hover.md),
+  [`tasks/09-task.md`](tasks/09-task.md)…[`12-task.md`](tasks/12-task.md)
+
+### Contexto
+Pedido do usuário: acionar **Resumo** e **Sugestões** sem clique (ajuda no
+stealth), com fill da esquerda para a direita, confirmação com segundo dwell e
+duração configurável (0,5 s padrão). O protótipo Stich AI foi referência de
+comportamento, **não** de implementação (Tailwind/Material/som ficaram de fora).
+
+### Entregue
+- **Settings:** `dwell_enabled` (padrão ligado) e `dwell_ms` (padrão 500, faixa
+  300–2000), sanitize/validate, UI em **Ajustes**; `settings_changed` faz o overlay
+  recarregar as settings ao salvar.
+- **Núcleo:** `domain/dwell.ts` (clamp/rótulo), `useDwellTimer`, `DwellButton`,
+  `DwellPopover`, `DwellProvider` e a janela **`dwell`** (260×60, transparente, sem
+  foco/taskbar). Fill **CSS-only** (`data-arming` + `--dwell-ms`).
+- **Rust:** porta `DwellPopoverController`, adaptador
+  `TauriDwellPopover`, posicionamento puro `dwell_popover_position` (acima se
+  couber, senão abaixo; clamp na work area), IPC
+  `dwell_show/hide/context/result` e `dwell` no `AppState`.
+- **Notch:** só **Resumo/Sugestões** usam `DwellButton`; **clique executa na hora**;
+  hover abre a confirmação; "Sim" tem dwell e clique; **sem som/toast**.
+- **Grace:** sair do gatilho **e** da confirmação inicia fechamento após `dwell_ms`;
+  voltar a qualquer uma das áreas cancela; sobre o "Sim" o dwell continua. O overlay
+  oculto (atalho/tray/superfície) fecha a confirmação via `dwell_closed`.
+- **Janela própria** (não expansão): um `position: absolute` não sai da janela
+  nativa de 72 px; a janela separada flutua sem mexer no notch (ISS-035).
+
+### Verificação
+- Frontend **181 ✓** (dwell/domínio/timer/botão/popover/action bar/settings) ·
+  `tsc --noEmit` ✓ · `pnpm build` ✓.
+- Rust **351 ✓** · `cargo clippy --all-targets` e `cargo fmt --check` limpos.
+- Screenshot headless da janela `dwell` (260×60) conferido.
+- AppImage (Vulkan) reconstruído ao final.
+
+### Pendências
+- Revisão manual no app: acima/abaixo perto das bordas, multi-monitor/DPI,
+  click-through e stealth (X11/Wayland), foco do popover e o grace entre janelas.
+
+---
+
+## 2026-10-19 — Correção: grace do drill-hover pausa na confirmação
+
+- **IDs:** BR-036, CA-11.5 · **Refs:** `src/features/dwell/DwellPopoverWindow.tsx`,
+  `src/components/dwell/DwellProvider.tsx`, `src-tauri/src/ipc/dwell.rs`
+
+### Sintoma
+Ao mover o cursor de **Resumo** para o **Sim**, a confirmação desaparecia antes
+de completar o segundo dwell.
+
+### Causa
+O timer de dispensa ficava no overlay e dependia de um evento (`dwell_pointer`)
+saindo da janela `dwell`. Na travessia entre as duas janelas, o `pointerleave` do
+gatilho iniciava o grace e o `pointerenter` da confirmação podia chegar depois —
+ou o evento se perdia — fechando o popover antes do "Sim".
+
+### Correção
+- O grace agora vive **na janela de confirmação**: `pointerenter` **e
+  `pointermove`** na janela **pausam/limpam** o timer; ele só corre quando o
+  cursor está fora do gatilho **e** da confirmação.
+- O overlay informa o hover do gatilho pelo comando `dwell_trigger_hover`; o core
+  reemite `dwell_trigger` para a janela `dwell` (relay confiável, sem evento
+  cross-window saindo da janela de confirmação).
+- Removido o evento `dwell_pointer` e o grace do `DwellProvider`.
+
+### Verificação
+- Frontend **189 ✓** (novos testes: não fecha ao entrar na confirmação; movimento
+  dentro também pausa; fecha depois do grace fora; voltar ao gatilho cancela; poll
+  do cursor na segunda abertura; matemática física→CSS) · `tsc` ✓ · `cargo test`
+  351 ✓ · clippy/fmt limpos.
+- AppImage (Vulkan) reconstruído com a correção.
+
+### Correção 2 (raiz do “só na primeira vez”)
+- **Causa raiz:** ao esconder a janela de confirmação com o cursor dentro dela, o
+  webview pode manter o estado de hover; na reabertura ele não reemite
+  `pointerenter` e o grace fecha o popover antes do "Sim".
+- **Correção:** a janela passou a **amostrar a posição global do cursor** a cada
+  ~90 ms. O core envia a **geometria real** da janela no `dwell_context`
+  (posição/tamanho/scale após `show`), então a amostra é usada como fonte de
+  verdade para pausar o grace e iniciar o segundo dwell. Eventos de ponteiro
+  continuam como atalho.
+- **Permissão:** apenas `core:window:allow-cursor-position` para a janela `dwell`;
+  a geometria vem do core (sem consultar `outerPosition` etc. no webview).
+- **Teste de regressão:** abre/fecha/abre e confirma duas vezes sem eventos de
+  hover (poll do cursor) · frontend **189 ✓**.
+- AppImage (Vulkan) reconstruído com a correção.
+
+---
+
+## 2026-10-19 — Histórico no trailing e ícone de recolher (task 13)
+
+- **IDs:** BR-032 (revisão), CA-10.1/10.6/10.7 · **Refs:**
+  [`tasks/13-task.md`](tasks/13-task.md), `src/features/overlay/ActionBar.tsx`,
+  `src/features/overlay/NotchTabs.tsx`, `src/components/icons.tsx`
+
+### Entregue
+- O item **Histórico** com rótulo saiu do switcher; virou `IconButton` no grupo da
+  direita, na ordem **ocultar · Histórico · Configurações** (engrenagem continua a
+  última), nos estados ativo e de repouso.
+- O botão **ocultar** passou a usar `CollapseIcon` (duas setas diagonais apontando
+  para o centro), no lugar do chevron.
+- `NotchTabs` não recebe mais `historyOpen`/`onToggleHistory`.
+
+### Verificação
+- Frontend **189 ✓** (ordem do trailing nos dois estados, Histórico fora do
+  switcher, ícone no catálogo) · `tsc` ✓ · Rust 351 ✓ · clippy/fmt limpos.
+- Screenshot headless do notch em repouso conferido.
+- AppImage (Vulkan) reconstruído.

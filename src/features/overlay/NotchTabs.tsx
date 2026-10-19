@@ -1,9 +1,9 @@
 import {
-  HistoryIcon,
   MicIcon,
   SparkleIcon,
   SummaryIcon,
 } from "../../components/icons";
+import { DwellButton } from "../../components/dwell/DwellButton";
 import { PauseIcon, PlayIcon } from "../../components/TransportIcons";
 import { NotchWaveform } from "./NotchWaveform";
 
@@ -14,16 +14,12 @@ interface NotchTabsProps {
   paused: boolean;
   /** Uma operação de sessão está em curso. */
   busy: boolean;
-  /** A janela de histórico está visível. */
-  historyOpen: boolean;
   /** A janela de sugestões está visível. */
   suggestionsOpen: boolean;
   /** Abre/foca o painel na aba Transcrição. */
   onOpenTranscription: () => void;
   /** Abre/foca o painel na aba Resumo. */
   onOpenSummary: () => void;
-  /** Mostra/esconde o histórico. */
-  onToggleHistory: () => void;
   /** Mostra/esconde a janela de sugestões. */
   onToggleSuggestions: () => void;
   onPause: () => void;
@@ -32,22 +28,21 @@ interface NotchTabsProps {
 
 /**
  * Switcher do notch ativo (BR-032/task 08): **Transcrição** (com waveform),
- * play/pause contextual, **Histórico**, **Resumo** e **Sugestões**.
+ * play/pause contextual, **Resumo** e **Sugestões**.
  *
  * A Transcrição fica destacada enquanto a sessão está captando — é o "modo vivo".
- * Clicar nela ou em Resumo abre o painel na aba correspondente; Histórico e
- * Sugestões alternam as janelas próprias. O encerrar **não** vive aqui (é só o
- * timer — BR-022).
+ * Clicar nela ou em Resumo abre o painel na aba correspondente; Sugestões alterna
+ * a janela. O **Histórico** vive no grupo trailing (ícone, antes de Configurações).
+ * **Resumo** e **Sugestões** também têm drill-hover (BR-036). O encerrar **não**
+ * vive aqui (é só o timer — BR-022).
  */
 export function NotchTabs({
   listening,
   paused,
   busy,
-  historyOpen,
   suggestionsOpen,
   onOpenTranscription,
   onOpenSummary,
-  onToggleHistory,
   onToggleSuggestions,
   onPause,
   onResume,
@@ -81,37 +76,26 @@ export function NotchTabs({
         )}
       </button>
 
-      <button
-        type="button"
-        className={`notch-tabs__item${historyOpen ? " notch-tabs__item--active" : ""}`}
-        aria-pressed={historyOpen}
-        title="Histórico de sessões"
-        onClick={onToggleHistory}
-      >
-        <HistoryIcon className="notch-tabs__icon" size={15} />
-        <span className="notch-tabs__label">Histórico</span>
-      </button>
-
-      <button
-        type="button"
+      <DwellButton
+        triggerId="notch-summary"
         className="notch-tabs__item"
         title="Resumo da sessão"
-        onClick={onOpenSummary}
+        onActivate={onOpenSummary}
       >
         <SummaryIcon className="notch-tabs__icon" size={15} />
         <span className="notch-tabs__label">Resumo</span>
-      </button>
+      </DwellButton>
 
-      <button
-        type="button"
+      <DwellButton
+        triggerId="notch-suggestions"
         className={`notch-tabs__item${suggestionsOpen ? " notch-tabs__item--active" : ""}`}
-        aria-pressed={suggestionsOpen}
+        pressed={suggestionsOpen}
         title="Sugestões da IA"
-        onClick={onToggleSuggestions}
+        onActivate={onToggleSuggestions}
       >
         <SparkleIcon className="notch-tabs__icon" size={15} />
         <span className="notch-tabs__label">Sugestões</span>
-      </button>
+      </DwellButton>
     </nav>
   );
 }

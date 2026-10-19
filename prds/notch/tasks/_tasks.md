@@ -15,6 +15,11 @@ só começa após a revisão da PRD pelo usuário.
 | 06 | Documentação (BR/memory), verificação e pacotes | CONCLUDED |
 | 07 | Padronizar a UI com o design system "Obsidian HUD" | CONCLUDED |
 | 08 | Notch ativo: switcher, waveform e play/pause contextual | CONCLUDED |
+| 09 | Settings do drill-hover (ligado/duração) | CONCLUDED |
+| 10 | Fundação reutilizável do drill-hover + janela de confirmação | CONCLUDED |
+| 11 | Notch: Resumo e Sugestões com drill-hover | CONCLUDED |
+| 12 | Validação visual, documentação e pacote (drill-hover) | CONCLUDED |
+| 13 | Histórico no trailing e ícone de recolher | CONCLUDED |
 
 ## Dependências
 
@@ -23,6 +28,7 @@ só começa após a revisão da PRD pelo usuário.
     └─▶ 03 ─┼─▶ 05 ─▶ 06
 04 ─────────┘
 02,03,05 ─▶ 07 ─▶ 08
+09 ─▶ 10 ─▶ 11 ─▶ 12 ─▶ 13
 ```
 
 - 01 é a base (ícones + `IconButton` + badges) e não muda comportamento.

@@ -2,11 +2,12 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–08 `CONCLUDED`)
+- **Status:** Implementado (tasks 01–13 `CONCLUDED`)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/notch-ui.md`](architecture/notch-ui.md),
   [`architecture/design-tokens.md`](architecture/design-tokens.md),
+  [`architecture/drill-hover.md`](architecture/drill-hover.md),
   [`tasks/_tasks.md`](tasks/_tasks.md), PRDs anteriores:
   [`../mvp/prd.md`](../mvp/prd.md), [`../chat/prd.md`](../chat/prd.md),
   [`../assistant/prd.md`](../assistant/prd.md),
@@ -69,13 +70,14 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 Como usuário, quero que o overlay fique discreto quando não estou em uma sessão.
 
 - **CA-01.1** Sem sessão ativa, a barra mostra **apenas**: alça de arraste, marca,
-  a ação primária **"Começar a ouvir"** (verde, US-07), **Histórico**, **ocultar** e
+  a ação primária **"Começar a ouvir"** (verde, US-07), **ocultar**, **Histórico** e
   a **engrenagem** (Configurações) como **último** botão redondo.
 - **CA-01.2** Sem sessão, **não** aparecem: seletor de canais, transporte, pílula
   de tempo, "Nova sessão" e os atalhos de janela ligados à sessão.
 - **CA-01.3** Com sessão (gravando ou pausada), a barra mostra o **switcher**
-  (Transcrição + waveform · play/pause · Histórico · Resumo · Sugestões), o
-  **timer**, os canais, stealth, ocultar e a **engrenagem (último)** (ver US-10).
+  (Transcrição + waveform · play/pause · Resumo · Sugestões), o
+  **timer**, os canais, stealth, **ocultar**, **Histórico** e a **engrenagem
+  (último)** (ver US-10).
 - **CA-01.4** A superfície continua `actionbar | hidden` (sem painel expansível,
   como já vigente desde a task 07 do PRD chat).
 
@@ -210,9 +212,9 @@ Como usuário, quero que o notch, durante a sessão, mostre o modo ativo e o áu
 sendo captado de forma imediata.
 
 - **CA-10.1** O notch ativo segue a ordem do protótipo: alça · marca (dot cyan +
-  nome) · **switcher** (Transcrição + waveform · play/pause · Histórico · Resumo ·
-  Sugestões) · **timer** · canais · stealth · ocultar · **configurações (engrenagem,
-  último botão)**.
+  nome) · **switcher** (Transcrição + waveform · play/pause · Resumo · Sugestões) ·
+  **timer** · canais · stealth · **ocultar · Histórico** · **configurações
+  (engrenagem, último botão)**.
 - **CA-10.2** **Transcrição** fica **destacada** quando gravando/pausada (ou com o
   painel na aba Transcrição); as inativas usam o tom mutado.
 - **CA-10.3** Um **waveform** de 4 barras ao lado de "Transcrição" reage ao
@@ -223,14 +225,44 @@ sendo captado de forma imediata.
 - **CA-10.5** O timer usa **`HH:MM:SS`** em mono/tabular; clique abre a confirmação
   "Encerrar sessão? Sim / Não".
 - **CA-10.6** Clicar **Transcrição**/**Resumo** abre/foca o painel na aba
-  correspondente; **Histórico** e **Sugestões** mostram/escondem as respectivas
-  janelas.
+  correspondente; **Sugestões** mostra/esconde a janela; **Histórico** (ícone no
+  grupo da direita) mostra/esconde a janela de histórico.
 - **CA-10.7** Canais (popover com Ambos/Mic/Sistema + Nova sessão), Sugestões (no
-  switcher), stealth e ocultar são preservados; a **engrenagem** é o **último botão
-  redondo da direita** e abre as Configurações.
+  switcher), Histórico (trailing), stealth e ocultar são preservados; a
+  **engrenagem** é o **último botão redondo da direita** e abre as Configurações.
 - **CA-10.8** O estado **repouso** mantém a estrutura atual (CA-01.1) — **sem**
   switcher/waveform/timer — com a engrenagem como último botão; só o re-skin.
 - **Detalhes:** [`tasks/08-task.md`](tasks/08-task.md).
+
+### US-11 — Acionar sem clique (drill-hover)
+
+Como usuário em modo stealth, quero acionar **Resumo** e **Sugestões** apenas
+mantendo o cursor sobre o botão, com uma confirmação, para não depender de cliques.
+
+- **CA-11.1** Com `dwell_enabled`, manter o cursor sobre **Resumo** ou **Sugestões**
+  preenche o botão da esquerda para a direita em `dwell_ms` (padrão **0,5 s**). Ao
+  completar, abre a confirmação. Sair antes zera o preenchimento imediatamente.
+- **CA-11.2** A confirmação é uma **janela própria flutuante**, com a dica **"Sem
+  clique"**, o botão **"Sim"** e a duração. O "Sim" também exige `dwell_ms` para
+  confirmar; **clique** nele confirma imediatamente (fallback). Confirmar executa a
+  ação **uma vez** e fecha.
+- **CA-11.3** **Clique** no botão original executa a ação **na hora**, sem
+  confirmação.
+- **CA-11.4** A confirmação aparece **acima** do gatilho quando há espaço na área útil
+  do monitor; senão, **abaixo**; sempre visível (clamp nas bordas).
+- **CA-11.5** Se o cursor sair do gatilho e da confirmação (sem estar sobre o "Sim"),
+  a confirmação fecha após `dwell_ms`; voltar a qualquer uma das áreas cancela o
+  fechamento. `Escape` fecha na hora.
+- **CA-11.6** `dwell_enabled` (padrão ligado) e `dwell_ms` (padrão 500 ms, faixa
+  300–2000 ms) ficam em **Ajustes** e persistem; desligado, o hover não faz nada e o
+  clique continua. A duração vale para os dois estágios.
+- **CA-11.7** O mecanismo é **opt-in**: só Resumo e Sugestões o usam no notch; os
+  demais botões não mudam. Um botão novo passa a usar sem duplicar lógica.
+- **CA-11.8** Sem som/toast. O preenchimento não re-renderiza a barra a cada quadro
+  nem republica regiões interativas (ISS-020); `prefers-reduced-motion` mantém o
+  dwell e remove glow/pulso.
+- **Detalhes:** [`architecture/drill-hover.md`](architecture/drill-hover.md),
+  [`tasks/09-task.md`](tasks/09-task.md)…[`12-task.md`](tasks/12-task.md).
 
 ## 5. Requisitos
 
@@ -246,6 +278,8 @@ sendo captado de forma imediata.
 - **RF-06** Troca de idioma **em tempo real** no ASR (próximo passe).
 - **RF-07** Engrenagem abre as Configurações.
 - **RF-08** Ação primária verde com **badge do atalho**.
+- **RF-09** **Drill-hover** opt-in (Resumo/Sugestões) com dois estágios,
+  confirmação flutuante e duração configurável; clique segue imediato.
 
 ### Não funcionais (RNF)
 
@@ -264,6 +298,9 @@ sendo captado de forma imediata.
   campos de layout (sem segredos — BR-003).
 - **RNF-07 — Documentação única (BR-016):** IDs `BR-032`…`BR-034`, `ISS-033`,
   `NN-task`; sem duplicar conteúdo já documentado.
+- **RNF-08 — Drill-hover acessível e estável:** clique sempre funciona; confirmação
+  não redimensiona o notch; a janela flutuante não captura foco; `Escape` cancela;
+  `prefers-reduced-motion` preserva o tempo.
 
 ## 6. Não-objetivos
 
@@ -272,6 +309,8 @@ sendo captado de forma imediata.
 - Seletor do idioma de **destino** na barra inferior.
 - Captura de tela/OCR, tradução automática em massa, tema claro/temas.
 - Reordenar/reposicionar abas por arraste.
+- **Som/toast** no drill-hover (em reunião, o bipe do protótipo seria captado).
+- Drill-hover em outros botões do notch (o mecanismo fica pronto; aplicação futura).
 - i18n além de PT-BR (BR-010).
 - Qualquer mudança no **pipeline de captura de áudio** ou no schema do banco.
 
@@ -285,6 +324,9 @@ sendo captado de forma imediata.
 | Custo do resumo automático com a janela sempre aberta | automático só com a **aba Resumo ativa** (CA-05.2) |
 | Abas + resize em Wayland | mesmo caminho X11/XWayland do overlay (BR-007) |
 | Ícones sem rótulo virarem "adivinhação" | `title` + `aria-label` obrigatórios e testados (CA-02.1, RNF-04) |
+| Hover atravessar duas janelas (notch ↔ confirmação) e fechar sem querer | grace de `dwell_ms` entre as áreas; entrar em qualquer uma cancela o fechamento (CA-11.5) |
+| Popover clipado/fora da tela | janela própria + posicionamento pela área útil do monitor, acima/abaixo (CA-11.4) |
+| Preenchimento animado republicar regiões interativas (ISS-020) | animação **CSS-only** por classe; observer ignora `.dwell-fill` |
 
 ## 8. Métricas de sucesso
 

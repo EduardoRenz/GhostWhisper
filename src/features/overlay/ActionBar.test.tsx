@@ -51,6 +51,9 @@ describe("ActionBar — notch em dois estados", () => {
     const trailing = container.querySelectorAll(
       ".overlay__group--end .icon-button",
     );
+    expect(
+      [...trailing].map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Ocultar overlay", "Histórico", "Configurações"]);
     expect(trailing[trailing.length - 1]?.getAttribute("aria-label")).toBe(
       "Configurações",
     );
@@ -78,11 +81,10 @@ describe("ActionBar — notch em dois estados", () => {
     expect(onStart).toHaveBeenCalledWith(["microphone", "system"]);
   });
 
-  it("ativo: switcher (Transcrição/Histórico/Resumo/Sugestões), pause, timer e ações", () => {
+  it("ativo: switcher (Transcrição/Resumo/Sugestões), pause, timer e ações", () => {
     render(<ActionBar {...base} listening paused={false} />);
 
     expect(button("Transcrição")).toBeDefined();
-    expect(button("Histórico")).toBeDefined();
     expect(button("Resumo")).toBeDefined();
     expect(button("Pausar")).toBeDefined();
     expect(button("Canais de áudio")).toBeDefined();
@@ -90,11 +92,13 @@ describe("ActionBar — notch em dois estados", () => {
     expect(button("Configurações")).toBeDefined();
     expect(screen.getByTestId("notch-waveform")).toBeDefined();
 
-    // Sugestões fica no switcher, ao lado de Resumo (não mais como ícone solto).
+    // Sugestões fica no switcher, ao lado de Resumo; Histórico vive no trailing.
     const suggestions = button("Sugestões");
     const summary = button("Resumo");
     expect(suggestions.closest(".notch-tabs")).not.toBeNull();
     expect(suggestions.closest(".notch-tabs")).toBe(summary.closest(".notch-tabs"));
+    expect(button("Histórico").closest(".notch-tabs")).toBeNull();
+    expect(button("Histórico").closest(".overlay__group--end")).not.toBeNull();
 
     // Sem a ação verde quando já há sessão.
     expect(screen.queryByRole("button", { name: "Começar a ouvir" })).toBeNull();

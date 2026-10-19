@@ -494,6 +494,10 @@ uma nota de revisão.
   Transcrição/Histórico/Resumo + **waveform** (reage ao áudio sem re-render) +
   **play/pause contextual** + **timer `HH:MM:SS`**; canais viram popover (com "Nova
   sessão"). O **repouso** não muda de estrutura.
+- **Revisão (2026-10-19, task 13):** o **Histórico** sai do switcher e vira
+  **ícone no grupo da direita, antes de Configurações**; o botão **ocultar** passa a
+  usar o ícone de **recolher** (duas setas diagonais apontando para o centro), como
+  no protótipo.
 - **Data:** 2026-10-18 · **Status:** Ativa (task 01/02)
 
 ## BR-033 — Painel da sessão em abas (Transcrição | Resumo); `summary` aposentado
@@ -565,3 +569,34 @@ uma nota de revisão.
   [`notch/tasks/07-task.md`](notch/tasks/07-task.md),
   [`notch/tasks/08-task.md`](notch/tasks/08-task.md).
 - **Data:** 2026-10-19 · **Status:** Ativa (tasks 07/08 concluídas)
+
+## BR-036 — Drill-hover (ativação por permanência) no notch
+- **Decisão:** botões **opt-in** do notch podem ser acionados por **permanência do
+  cursor** (*drill-hover*/dwell), sem clique, pensado para o modo stealth. São **dois
+  estágios**: (1) o botão se preenche da esquerda para a direita durante `dwell_ms`;
+  ao completar, abre uma **confirmação flutuante**; (2) o botão **"Sim"** da
+  confirmação também exige `dwell_ms`. **Clique** no botão original executa a ação
+  **imediatamente**, sem confirmação; clique no "Sim" confirma (fallback acessível).
+- **Configuração:** `Settings.dwell_enabled` (padrão **ligado**) e
+  `Settings.dwell_ms` (padrão **500 ms**, faixa **300–2000 ms**), em Configurações →
+  Ajustes. Desligado, o hover não faz nada e o clique continua normal. A duração vale
+  para os dois estágios.
+- **Escopo inicial:** somente **Resumo** e **Sugestões** no notch ativo. O mecanismo
+  é genérico e opt-in: qualquer botão futuro usa o mesmo componente/porta.
+- **Confirmação:** **janela Tauri própria**, pequena e transparente, posicionada
+  **acima** do gatilho quando há espaço na **área útil do monitor**; senão **abaixo**.
+  Ela **não** redimensiona nem move a janela do notch. Conteúdo mínimo: dica
+  **"Sem clique"** + botão **"Sim"** + duração. **Sem som/toast**.
+- **Cancelamento:** a confirmação aberta fecha após `dwell_ms` quando o cursor **não**
+  está no gatilho nem na confirmação (grace); voltar a qualquer uma das áreas cancela
+  o fechamento. Sobre o "Sim", o dwell de confirmação corre normalmente. O
+  preenchimento do gatilho (estágio 1) cancela **na saída**.
+- **Motivo:** pedido do usuário — acionar sem clique ajuda no stealth; o hover não
+  deve acionar direto (evita acidente) e a confirmação precisa tolerar saídas
+  involuntárias do cursor.
+- **Consequência:** `Settings` ganha `dwell_enabled`/`dwell_ms`; nova janela `dwell`
+  + porta/adaptador/IPC; `DwellProvider` no overlay; sem som; sem mudança de schema.
+- **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-11),
+  [`notch/architecture/drill-hover.md`](notch/architecture/drill-hover.md),
+  [`notch/tasks/09-task.md`](notch/tasks/09-task.md)…[`12-task.md`](notch/tasks/12-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 09–12)

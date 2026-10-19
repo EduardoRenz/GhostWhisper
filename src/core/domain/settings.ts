@@ -92,6 +92,10 @@ export interface Settings {
   history_size: [number, number] | null;
   /** Aba ativa do painel da sessão (BR-033). */
   panel_tab: PanelTab;
+  /** Drill-hover (ativação por permanência) habilitado (BR-036). */
+  dwell_enabled: boolean;
+  /** Tempo de permanência do drill-hover, em milissegundos (BR-036). */
+  dwell_ms: number;
 }
 
 /** Abas do painel da sessão (janela `chat`). */
@@ -174,11 +178,20 @@ export const defaultSettings = (): Settings => ({
   chat_size: null,
   history_size: null,
   panel_tab: "transcription",
+  dwell_enabled: true,
+  dwell_ms: 500,
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */
 export const MIN_AUTO_INTERVAL_SECS = 10;
 export const MAX_AUTO_INTERVAL_SECS = 120;
+
+/** Drill-hover: padrão e faixa em milissegundos (BR-036). */
+export const DEFAULT_DWELL_MS = 500;
+export const MIN_DWELL_MS = 300;
+export const MAX_DWELL_MS = 2_000;
+/** Passo da UI de duração (0,1 s). */
+export const DWELL_STEP_MS = 100;
 
 /** Opções de cadência do resumo automático. */
 export const SUMMARY_INTERVALS = [15, 30, 60, 120] as const;

@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser único
-no repositório). Próximo ID livre: **ISS-035**.
+no repositório). Próximo ID livre: **ISS-036**.
 
 > `ISS-032` segue reservada pelo PRD [`chat`](../chat/issues.md); esta PRD começa em
 > `ISS-033` para não colidir.
@@ -12,6 +12,7 @@ no repositório). Próximo ID livre: **ISS-035**.
 |---|---|---|---|
 | ISS-033 | Idioma da transcrição preso à sessão (troca só valia na próxima) | Média | FIXED |
 | ISS-034 | Notch poluído em repouso e controles por texto (fora do padrão Perssua) | Baixa | FIXED |
+| ISS-035 | Hover do drill-hover atravessa duas janelas e pode fechar sem querer | Média | FIXED |
 
 ---
 
@@ -61,6 +62,25 @@ no repositório). Próximo ID livre: **ISS-035**.
 - **Task:** [`tasks/01-task.md`](tasks/01-task.md),
   [`tasks/02-task.md`](tasks/02-task.md)
 - **Dano em dados existentes:** nenhum (apresentação).
+
+---
+
+## ISS-035 — Hover do drill-hover atravessa duas janelas
+
+- **Severidade:** Média · **Status:** FIXED ([`tasks/10-task.md`](tasks/10-task.md))
+- **Sintoma:** a confirmação é uma janela Tauri separada; ao mover o cursor do
+  gatilho para ela, o `pointerleave` do notch pode fechar o popover antes de o
+  `pointerenter` da janela `dwell` chegar.
+- **Causa raiz:** são dois webviews nativos; a troca de janela gera leave/enter
+  separados e não há um `hover` compartilhado.
+- **Mitigação (task 10/11):** grace de `dwell_ms` após sair do gatilho **e** da
+  confirmação; entrar em qualquer uma das áreas cancela o fechamento; o popover é
+  posicionado com gap pequeno. Sem som.
+- **Arquivos:** `src/features/dwell/DwellProvider.tsx`,
+  `src/features/dwell/DwellPopoverWindow.tsx`,
+  `src-tauri/src/adapters/dwell/tauri_dwell_popover.rs`.
+- **Task:** [`tasks/10-task.md`](tasks/10-task.md), [`tasks/11-task.md`](tasks/11-task.md)
+- **Dano em dados existentes:** nenhum.
 
 ---
 

@@ -1,4 +1,4 @@
-/** Assinatura de eventos Tauri (no-op fora do runtime nativo). */
+/** Eventos Tauri (no-op fora do runtime nativo). */
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauriRuntime } from "./client";
 

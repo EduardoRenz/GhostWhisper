@@ -2,7 +2,7 @@
 //!
 //! A chave **nunca** é devolvida ao frontend nem registrada em logs.
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::domain::settings::{ProviderKind, Settings};
 use crate::domain::shortcuts::ShortcutConflict;
@@ -48,12 +48,17 @@ pub fn settings_get(state: State<'_, AppState>) -> Result<Settings> {
 /// Reaplica atalhos/stealth e devolve os conflitos de atalho encontrados.
 #[tauri::command(async)]
 pub fn settings_set(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Vec<ShortcutConflict>> {
     state.settings.save(&settings)?;
     state.overlay.set_stealth(settings.stealth);
-    Ok(state.shortcuts.apply(&settings.shortcuts))
+    let conflicts = state.shortcuts.apply(&settings.shortcuts);
+    // Avisa as janelas abertas (overlay/painel) para recarregarem as settings,
+    // inclusive o drill-hover (BR-036).
+    let _ = app.emit("settings_changed", ());
+    Ok(conflicts)
 }
 
 /// Grava a chave do provider ativo no armazenamento de segredos.

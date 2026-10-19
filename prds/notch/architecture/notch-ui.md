@@ -2,8 +2,8 @@
 
 Especificação técnica do **notch** (barra do overlay em dois estados, por ícones) e
 do **painel da sessão em abas** (Transcrição + Resumo), além da **troca de idioma
-em tempo real**. Paridade com o **Perssua 0.27.5** (BR-015); desvios conscientes no
-§6 e evidência no §7.
+em tempo real** e do **drill-hover** (BR-036). Paridade com o **Perssua 0.27.5**
+(BR-015); desvios conscientes no §6 e evidência no §7.
 
 ---
 
@@ -27,6 +27,11 @@ src/features/panel/SummaryView.tsx       # conteúdo que hoje é a janela `summa
 src/features/panel/LanguageBar.tsx       # barra inferior: seletor de idioma (origem)
 src/features/chat/ChatHeaderActions.tsx  # atalho "Sugestões" (chat é só transcrição)
 
+src/components/dwell/DwellButton.tsx     # opt-in: fill + clique imediato (BR-036)
+src/components/dwell/DwellPopover.tsx    # "Sem clique" + "Sim"
+src/components/dwell/DwellProvider.tsx   # ação pendente + grace no overlay
+src/features/dwell/DwellPopoverWindow.tsx # rota `dwell` (janela de confirmação)
+
 src/core/domain/shortcuts.ts             # + parseAccelerator / acceleratorBadges (puro)
 src/core/domain/settings.ts             # + panel_tab; - summary_position/summary_size
 src/adapters/ipc/settings.ts            # session_set_language (novo)
@@ -45,8 +50,8 @@ Estado derivado de `useSessionState()`:
 
 | Estado | Condição | Conteúdo da barra |
 |---|---|---|
-| **Repouso** | `!state.listening` | alça · marca · **"Começar a ouvir"** (esmeralda + badges) · Histórico · ocultar · **engrenagem (último)** |
-| **Ativo** | `state.listening` | alça · marca · **switcher** (Transcrição + waveform · play/pause · Histórico · Resumo · Sugestões) · **timer** · canais · stealth · ocultar · **engrenagem (último)** |
+| **Repouso** | `!state.listening` | alça · marca · **"Começar a ouvir"** (esmeralda + badges) · ocultar · Histórico · **engrenagem (último)** |
+| **Ativo** | `state.listening` | alça · marca · **switcher** (Transcrição + waveform · play/pause · Resumo · Sugestões) · **timer** · canais · stealth · **ocultar · Histórico** · **engrenagem (último)** |
 
 - **Não** há nova `Surface`: continua `actionbar | hidden`
   (`ports/overlay_window.rs`), como já vigente desde a task 07 do PRD chat.
@@ -61,14 +66,16 @@ Estado derivado de `useSessionState()`:
 Layout do protótipo (sem copiar Tailwind/Material — BR-008/BR-035):
 
 ```
-[grip] ● GhostWhisper │ [🎙 Transcrição ▁▃▅▂] [⏸/▶] [🕘 Histórico] [📄 Resumo] [✦ Sugestões] │
-[● 00:14:32]  [🎙 canais] [👁 stealth] [⌄ ocultar] [⚙ configurações]
+[grip] ● GhostWhisper │ [🎙 Transcrição ▁▃▅▂] [⏸/▶] [📄 Resumo] [✦ Sugestões] │
+[● 00:14:32]  [🎙 canais] [👁 stealth] [⤡ ocultar] [🕘 Histórico] [⚙ configurações]
 ```
 
 - **Switcher** (`role="tablist"`): Transcrição/Resumo abrem o painel na aba
-  correspondente (`panel_open` com `tab` → evento `panel_tab`); Histórico e
-  Sugestões alternam as janelas próprias. A aba ativa fica em
-  `surface-container-highest` + texto cyan.
+  correspondente (`panel_open` com `tab` → evento `panel_tab`); Sugestões alterna
+  a janela. A aba ativa fica em `surface-container-highest` + texto cyan.
+- **Histórico** e **ocultar** vivem no **grupo trailing**, como ícones (sem
+  rótulo): Histórico antes da engrenagem; ocultar usa o ícone de **recolher**
+  (duas setas diagonais), como no protótipo.
 - **Waveform**: 4 barras cyan; nível vem de `audio_level` (máx. dos canais) por
   `ref`/CSS vars; pausado → estático e esmaecido; sem eventos → baixo (sem fake).
 - **Play/pause**: contextual (gravando → `pause`; pausado → `play`); encerrar
@@ -76,10 +83,24 @@ Layout do protótipo (sem copiar Tailwind/Material — BR-008/BR-035):
 - **Timer**: `HH:MM:SS` mono, tabular, dot esmeralda/outline; clique abre a
   confirmação de encerramento.
 - **Canais**: popover (Ambos/Mic/Sistema) + **Nova sessão**; troca ao vivo (BR-019).
-- **Trailing**: stealth, ocultar e, **por último**, **Configurações**
+- **Trailing**: ocultar, Histórico e, **por último**, **Configurações**
   (engrenagem) — correção do protótipo, que a omitiu.
 - **Repouso** mantém a estrutura atual; só o re-skin da task 07.
 - Detalhes, critérios e roteiro: [`../tasks/08-task.md`](../tasks/08-task.md).
+
+### 2.2 Drill-hover em Resumo/Sugestões (task 11)
+
+- **Gatilhos:** somente **Resumo** e **Sugestões**. Clique executa a ação na hora;
+  permanecer com o cursor preenche o item (0,5 s por padrão) e abre a confirmação.
+- **Confirmação:** janela Tauri `dwell` própria (transparente, sem foco), com **"Sem
+  clique"** + **"Sim"** + duração; acima do gatilho se couber, senão abaixo (work
+  area). O notch **não** redimensiona.
+- **Grace:** sair do gatilho e da confirmação inicia o fechamento após `dwell_ms`;
+  voltar a qualquer uma das áreas cancela; sobre o "Sim" o dwell de confirmação
+  continua.
+- **Config:** `dwell_enabled` (padrão ligado) e `dwell_ms` (padrão 500 ms) nos
+  Ajustes. Sem som/toast.
+- Detalhes: [`drill-hover.md`](drill-hover.md) e BR-036.
 
 ## 3. Pill de abas
 

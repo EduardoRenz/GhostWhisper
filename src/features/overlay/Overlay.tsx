@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import {
   openSettingsWindow,
   setStealth as setStealthIpc,
@@ -12,6 +12,7 @@ import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { defaultBindings } from "../../core/domain/shortcuts";
+import { DwellProvider, useDwell } from "../../components/dwell/DwellProvider";
 import { ActionBar } from "./ActionBar";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 
@@ -86,30 +87,36 @@ export function Overlay() {
 
   return (
     <div className="overlay">
-      <ActionBar
-        listening={state.listening}
-        paused={state.paused}
-        channels={state.channels}
-        startedAtMs={state.started_at_ms}
-        busy={busy}
-        onStart={(channels) => void start(channels)}
-        onPause={() => void pause()}
-        onResume={() => void resume()}
-        onStop={() => void stop()}
-        onChannelsChange={(channels) => void setChannels(channels)}
-        onStartDrag={() => void startDragIpc()}
-        startAccelerator={startAccelerator}
-        stealth={stealth}
-        onToggleStealth={toggleStealth}
-        onOpenSettings={() => void openSettings()}
-        onOpenTranscription={openTranscription}
-        onOpenSummary={openSummary}
-        suggestionsOpen={suggestionsOpen}
-        onToggleSuggestions={toggleSuggestions}
-        historyOpen={historyOpen}
-        onToggleHistory={toggleHistory}
-        onHide={hideOverlay}
-      />
+      <DwellProvider
+        enabled={settings.dwell_enabled}
+        durationMs={settings.dwell_ms}
+        active={state.listening}
+      >
+        <DwellActionBar
+          listening={state.listening}
+          paused={state.paused}
+          channels={state.channels}
+          startedAtMs={state.started_at_ms}
+          busy={busy}
+          onStart={(channels) => void start(channels)}
+          onPause={() => void pause()}
+          onResume={() => void resume()}
+          onStop={() => void stop()}
+          onChannelsChange={(channels) => void setChannels(channels)}
+          onStartDrag={() => void startDragIpc()}
+          startAccelerator={startAccelerator}
+          stealth={stealth}
+          onToggleStealth={toggleStealth}
+          onOpenSettings={() => void openSettings()}
+          onOpenTranscription={openTranscription}
+          onOpenSummary={openSummary}
+          suggestionsOpen={suggestionsOpen}
+          onToggleSuggestions={toggleSuggestions}
+          historyOpen={historyOpen}
+          onToggleHistory={toggleHistory}
+          onHide={hideOverlay}
+        />
+      </DwellProvider>
 
       <AsrStatusBanner status={asrStatus} />
 
@@ -119,5 +126,19 @@ export function Overlay() {
         </p>
       )}
     </div>
+  );
+}
+
+/** Barra com o drill-hover: esconder o overlay também fecha a confirmação. */
+function DwellActionBar(props: ComponentProps<typeof ActionBar>) {
+  const dwell = useDwell();
+  return (
+    <ActionBar
+      {...props}
+      onHide={() => {
+        dwell.cancel();
+        props.onHide();
+      }}
+    />
   );
 }

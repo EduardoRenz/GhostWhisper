@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ALL_CHANNELS, type SessionChannel } from "../../core/domain/transcript";
 import { IconButton } from "../../components/IconButton";
 import {
-  ChevronDownIcon,
+  CollapseIcon,
   EyeIcon,
   EyeOffIcon,
   GearIcon,
@@ -51,10 +51,10 @@ interface ActionBarProps {
  * Barra de ações do overlay em **dois estados** (BR-032/task 08).
  *
  * - **Repouso** (sem sessão): marca, **"Começar a ouvir"** (esmeralda + badges),
- *   Histórico, ocultar e — **por último** — Configurações.
+ *   ocultar, Histórico e — **por último** — Configurações.
  * - **Ativo** (com sessão): marca, **switcher** (Transcrição + waveform ·
- *   play/pause · Histórico · Resumo · Sugestões), **timer**, canais, stealth,
- *   ocultar e Configurações (último).
+ *   play/pause · Resumo · Sugestões), **timer**, canais, stealth, **ocultar**,
+ *   **Histórico** e Configurações (último).
  */
 export function ActionBar({
   listening,
@@ -134,11 +134,9 @@ export function ActionBar({
             listening={listening}
             paused={paused}
             busy={busy}
-            historyOpen={historyOpen}
             suggestionsOpen={suggestionsOpen}
             onOpenTranscription={onOpenTranscription}
             onOpenSummary={onOpenSummary}
-            onToggleHistory={onToggleHistory}
             onToggleSuggestions={onToggleSuggestions}
             onPause={onPause}
             onResume={onResume}
@@ -176,24 +174,21 @@ export function ActionBar({
       )}
 
       <div className="overlay__group overlay__group--end" data-interactive>
-        {/* No repouso o Histórico fica aqui; no estado ativo ele vive no switcher. */}
-        {!listening && (
-          <IconButton
-            label="Histórico"
-            title="Mostra ou esconde o histórico de sessões"
-            active={historyOpen}
-            pressed={historyOpen}
-            onClick={onToggleHistory}
-          >
-            <HistoryIcon />
-          </IconButton>
-        )}
         <IconButton
           label="Ocultar overlay"
           title="Esconde o overlay (atalho: mostrar/ocultar)"
           onClick={onHide}
         >
-          <ChevronDownIcon />
+          <CollapseIcon />
+        </IconButton>
+        <IconButton
+          label="Histórico"
+          title="Mostra ou esconde o histórico de sessões"
+          active={historyOpen}
+          pressed={historyOpen}
+          onClick={onToggleHistory}
+        >
+          <HistoryIcon />
         </IconButton>
         <IconButton label="Configurações" onClick={onOpenSettings}>
           <GearIcon />

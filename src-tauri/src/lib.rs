@@ -37,6 +37,11 @@ pub fn run() {
             ipc::overlay::overlay_set_interactive_regions,
             ipc::overlay::overlay_set_surface,
             ipc::overlay::overlay_start_drag,
+            ipc::dwell::dwell_show,
+            ipc::dwell::dwell_hide,
+            ipc::dwell::dwell_context,
+            ipc::dwell::dwell_result,
+            ipc::dwell::dwell_trigger_hover,
             ipc::audio_commands::audio_list_devices,
             ipc::audio_commands::audio_start,
             ipc::audio_commands::audio_stop,
@@ -183,6 +188,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::audio::pulse_delayed_monitor::PulseDelayedMonitor;
     use adapters::audio::pulse_system_audio_source::PulseSystemAudioSource;
     use adapters::audio::shared_audio_reference::{SharedAudioReference, SystemAudioReferenceTap};
+    use adapters::dwell::tauri_dwell_popover::TauriDwellPopover;
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
@@ -213,6 +219,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::audio_source::AudioSource;
     use ports::click_through::ClickThroughController;
     use ports::clock::Clock;
+    use ports::dwell_popover::DwellPopoverController;
     use ports::event_publisher::EventPublisher;
     use ports::gpu_probe::GpuProbe;
     use ports::llm_controller::LlmController;
@@ -238,6 +245,12 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let overlay_window = window.clone();
 
     let overlay: Arc<dyn OverlayWindowController> = Arc::new(TauriOverlayWindow::new(window));
+
+    let dwell_window = app
+        .get_webview_window("dwell")
+        .ok_or_else(|| GhostWhisperError::Other("janela 'dwell' não encontrada".to_string()))?;
+    let dwell: Arc<dyn DwellPopoverController> =
+        Arc::new(TauriDwellPopover::new(dwell_window, overlay_window.clone()));
 
     // Click-through: input-shape por região no X11; polling como fallback.
     let click_through: Arc<dyn ClickThroughController> =
@@ -469,6 +482,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         suggestions,
         publisher,
         shortcuts,
+        dwell,
     ))
 }
 
@@ -754,7 +768,10 @@ fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
     let state = app.state::<state::AppState>();
     match action {
         ShortcutAction::ToggleOverlay => {
-            state.overlay.toggle();
+            let visible = state.overlay.toggle();
+            if !visible {
+                crate::ipc::dwell::dismiss(app, &state);
+            }
         }
         ShortcutAction::ToggleStealth => {
             if let Ok(mut settings) = state.settings.load() {

@@ -8,6 +8,7 @@
 
 pub mod ai;
 pub mod audio;
+pub mod dwell;
 pub mod events;
 pub mod overlay;
 pub mod persistence;

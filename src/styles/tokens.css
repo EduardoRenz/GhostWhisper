@@ -105,6 +105,9 @@
   --oh-ai: #8b5cf6;
   --oh-success: #10b981;
   --oh-danger: #f43f5e;
+  /* Drill-hover (BR-036): preenchimento e linha de progresso. */
+  --oh-dwell-fill: rgba(0, 242, 254, 0.2);
+  --oh-dwell-line: #00f2fe;
 
   /* --- Elevação, vidro e foco ------------------------------------------ */
   --oh-glass-bar: rgba(11, 15, 23, 0.78);

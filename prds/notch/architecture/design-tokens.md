@@ -155,6 +155,7 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | **Ícones/`IconButton`** | alvo 28–32px circular/`--oh-radius-full`; ghost `rgba(255,255,255,.04)` + borda `.08`; hover `.12`; foco com `--oh-focus-ring` |
 | **Abas do painel** | segmented switcher em `--oh-radius-full`; destaque deslizante `rgba(255,255,255,.12)` (`--oh-radius`) |
 | **Switcher do notch** | segmented pill; item ativo em `surface-container-highest` + texto **cyan** + hairline; play/pause circular 28px ao lado do item ativo |
+| **Drill-hover (dwell)** | fill da esquerda para a direita em cyan suave (`--oh-dwell-fill`) + linha inferior 2px (`--oh-dwell-line`); confirmação em pill de vidro com borda cyan; `popoverIn`; sem som |
 | **Waveform** | 4 barras de 2px (raio full, gap 2px) cyan; altura 4–14px pelo nível de áudio; pausado estático/esmaecido |
 | **Painel / `PanelFrame`** | `--oh-glass-card` na casca; corpo em `--oh-read-surface`; `--oh-radius-md` |
 | **Botões** | primário (cyan hairline + hover gradiente cyan→violeta), ghost, toggle "ligado" em cyan |

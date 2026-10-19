@@ -5,6 +5,12 @@
 - **Habilita:** —
 - **Issues:** — · **BR:** BR-032 (revisão 2026-10-19), BR-035
 
+> **Revisão (task 13, 2026-10-19):** o item "Histórico" com rótulo saiu do
+> switcher e virou **ícone trailing antes de Configurações**; o botão ocultar usa
+> o **ícone de recolher** (duas setas diagonais). Ver
+> [`13-task.md`](13-task.md) e o layout atual em
+> [`../architecture/notch-ui.md`](../architecture/notch-ui.md) §2.1.
+
 ## Objetivo
 
 Levar o **notch no estado ativo** (sessão gravando/pausada) para o layout do

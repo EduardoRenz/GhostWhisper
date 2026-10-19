@@ -135,4 +135,30 @@ describe("SettingsPage", () => {
       (screen.getByLabelText("Modelo whisper (local)") as HTMLSelectElement).value,
     ).toBe("tiny");
   });
+
+  it("configura o drill-hover nos Ajustes", async () => {
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: "Ajustes" }).click();
+    });
+
+    const toggle = (await screen.findByRole("checkbox", {
+      name: "Ativação por permanência",
+    })) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+
+    const slider = screen.getByLabelText(
+      "Duração do drill-hover em segundos",
+    ) as HTMLInputElement;
+    expect(slider.value).toBe("0.5");
+    expect(slider.disabled).toBe(false);
+
+    fireEvent.change(slider, { target: { value: "1.2" } });
+    expect(screen.getByText("1,2 s")).toBeDefined();
+
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(false);
+    expect(slider.disabled).toBe(true);
+  });
 });

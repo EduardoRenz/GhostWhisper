@@ -13,6 +13,7 @@ pub mod audio_source;
 pub mod chat_bot_provider;
 pub mod click_through;
 pub mod clock;
+pub mod dwell_popover;
 pub mod event_publisher;
 pub mod gpu_probe;
 pub mod llm_controller;

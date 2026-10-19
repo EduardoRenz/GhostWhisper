@@ -9,6 +9,7 @@ use crate::ports::audio_monitor::AudioMonitor;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
 use crate::ports::clock::Clock;
+use crate::ports::dwell_popover::DwellPopoverController;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::gpu_probe::GpuProbe;
 use crate::ports::llm_controller::LlmController;
@@ -66,6 +67,8 @@ pub struct AppState {
     pub publisher: Arc<dyn EventPublisher>,
     /// Registro de atalhos globais.
     pub shortcuts: Arc<dyn GlobalShortcutRegistry>,
+    /// Janela de confirmação do drill-hover (BR-036).
+    pub dwell: Arc<dyn DwellPopoverController>,
 }
 
 impl AppState {
@@ -92,6 +95,7 @@ impl AppState {
         suggestions: Arc<dyn SuggestionGenerator>,
         publisher: Arc<dyn EventPublisher>,
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
+        dwell: Arc<dyn DwellPopoverController>,
     ) -> Self {
         Self {
             overlay,
@@ -114,6 +118,7 @@ impl AppState {
             suggestions,
             publisher,
             shortcuts,
+            dwell,
         }
     }
 }
@@ -387,6 +392,23 @@ mod tests {
         }
     }
 
+    struct FakeDwell {
+        open: Mutex<Option<u32>>,
+    }
+    impl crate::ports::dwell_popover::DwellPopoverController for FakeDwell {
+        fn show(&self, _anchor: Rect, dwell_ms: u32) -> Result<()> {
+            *self.open.lock().unwrap() = Some(dwell_ms);
+            Ok(())
+        }
+        fn hide(&self) -> Result<()> {
+            *self.open.lock().unwrap() = None;
+            Ok(())
+        }
+        fn context(&self) -> Option<u32> {
+            *self.open.lock().unwrap()
+        }
+    }
+
     fn build_state() -> AppState {
         use crate::adapters::persistence::memory::in_memory_messages_repository::InMemoryMessagesRepository;
         use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
@@ -415,6 +437,9 @@ mod tests {
             Arc::new(FakeSuggestions),
             Arc::new(FakePublisher),
             Arc::new(FakeShortcutRegistry),
+            Arc::new(FakeDwell {
+                open: Mutex::new(None),
+            }),
         )
     }
 
