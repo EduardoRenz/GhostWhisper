@@ -27,6 +27,8 @@ export interface SpeechBubble {
   end_ms?: number;
   /** Continuação de uma fala longa (mesma fala, parte seguinte). */
   continues?: boolean;
+  /** Texto inteiro do segmento (antes do split de exibição — BR-041). */
+  source_text?: string;
 }
 
 /** Bolha de sugestão da IA (BR-020). */
@@ -50,7 +52,7 @@ export const MAX_BUBBLES = 300;
 /**
  * Teto de caracteres de uma bolha de fala (≈4–5 linhas no painel).
  *
- * Fala contínua — o Interlocutor falando sem pausas — só fecha o turno no silêncio
+ * Fala contínua — Outros falando sem pausas — só fecha o turno no silêncio
  * ou no teto do turno (`max_turn_ms`, 25 s), e a bolha crescia sem fim. O excesso
  * **continua numa bolha seguinte** (`continues`), sem mexer no áudio: a
  * transcrição sai inteira e o corte é só de exibição.
@@ -122,6 +124,154 @@ export function splitSpeechText(
 
 /** Fala em branco (só ruído/pontuação do ASR) não vira bolha. */
 const hasContent = (text: string): boolean => text.trim().length > 0;
+
+/** Fala mínima usada pelo corte de sobreposição (ao vivo e histórico). */
+interface SpeechSpan {
+  id: string;
+  speaker: Speaker;
+  text: string;
+  start_ms: number;
+  end_ms?: number;
+}
+
+/**
+ * Acha o corte de texto mais próximo de `target`, preferindo fim de frase e,
+ * depois, fim de palavra. Nunca devolve um índice fora de `[min, max]`.
+ */
+function nearestTextCut(
+  text: string,
+  target: number,
+  min: number,
+  max: number,
+): number {
+  if (max <= min) {
+    return Math.min(text.length - 1, Math.max(1, target));
+  }
+  const clamped = Math.min(max, Math.max(min, target));
+  let sentence: number | null = null;
+  let word: number | null = null;
+  for (let index = min; index <= max; index += 1) {
+    const previous = text[index - 1] ?? "";
+    if (/[.!?…\n]/u.test(previous)) {
+      if (sentence === null || Math.abs(index - clamped) < Math.abs(sentence - clamped)) {
+        sentence = index;
+      }
+    }
+    if (text[index] === " ") {
+      if (word === null || Math.abs(index - clamped) < Math.abs(word - clamped)) {
+        word = index;
+      }
+    }
+  }
+  return sentence ?? word ?? clamped;
+}
+
+/**
+ * Divide o texto em `ratios.length + 1` partes nas proporções dadas.
+ *
+ * Se algum corte produzir parte vazia, devolve o texto inteiro (melhor não
+ * intercalar do que perder conteúdo).
+ */
+function splitTextAtRatios(text: string, ratios: number[]): string[] {
+  const trimmed = text.trim();
+  if (ratios.length === 0 || trimmed.length === 0) {
+    return [trimmed];
+  }
+  const cuts: number[] = [];
+  let previous = 0;
+  ratios.forEach((ratio, index) => {
+    const remaining = ratios.length - index;
+    const target = Math.round(
+      trimmed.length * Math.min(0.98, Math.max(0.02, ratio)),
+    );
+    const min = previous + 1;
+    const max = trimmed.length - remaining;
+    if (max < min) {
+      cuts.push(previous);
+      return;
+    }
+    const cut = nearestTextCut(trimmed, target, min, max);
+    cuts.push(cut);
+    previous = cut;
+  });
+
+  const parts: string[] = [];
+  let start = 0;
+  for (const cut of cuts) {
+    parts.push(trimmed.slice(start, cut).trim());
+    start = cut;
+  }
+  parts.push(trimmed.slice(start).trim());
+  return parts.some((part) => part.length === 0) ? [trimmed] : parts;
+}
+
+/**
+ * Corta falas longas quando o **outro falante começa** dentro do intervalo.
+ *
+ * Sem timestamps por palavra, o texto é dividido proporcionalmente ao tempo
+ * (preferindo fim de frase/palavra). A parte anterior fica no tempo original; a
+ * seguinte começa **1 ms depois** do início do outro falante, para a ordenação
+ * colocar a nova fala no meio. Cada parte vira uma bolha própria, com rótulo e
+ * hora (o resto não é uma "continuação" silenciosa).
+ */
+function splitSpeechSpans(spans: SpeechSpan[]): SpeechSpan[] {
+  const ordered = [...spans].sort(
+    (a, b) => a.start_ms - b.start_ms || a.id.localeCompare(b.id),
+  );
+  const parts: SpeechSpan[] = [];
+
+  for (const span of ordered) {
+    const text = span.text.trim();
+    if (!hasContent(text)) {
+      continue;
+    }
+    const end = span.end_ms;
+    const boundaries =
+      end === undefined || end <= span.start_ms
+        ? []
+        : ordered
+            .filter(
+              (other) =>
+                other.speaker !== span.speaker &&
+                other.start_ms > span.start_ms &&
+                other.start_ms < end,
+            )
+            .map((other) => other.start_ms)
+            .filter((value, index, all) => all.indexOf(value) === index)
+            .sort((a, b) => a - b);
+
+    if (boundaries.length === 0) {
+      parts.push({ ...span, text });
+      continue;
+    }
+
+    const duration = end! - span.start_ms;
+    const ratios = boundaries.map((boundary) => (boundary - span.start_ms) / duration);
+    const texts = splitTextAtRatios(text, ratios);
+    if (texts.length !== boundaries.length + 1) {
+      // Não foi possível cortar sem perder texto: mantém a fala inteira.
+      parts.push({ ...span, text });
+      continue;
+    }
+
+    texts.forEach((part, index) => {
+      if (!hasContent(part)) {
+        return;
+      }
+      parts.push({
+        id: index === 0 ? span.id : `${span.id}#ov${index}`,
+        speaker: span.speaker,
+        text: part,
+        // A parte seguinte ao outro falante entra 1 ms depois dele, para não
+        // empatar na ordenação (a fala do outro vem primeiro no empate).
+        start_ms: index === 0 ? span.start_ms : boundaries[index - 1]! + 1,
+        end_ms: index === texts.length - 1 ? end : boundaries[index],
+      });
+    });
+  }
+
+  return parts;
+}
 
 /**
  * Ordena por tempo; no empate, falas antes de sugestões e, entre iguais, por id
@@ -198,21 +348,31 @@ export function buildChatTimeline(
   const { committed, pending } = splitChatTimeline(segments);
 
   const bubbles: ChatBubble[] = [];
-  for (const segment of committed) {
-    const text = segment.text.trim();
+  const spans: SpeechSpan[] = committed.map((segment) => ({
+    id: segment.id,
+    speaker: segment.speaker,
+    text: segment.text,
+    start_ms: segment.start_ms,
+    end_ms: segment.end_ms,
+  }));
+
+  // 1) Corta no início da fala do outro canal (linha do tempo intercalada).
+  // 2) Depois aplica o teto de exibição de 180 caracteres em cada parte.
+  for (const part of splitSpeechSpans(spans)) {
+    const text = part.text.trim();
     if (!hasContent(text)) {
       continue;
     }
-    // Fala longa continua na bolha seguinte (continuação da mesma fala).
-    splitSpeechText(text).forEach((part, index) => {
+    splitSpeechText(text).forEach((piece, index) => {
       bubbles.push({
         kind: "speech",
-        id: index === 0 ? segment.id : `${segment.id}#${index}`,
-        speaker: segment.speaker,
-        text: part,
-        at_ms: segment.start_ms,
-        end_ms: segment.end_ms,
+        id: index === 0 ? part.id : `${part.id}#${index}`,
+        speaker: part.speaker,
+        text: piece,
+        at_ms: part.start_ms,
+        end_ms: part.end_ms,
         continues: index > 0,
+        source_text: text,
       });
     });
   }
@@ -252,33 +412,52 @@ export function bubblesFromTimeline(
   cap: number = MAX_BUBBLES,
 ): ChatBubble[] {
   const bubbles: ChatBubble[] = [];
+
+  // Falas: mesma regra do ao vivo (corte na sobreposição + teto de 180).
+  const spans: SpeechSpan[] = [];
   entries.forEach((entry, index) => {
-    const text = entry.text.trim();
-    if (!hasContent(text)) {
+    if (entry.kind !== "speech" || !hasContent(entry.text)) {
       return;
     }
-    if (entry.kind !== "speech") {
-      bubbles.push({
-        kind: "suggestion",
-        id: `suggestion-${entry.at_ms}-${index}`,
-        text,
-        at_ms: entry.at_ms,
-      });
-      return;
-    }
-    // Mesma regra do ao vivo: fala longa continua na bolha seguinte.
-    const id = `speech-${entry.at_ms}-${index}`;
-    splitSpeechText(text).forEach((part, partIndex) => {
-      bubbles.push({
-        kind: "speech",
-        id: partIndex === 0 ? id : `${id}#${partIndex}`,
-        speaker: entry.speaker,
-        text: part,
-        at_ms: entry.at_ms,
-        continues: partIndex > 0,
-      });
+    spans.push({
+      id: `speech-${entry.at_ms}-${index}`,
+      speaker: entry.speaker,
+      text: entry.text,
+      start_ms: entry.at_ms,
+      end_ms: entry.end_ms,
     });
   });
+  for (const part of splitSpeechSpans(spans)) {
+    const text = part.text.trim();
+    if (!hasContent(text)) {
+      continue;
+    }
+    splitSpeechText(text).forEach((piece, partIndex) => {
+      bubbles.push({
+        kind: "speech",
+        id: partIndex === 0 ? part.id : `${part.id}#${partIndex}`,
+        speaker: part.speaker,
+        text: piece,
+        at_ms: part.start_ms,
+        end_ms: part.end_ms,
+        continues: partIndex > 0,
+        source_text: text,
+      });
+    });
+  }
+
+  entries.forEach((entry, index) => {
+    if (entry.kind !== "suggestion" || !hasContent(entry.text)) {
+      return;
+    }
+    bubbles.push({
+      kind: "suggestion",
+      id: `suggestion-${entry.at_ms}-${index}`,
+      text: entry.text.trim(),
+      at_ms: entry.at_ms,
+    });
+  });
+
   bubbles.sort(byTimeThenKind);
   return bubbles.slice(-cap);
 }

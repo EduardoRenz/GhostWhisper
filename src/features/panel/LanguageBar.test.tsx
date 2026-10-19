@@ -6,10 +6,26 @@ const reload = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../adapters/ipc/session", () => ({
   sessionSetLanguage: (...args: unknown[]) => sessionSetLanguage(...args),
+  sessionCurrent: vi.fn(async () => null),
 }));
 
 vi.mock("../../core/application/useSettings", () => ({
-  useSettings: () => ({ settings: { source_language: "auto" }, reload }),
+  useSettings: () => ({
+    settings: { source_language: "auto", whisper_model: "tiny" },
+    reload,
+  }),
+}));
+
+vi.mock("../../core/application/useSessionState", () => ({
+  useSessionState: () => ({
+    state: {
+      listening: false,
+      paused: false,
+      session_id: null,
+      channels: [],
+      started_at_ms: null,
+    },
+  }),
 }));
 
 import { LanguageBar } from "./LanguageBar";
@@ -37,6 +53,7 @@ describe("LanguageBar (idioma em tempo real)", () => {
   it("não tem transporte (o play/pause vive no notch)", () => {
     render(<LanguageBar />);
     expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByText("Idioma")).toBeDefined();
+    expect(screen.getByText("Idioma de Entrada:")).toBeDefined();
+    expect(screen.getByText(/Whisper tiny/)).toBeDefined();
   });
 });

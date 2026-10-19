@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Suggestion } from "../../core/domain/assistant";
+import { formatMessageClock, speakerLabel } from "../../core/domain/transcript";
 import {
   NO_SUGGESTION_TITLE,
   parseSuggestionMeta,
@@ -27,6 +28,8 @@ interface SuggestionCardProps {
   copied: boolean;
   /** `true` enquanto a resposta completa da geração atual está pendente. */
   awaitingFull: boolean;
+  /** Início da sessão (hora de parede no rótulo manual — BR-040). */
+  startedAtMs?: number | null;
   /** Ações extras (ex.: "Fixar"/"Copiar" em texto). */
   children?: React.ReactNode;
 }
@@ -59,17 +62,18 @@ export function SuggestionCard({
   pinned,
   copied,
   awaitingFull,
+  startedAtMs,
   children,
 }: SuggestionCardProps) {
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // A contagem recomeça a cada nova geração (a rápida e a completa da mesma
-  // geração compartilham `at_ms`).
+  // geração compartilham `generation_id`).
   useEffect(() => {
     setReceivedAt(Date.now());
     setNow(Date.now());
-  }, [current?.at_ms, quick?.at_ms]);
+  }, [current?.generation_id, quick?.generation_id]);
 
   // Relógio do rótulo (1 s).
   useEffect(() => {
@@ -99,13 +103,15 @@ export function SuggestionCard({
     icon: source.mode_icon,
     color: source.mode_color,
   };
+  const manual = (current?.trigger ?? quick?.trigger) === "manual";
+  const origin = current?.source ?? quick?.source ?? null;
 
   return (
     <div className="suggestion-card">
       <div className="suggestion-card__head">
         <span className="suggestion-card__tag">
           <SparkleIcon size={11} />
-          Sugestão Atual
+          {manual ? "Sugestão Manual" : "Sugestão Atual"}
           {receivedAt !== null && (
             <span className="suggestion-card__age">
               · {relativeTime(now - receivedAt)}
@@ -116,6 +122,13 @@ export function SuggestionCard({
       </div>
 
       <h2 className="suggestion-card__title">{title}</h2>
+
+      {origin && (
+        <p className="suggestion-card__source">
+          Manual · {speakerLabel(origin.speaker)}{" "}
+          {formatMessageClock(origin.at_ms, startedAtMs)}
+        </p>
+      )}
 
       {children}
 

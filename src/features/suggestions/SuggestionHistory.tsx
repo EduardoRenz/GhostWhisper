@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Suggestion } from "../../core/domain/assistant";
+import { formatMessageClock, speakerLabel } from "../../core/domain/transcript";
 import { suggestionTitle } from "../../core/domain/suggestion";
 import { AgentBadge } from "../../components/AgentBadge";
 import { AgentIcon } from "../../components/AgentIcon";
@@ -16,10 +17,13 @@ interface SuggestionHistoryProps {
   onPin: (suggestion: Suggestion) => void;
   /** Id da mensagem fixada (para o feedback). */
   pinnedId: string | null;
+  /** Início da sessão (hora de parede do source — BR-040). */
+  startedAtMs?: number | null;
 }
 
-/** Chave estável de um item do histórico. */
+/** Chave estável de um item do histórico (BR-042). */
 const keyOf = (suggestion: Suggestion): string =>
+  suggestion.generation_id ||
   `${suggestion.at_ms}-${suggestion.message_id ?? suggestion.text.slice(0, 12)}`;
 
 /**
@@ -34,6 +38,7 @@ export function SuggestionHistory({
   onCopy,
   onPin,
   pinnedId,
+  startedAtMs,
 }: SuggestionHistoryProps) {
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -96,6 +101,9 @@ export function SuggestionHistory({
                   <span className="history__item-title">
                     {item.title?.trim() || suggestionTitle(item.text)}
                   </span>
+                  {item.trigger === "manual" && (
+                    <Pill className="history__item-manual">Manual</Pill>
+                  )}
                   <AgentBadge
                     mode={{
                       name: item.mode_name,
@@ -110,6 +118,12 @@ export function SuggestionHistory({
 
                 {open && (
                   <div className="history__item-body" ref={expandedRef}>
+                    {item.source && (
+                      <p className="suggestion-card__source">
+                        Manual · {speakerLabel(item.source.speaker)}{" "}
+                        {formatMessageClock(item.source.at_ms, startedAtMs)}
+                      </p>
+                    )}
                     <MarkdownView markdown={item.text} />
                     <div className="history__item-actions">
                       <button

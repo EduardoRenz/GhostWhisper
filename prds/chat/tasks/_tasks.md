@@ -15,12 +15,13 @@
 | 07 | Janela de Chat própria (movível e redimensionável) | CONCLUDED |
 | 08 | Janela de Histórico (sessões anteriores) | CONCLUDED |
 | 09 | Transporte: toggle único (start/pause) e stop único | CONCLUDED |
-| 10 | Casca "Transcrição ao Vivo": cabeçalho, abas e rodapé | PENDING |
-| 11 | Bolhas em largura total: Microfone/Outros, hora e Streaming | PENDING |
-| 12 | Ação de IA por mensagem e handoff de contexto para Sugestões | PENDING |
-| 13 | Sugestão manual no Sugestões (contexto por parâmetro) | PENDING |
-| 14 | Documentação, verificação e pacotes (v0.2) | PENDING |
-| 15 | Concorrência e ciclo de vida das sugestões (single-flight e janela) | PENDING |
+| 10 | Casca "Transcrição ao Vivo": cabeçalho, abas e rodapé | CONCLUDED |
+| 11 | Bolhas em largura total: Microfone/Outros, hora e Streaming | CONCLUDED |
+| 12 | Ação de IA por mensagem e handoff de contexto para Sugestões | CONCLUDED |
+| 13 | Sugestão manual no Sugestões (contexto por parâmetro) | CONCLUDED |
+| 14 | Documentação, verificação e pacotes (v0.2) | CONCLUDED |
+| 15 | Concorrência e ciclo de vida das sugestões (single-flight e janela) | CONCLUDED |
+| 16 | Intercalação por sobreposição e grip padrão | CONCLUDED |
 
 > A **14** é a última na ordem de execução, embora apareça antes da **15** na
 > tabela (mantém o fechamento junto das demais tasks). A ordem válida é a do
@@ -50,7 +51,8 @@
   para fixar a geometria da janela.
 - A **12** liga o botão de IA ao handoff de contexto (BR-041); a **13** consome o
   contexto no Sugestões e gera a sugestão manual. A 13 depende da 12.
-- A **15** entra depois da 13 para fechar a concorrência: uma geração por sessão,
-  sugestão em andamento, janela aberta/fechada e prioridade do manual (BR-042).
+- A **15** entra depois da 13 para fechar a concorrência: uma geração por vez no
+  serviço, sugestão em andamento, janela aberta/fechada e prioridade do manual
+  (BR-042).
 - A **14** fecha: documentação, regras, verificação e pacotes. Só começa com
   10–13 e 15 concluídas.

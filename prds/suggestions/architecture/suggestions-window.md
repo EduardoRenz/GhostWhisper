@@ -239,11 +239,11 @@ useSuggestions()        ── histórico em memória ────────�
   **“Manual”** no cartão/histórico.
 - O automático do core **não** usa o contexto manual; “Sugerir agora” continua a
   sugestão normal.
-- **Concorrência (task 15):** uma geração por sessão; a manual espera a atual
-  (botão “Aguardando…”); com contexto manual ativo, a automática vai para o
-  histórico e não substitui o cartão manual; a janela oculta continua montada,
-  `suggestionLast` hidrata o cartão sem LLM e abrir vazia com auto ligado não
-  dispara geração.
+- **Concorrência (task 15):** uma geração por vez no serviço (`gate`); a manual
+  espera a atual (botão “Aguardando…”); com contexto manual ativo, a automática
+  vai para o histórico e não substitui o cartão manual; `suggestionLast` hidrata
+  o cartão sem LLM. **Abrir a janela nunca gera** (BR-028 revisada): o automático
+  só roda com a janela aberta e após o intervalo.
 - Contrato completo (store, IPC, prompt, concorrência e fluxo):
   [`../../chat/architecture/transcription-panel.md`](../../chat/architecture/transcription-panel.md)
   §4–§5.

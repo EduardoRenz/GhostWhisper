@@ -1,6 +1,6 @@
 # 12 — Ação de IA por mensagem e handoff de contexto para Sugestões
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 11
 - **Habilita:** 13
 - **Issues:** — · **BR:** BR-041
@@ -48,8 +48,8 @@ task 13); o store é só o correio entre as duas janelas.
   ```
   - guarda **um** contexto por vez (a sessão ativa); `put` substitui, `get`
     devolve só se `session_id` bater; `clear` zera.
-- `src-tauri/src/adapters/persistence/memory/in_memory_manual_suggestion_context_store.rs`
-  (dobra de teste do próprio port; `Mutex<Option<...>>`).
+- `src-tauri/src/adapters/manual/in_memory_manual_suggestion_context_store.rs`
+  (adaptador em memória do próprio port; `Mutex<Option<...>>`).
 - `AppState.manual_context: Arc<dyn ManualSuggestionContextStore>` + wiring em
   `lib.rs` (composition root).
 - `Speaker` ganha `Deserialize` (o IPC recebe `"ME"`/`"THEY"`; o enum já tem
@@ -115,3 +115,16 @@ task 13); o store é só o correio entre as duas janelas.
   "Sugestão Manual" ficam na task 13.
 - A janela de Sugestões só busca o store ao montar e ao receber `panel_opened`;
   por isso não há corrida entre preparar o contexto e abrir a janela.
+
+## Resultado (2026-10-19)
+
+- Novo port `ManualSuggestionContextStore` + adaptador em memória
+  (`adapters/manual/`), injetado no `AppState`/`lib.rs`.
+- IPC `suggestion_prepare_manual`, `suggestion_manual_context` e
+  `suggestion_clear_manual_context`; o clique no `[✦]` grava o contexto (sessão
+  ativa, texto clampado) e chama `panel_open("suggestions")` — **sem LLM**.
+- `ChatBubble`/`ChatView` ganharam a ação de IA só em fala finalizada/primeira
+  parte, com o texto inteiro do segmento; `TranscriptionView` faz o handoff.
+- `Speaker` ganhou `Deserialize`; testes do store e do editor cobrem put/get/
+  clear e sessão divergente.
+- `cargo test --lib` 378 ✓ · `pnpm test` 261 ✓ · `tsc`/`build` ✓.

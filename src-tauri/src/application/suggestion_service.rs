@@ -15,10 +15,12 @@ use crate::error::{GhostWhisperError, Result};
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::llm_controller::LlmController;
+use crate::ports::manual_suggestion_context::ManualSuggestionContext;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::suggestion_generator::{
     PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionPhase, SuggestionRequest,
+    SuggestionSource, SuggestionTrigger,
 };
 
 use super::context;
@@ -53,6 +55,10 @@ const TECHNICAL_TEMPERATURE: f32 = 0.2;
 const FAST_FIRST_MAX_TOKENS: u32 = 420;
 /// Temperatura do rascunho *fast-first* (determinístico, como o Perssua).
 const FAST_FIRST_TEMPERATURE: f32 = 0.0;
+/// Teto do texto da mensagem selecionada (sugestão manual).
+const MANUAL_CONTEXT_MAX_CHARS: usize = 6_000;
+/// Tamanho do preview do `SuggestionSource` (não repete o texto nos eventos).
+const SOURCE_PREVIEW_MAX_CHARS: usize = 160;
 
 /// Última sugestão gerada de uma sessão (o "cursor" do contexto).
 ///
@@ -147,6 +153,51 @@ impl SuggestionService {
         Some(trimmed.chars().take(max_chars).collect())
     }
 
+    /// Snapshot leve da mensagem que originou a manual.
+    fn manual_source(context: &ManualSuggestionContext) -> SuggestionSource {
+        let preview: String = context
+            .text
+            .trim()
+            .chars()
+            .take(SOURCE_PREVIEW_MAX_CHARS)
+            .collect();
+        SuggestionSource {
+            speaker: context.speaker,
+            at_ms: context.at_ms.max(0),
+            preview,
+        }
+    }
+
+    /// Valida/normaliza o contexto manual contra a sessão resolvida.
+    fn resolve_manual_context(
+        requested: Option<ManualSuggestionContext>,
+        session_id: &str,
+    ) -> Result<Option<ManualSuggestionContext>> {
+        let Some(mut context) = requested else {
+            return Ok(None);
+        };
+        if context.session_id != session_id {
+            return Err(GhostWhisperError::Config(
+                "contexto manual pertence a outra sessão".to_string(),
+            ));
+        }
+        context.text = context.text.trim().to_string();
+        if context.text.is_empty() {
+            return Err(GhostWhisperError::Config(
+                "contexto manual vazio".to_string(),
+            ));
+        }
+        if context.text.chars().count() > MANUAL_CONTEXT_MAX_CHARS {
+            context.text = context
+                .text
+                .chars()
+                .take(MANUAL_CONTEXT_MAX_CHARS)
+                .collect();
+        }
+        context.at_ms = context.at_ms.max(0);
+        Ok(Some(context))
+    }
+
     /// Guarda a última sugestão da sessão (cursor + texto).
     fn remember(&self, session_id: &str, suggestion: &Suggestion) {
         if let Ok(mut last) = self.last.lock() {
@@ -197,6 +248,18 @@ impl SuggestionGenerator for SuggestionService {
         let mode = self.resolve_mode(request.mode_id.as_deref(), &settings)?;
         let segments = self.transcriptions.list_by_session(&session.id)?;
         let now_rel = (self.clock.now_ms() - session.started_at_ms).max(0);
+        let generation_id = Uuid::new_v4().to_string();
+        // Sugestão manual (BR-041): o contexto vem por parâmetro e é explícito.
+        let manual = Self::resolve_manual_context(request.manual_context.clone(), &session.id)?;
+        let force = request.force || manual.is_some();
+        let trigger = if manual.is_some() {
+            SuggestionTrigger::Manual
+        } else if request.force {
+            SuggestionTrigger::Now
+        } else {
+            SuggestionTrigger::Auto
+        };
+        let source = manual.as_ref().map(Self::manual_source);
 
         // Contexto **ao vivo**: inclui a fala em andamento, para a sugestão não
         // esperar o turno fechar (BR-028).
@@ -229,7 +292,7 @@ impl SuggestionGenerator for SuggestionService {
             (None, Some(cached)) => Some(cached),
             (None, None) => None,
         };
-        if !request.force {
+        if !force {
             if let Some(since) = since {
                 if recent.until_ms <= since {
                     // Reaproveita a última sugestão: nenhuma chamada ao LLM.
@@ -242,6 +305,9 @@ impl SuggestionGenerator for SuggestionService {
                         mode_name: mode.name,
                         mode_icon: mode.icon,
                         mode_color: mode.color,
+                        generation_id,
+                        trigger,
+                        source,
                         phase: SuggestionPhase::Full,
                         title: String::new(),
                         text: String::new(),
@@ -257,11 +323,19 @@ impl SuggestionGenerator for SuggestionService {
         let last = Self::clamp(request.last_suggestion, LAST_SUGGESTION_MAX_CHARS);
         let extra = Self::clamp(request.extra_context, EXTRA_CONTEXT_MAX_CHARS);
         let language = Some(settings.source_language.as_str());
-        let user = assistant_prompts::suggestion_user_prompt(
-            &recent.text,
-            last.as_deref(),
-            extra.as_deref(),
-        );
+        let user = match manual.as_ref() {
+            Some(selected) => assistant_prompts::manual_suggestion_user_prompt(
+                &recent.text,
+                selected,
+                last.as_deref(),
+                extra.as_deref(),
+            ),
+            None => assistant_prompts::suggestion_user_prompt(
+                &recent.text,
+                last.as_deref(),
+                extra.as_deref(),
+            ),
+        };
         let (max_tokens, temperature) = sampling(&mode);
 
         // 1) Fast-first: rascunho curto publicado antes do texto completo.
@@ -284,6 +358,9 @@ impl SuggestionGenerator for SuggestionService {
                             mode_name: mode.name.clone(),
                             mode_icon: mode.icon.clone(),
                             mode_color: mode.color.clone(),
+                            generation_id: generation_id.clone(),
+                            trigger,
+                            source: source.clone(),
                             phase: SuggestionPhase::Quick,
                             title: title.unwrap_or_default(),
                             text,
@@ -320,6 +397,9 @@ impl SuggestionGenerator for SuggestionService {
                     mode_name: mode_name.clone(),
                     mode_icon: mode_icon.clone(),
                     mode_color: mode_color.clone(),
+                    generation_id: generation_id.clone(),
+                    trigger,
+                    source: source.clone(),
                     phase: SuggestionPhase::Full,
                     title: title.unwrap_or_default(),
                     text,
@@ -352,6 +432,9 @@ impl SuggestionGenerator for SuggestionService {
             mode_name: mode.name,
             mode_icon: mode.icon,
             mode_color: mode.color,
+            generation_id,
+            trigger,
+            source,
             phase: SuggestionPhase::Full,
             title: title.unwrap_or_default(),
             text,
@@ -399,6 +482,9 @@ impl SuggestionGenerator for SuggestionService {
             mode_name,
             mode_icon,
             mode_color,
+            generation_id: Uuid::new_v4().to_string(),
+            trigger: SuggestionTrigger::Now,
+            source: None,
             phase: SuggestionPhase::Full,
             title: String::new(),
             text: text.to_string(),
@@ -407,6 +493,15 @@ impl SuggestionGenerator for SuggestionService {
             message_id: Some(message_id),
             skipped: false,
         })
+    }
+
+    fn last_suggestion(&self, session_id: &str) -> Result<Option<Suggestion>> {
+        let cached = self
+            .last
+            .lock()
+            .ok()
+            .and_then(|last| last.get(session_id).cloned());
+        Ok(cached.map(|entry| entry.suggestion))
     }
 }
 
@@ -1018,5 +1113,111 @@ mod tests {
         let request = fixture.llm.last_request().expect("pedido");
         assert!(request.prompt.contains("fala recente"));
         assert!(!request.prompt.contains("fala antiga"));
+    }
+
+    #[test]
+    fn manual_context_forces_generation_and_marks_trigger_and_source() {
+        let fixture = fixture(Settings::default(), "> responda a pergunta");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "e o system design?"))
+            .unwrap();
+        let manual = ManualSuggestionContext {
+            session_id: "s1".into(),
+            speaker: Speaker::They,
+            text: "Como tu faria um system design para um banco?".into(),
+            at_ms: 63_500,
+        };
+
+        let suggestion = fixture
+            .service
+            .generate(
+                SuggestionRequest::ephemeral(None, "meeting".to_string())
+                    .with_manual_context(Some(manual.clone())),
+            )
+            .expect("manual");
+
+        assert_eq!(fixture.llm.call_count(), 1);
+        assert_eq!(suggestion.trigger, SuggestionTrigger::Manual);
+        assert_eq!(
+            suggestion.source,
+            Some(SuggestionSource {
+                speaker: Speaker::They,
+                at_ms: 63_500,
+                preview: manual.text.clone(),
+            })
+        );
+        assert!(!suggestion.generation_id.is_empty());
+        let request = fixture.llm.last_request().expect("pedido");
+        assert!(request
+            .prompt
+            .contains("<selected_message speaker=\"THEY\""));
+        assert!(request.prompt.contains("banco"));
+    }
+
+    #[test]
+    fn manual_context_from_another_session_is_rejected() {
+        let fixture = fixture(Settings::default(), "> ok");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        let error = fixture.service.generate(
+            SuggestionRequest::ephemeral(None, "meeting".to_string()).with_manual_context(Some(
+                ManualSuggestionContext {
+                    session_id: "outra".into(),
+                    speaker: Speaker::Me,
+                    text: "mensagem".into(),
+                    at_ms: 1,
+                },
+            )),
+        );
+        assert!(error.is_err());
+        assert_eq!(fixture.llm.call_count(), 0);
+    }
+
+    #[test]
+    fn last_suggestion_returns_the_cached_one_without_calling_the_llm() {
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("gera");
+        assert_eq!(fixture.llm.call_count(), 1);
+
+        let cached = fixture
+            .service
+            .last_suggestion("s1")
+            .expect("cache")
+            .expect("sugestão");
+        assert_eq!(cached.text, "> uma linha");
+        assert_eq!(fixture.llm.call_count(), 1, "não chama o LLM");
+        assert!(fixture
+            .service
+            .last_suggestion("s2")
+            .expect("sem s2")
+            .is_none());
+    }
+
+    #[test]
+    fn automatic_generation_keeps_trigger_auto() {
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        let suggestion = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("auto");
+        assert_eq!(suggestion.trigger, SuggestionTrigger::Auto);
+        assert!(suggestion.source.is_none());
     }
 }

@@ -6,7 +6,10 @@
 
 use serde::Serialize;
 
+use crate::domain::transcription::Speaker;
 use crate::error::Result;
+
+use super::manual_suggestion_context::ManualSuggestionContext;
 
 /// Pedido de sugestão.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -33,6 +36,11 @@ pub struct SuggestionRequest {
     /// Sem `force`, o serviço devolve a última sugestão da sessão quando não
     /// houve fala nova — nenhuma chamada ao LLM (BR-039).
     pub force: bool,
+    /// Mensagem selecionada na Transcrição (sugestão manual — BR-041).
+    ///
+    /// Ação explícita do usuário: entra como foco do prompt e sempre gera,
+    /// mesmo sem fala nova.
+    pub manual_context: Option<ManualSuggestionContext>,
 }
 
 impl SuggestionRequest {
@@ -84,6 +92,12 @@ impl SuggestionRequest {
         self.force = force;
         self
     }
+
+    /// Inclui a mensagem selecionada (sugestão manual).
+    pub fn with_manual_context(mut self, manual_context: Option<ManualSuggestionContext>) -> Self {
+        self.manual_context = manual_context;
+        self
+    }
 }
 
 /// Fase da sugestão (BR-038).
@@ -101,6 +115,28 @@ pub enum SuggestionPhase {
     Full,
 }
 
+/// Origem da geração (BR-041/BR-042).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionTrigger {
+    /// Agendador automático (janela aberta + intervalo).
+    Auto,
+    /// Ação explícita “Sugerir agora”/atalho.
+    Now,
+    /// Sugestão manual a partir de uma mensagem da Transcrição.
+    Manual,
+}
+
+/// Snapshot **leve** da mensagem que originou uma sugestão manual.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SuggestionSource {
+    pub speaker: Speaker,
+    /// Tempo da mensagem desde o início da sessão (ms).
+    pub at_ms: i64,
+    /// Primeiros caracteres da mensagem (sem o texto completo).
+    pub preview: String,
+}
+
 /// Sugestão gerada.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Suggestion {
@@ -113,6 +149,12 @@ pub struct Suggestion {
     pub mode_icon: String,
     /// Cor do agente no momento da resposta (snapshot — BR-037).
     pub mode_color: String,
+    /// UUID da geração; `quick`/`full`/deltas da mesma chamada compartilham.
+    pub generation_id: String,
+    /// Origem da geração (BR-041/BR-042).
+    pub trigger: SuggestionTrigger,
+    /// Snapshot da mensagem de origem (só na manual; BR-041).
+    pub source: Option<SuggestionSource>,
     /// Fase da sugestão (BR-038).
     pub phase: SuggestionPhase,
     /// Título curto gerado pelo agente (`Subject:`), quando houver (BR-038).
@@ -150,4 +192,8 @@ pub trait SuggestionGenerator: Send + Sync {
     fn generate(&self, request: SuggestionRequest) -> Result<Suggestion>;
     /// Persiste uma sugestão já gerada, sem chamar o LLM.
     fn pin(&self, request: PinSuggestionRequest) -> Result<Suggestion>;
+    /// Última sugestão lembrada da sessão (cache; não chama o LLM).
+    ///
+    /// Usada pela janela para hidratar o cartão ao montar/reabrir (BR-042).
+    fn last_suggestion(&self, session_id: &str) -> Result<Option<Suggestion>>;
 }

@@ -1,6 +1,6 @@
 # 14 — Documentação, verificação e pacotes (v0.2)
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 10, 11, 12, 13, 15
 - **Habilita:** —
 - **Issues:** — · **BR:** BR-040, BR-041, BR-042
@@ -51,3 +51,15 @@ memória), rodar a verificação completa e reconstruir os pacotes de release.
 - A latência/WebRTC do print **não** foi transposta: o rodapé usa o estado real
   do Whisper. Se a latência real for desejada, deve virar uma task de
   instrumentação própria.
+
+## Resultado (2026-10-19)
+
+- Docs alinhados ao código que chegou antes da implementação: o automático só
+  roda com a janela aberta (BR-028 revisada), abrir não gera, o `gate` do
+  serviço serializa e o `suggestionLast` hidrata.
+- PRD §9, `transcription-panel.md`, BR-040/041/042 e as notas de
+  notch/suggestions atualizadas; `memory.md` com a entrada de implementação.
+- Verificação: `cargo test` 378 ✓ (8 ignored) · `clippy`/`fmt` limpos ·
+  `pnpm test` 261 ✓ · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- Pacotes de release **não** foram reconstruídos nesta rodada (build de frontend
+  validado; `pnpm tauri build` fica para o fechamento de release).

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   suggestionGenerate,
+  suggestionLast,
   suggestionPin,
 } from "../../adapters/ipc/suggestions";
 import { subscribe } from "../../adapters/ipc/events";
-import type { Suggestion } from "../domain/assistant";
+import type {
+  ManualSuggestionContext,
+  Suggestion,
+  SuggestionTrigger,
+} from "../domain/assistant";
 
 interface UseSuggestionsOptions {
   sessionId: string | null;
@@ -12,6 +17,8 @@ interface UseSuggestionsOptions {
   modeId: string;
   /** Contexto colado pelo usuário (enviado como fonte suplementar). */
   extraContext: string;
+  /** Mensagem selecionada na Transcrição (BR-041). */
+  manualContext?: ManualSuggestionContext | null;
 }
 
 const HISTORY_LIMIT = 8;
@@ -19,19 +26,22 @@ const HISTORY_LIMIT = 8;
 /**
  * Sugestão viva da janela.
  *
- * A geração **automática** vive no core (reage a fala nova, **com a janela
- * aberta**) e chega pelo evento `suggestion` em **duas fases** (BR-038):
- * a resposta curta (`quick`, do passe *fast-first*) e a completa (`full`,
- * Markdown com deltas do streaming). As duas ficam em blocos próprios — a
- * rápida **não** substitui a completa.
+ * A geração **automática** vive no core e reage a fala nova **com a janela
+ * aberta** (BR-028 revisada); chega pelo evento `suggestion` em **duas fases**
+ * (BR-038): a resposta curta (`quick`, do passe *fast-first*) e a completa
+ * (`full`, Markdown com deltas do streaming).
  *
- * A janela só pede uma sugestão ao abrir (para não começar vazia), permite
- * forçar, fixar e navegar no histórico.
+ * A janela **não gera ao abrir**: hidrata com a última sugestão em cache
+ * (`suggestion_last`) e deixa o automático/“Sugerir agora” gerar (BR-042).
+ *
+ * Com **contexto manual ativo**, a automática vai para o histórico e não
+ * substitui a manual; a manual é disparada pelo usuário (`generateManual`).
  */
 export function useSuggestions({
   sessionId,
   modeId,
   extraContext,
+  manualContext,
 }: UseSuggestionsOptions) {
   /** Sugestão completa em destaque (Markdown). */
   const [current, setCurrent] = useState<Suggestion | null>(null);
@@ -45,32 +55,45 @@ export function useSuggestions({
   const [pinned, setPinned] = useState<string | null>(null);
   /** Há streaming recente (deltas) — o pill some 1,5 s após o último. */
   const [streamActive, setStreamActive] = useState(false);
+  /** Origem do stream em andamento (rótulo do pill). */
+  const [streamingTrigger, setStreamingTrigger] =
+    useState<SuggestionTrigger | null>(null);
   /**
-   * `at_ms` da geração cuja **resposta completa** está pendente.
+   * `generation_id` cuja **resposta completa** está pendente.
    *
    * A rápida chega primeiro; a completa pode demorar (principalmente no
    * automático). Este estado garante o aviso “Gerando resposta completa…”
    * durante a espera, sem depender do `streamActive` (que expira em 1,5 s).
    */
-  const [pendingFull, setPendingFull] = useState<number | null>(null);
+  const [pendingFull, setPendingFull] = useState<string | null>(null);
   const pendingTimer = useRef<number | null>(null);
 
   const inFlight = useRef(false);
+  const eventSeen = useRef(false);
   const sessionRef = useRef<string | null>(sessionId);
   const modeRef = useRef(modeId);
   const extraRef = useRef(extraContext);
+  const manualRef = useRef<ManualSuggestionContext | null>(manualContext ?? null);
   const contextUntil = useRef<number | null>(null);
   const lastText = useRef<string | null>(null);
   const streamTimer = useRef<number | null>(null);
 
+  // A ref fica atualizada **antes** dos efeitos de sessão/subscribe, para o
+  // filtro da automática enxergar o contexto manual já no primeiro evento.
+  useEffect(() => {
+    manualRef.current = manualContext ?? null;
+  }, [manualContext]);
+
   /** Marca atividade de streaming (fast-first + deltas do evento `suggestion`). */
-  const markStreaming = useCallback(() => {
+  const markStreaming = useCallback((trigger: SuggestionTrigger) => {
     setStreamActive(true);
+    setStreamingTrigger(trigger);
     if (streamTimer.current !== null) {
       window.clearTimeout(streamTimer.current);
     }
     streamTimer.current = window.setTimeout(() => {
       setStreamActive(false);
+      setStreamingTrigger(null);
       streamTimer.current = null;
     }, 1_500);
   }, []);
@@ -88,8 +111,8 @@ export function useSuggestions({
   );
 
   /** Marca a completa como pendente (com um teto de segurança). */
-  const markFullPending = useCallback((atMs: number) => {
-    setPendingFull(atMs);
+  const markFullPending = useCallback((generationId: string) => {
+    setPendingFull(generationId);
     if (pendingTimer.current !== null) {
       window.clearTimeout(pendingTimer.current);
     }
@@ -109,30 +132,12 @@ export function useSuggestions({
     }
   }, []);
 
-  /** Aplica uma sugestão recebida, respeitando a fase (BR-038). */
-  const applyIncoming = useCallback(
-    (incoming: Suggestion) => {
-    if (incoming.phase === "quick") {
-      // A resposta rápida é o **começo** da nova sugestão: a anterior sai do
-      // topo (já está no histórico) e o cartão passa a mostrar a nova sendo
-      // montada — sem confundir com a antiga.
-      setCurrent((previous) =>
-        previous && previous.at_ms !== incoming.at_ms ? null : previous,
-      );
-      setQuick(incoming);
-      markFullPending(incoming.at_ms);
-      return;
-    }
-    // A completa chegou: o aviso de “gerando” some.
-    clearFullPending();
-    // A completa só convive com a rápida da **mesma** geração.
-    setQuick((previous) =>
-      previous && previous.at_ms === incoming.at_ms ? previous : null,
-    );
-    setCurrent(incoming);
-    lastText.current = incoming.text;
+  /** Adiciona uma sugestão completa ao histórico (dedupe por geração). */
+  const pushHistory = useCallback((incoming: Suggestion) => {
     setHistory((previous) => {
-      const rest = previous.filter((item) => item.at_ms !== incoming.at_ms);
+      const rest = previous.filter(
+        (item) => item.generation_id !== incoming.generation_id,
+      );
       // Conteúdo idêntico à sugestão anterior não vira um segundo item no
       // histórico (proteção contra duplicatas): fica só a mais recente.
       if (rest[0] && rest[0].text.trim() === incoming.text.trim()) {
@@ -140,12 +145,52 @@ export function useSuggestions({
       }
       return [incoming, ...rest].slice(0, HISTORY_LIMIT);
     });
+  }, []);
+
+  /** Aplica uma sugestão recebida, respeitando a fase e a prioridade (BR-042). */
+  const applyIncoming = useCallback(
+    (incoming: Suggestion) => {
+      // Com contexto manual ativo, a automática não assume o cartão: a
+      // completa vai para o histórico e a rápida é ignorada (efêmera).
+      if (incoming.trigger === "auto" && manualRef.current) {
+        if (incoming.phase === "full") {
+          pushHistory(incoming);
+        }
+        return;
+      }
+
+      if (incoming.phase === "quick") {
+        // A resposta rápida é o **começo** da nova sugestão: a anterior sai do
+        // topo (já está no histórico) e o cartão passa a mostrar a nova sendo
+        // montada — sem confundir com a antiga.
+        setCurrent((previous) =>
+          previous && previous.generation_id !== incoming.generation_id
+            ? null
+            : previous,
+        );
+        setQuick(incoming);
+        markFullPending(incoming.generation_id);
+        return;
+      }
+
+      // A completa chegou: o aviso de “gerando” some.
+      clearFullPending();
+      // A completa só convive com a rápida da **mesma** geração.
+      setQuick((previous) =>
+        previous && previous.generation_id === incoming.generation_id
+          ? previous
+          : null,
+      );
+      setCurrent(incoming);
+      lastText.current = incoming.text;
+      pushHistory(incoming);
     },
-    [clearFullPending, markFullPending],
+    [clearFullPending, markFullPending, pushHistory],
   );
 
   useEffect(() => {
     sessionRef.current = sessionId;
+    eventSeen.current = false;
     contextUntil.current = null;
     lastText.current = null;
     setCurrent(null);
@@ -155,6 +200,7 @@ export function useSuggestions({
     setSkipped(false);
     setPinned(null);
     setStreamActive(false);
+    setStreamingTrigger(null);
     setPendingFull(null);
     if (streamTimer.current !== null) {
       window.clearTimeout(streamTimer.current);
@@ -164,7 +210,29 @@ export function useSuggestions({
       window.clearTimeout(pendingTimer.current);
       pendingTimer.current = null;
     }
-  }, [sessionId]);
+
+    if (!sessionId) {
+      return;
+    }
+
+    // Hidrata com a última sugestão lembrada (cache do core, sem LLM).
+    let cancelled = false;
+    void suggestionLast(sessionId).then((last) => {
+      if (
+        cancelled ||
+        !last ||
+        sessionRef.current !== sessionId ||
+        eventSeen.current ||
+        inFlight.current
+      ) {
+        return;
+      }
+      applyIncoming(last);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, applyIncoming]);
 
   useEffect(() => {
     modeRef.current = modeId;
@@ -177,7 +245,7 @@ export function useSuggestions({
     extraRef.current = extraContext;
   }, [extraContext]);
 
-  // Sugestões do core (fast-first + streaming), inclusive sem a janela aberta.
+  // Sugestões do core (fast-first + streaming).
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
@@ -192,9 +260,10 @@ export function useSuggestions({
       ) {
         return;
       }
+      eventSeen.current = true;
       setSkipped(false);
       applyIncoming(incoming);
-      markStreaming();
+      markStreaming(incoming.trigger);
     }).then((stop) => {
       if (cancelled) {
         stop();
@@ -210,7 +279,7 @@ export function useSuggestions({
   }, [applyIncoming, markStreaming]);
 
   const generate = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, manual?: ManualSuggestionContext | null) => {
       if (inFlight.current || !sessionRef.current) {
         return;
       }
@@ -226,6 +295,7 @@ export function useSuggestions({
           extraContext: extraRef.current.trim() ? extraRef.current : null,
           fastFirst: true,
           force,
+          manualContext: manual ?? null,
         });
         if (!result || result.session_id !== sessionRef.current) {
           return;
@@ -245,15 +315,19 @@ export function useSuggestions({
         setLoading(false);
       }
     },
-    [applyIncoming],
+    [applyIncoming, clearFullPending],
   );
 
-  // **Abrir a janela não gera** (pedido do usuário): o automático começa a
-  // contar do intervalo (o core reinicia a contagem na abertura) e só gera se
-  // houver fala nova; pausado, só o botão “Sugerir agora”. Trocar de agente
-  // também não gera — a escolha vale para a próxima geração.
+  const suggestNow = useCallback(() => generate(true, null), [generate]);
 
-  const suggestNow = useCallback(() => generate(true), [generate]);
+  /** Gera a sugestão manual a partir da mensagem selecionada (BR-041). */
+  const generateManual = useCallback(() => {
+    const selected = manualRef.current;
+    if (!selected || selected.session_id !== sessionRef.current) {
+      return;
+    }
+    return generate(true, selected);
+  }, [generate]);
 
   /** Fixa uma sugestão (a atual, ou a de um item do histórico). */
   const pin = useCallback(
@@ -287,16 +361,20 @@ export function useSuggestions({
     /** Resposta curta da geração atual (fase `quick`). */
     quick,
     /** `true` enquanto a completa da geração atual ainda não chegou. */
-    awaitingFull: pendingFull !== null && quick?.at_ms === pendingFull,
+    awaitingFull:
+      pendingFull !== null && quick?.generation_id === pendingFull,
     /** Sugestões completas anteriores (mais recente primeiro). */
     history,
-    /** `true` enquanto a IA gera/transmite uma sugestão (manual ou automática). */
+    /** `true` enquanto a IA gera/transmite uma sugestão. */
     generating: loading || streamActive,
+    /** Origem do stream atual (`auto`/`now`/`manual`), quando houver. */
+    streamingTrigger,
     loading,
     error,
     skipped,
     pinned,
     suggestNow,
+    generateManual,
     pin,
   };
 }

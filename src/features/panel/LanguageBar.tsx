@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { sessionSetLanguage } from "../../adapters/ipc/session";
 import { LanguageIcon } from "../../components/icons";
+import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import {
   LANGUAGES,
@@ -9,7 +10,8 @@ import {
 } from "../../core/domain/settings";
 
 /**
- * Barra inferior da aba **Transcrição**: o seletor de **idioma de origem**.
+ * Barra inferior da aba **Transcrição**: o seletor de **idioma de origem** e o
+ * estado real do motor (BR-040).
  *
  * Trocar o idioma aplica ao **próximo passe** de decodificação da sessão em
  * andamento (BR-034) — sem reiniciar a sessão. O destino da tradução **não**
@@ -17,6 +19,7 @@ import {
  * transporte vive no notch (BR-022).
  */
 export function LanguageBar() {
+  const { state } = useSessionState();
   const { settings, reload } = useSettings();
   const [value, setValue] = useState<Language>(settings.source_language);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +41,17 @@ export function LanguageBar() {
     }
   };
 
+  const engineStatus = !state.listening
+    ? "Sem sessão"
+    : state.paused
+      ? "Pausado"
+      : "Gravando";
+
   return (
     <div className="language-bar" data-interactive>
       <LanguageIcon className="language-bar__icon" size={16} />
       <label className="language-bar__field">
-        <span className="language-bar__label">Idioma</span>
+        <span className="language-bar__label">Idioma de Entrada:</span>
         <select
           className="language-bar__select"
           aria-label="Idioma da transcrição"
@@ -60,7 +69,9 @@ export function LanguageBar() {
       {error ? (
         <span className="language-bar__error">{error}</span>
       ) : (
-        <span className="language-bar__hint">muda na hora</span>
+        <span className="language-bar__status">
+          Whisper {settings.whisper_model} · {engineStatus}
+        </span>
       )}
     </div>
   );

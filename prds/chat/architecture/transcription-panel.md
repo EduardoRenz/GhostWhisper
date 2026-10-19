@@ -49,7 +49,7 @@ pelo usuário (2026-10-19); o contrato em
 | Cabeçalho | altura ~48 px; `WaveformIcon` estático em selo 28×28; título 15/600 | SVG do projeto (BR-008), `--oh-headline-md-size`, `--oh-accent` |
 | Título | **"Transcrição ao Vivo"** na aba Transcrição; **"Resumo"** na aba Resumo | `PanelWindow` |
 | Subtítulo | removido do cabeçalho | o estado vai para o rodapé e para o notch |
-| Grip de arraste | sem o `⋮⋮` visível; o cabeçalho (título/ícone) arrasta | `PanelFrame`/`panel_start_drag` |
+| Grip de arraste | visível no canto superior direito de **todas** as janelas; o cabeçalho (título/ícone) também arrasta | `DragHandle`/`PanelFrame`/`panel_start_drag` |
 | Medidores | fora da aba; o waveform do notch continua | BR-032 |
 | Atalho "Sugestões" no topo da conversa | removido; o notch já abre a janela | BR-032/BR-033 |
 | Pill de abas | `width:100%`; duas colunas iguais; `gap:2px`; `padding:2px`; raio `--oh-radius-full` | `PanelTabs` |
@@ -109,6 +109,32 @@ pelo usuário (2026-10-19); o contrato em
 - O histórico não precisa de `source_text` para a IA, mas mantém o campo para
   simetria do domínio.
 
+### 3.4 Intercalação por sobreposição (task 16)
+
+Quando uma fala começa antes e termina depois do início da fala do **outro**
+canal, a bolha longa é cortada no início do outro falante:
+
+```
+Outros  [========== 20 s ==========]
+Microfone        [= 10 s =]
+                         ↓
+Outros  [==== 0–10 s ====]
+Microfone        [= 10 s =]
+Outros                  [== 10,001–20 s ==]
+```
+
+- `splitSpeechSpans` encontra os `start_ms` do outro falante dentro de
+  `[start, end]` e divide o texto em partes proporcionais ao tempo.
+- O corte prefere fim de frase (`[.!?…\n]`) e, depois, espaço; se não houver
+  corte seguro, a fala fica inteira.
+- A primeira parte mantém `at_ms`; as seguintes entram em `boundary + 1` para o
+  desempate colocar a fala nova no meio. Cada parte é uma bolha normal (rótulo e
+  hora), não uma continuação silenciosa.
+- O `buildChatTimeline` aplica no ao vivo; o `bubblesFromTimeline` aplica no
+  histórico usando `end_ms` da `TimelineEntry`.
+- É um corte de **exibição**: o ASR, o banco e o export continuam com a fala
+  inteira (o export é uma lista por item, sem as partes).
+
 ## 4. Handoff do contexto (task 12)
 
 ```
@@ -151,7 +177,7 @@ pub trait ManualSuggestionContextStore: Send + Sync {
 ```
 
 - Adaptador: `InMemoryManualSuggestionContextStore` (`Mutex<Option<...>>`) em
-  `adapters/persistence/memory/`; **uma** sessão por vez.
+  `adapters/manual/`; **uma** sessão por vez.
 - `AppState.manual_context: Arc<dyn ManualSuggestionContextStore>`; wiring só no
   `lib.rs`.
 
@@ -206,9 +232,9 @@ pub struct SuggestionRequest {
   - `Auto` no agendador.
 - O agendador **não** monta `manual_context`; portanto o automático nunca herda
   o contexto manual.
-- **Single-flight por sessão:** `SuggestionService` mantém um lock por sessão
-  durante o fast-first + streaming + persistência. Automático e manual nunca
-  emitem `quick`/`full` intercalados; o segundo espera. `pin` não usa o lock.
+- **Single-flight no serviço:** o `gate` do `SuggestionService` serializa
+  fast-first + streaming + persistência. Automático e manual nunca emitem
+  `quick`/`full` intercalados; o segundo espera. `pin` não usa o gate.
 - **Cursor compartilhado:** o `remember` do serviço já guarda
   `context_until_ms`. O agendador deve consultar esse cursor (inclui a sugestão
   manual) em vez de manter um cursor local que a manual não vê; assim a manual
@@ -264,14 +290,14 @@ pub struct SuggestionRequest {
 O ponto delicado é **não se perder** quando já existe uma sugestão em andamento
 (automática ou manual) e a janela está aberta, oculta ou nunca foi aberta.
 
-**Single-flight por sessão.** `SuggestionService` mantém um lock por sessão
-durante o fast-first + streaming + persistência. O automático e a manual chamam
-`generate` normalmente; o segundo **espera** o primeiro. Não há cancelamento de
-LLM em voo (não existe token no `LlmController`). O `pin` não usa o lock.
+**Single-flight no serviço.** `SuggestionService.gate` (já existente) serializa
+fast-first + streaming + persistência. O automático e a manual chamam `generate`
+normalmente; o segundo **espera** o primeiro. Não há cancelamento de LLM em voo
+(não existe token no `LlmController`). O `pin` não usa o gate.
 
 > A UI pode não saber que o automático começou antes do primeiro evento chegar
 > (o `streamActive` só liga no primeiro `quick`/`full`). A garantia de não
-> concorrência é do **lock no core**, não do estado visual. Ao clicar, o botão
+> concorrência é do **gate no core**, não do estado visual. Ao clicar, o botão
 > entra em `loading` e mostra a espera.
 
 **Prioridade de leitura.** Enquanto houver `manual_context` ativo:
@@ -281,17 +307,12 @@ LLM em voo (não existe token no `LlmController`). O `pin` não usa o lock.
 - ao limpar o contexto, a próxima automática volta a poder ocupar o cartão.
 
 **Janela oculta.** A janela Tauri de Sugestões é criada oculta no boot e o React
-continua montado; `useSuggestions` recebe os eventos mesmo com a janela fechada.
+continua montado; `useSuggestions` recebe os eventos enquanto ela está aberta.
 Ao montar/trocar de sessão, a janela consulta `suggestionLast` (cache do
-serviço, sem LLM) e hidrata o cartão se estiver vazio. Ao abrir:
-- se há `current`/`quick`, `generating` ou `manual_context`, **não** chama
-  `generate`;
-- se está vazia e o **auto-sugerir está ligado**, **não** chama `generate`: o
-  agendador é quem gera; a janela espera o evento (evita a chamada duplicada que
-  competiria com o automático);
-- se está vazia e o **auto está desligado** (e sem manual), chama
-  `generate(false)` **uma vez** por abertura/sessão (guard por `openAttempt`);
-- ocultar/mostrar durante uma manual não perde o resultado.
+serviço, sem LLM) e hidrata o cartão se estiver vazio. **Abrir nunca gera**
+(BR-028 revisada): quem gera é o agendador — só com a janela aberta e depois do
+intervalo — ou o botão “Sugerir agora”. Ocultar/mostrar durante uma manual não
+perde o resultado.
 
 **Novo `[✦]` durante uma manual.** O contexto novo substitui o antigo no store.
 A geração antiga termina e leva `Suggestion.source` (falante, `at_ms` e um
@@ -302,8 +323,8 @@ está pronto para gerar. Nunca há duas chamadas manuais concorrentes
 (`inFlight`/estado).
 
 **Troca de sessão.** `useSuggestions` limpa `current`/`quick`/histórico/contexto
-e ignora eventos/resultados cujo `session_id` não é o atual. O lock é por
-sessão, então a sessão nova não fica atrás de uma geração antiga.
+e ignora eventos/resultados cujo `session_id` não é o atual. A geração antiga
+pode terminar no serviço, mas não contamina a sessão nova.
 
 **Identidade da geração.** `Suggestion.generation_id` (UUID) é criado por
 `generate` e compartilhado por `quick`/`full`/deltas. A UI usa o id como chave
@@ -313,14 +334,14 @@ confundem. O id é efêmero e não vai ao banco.
 
 | Cenário | Comportamento |
 |---|---|
-| Janela oculta + automática em andamento | eventos acumulam; abrir mostra o estado e **não** dispara outra geração |
-| Abrir vazia + auto ligado | não gera; o agendador gera na próxima fala |
-| Abrir vazia + auto desligado | gera uma vez (ou usa `suggestionLast`) |
+| Janela oculta + geração iniciada quando aberta | eventos acumulam; abrir mostra o estado e **não** dispara outra geração |
+| Abrir vazia (auto ligado ou não) | **não** gera; o agendador só gera com a janela aberta e depois do intervalo; o botão “Sugerir agora” é explícito |
+| Abrir com `current`/`suggestionLast` | hidrata o cartão sem LLM |
 | Janela fechada + `[✦]` | contexto grava, janela abre/foca; manual espera a geração atual ou fica pronta |
 | Janela aberta + automática em andamento + `[✦]` | contexto atualiza; botão “Aguardando…”; automática vai ao histórico ao completar |
 | Manual em andamento + novo `[✦]` | contexto novo substitui; manual antiga termina com `source` antigo; botão libera depois |
 | Manual em andamento + janela oculta | geração continua; reabrir mostra resultado/source |
-| Troca de sessão | UI limpa; eventos antigos ignorados; novo lock |
+| Troca de sessão | UI limpa; eventos antigos ignorados |
 | Automática depois da manual | com contexto ativo vai ao histórico; sem contexto pode ocupar o cartão |
 
 ## 6. Fluxo completo

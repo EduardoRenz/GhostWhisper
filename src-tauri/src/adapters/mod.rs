@@ -10,6 +10,7 @@ pub mod ai;
 pub mod audio;
 pub mod dwell;
 pub mod events;
+pub mod manual;
 pub mod overlay;
 pub mod persistence;
 pub mod secrets;

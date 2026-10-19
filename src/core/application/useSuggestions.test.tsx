@@ -1,10 +1,15 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useSuggestions } from "./useSuggestions";
-import type { Suggestion, SuggestionPhase } from "../domain/assistant";
+import type {
+  ManualSuggestionContext,
+  Suggestion,
+  SuggestionPhase,
+} from "../domain/assistant";
 
 const suggestionGenerate = vi.fn();
 const suggestionPin = vi.fn();
+const suggestionLast = vi.fn();
 const subscribeMock = vi.hoisted(() => ({
   emit: null as null | ((payload: unknown) => void),
 }));
@@ -12,6 +17,7 @@ const subscribeMock = vi.hoisted(() => ({
 vi.mock("../../adapters/ipc/suggestions", () => ({
   suggestionGenerate: (...args: unknown[]) => suggestionGenerate(...args),
   suggestionPin: (...args: unknown[]) => suggestionPin(...args),
+  suggestionLast: (...args: unknown[]) => suggestionLast(...args),
 }));
 
 vi.mock("../../adapters/ipc/events", () => ({
@@ -32,6 +38,9 @@ const suggestion = (
   mode_name: "Reunião",
   mode_icon: "users",
   mode_color: "cyan",
+  generation_id: `g-${atMs}`,
+  trigger: "auto",
+  source: null,
   phase,
   title: "",
   text,
@@ -43,14 +52,15 @@ const suggestion = (
 
 const options = {
   sessionId: "s1",
-  opened: true,
   modeId: "meeting",
   extraContext: "",
+  manualContext: null,
 };
 
 describe("useSuggestions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    suggestionLast.mockResolvedValue(null);
     suggestionGenerate.mockResolvedValue(suggestion("> fale do prazo", 1_000));
     suggestionPin.mockResolvedValue(suggestion("> fale do prazo", 1_000));
   });
@@ -298,5 +308,83 @@ describe("useSuggestions", () => {
     });
 
     expect(result.current.current?.text).toContain("da sessão");
+  });
+
+  it("hidrata o cartão com a última sugestão em cache, sem gerar", async () => {
+    suggestionLast.mockResolvedValueOnce(suggestion("> do cache", 1_000));
+    const { result } = renderHook(() => useSuggestions(options));
+
+    await waitFor(() =>
+      expect(result.current.current?.text).toContain("do cache"),
+    );
+    expect(suggestionGenerate).not.toHaveBeenCalled();
+  });
+
+  it("com contexto manual, a automática vai para o histórico e não rouba o cartão", async () => {
+    const manualContext: ManualSuggestionContext = {
+      session_id: "s1",
+      speaker: "THEY",
+      text: "Como tu faria um system design?",
+      at_ms: 500,
+    };
+    type ManualProps = { manualContext: ManualSuggestionContext | null };
+    const { result, rerender } = renderHook(
+      (props: ManualProps) =>
+        useSuggestions({ ...options, manualContext: props.manualContext }),
+      { initialProps: { manualContext } as ManualProps },
+    );
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> rascunho auto", 5_000, false, "quick"));
+      subscribeMock.emit!(suggestion("> completa auto", 5_000));
+    });
+
+    await waitFor(() =>
+      expect(result.current.history.some((item) => item.text.includes("completa auto"))).toBe(true),
+    );
+    expect(result.current.current).toBeNull();
+
+    // Sem o contexto manual, a próxima automática pode ocupar o cartão.
+    rerender({ manualContext: null });
+    act(() => {
+      subscribeMock.emit!({
+        ...suggestion("> auto nova", 9_000),
+        generation_id: "g-nova",
+      });
+    });
+    await waitFor(() =>
+      expect(result.current.current?.text).toContain("auto nova"),
+    );
+  });
+
+  it("gera a sugestão manual com o contexto como parâmetro", async () => {
+    const manualContext = {
+      session_id: "s1",
+      speaker: "THEY" as const,
+      text: "Como tu faria um system design?",
+      at_ms: 500,
+    };
+    const manualSuggestion: Suggestion = {
+      ...suggestion("> manual gerada", 2_000),
+      generation_id: "g-manual",
+      trigger: "manual",
+      source: { speaker: "THEY", at_ms: 500, preview: manualContext.text },
+    };
+    suggestionGenerate.mockResolvedValueOnce(manualSuggestion);
+
+    const { result } = renderHook(() =>
+      useSuggestions({ ...options, manualContext }),
+    );
+
+    await act(async () => {
+      await result.current.generateManual();
+    });
+
+    expect(suggestionGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({ force: true, manualContext }),
+    );
+    expect(result.current.current?.trigger).toBe("manual");
+    expect(result.current.current?.source?.preview).toBe(manualContext.text);
   });
 });

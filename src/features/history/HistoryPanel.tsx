@@ -190,7 +190,10 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
         ) : entries.length === 0 ? (
           <p className="chat__empty">Nada registrado nesta sessão.</p>
         ) : (
-          <ChatView bubbles={bubbles} />
+          <ChatView
+            bubbles={bubbles}
+            sessionStartedAtMs={current.started_at_ms}
+          />
         )}
       </div>
     );

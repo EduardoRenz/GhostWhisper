@@ -13,6 +13,7 @@ use crate::ports::dwell_popover::DwellPopoverController;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::gpu_probe::GpuProbe;
 use crate::ports::llm_controller::LlmController;
+use crate::ports::manual_suggestion_context::ManualSuggestionContextStore;
 use crate::ports::overlay_window::OverlayWindowController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::secret_store::SecretStore;
@@ -63,6 +64,8 @@ pub struct AppState {
     pub summary: Arc<dyn SummaryGenerator>,
     /// Sugestões contextuais por agente.
     pub suggestions: Arc<dyn SuggestionGenerator>,
+    /// Contexto manual da Transcrição → Sugestões (BR-041).
+    pub manual_context: Arc<dyn ManualSuggestionContextStore>,
     /// Publicação de eventos para a UI.
     pub publisher: Arc<dyn EventPublisher>,
     /// Registro de atalhos globais.
@@ -93,6 +96,7 @@ impl AppState {
         translator: Arc<dyn Translator>,
         summary: Arc<dyn SummaryGenerator>,
         suggestions: Arc<dyn SuggestionGenerator>,
+        manual_context: Arc<dyn ManualSuggestionContextStore>,
         publisher: Arc<dyn EventPublisher>,
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
         dwell: Arc<dyn DwellPopoverController>,
@@ -116,6 +120,7 @@ impl AppState {
             translator,
             summary,
             suggestions,
+            manual_context,
             publisher,
             shortcuts,
             dwell,
@@ -138,6 +143,7 @@ mod tests {
     use crate::ports::session_controller::AudioChannel;
     use crate::ports::suggestion_generator::{
         PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionPhase, SuggestionRequest,
+        SuggestionTrigger,
     };
     use crate::ports::summary_generator::{SummaryGenerator, SummaryRequest, SummaryResult};
 
@@ -345,6 +351,9 @@ mod tests {
                 mode_name: "Reunião".into(),
                 mode_icon: "users".into(),
                 mode_color: "cyan".into(),
+                generation_id: "g1".into(),
+                trigger: SuggestionTrigger::Auto,
+                source: None,
                 phase: SuggestionPhase::Full,
                 title: "Sugestão".into(),
                 text: "sugestão".into(),
@@ -361,6 +370,9 @@ mod tests {
                 mode_name: "Reunião".into(),
                 mode_icon: "users".into(),
                 mode_color: "cyan".into(),
+                generation_id: "g1".into(),
+                trigger: SuggestionTrigger::Now,
+                source: None,
                 phase: SuggestionPhase::Full,
                 title: String::new(),
                 text: request.text,
@@ -369,6 +381,10 @@ mod tests {
                 message_id: Some("m1".into()),
                 skipped: false,
             })
+        }
+
+        fn last_suggestion(&self, _session_id: &str) -> Result<Option<Suggestion>> {
+            Ok(None)
         }
     }
 
@@ -423,6 +439,7 @@ mod tests {
     }
 
     fn build_state() -> AppState {
+        use crate::adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
         use crate::adapters::persistence::memory::in_memory_messages_repository::InMemoryMessagesRepository;
         use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
         use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
@@ -448,6 +465,7 @@ mod tests {
             Arc::new(FakeTranslator),
             Arc::new(FakeSummary),
             Arc::new(FakeSuggestions),
+            Arc::new(InMemoryManualSuggestionContextStore::new()),
             Arc::new(FakePublisher),
             Arc::new(FakeShortcutRegistry),
             Arc::new(FakeDwell {

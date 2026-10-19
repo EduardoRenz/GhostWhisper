@@ -36,11 +36,15 @@ export function PanelFrame({
       <ResizeHandles />
       <div className="panel" data-route={label}>
         <header className="panel__header">
-          <DragHandle
-            className="panel__drag"
-            onStartDrag={() => void panelStartDrag()}
-          />
-          <div className="panel__heading">
+          <div
+            className="panel__heading"
+            onPointerDown={(event) => {
+              // O cabeçalho também arrasta; o grip visível fica no canto direito
+              // e é padrão em todas as janelas (BR-040).
+              event.preventDefault();
+              void panelStartDrag();
+            }}
+          >
             {heading ?? (
               <>
                 <span className="panel__title">{title}</span>
@@ -49,6 +53,10 @@ export function PanelFrame({
             )}
           </div>
           <div className="panel__actions">{actions}</div>
+          <DragHandle
+            className="panel__drag"
+            onStartDrag={() => void panelStartDrag()}
+          />
           <button
             type="button"
             className="panel__close"

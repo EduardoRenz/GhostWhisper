@@ -18,6 +18,7 @@ pub mod event_publisher;
 pub mod gpu_probe;
 pub mod llm_controller;
 pub mod llm_provider_factory;
+pub mod manual_suggestion_context;
 pub mod meeting_summaries_repository;
 pub mod model_store;
 pub mod overlay_window;

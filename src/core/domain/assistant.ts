@@ -105,6 +105,26 @@ export interface SummaryResult {
 /** Fase da sugestão (BR-038): resposta curta ou completa. */
 export type SuggestionPhase = "quick" | "full";
 
+/** Origem da geração (BR-041/BR-042). */
+export type SuggestionTrigger = "auto" | "now" | "manual";
+
+/** Mensagem selecionada na Transcrição para uma sugestão manual (BR-041). */
+export interface ManualSuggestionContext {
+  session_id: string;
+  speaker: "ME" | "THEY";
+  /** Texto completo do segmento. */
+  text: string;
+  /** Tempo desde o início da sessão (ms). */
+  at_ms: number;
+}
+
+/** Snapshot leve da mensagem que originou uma sugestão manual. */
+export interface SuggestionSource {
+  speaker: "ME" | "THEY";
+  at_ms: number;
+  preview: string;
+}
+
 /** Sugestão gerada (`ports::suggestion_generator::Suggestion`). */
 export interface Suggestion {
   session_id: string;
@@ -114,6 +134,12 @@ export interface Suggestion {
   mode_icon: string;
   /** Snapshot da cor do agente (BR-037). */
   mode_color: string;
+  /** UUID da geração; quick/full/deltas compartilham o mesmo id. */
+  generation_id: string;
+  /** Origem da geração (BR-041/BR-042). */
+  trigger: SuggestionTrigger;
+  /** Snapshot da mensagem de origem (só na manual). */
+  source: SuggestionSource | null;
   /** Fase da sugestão (BR-038). */
   phase: SuggestionPhase;
   /** Título curto gerado pelo agente (`Subject:`); vazio = derive do texto. */

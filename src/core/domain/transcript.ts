@@ -39,7 +39,14 @@ export const MAX_SEGMENTS = 500;
 
 /** Item da linha temporal (espelha `application::session_timeline::TimelineEntry`). */
 export type TimelineEntry =
-  | { at_ms: number; kind: "speech"; speaker: Speaker; text: string }
+  | {
+      at_ms: number;
+      kind: "speech";
+      speaker: Speaker;
+      text: string;
+      /** Fim da fala (ms desde o início da sessão); ausente em dados antigos. */
+      end_ms?: number;
+    }
   | { at_ms: number; kind: "suggestion"; text: string };
 
 /** Sugestão da IA persistida (`ports::insight_generator::InsightSuggestion`). */
@@ -122,6 +129,24 @@ export const formatClock = (ms: number): string => {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 };
 
+/**
+ * Hora da mensagem para a UI (BR-040).
+ *
+ * Com o início da sessão, devolve a hora de parede `HH:MM:SS`
+ * (`started_at_ms + at_ms`); sem ele, cai no tempo decorrido `mm:ss`.
+ */
+export const formatMessageClock = (
+  atMs: number,
+  startedAtMs?: number | null,
+): string => {
+  if (startedAtMs === undefined || startedAtMs === null) {
+    return formatClock(atMs);
+  }
+  const date = new Date(startedAtMs + Math.max(0, atMs));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
+
 /** Formata como `HH:MM:SS` (timer do notch — BR-032/task 08). */
 export const formatClockLong = (ms: number): string => {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -183,9 +208,9 @@ export function mergeHistory(
     .slice(-cap);
 }
 
-/** Rótulo legível do falante. */
+/** Rótulo legível do falante (BR-040: canal do microfone × canal do sistema). */
 export const speakerLabel = (speaker: Speaker): string =>
-  speaker === "ME" ? "Você" : "Interlocutor";
+  speaker === "ME" ? "Microfone" : "Outros";
 
 /** Rótulo legível do canal. */
 export const channelLabel = (channel: SessionChannel | null): string => {

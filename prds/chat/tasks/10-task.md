@@ -1,6 +1,6 @@
 # 10 — Casca "Transcrição ao Vivo": cabeçalho, abas e rodapé
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 09
 - **Habilita:** 11
 - **Issues:** — · **BR:** BR-040
@@ -52,8 +52,9 @@ evidência histórica da paridade Perssua 0.27.5.
   - sai o `header={<ChatHeaderActions />}`; o `ChatHeaderActions.tsx` pode ser
     removido se ficar sem uso (o atalho Sugestões vive no notch).
 - `src/features/panels/PanelFrame.tsx`:
-  - no painel `chat`, o grip visível `⋮⋮` some; o arraste continua pelo cabeçalho
-    (título/ícone) e o `panel_start_drag` não muda.
+  - o `DragHandle` visível passa a ficar no **canto superior direito** de
+    **todas** as janelas (antes do fechar); o arraste pelo cabeçalho
+    (título/ícone) e o `panel_start_drag` não mudam.
 - `src/styles/globals.css` / `src/styles/tokens.css`:
   - ajustes de `.panel__header`, `.panel-tabs`, `.language-bar` e do selo do
     título; apenas tokens `--oh-*` (BR-035);
@@ -71,7 +72,8 @@ evidência histórica da paridade Perssua 0.27.5.
 - [ ] O rodapé mostra **"Idioma de Entrada:"** + seletor e, à direita, o estado
       real do Whisper — sem número de latência inventado e sem "WebRTC".
 - [ ] A aba Transcrição não mostra a linha de medidores nem o botão "Sugestões";
-      o header arrasta pelo título/ícone, sem o grip visível.
+      o header arrasta pelo título/ícone e o grip fica no canto superior direito
+      de todas as janelas.
 - [ ] Em 360 px de largura nada estoura; foco visível e navegação por teclado.
 - [ ] `pnpm test`, `tsc --noEmit` e `pnpm build` verdes.
 
@@ -87,3 +89,16 @@ evidência histórica da paridade Perssua 0.27.5.
 - O ícone do cabeçalho é SVG do projeto (BR-008); não copiar o asset do print.
 - O selo/ícone do print é só referência de **hierarquia**; a geometria segue os
   tokens do design system.
+
+## Resultado (2026-10-19)
+
+- `PanelWindow` ganhou o cabeçalho “Transcrição ao Vivo” com `WaveformIcon` em
+  selo accent; o subtítulo saiu e o título da aba Resumo continua “Resumo”.
+- `PanelTabs` ocupa 100% da largura, com duas colunas e a aba ativa em contorno
+  cyan.
+- `LanguageBar` mostra “Idioma de Entrada:” + seletor e, à direita,
+  `Whisper {modelo} · {estado}` (sem latência/WebRTC inventados).
+- `TranscriptionView` perdeu `LevelMeters` e o atalho “Sugestões”; o
+  `PanelFrame` arrasta pelo heading e o `DragHandle` fica no canto direito de
+  todas as janelas.
+- `pnpm test` 261 ✓ · `tsc --noEmit` ✓ · `pnpm build` ✓.

@@ -1,9 +1,9 @@
 //! Tipos de domínio para transcrição.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Quem falou: o usuário (`Me`) ou o outro lado (`They`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Speaker {
     #[serde(rename = "ME")]
     Me,

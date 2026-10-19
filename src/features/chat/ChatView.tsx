@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import { copyText } from "../../core/application/clipboard";
 import {
   MAX_BUBBLES,
@@ -7,20 +6,35 @@ import {
   type ChatBubble,
 } from "../../core/domain/chat";
 import {
+  formatMessageClock,
   speakerLabel,
+  type Speaker,
   type TranscriptSegment,
 } from "../../core/domain/transcript";
 import type { TranslationMap } from "../../core/application/useTranslation";
 import { ChatBubble as Bubble } from "./ChatBubble";
+
+/** Dados de uma fala entregues à ação de IA (BR-041). */
+export interface AskAiInput {
+  id: string;
+  speaker: Speaker;
+  /** Texto inteiro do segmento (antes do split de exibição). */
+  text: string;
+  atMs: number;
+}
 
 interface ChatViewProps {
   /** Linha temporal (falas finalizadas + sugestões). */
   bubbles: ChatBubble[];
   /** Falas ainda em revisão: exibidas **depois** da linha temporal. */
   pending?: TranscriptSegment[];
-  /** Cabeçalho do chat (ex.: atalho "Sugestões"). */
-  header?: ReactNode;
   emptyLabel?: string;
+  /** Início da sessão: a hora da mensagem usa a hora de parede (BR-040). */
+  sessionStartedAtMs?: number | null;
+  /** Ação de IA de uma fala finalizada (BR-041). */
+  onAskAi?: (input: AskAiInput) => Promise<void> | void;
+  /** Id da fala cuja ação de IA está em preparação. */
+  askingAiId?: string | null;
   /** Tradução sob demanda nas bolhas de fala (botão no canto). */
   translationEnabled?: boolean;
   translations?: TranslationMap;
@@ -36,20 +50,22 @@ interface ChatViewProps {
 const NEAR_BOTTOM_PX = 40;
 
 /**
- * Conversa em bolhas: a linha temporal do Perssua (`chat-ui.md` §3).
+ * Conversa em cartões de largura total (BR-040).
  *
- * A fala em andamento aparece **no fim**, como bolha própria com `…` — nunca no
- * meio da linha temporal (é o que corrige a leitura errada da ISS-018). A rolagem
+ * A fala em andamento aparece **no fim**, como cartão próprio — nunca no meio
+ * da linha temporal (é o que corrige a leitura errada da ISS-018). A rolagem
  * segue o fim só enquanto o usuário está perto dele.
  *
- * Memoizada: o overlay re-renderiza por eventos de sessão/status e a conversa pode
- * ter centenas de bolhas.
+ * Memoizada: o painel re-renderiza por eventos de sessão/status e a conversa
+ * pode ter centenas de bolhas.
  */
 export const ChatView = memo(function ChatView({
   bubbles,
   pending = [],
-  header,
   emptyLabel = "Nenhuma fala ainda…",
+  sessionStartedAtMs,
+  onAskAi,
+  askingAiId,
   translationEnabled = false,
   translations,
   translationPending,
@@ -93,7 +109,6 @@ export const ChatView = memo(function ChatView({
 
   return (
     <div className="chat" data-interactive>
-      {header && <div className="chat__head">{header}</div>}
       <div className="chat__list" ref={scrollerRef} onScroll={onScroll}>
         {empty && <p className="chat__empty">{emptyLabel}</p>}
         {visible.map((bubble) =>
@@ -103,7 +118,23 @@ export const ChatView = memo(function ChatView({
               text={bubble.text}
               label={speakerLabel(bubble.speaker)}
               side={bubble.speaker === "ME" ? "me" : "they"}
-              atMs={bubble.continues ? undefined : bubble.at_ms}
+              timeLabel={
+                bubble.continues
+                  ? undefined
+                  : formatMessageClock(bubble.at_ms, sessionStartedAtMs)
+              }
+              onAskAi={
+                onAskAi && !bubble.continues
+                  ? () =>
+                      onAskAi({
+                        id: bubble.id,
+                        speaker: bubble.speaker,
+                        text: bubble.source_text ?? bubble.text,
+                        atMs: bubble.at_ms,
+                      })
+                  : undefined
+              }
+              askingAi={askingAiId === bubble.id}
               translation={
                 translationEnabled ? translations?.[bubble.id] : undefined
               }
@@ -124,7 +155,7 @@ export const ChatView = memo(function ChatView({
               text={bubble.text}
               label={bubble.mode_name ? `Sugestão · ${bubble.mode_name}` : "Sugestão da IA"}
               side="ai"
-              atMs={bubble.at_ms}
+              timeLabel={formatMessageClock(bubble.at_ms, sessionStartedAtMs)}
               markdown
               copied={copied === bubble.id}
               onCopy={() => void onCopy(bubble.id, bubble.text)}
@@ -132,8 +163,8 @@ export const ChatView = memo(function ChatView({
           ),
         )}
         {pending.flatMap((segment) => {
-          // A prévia cresce enquanto o Interlocutor fala: mesma regra de teto, com
-          // o `…` só na última parte.
+          // A prévia cresce enquanto o outro lado fala: mesma regra de teto,
+          // com o `…`/Streaming só na última parte.
           const parts = splitSpeechText(segment.text);
           return parts.map((part, index) => (
             <Bubble
@@ -141,8 +172,8 @@ export const ChatView = memo(function ChatView({
               text={part}
               label={speakerLabel(segment.speaker)}
               side={segment.speaker === "ME" ? "me" : "they"}
-              atMs={index === 0 ? segment.start_ms : undefined}
               pending
+              streaming={index === parts.length - 1}
               typing={index === parts.length - 1}
               continues={index > 0}
             />

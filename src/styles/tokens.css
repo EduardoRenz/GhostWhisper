@@ -117,6 +117,10 @@
   --oh-agent-coral: #fb7185;
   --oh-agent-slate: #94a3b8;
 
+  /* --- Identidade do falante no painel ao vivo (BR-040) ----------------- */
+  --oh-speaker-me: var(--oh-accent);
+  --oh-speaker-they: var(--oh-agent-violet);
+
   /* --- Elevação, vidro e foco ------------------------------------------ */
   --oh-glass-bar: rgba(11, 15, 23, 0.78);
   --oh-glass-card: rgba(19, 27, 46, 0.85);

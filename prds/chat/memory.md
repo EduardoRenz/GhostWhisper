@@ -198,32 +198,112 @@ silêncio, então o teto visual faz o papel que o *commit* faz lá em cima.
 - O automático do core não usa `manual_context`; "Sugerir agora" continua a
   sugestão normal. Sem schema novo, sem backend novo.
 
-### Concorrência e janela (aviso do usuário)
+### Concorrência e janela (aviso do usuário + código de 2026-10-19)
 O usuário alertou para não se perder quando **já existe uma sugestão em
-andamento** e a janela está aberta/fechada. Decisões (BR-042, task 15):
-- **Single-flight por sessão** no `SuggestionService`: automático e manual nunca
+andamento** e a janela está aberta/fechada. O código evoluiu antes da
+implementação (commit `f3ea741`): o automático **só gera com a janela de
+Sugestões aberta**, **abrir a janela não gera** (a contagem reinicia na
+abertura) e o `SuggestionService` já tem um **`gate`** que serializa as gerações
+com o cursor mais avançado. Decisões (BR-042, task 15) alinhadas a isso:
+- **Single-flight no serviço** (`gate` existente): automático e manual nunca
   emitem `quick`/`full` intercalados; a manual **espera** a atual. Sem
   cancelamento de LLM em voo.
 - **Prioridade do manual:** com contexto manual ativo, a automática `full` vai
   para o histórico e a `quick` é ignorada; o cartão manual não é substituído.
   Ao limpar o contexto, a automática volta a poder ocupar o cartão.
-- **Janela oculta continua montada:** os eventos acumulam; `suggestionLast`
-  hidrata o cartão sem LLM. Abrir com `current`/`quick`/`generating`/contexto
-  manual não chama `generate`; abrir vazia com auto **ligado** também não (o
-  agendador é a fonte); com auto **desligado**, chama no máximo uma vez.
+- **Abrir não gera:** a janela hidrata com `suggestionLast` (cache, sem LLM); o
+  automático gera com a janela aberta e após o intervalo, e o botão “Sugerir
+  agora” é a ação explícita.
 - **Novo `[✦]` durante a manual:** o contexto novo substitui o antigo; a manual
-  antiga termina com `Suggestion.source` (falante/texto/`at_ms` original) e o
-  botão libera para o contexto novo.
-- **Troca de sessão:** limpa a leitura e ignora eventos/resultados antigos; o
-  lock é por sessão.
+  antiga termina com `Suggestion.source` (falante/`at_ms`/preview) e o botão
+  libera para o contexto novo.
+- **Troca de sessão:** limpa a leitura e ignora eventos/resultados antigos.
 - **`generation_id` (UUID por geração):** a UI usa o id como chave de
   `current`/`quick`/histórico; `at_ms` pode empatar (relógio fixo/teste) e não
-  serve como identidade. O single-flight evita intercalação; o id identifica a
-  geração; `trigger`/`source` rotulam.
+  serve como identidade. O gate evita intercalação; o id identifica a geração;
+  `trigger`/`source` rotulam.
 
 ### Entregável desta rodada
-- **Nada implementado.** PRD §9, arquitetura `transcription-panel.md`, tasks
+> Esta entrada registra o **planejamento**; a implementação está na entrada
+> seguinte, de 2026-10-19.
+- **Nada implementado nesta etapa.** PRD §9, arquitetura `transcription-panel.md`, tasks
   10–15 (`PENDING`), BR-040/BR-041/BR-042 e revisões de BR-019/BR-021
   registradas. A task 14 é o fechamento e vem depois da 15 (`13 → 15 → 14`).
 - Próximo passo: task 10 (casca) e task 11 (cartões), depois 12 (handoff), 13
   (Sugestões manual), 15 (concorrência) e 14 (fechamento).
+
+## 2026-10-19 — Implementação da v0.2: transcrição ao vivo, sugestão manual e concorrência
+
+- **IDs:** BR-040, BR-041, BR-042, T10–T15
+- **Refs:** [`prd.md`](prd.md) §9,
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md),
+  [`tasks/10-task.md`](tasks/10-task.md)…[`tasks/15-task.md`](tasks/15-task.md)
+
+### Código que chegou antes da implementação
+A base já tinha evoluído (commits `f3ea741`/`feeba77`): o automático **só gera
+com a janela de Sugestões aberta**, abrir a janela **reinicia** a contagem e não
+gera, e o `SuggestionService` já tinha um **`gate`** com cursor mais avançado.
+A implementação foi alinhada a isso (não reintroduziu geração ao abrir).
+
+### Entregue
+- **T10** cabeçalho “Transcrição ao Vivo” com `WaveformIcon`, abas full-width com
+  ativa em contorno cyan, rodapé “Idioma de Entrada:” + `Whisper {modelo} ·
+  {estado}`; medidores e atalho “Sugestões” saíram da aba; grip oculto no chat e
+  arraste pelo heading.
+- **T11** cartões full-width, Microfone/Outros com cores, hora de parede
+  `HH:MM:SS` (`formatMessageClock`), “Falando agora…” + Streaming, `source_text`
+  do segmento e histórico com o mesmo contrato.
+- **T12** ação `[✦]` por fala finalizada (texto inteiro), `ManualSuggestionContext`
+  + store em memória, IPC `suggestion_prepare_manual`/`suggestion_manual_context`/
+  `suggestion_clear_manual_context`; o clique não chama LLM.
+- **T13** `SuggestionRequest.manual_context`, `trigger`/`generation_id`/`source`,
+  prompt `<selected_message>`, `useManualSuggestionContext`,
+  `ManualContextCard` e rótulos “Sugestão Manual”/“Manual”.
+- **T15** `suggestion_last` + hidratação sem LLM; prioridade do manual
+  (automática full → histórico, quick ignorada); abertura nunca gera;
+  `generation_id` como chave de estado/histórico; gate existente cobre a manual.
+- **T14** documentação/regras/memória atualizadas; tasks 10–15 `CONCLUDED`.
+
+### Verificação
+- `cargo test --lib` **378 ✓** (8 `ignored`) · `cargo clippy --all-targets` ✓ ·
+  `cargo fmt --check` ✓.
+- `pnpm test` **261 ✓** (47 arquivos) · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- Pacotes `.deb`/AppImage **não** foram reconstruídos nesta rodada.
+
+### Desvios/decisões mantidas
+- Rodapé sem latência/“WebRTC” inventados (usa estado real do Whisper).
+- Hora de parede na UI; banco continua relativo à sessão (BR-019).
+- Ação de IA só em fala finalizada/primeira parte; prévia/continuação não.
+- Manual espera o automático (sem cancelamento de LLM); automática não rouba o
+  cartão enquanto o contexto manual está ativo.
+- Contexto manual é efêmero (memória), sem schema.
+
+## 2026-10-19 — Intercalação por sobreposição e grip padrão (task 16)
+
+- **IDs:** BR-043, T16
+- **Refs:** [`prd.md`](prd.md) §9 (US-14),
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md) §3.4,
+  [`tasks/16-task.md`](tasks/16-task.md)
+
+### Pedido (teste do usuário)
+- “Se os outros estão falando sem parar e eu falo em seguida, ele vai jogando
+  minha mensagem atrás.” Queria cortar a fala longa no ponto em que o outro
+  começou, colocar a nova no meio e continuar o resto em outra bolha.
+- O grip de arraste precisava ser padrão no canto superior direito de todas as
+  janelas.
+
+### Entregue
+- `splitSpeechSpans` em `core/domain/chat.ts`: encontra o início do outro
+  falante dentro do intervalo, divide o texto por proporção de tempo (fim de
+  frase → palavra), mantém a primeira parte no tempo original e coloca as
+  seguintes em `boundary + 1` ms. Cada parte vira uma bolha normal, com
+  rótulo/hora; se o corte não for seguro, mantém a fala inteira.
+- Aplicado no `buildChatTimeline` (ao vivo) e `bubblesFromTimeline` (histórico);
+  `TimelineKind::Speech` ganhou `end_ms` (sem schema) para o histórico.
+- `PanelFrame`: `DragHandle` movido para o canto superior direito, visível em
+  todas as janelas; o heading continua arrastando.
+- Testes: intercalação simétrica, sem sobreposição e histórico com `end_ms`.
+
+### Verificação
+- `pnpm test` **265 ✓** · `cargo test --lib` **378 ✓** · `tsc`/`build` ✓.
+- AppImage/deb reconstruídos (19:47) e app aberto com o novo build.

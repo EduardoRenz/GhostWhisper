@@ -1,6 +1,6 @@
 # 11 — Bolhas em largura total: Microfone/Outros, hora e Streaming
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 09, 10
 - **Habilita:** 12
 - **Issues:** — · **BR:** BR-040, BR-031
@@ -86,3 +86,15 @@ cartões de largura total.
   relativo (BR-019) e derivamos a hora na UI; sem migração.
 - O teto de 180 caracteres (BR-031) é de **exibição**; o `source_text` garante que
   a sugestão manual receba a fala inteira.
+
+## Resultado (2026-10-19)
+
+- `speakerLabel` passou a devolver **Microfone/Outros** e `formatMessageClock`
+  mostra a hora de parede `HH:MM:SS` (fallback `mm:ss`).
+- `ChatBubble` virou cartão de **largura total**, com rótulo colorido + hora no
+  topo e ações no canto direito; a prévia mostra “Falando agora…” e
+  **Streaming**; a continuação não repete rótulo/hora.
+- `SpeechBubble.source_text` carrega o texto inteiro antes do split; o botão de
+  IA recebe a mensagem completa.
+- `HistoryPanel` usa a mesma hora de parede e o mesmo componente.
+- `pnpm test` 261 ✓ · `tsc --noEmit` ✓ · `pnpm build` ✓.

@@ -90,6 +90,10 @@ pub fn run() {
             ipc::suggestion_commands::assistant_modes_list,
             ipc::suggestion_commands::suggestion_generate,
             ipc::suggestion_commands::suggestion_pin,
+            ipc::suggestion_commands::suggestion_prepare_manual,
+            ipc::suggestion_commands::suggestion_manual_context,
+            ipc::suggestion_commands::suggestion_clear_manual_context,
+            ipc::suggestion_commands::suggestion_last,
             ipc::suggestion_commands::llm_insight,
             ipc::summary_commands::summary_get,
             ipc::summary_commands::summary_generate,
@@ -190,6 +194,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::audio::shared_audio_reference::{SharedAudioReference, SystemAudioReferenceTap};
     use adapters::dwell::tauri_dwell_popover::TauriDwellPopover;
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
+    use adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
@@ -224,6 +229,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::gpu_probe::GpuProbe;
     use ports::llm_controller::LlmController;
     use ports::llm_provider_factory::ChatBotProviderFactory;
+    use ports::manual_suggestion_context::ManualSuggestionContextStore;
     use ports::meeting_summaries_repository::MeetingSummariesRepository;
     use ports::model_store::ModelStore;
     use ports::overlay_window::OverlayWindowController;
@@ -397,6 +403,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&clock),
         Arc::clone(&publisher),
     ));
+    let manual_context: Arc<dyn ManualSuggestionContextStore> =
+        Arc::new(InMemoryManualSuggestionContextStore::new());
 
     // Atalhos globais: o despachante resolve o `AppState` em tempo de execução.
     let shortcuts: Arc<dyn GlobalShortcutRegistry> = {
@@ -480,6 +488,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         translator,
         summary,
         suggestions,
+        manual_context,
         publisher,
         shortcuts,
         dwell,

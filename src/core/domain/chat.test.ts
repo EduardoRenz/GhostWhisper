@@ -240,4 +240,93 @@ describe("continuação de fala longa", () => {
     // Sugestão não é continuação de nada (a marca só existe em fala).
     expect("continues" in (bubbles[2] as object)).toBe(false);
   });
+
+  it("corta a fala longa no início do outro falante e coloca a nova no meio", () => {
+    const { bubbles } = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 0,
+        end_ms: 20_000,
+        text: "um dois três quatro cinco seis sete oito nove dez.",
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 10_000,
+        end_ms: 12_000,
+        text: "minha fala",
+      }),
+    ]);
+    const speech = bubbles.filter(
+      (item): item is Extract<ChatBubble, { kind: "speech" }> =>
+        item.kind === "speech",
+    );
+
+    expect(speech.map((item) => item.id)).toEqual(["they", "me", "they#ov1"]);
+    expect(speech[0]?.at_ms).toBe(0);
+    expect(speech[1]?.at_ms).toBe(10_000);
+    // 1 ms depois do início do outro, para o desempate colocar a fala no meio.
+    expect(speech[2]?.at_ms).toBe(10_001);
+    expect(speech[2]?.continues).toBeFalsy();
+    expect(speech[0]?.text).toMatch(/^um /);
+    expect(speech[2]?.text).toMatch(/dez\.$/);
+  });
+
+  it("a intercalação é simétrica (microfone longo e outro falante no meio)", () => {
+    const { bubbles } = buildChatTimeline([
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 0,
+        end_ms: 20_000,
+        text: "um dois três quatro cinco seis sete oito nove dez.",
+      }),
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 10_000,
+        end_ms: 12_000,
+        text: "fala do outro",
+      }),
+    ]);
+    const speech = bubbles.filter(
+      (item): item is Extract<ChatBubble, { kind: "speech" }> =>
+        item.kind === "speech",
+    );
+
+    expect(speech.map((item) => item.id)).toEqual(["me", "they", "me#ov1"]);
+    expect(speech[1]?.at_ms).toBe(10_000);
+    expect(speech[2]?.at_ms).toBe(10_001);
+  });
+
+  it("não corta falas que não se sobrepõem", () => {
+    const { bubbles } = buildChatTimeline([
+      segment({ id: "a", speaker: "THEY", start_ms: 0, end_ms: 5_000, text: "antes" }),
+      segment({ id: "b", speaker: "ME", start_ms: 5_000, end_ms: 6_000, text: "depois" }),
+    ]);
+    expect(bubbles.map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("o histórico também intercala pela sobreposição quando tem end_ms", () => {
+    const entries: TimelineEntry[] = [
+      {
+        kind: "speech",
+        speaker: "THEY",
+        at_ms: 0,
+        end_ms: 20_000,
+        text: "um dois três quatro cinco seis sete oito nove dez.",
+      },
+      { kind: "speech", speaker: "ME", at_ms: 10_000, end_ms: 12_000, text: "minha fala" },
+    ];
+    const bubbles = bubblesFromTimeline(entries);
+
+    expect(bubbles.map((item) => item.id)).toEqual([
+      "speech-0-0",
+      "speech-10000-1",
+      "speech-0-0#ov1",
+    ]);
+    expect(bubbles[1]?.at_ms).toBe(10_000);
+    expect(bubbles[2]?.at_ms).toBe(10_001);
+  });
 });

@@ -5,6 +5,7 @@ import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useSuggestions } from "../../core/application/useSuggestions";
+import { useManualSuggestionContext } from "../../core/application/useManualSuggestionContext";
 import { useSuggestionCadence } from "../../core/application/useSuggestionCadence";
 import type { Suggestion } from "../../core/domain/assistant";
 import { saveSettings } from "../../adapters/ipc/settings";
@@ -14,6 +15,7 @@ import { Pill } from "../../components/Pill";
 import { StatusPill } from "../../components/StatusPill";
 import { AgentSelector } from "./AgentSelector";
 import { AutoSuggestControl } from "./AutoSuggestControl";
+import { ManualContextCard } from "./ManualContextCard";
 import { SuggestionCard } from "./SuggestionCard";
 import { SuggestionHistory } from "./SuggestionHistory";
 import { PanelFrame } from "../panels/PanelFrame";
@@ -36,21 +38,27 @@ export function SuggestionsWindow() {
     setModeId(settings.assistant_mode_id);
   }, [settings.assistant_mode_id]);
 
+  const manual = useManualSuggestionContext({ sessionId: state.session_id });
+
   const {
     current,
     quick,
     awaitingFull,
     history,
+    generating,
+    streamingTrigger,
     loading,
     error,
     skipped,
     pinned,
     suggestNow,
+    generateManual,
     pin,
   } = useSuggestions({
     sessionId: state.session_id,
     modeId,
     extraContext,
+    manualContext: manual.context,
   });
 
   const selectMode = (id: string) => {
@@ -60,7 +68,7 @@ export function SuggestionsWindow() {
     );
   };
 
-  // O automático vive no core (reage a fala nova, mesmo com a janela fechada);
+  // O automático vive no core (reage a fala nova, com a janela aberta);
   // aqui só ligamos/desligamos.
   const toggleAuto = () => {
     void saveSettings({
@@ -83,6 +91,26 @@ export function SuggestionsWindow() {
     : state.paused
       ? "Pausado"
       : "Gravando";
+
+  /** Rótulo do pill de geração (BR-042). */
+  const generatingLabel = (() => {
+    if (!generating) {
+      return null;
+    }
+    if (!current && !quick) {
+      return "Gerando sugestão…";
+    }
+    if (streamingTrigger === "manual") {
+      return "Gerando sugestão manual…";
+    }
+    if (streamingTrigger === "auto" && manual.context) {
+      return "Sugestão automática em andamento — vai para o histórico";
+    }
+    if (manual.context && loading) {
+      return "Aguardando a sugestão em andamento…";
+    }
+    return "Gerando uma nova sugestão…";
+  })();
 
   // Cabeçalho: faísca + título + badge de estado (BR-039).
   const heading = (
@@ -125,12 +153,12 @@ export function SuggestionsWindow() {
       <button
         type="button"
         className="suggest-now"
-        disabled={loading || !state.session_id}
+        disabled={generating || !state.session_id}
         onClick={() => void suggestNow()}
         title="Gerar uma sugestão agora"
       >
         <SparkleIcon size={12} />
-        {loading ? "Analisando…" : "Sugerir agora"}
+        {generating ? "Aguardando…" : "Sugerir agora"}
       </button>
     </>
   );
@@ -150,6 +178,21 @@ export function SuggestionsWindow() {
         </label>
       )}
       <div className="panel__scroll">
+        {manual.context && (
+          <ManualContextCard
+            context={manual.context}
+            startedAtMs={state.started_at_ms}
+            generating={generating}
+            generated={
+              current?.trigger === "manual" &&
+              current.source?.speaker === manual.context.speaker &&
+              current.source?.at_ms === manual.context.at_ms
+            }
+            onGenerate={() => void generateManual()}
+            onClear={() => void manual.clear()}
+          />
+        )}
+
         {error ? (
           <div className="panel__error">
             <p>{error}</p>
@@ -173,9 +216,9 @@ export function SuggestionsWindow() {
           </div>
         ) : current || quick ? (
           <>
-            {loading && current && (
+            {generatingLabel && current && (
               <StatusPill
-                label="Gerando uma nova sugestão…"
+                label={generatingLabel}
                 title="A sugestão atual continua na tela até a nova ficar pronta; a anterior vai para o histórico"
               />
             )}
@@ -185,6 +228,7 @@ export function SuggestionsWindow() {
               pinned={Boolean(pinned)}
               copied={copied}
               awaitingFull={awaitingFull}
+              startedAtMs={state.started_at_ms}
               onCopy={() => void onCopy()}
               onPin={() => void pin()}
             />
@@ -194,7 +238,7 @@ export function SuggestionsWindow() {
           </>
         ) : loading ? (
           <>
-            <StatusPill label="Gerando sugestão…" />
+            <StatusPill label={generatingLabel ?? "Gerando sugestão…"} />
             <p className="panel__empty">Analisando a conversa…</p>
           </>
         ) : (
@@ -204,14 +248,17 @@ export function SuggestionsWindow() {
             </span>
             <p className="suggestion-empty__title">Ainda sem sugestão</p>
             <p className="suggestion-empty__hint">
-              Fale na reunião: o agente sugere o que dizer a cada fala nova.
+              Fale na reunião ou use “Sugerir agora”: a janela não gera ao abrir.
             </p>
           </div>
         )}
 
         <SuggestionHistory
-          items={history.filter((item) => item.at_ms !== current?.at_ms)}
+          items={history.filter(
+            (item) => item.generation_id !== current?.generation_id,
+          )}
           pinnedId={pinned}
+          startedAtMs={state.started_at_ms}
           onCopy={(suggestion) => void onCopy(suggestion)}
           onPin={(suggestion) => void pin(suggestion)}
         />

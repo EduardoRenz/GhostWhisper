@@ -3,6 +3,7 @@ import {
   formatClock,
   formatClockLong,
   formatDateTime,
+  formatMessageClock,
   mergeHistory,
   mergeSegment,
   sessionDuration,
@@ -160,7 +161,7 @@ describe("histórico de sessões", () => {
   it("rotula falas e sugestões", () => {
     expect(
       timelineLabel({ at_ms: 0, kind: "speech", speaker: "ME", text: "oi" }),
-    ).toBe("Você");
+    ).toBe("Microfone");
     expect(
       timelineLabel({
         at_ms: 0,
@@ -168,7 +169,7 @@ describe("histórico de sessões", () => {
         speaker: "THEY",
         text: "oi",
       }),
-    ).toBe("Interlocutor");
+    ).toBe("Outros");
     expect(timelineLabel({ at_ms: 0, kind: "suggestion", text: "sug" })).toBe(
       "Sugestão da IA",
     );
@@ -189,5 +190,14 @@ describe("histórico de sessões", () => {
       text: "faça X",
       at_ms: 9_000,
     });
+  });
+
+  it("formatMessageClock usa a hora de parede e cai em mm:ss sem o início", () => {
+    // O print mostra 10:42:15/10:43:02 (BR-040).
+    const started = new Date(2026, 9, 19, 10, 42, 15).getTime();
+    expect(formatMessageClock(0, started)).toBe("10:42:15");
+    expect(formatMessageClock(47_000, started)).toBe("10:43:02");
+    expect(formatMessageClock(65_000)).toBe("01:05");
+    expect(formatMessageClock(65_000, null)).toBe("01:05");
   });
 });

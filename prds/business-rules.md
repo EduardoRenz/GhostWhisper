@@ -730,8 +730,8 @@ uma nota de revisão.
   - o rodapé mostra **"Idioma de Entrada:"** + seletor e o **estado real** do
     Whisper à direita. **Não** exibir latência/“WebRTC” inventados;
   - a linha de medidores e o botão de texto "Sugestões" **saem** da aba (o
-    waveform e o atalho ficam no notch); o header arrasta pelo título/ícone, sem
-    grip visível;
+    waveform e o atalho ficam no notch); o header arrasta pelo título/ícone e o
+    **grip de arraste** fica no canto superior direito de todas as janelas;
   - o histórico usa o mesmo cartão e a mesma hora, sem a ação de IA.
 - **Motivo:** pedido do usuário — "deixe o layout o mais fiel possível" ao print
   anexado, com microfone/outros em cores distintas, hora por mensagem e cartões
@@ -746,7 +746,7 @@ uma nota de revisão.
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
   §2–§3, [`chat/tasks/10-task.md`](chat/tasks/10-task.md),
   [`chat/tasks/11-task.md`](chat/tasks/11-task.md).
-- **Data:** 2026-10-19 · **Status:** Ativa (tasks 10/11 planejadas)
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 10/11 implementadas)
 
 ## BR-041 — Sugestão manual a partir de uma mensagem (contexto por parâmetro)
 
@@ -786,41 +786,66 @@ uma nota de revisão.
   [`chat/tasks/13-task.md`](chat/tasks/13-task.md),
   [`suggestions/architecture/suggestions-window.md`](suggestions/architecture/suggestions-window.md)
   §5.4.
-- **Data:** 2026-10-19 · **Status:** Ativa (tasks 12/13 planejadas)
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 12/13 implementadas)
 
-## BR-042 — Sugestões: single-flight por sessão e prioridade do contexto manual
+## BR-042 — Sugestões: single-flight e prioridade do contexto manual
 
-- **Decisão:** a geração de sugestões é **single-flight por sessão**: no máximo
-  um fast-first + streaming por vez. Automático e manual não emitem `quick`/
-  `full` intercalados; a segunda chamada **espera** a primeira. Não há
-  cancelamento de LLM em voo (seria uma task própria). Enquanto houver
-  **contexto manual ativo**:
+- **Decisão:** a geração de sugestões é **single-flight no serviço**: no máximo
+  um fast-first + streaming por vez (janela × agendador × manual). Automático e
+  manual não emitem `quick`/`full` intercalados; a segunda chamada **espera** a
+  primeira. Não há cancelamento de LLM em voo (seria uma task própria). Enquanto
+  houver **contexto manual ativo**:
   - a `quick` automática é ignorada (efêmera);
   - a `full` automática vai para o **histórico**, sem substituir o cartão manual;
   - a manual tem prioridade de leitura; ao limpar o contexto, a automática volta
     a poder ocupar o cartão.
-  A janela de Sugestões **continua montada quando oculta**: os eventos acumulam e
-  reabrir não dispara outra geração. A abertura consulta `suggestionLast` (cache,
-  sem LLM) para hidratar o cartão. Se já há `current`/`quick`/`generating` ou
-  contexto manual, não chama `generate`; se está vazia e o auto **ligado**,
-  também não (o agendador é a fonte); com o auto **desligado**, chama no máximo
-  uma vez. Um novo `[✦]` durante uma manual substitui o contexto;
+  A janela de Sugestões **continua montada quando oculta**: os eventos acumulam
+  enquanto ela estava aberta e reabrir não dispara geração. **Abrir nunca
+  gera** (BR-028 revisada): a abertura só consulta `suggestionLast` (cache, sem
+  LLM) para hidratar o cartão; quem gera é o automático (com a janela aberta e
+  depois do intervalo) ou o botão. Um novo `[✦]` durante uma manual substitui o
+  contexto;
   a manual antiga termina rotulada com `Suggestion.source` (snapshot leve de
   falante, `at_ms` e `preview`; o texto completo fica no `manual_context`/
   prompt). Cada geração carrega um `generation_id` (UUID) compartilhado por
   `quick`/`full`/deltas; a UI usa o id como chave, não o `at_ms`. Trocar de
-  sessão limpa a leitura e ignora eventos/resultados antigos; o lock é por
-  sessão.
+  sessão limpa a leitura e ignora eventos/resultados antigos.
 - **Motivo:** aviso do usuário — é preciso cuidar de já existir uma sugestão em
   andamento e do estado da janela (aberta/fechada), sem streams misturados,
   geração duplicada ao reabrir ou perda do contexto.
-- **Consequência:** `SuggestionService` ganha lock por sessão; `Suggestion` ganha
-  `generation_id` (UUID por geração; cache preserva o id), `trigger` e
-  `source: Option<SuggestionSource>` (falante/`at_ms`/preview); `useSuggestions`
-  usa o id como chave de `current`/`quick`/histórico, filtra a automática para o
-  histórico quando o manual está ativo e não gera ao abrir com estado. Sem
-  schema; sem backend novo.
+- **Consequência:** o `gate` do `SuggestionService` (já existente) serializa
+  tudo; `Suggestion` ganha `generation_id` (UUID por geração; cache preserva o
+  id), `trigger` e `source: Option<SuggestionSource>` (falante/`at_ms`/preview);
+  `useSuggestions` usa o id como chave de `current`/`quick`/histórico, filtra a
+  automática para o histórico quando o manual está ativo e **não gera ao
+  abrir**. Sem schema; sem backend novo.
 - **Detalhes:** [`chat/prd.md`](chat/prd.md) §9 (US-13),
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
   §5.4, [`chat/tasks/15-task.md`](chat/tasks/15-task.md).
-- **Data:** 2026-10-19 · **Status:** Ativa (task 15 planejada)
+- **Data:** 2026-10-19 · **Status:** Ativa (task 15 implementada)
+
+## BR-043 — Linha temporal intercalada por sobreposição dos canais
+
+- **Decisão:** quando a fala de um canal começa antes e termina depois do início
+  da fala do **outro** canal, a fala longa é **cortada no início do outro** para
+  a linha temporal ficar coerente:
+  - o texto é dividido proporcionalmente ao tempo, preferindo fim de frase e,
+    depois, fim de palavra; se não houver corte seguro, a fala fica inteira;
+  - a primeira parte mantém o tempo original; a nova fala entra no tempo dela; o
+    restante entra **1 ms depois**, como uma nova bolha com rótulo/hora (não como
+    continuação silenciosa);
+  - vale nos dois sentidos (Microfone/Outros) e no histórico, cuja fala passa a
+    carregar `end_ms`;
+  - é um corte de **exibição**: ASR, banco e export continuam com a fala
+    inteira.
+- **Motivo:** relato do usuário — “se os outros estão falando sem parar e eu falo
+  em seguida, ele vai jogando minha mensagem atrás”; a fala longa deve ser
+  intercalada pela nova, não engolir a ordem.
+- **Consequência:** `splitSpeechSpans` em `core/domain/chat.ts`, usado pelo
+  `buildChatTimeline` e `bubblesFromTimeline`; `TimelineKind::Speech` ganha
+  `end_ms` (sem schema); o **grip** de arraste passa a ser padrão no canto
+  superior direito de todas as janelas de painel.
+- **Detalhes:** [`chat/prd.md`](chat/prd.md) §9 (US-14),
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
+  §3.4, [`chat/tasks/16-task.md`](chat/tasks/16-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 16 implementada)

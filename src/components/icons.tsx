@@ -84,6 +84,26 @@ export function TranscriptIcon({ className, size = 18 }: IconProps) {
   );
 }
 
+/** Barras de áudio: selo da aba "Transcrição ao Vivo" (BR-040). */
+export function WaveformIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      >
+        <path d="M4 10.5v3" />
+        <path d="M8 7.5v9" />
+        <path d="M12 5v14" />
+        <path d="M16 8.5v7" />
+        <path d="M20 10.5v3" />
+      </g>
+    </Icon>
+  );
+}
+
 /** Documento com linhas: a aba/atalho "Resumo". */
 export function SummaryIcon({ className, size = 18 }: IconProps) {
   return (

@@ -22,7 +22,13 @@ pub struct TimelineEntry {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum TimelineKind {
     /// Fala transcrita.
-    Speech { speaker: Speaker, text: String },
+    Speech {
+        speaker: Speaker,
+        text: String,
+        /// Fim da fala (ms desde o início da sessão); a UI usa para cortar a
+        /// sobreposição com o outro canal na linha temporal.
+        end_ms: i64,
+    },
     /// Sugestão pedida à IA.
     Suggestion { text: String },
 }
@@ -71,6 +77,7 @@ pub fn build_timeline(
             kind: TimelineKind::Speech {
                 speaker: segment.speaker,
                 text: segment.text.clone(),
+                end_ms: segment.end_ms,
             },
         });
     }

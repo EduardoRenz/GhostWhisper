@@ -1,7 +1,20 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Suggestion } from "../../core/domain/assistant";
+
+const manual = vi.hoisted(() => ({
+  value: {
+    context: null as {
+      session_id: string;
+      speaker: "ME" | "THEY";
+      text: string;
+      at_ms: number;
+    } | null,
+    clear: vi.fn(),
+    refresh: vi.fn(),
+  },
+}));
 
 const state = vi.hoisted(() => ({
   value: {
@@ -10,13 +23,19 @@ const state = vi.hoisted(() => ({
     awaitingFull: false,
     history: [] as Suggestion[],
     generating: false,
+    streamingTrigger: null as "auto" | "now" | "manual" | null,
     loading: false,
     error: null as string | null,
     skipped: false,
     pinned: null as string | null,
     suggestNow: vi.fn(),
+    generateManual: vi.fn(),
     pin: vi.fn(),
   },
+}));
+
+vi.mock("../../core/application/useManualSuggestionContext", () => ({
+  useManualSuggestionContext: () => manual.value,
 }));
 
 vi.mock("../../core/application/usePanelOpen", () => ({
@@ -109,6 +128,9 @@ const suggestion = (overrides: Partial<Suggestion> = {}): Suggestion => ({
   mode_name: "Reunião",
   mode_icon: "users",
   mode_color: "cyan",
+  generation_id: "g1",
+  trigger: "auto",
+  source: null,
   phase: "full",
   title: "",
   text: "Sugestão atual.",
@@ -127,13 +149,18 @@ describe("SuggestionsWindow — feedback da geração", () => {
       awaitingFull: false,
       history: [],
       generating: false,
+      streamingTrigger: null,
       loading: false,
       error: null,
       skipped: false,
       pinned: null,
       suggestNow: vi.fn(),
+      generateManual: vi.fn(),
       pin: vi.fn(),
     };
+    manual.value.context = null;
+    manual.value.clear = vi.fn();
+    manual.value.refresh = vi.fn();
   });
 
   it("mostra o pill DENTRO do bloco da sugestão ao gerar uma nova", () => {
@@ -247,5 +274,66 @@ describe("SuggestionsWindow — feedback da geração", () => {
     expect(container.querySelector(".suggestion-block--full")).toBeNull();
     const historyItem = container.querySelector(".history__item-title");
     expect(historyItem?.textContent).toContain("Sugestão anterior");
+  });
+
+  it("mostra o contexto manual e gera só no clique do usuário", () => {
+    manual.value.context = {
+      session_id: "s1",
+      speaker: "THEY",
+      text: "Como tu faria um system design?",
+      at_ms: 500,
+    };
+    render(<SuggestionsWindow />);
+
+    expect(screen.getByText("Contexto manual")).toBeDefined();
+    expect(screen.getByText("Outros")).toBeDefined();
+    expect(screen.getByText("Como tu faria um system design?")).toBeDefined();
+
+    const generate = screen.getByRole("button", {
+      name: /Gerar sugestão manual/,
+    });
+    fireEvent.click(generate);
+    expect(state.value.generateManual).toHaveBeenCalled();
+  });
+
+  it("desabilita a manual enquanto uma geração está em andamento", () => {
+    manual.value.context = {
+      session_id: "s1",
+      speaker: "ME",
+      text: "Primeiro eu começo pela camada de API.",
+      at_ms: 500,
+    };
+    state.value.generating = true;
+    render(<SuggestionsWindow />);
+
+    const generate = screen.getByRole("button", {
+      name: /Aguardando a sugestão em andamento/,
+    });
+    expect(generate.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("rotula a sugestão manual no cartão e no histórico", () => {
+    state.value.current = suggestion({
+      text: "> manual",
+      trigger: "manual",
+      source: {
+        speaker: "THEY",
+        at_ms: 500,
+        preview: "Como tu faria um system design?",
+      },
+    });
+    state.value.history = [
+      suggestion({
+        text: "> manual antiga",
+        at_ms: 100,
+        generation_id: "g-antiga",
+        trigger: "manual",
+      }),
+    ];
+    render(<SuggestionsWindow />);
+
+    expect(screen.getByText("Sugestão Manual")).toBeDefined();
+    expect(screen.getByText(/Manual · Outros/)).toBeDefined();
+    expect(screen.getAllByText("Manual").length).toBeGreaterThanOrEqual(1);
   });
 });

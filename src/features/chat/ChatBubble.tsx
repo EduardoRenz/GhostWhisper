@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { formatClock } from "../../core/domain/transcript";
 import { SparkIcon, TranslateIcon } from "../../components/TransportIcons";
 import { MarkdownView } from "../../components/MarkdownView";
 
@@ -15,13 +14,15 @@ export type BubbleSide = "me" | "they" | "ai";
 
 interface ChatBubbleProps {
   text: string;
-  /** Rótulo do autor ("Você", "Interlocutor", "Sugestão da IA"). */
+  /** Rótulo do autor ("Microfone", "Outros", "Sugestão da IA"). */
   label: string;
   side: BubbleSide;
-  /** Tempo desde o início da sessão (ms); ausente em continuações. */
-  atMs?: number;
+  /** Tempo exibido ao lado do rótulo (BR-040). */
+  timeLabel?: string;
   /** Fala ainda em revisão (bolha "em andamento", com indicador `…`). */
   pending?: boolean;
+  /** Última parte da fala em andamento (mostra o selo **Streaming**). */
+  streaming?: boolean;
   /** Continuação de uma fala longa (parte seguinte, na mesma conversa). */
   continues?: boolean;
   /** Mostra o indicador `…` de digitação (padrão: `pending`). */
@@ -39,22 +40,27 @@ interface ChatBubbleProps {
   onTranslate?: () => void;
   /** Idioma de destino (rótulo do botão e `lang` da tradução). */
   translationTarget?: string;
+  /** Ação de IA da mensagem (BR-041): só na fala finalizada. */
+  onAskAi?: () => void;
+  /** Ação de IA em preparação. */
+  askingAi?: boolean;
 }
 
 /**
- * Uma bolha da conversa, com os valores visuais do Perssua
- * (`prds/chat/architecture/chat-ui.md` §3): alinhamento e tonalidade por autor,
- * rótulo em maiúsculas, texto que quebra palavra longa e o tempo da sessão.
+ * Uma bolha da conversa, com o layout do painel ao vivo (BR-040):
+ * cartão de **largura total**, rótulo colorido + hora no topo e o grupo de
+ * ações no canto superior direito (tradução + IA).
  *
- * Continuação de fala longa (`continues`) é compacta: sem rótulo e sem tempo
- * repetidos — a bolha de cima já diz quem falou e quando.
+ * A fala em andamento mostra "Falando agora…" e o selo **Streaming**; a
+ * continuação de fala longa (`continues`) não repete rótulo/hora.
  */
 export function ChatBubble({
   text,
   label,
   side,
-  atMs,
+  timeLabel,
   pending = false,
+  streaming = false,
   continues = false,
   typing,
   markdown = false,
@@ -64,13 +70,20 @@ export function ChatBubble({
   translating = false,
   onTranslate,
   translationTarget,
+  onAskAi,
+  askingAi = false,
 }: ChatBubbleProps) {
   const collapsible = markdown && text.trim().length > CLAMP_THRESHOLD_CHARS;
   const [expanded, setExpanded] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const showTyping = typing ?? pending;
-  const showLabelRow = !continues || onTranslate !== undefined || showTyping;
-  const showFoot = atMs !== undefined || onCopy !== undefined;
+  // A continuação não repete o rótulo, mas ainda pode mostrar o selo Streaming
+  // na última parte da fala em andamento.
+  const showHeader = !continues || (pending && streaming);
+  const hasActions =
+    (onTranslate !== undefined && !continues) ||
+    (onAskAi !== undefined && !pending && !continues) ||
+    (onCopy !== undefined && !continues);
 
   // Mesma língua não vira linha de tradução (ex.: pt → pt com detecção errada).
   const usableTranslation =
@@ -88,6 +101,34 @@ export function ChatBubble({
     onTranslate?.();
   };
 
+  const translateButton = onTranslate ? (
+    <button
+      type="button"
+      className={`chat__translate${showTranslation ? " chat__translate--on" : ""}`}
+      data-interactive
+      disabled={translating}
+      aria-label={
+        showTranslation
+          ? "Ocultar tradução"
+          : `Traduzir${translationTarget ? ` para ${translationTarget}` : ""}`
+      }
+      title={
+        showTranslation
+          ? "Ocultar tradução"
+          : `Traduzir${translationTarget ? ` para ${translationTarget}` : ""}`
+      }
+      onClick={() => void toggleTranslation()}
+    >
+      {translating ? (
+        <span className="chat__translate-busy" aria-hidden="true">
+          …
+        </span>
+      ) : (
+        <TranslateIcon />
+      )}
+    </button>
+  ) : null;
+
   return (
     <div
       className={`chat__row chat__row--${side}${pending ? " chat__row--pending" : ""}${
@@ -99,62 +140,82 @@ export function ChatBubble({
       title={pending ? "transcrevendo — o texto ainda pode mudar" : undefined}
     >
       <div className="chat__bubble">
-        {showLabelRow && (
-          <div className="chat__label">
+        {showHeader && (
+          <div className="chat__top">
             {!continues && (
-              <>
+              <div className="chat__label">
                 {side === "ai" && <SparkIcon className="chat__label-icon" />}
-                <span>{label}</span>
-              </>
-            )}
-            {showTyping && (
-              <span className="chat__typing" aria-hidden="true">
-                …
-              </span>
-            )}
-            {onTranslate && (
-              <button
-                type="button"
-                className={`chat__translate${showTranslation ? " chat__translate--on" : ""}`}
-                data-interactive
-                disabled={translating}
-                aria-label={
-                  showTranslation
-                    ? "Ocultar tradução"
-                    : `Traduzir${translationTarget ? ` para ${translationTarget}` : ""}`
-                }
-                title={
-                  showTranslation
-                    ? "Ocultar tradução"
-                    : `Traduzir${translationTarget ? ` para ${translationTarget}` : ""}`
-                }
-                onClick={() => void toggleTranslation()}
-              >
-                {translating ? (
-                  <span className="chat__translate-busy" aria-hidden="true">
+                <span className="chat__speaker">{label}</span>
+                {pending && (
+                  <span className="chat__now" aria-hidden="true">
+                    Falando agora…
+                  </span>
+                )}
+                {timeLabel && !pending && (
+                  <span className="chat__time" title="hora da mensagem">
+                    {timeLabel}
+                  </span>
+                )}
+                {showTyping && !pending && (
+                  <span className="chat__typing" aria-hidden="true">
                     …
                   </span>
-                ) : (
-                  <TranslateIcon />
                 )}
-              </button>
+              </div>
+            )}
+
+            {pending ? (
+              <div className="chat__actions">
+                {!continues && translateButton}
+                {streaming && (
+                  <span className="chat__streaming" aria-hidden="true">
+                    <span className="chat__streaming-dot" />
+                    Streaming
+                  </span>
+                )}
+              </div>
+            ) : (
+              hasActions && (
+                <div className="chat__actions">
+                  {translateButton}
+                  {onAskAi && (
+                    <button
+                      type="button"
+                      className="chat__ai"
+                      data-interactive
+                      disabled={askingAi}
+                      aria-label="Sugerir com IA a partir desta mensagem"
+                      title="Sugerir com IA a partir desta mensagem"
+                      onClick={onAskAi}
+                    >
+                      <SparkIcon size={14} />
+                    </button>
+                  )}
+                </div>
+              )
             )}
           </div>
         )}
+
         {markdown ? (
-          <div
-            className={`chat__clamp${expanded ? " chat__clamp--open" : ""}`}
-          >
+          <div className={`chat__clamp${expanded ? " chat__clamp--open" : ""}`}>
             <MarkdownView markdown={text} compact />
           </div>
         ) : (
-          <div className="chat__text">{text}</div>
+          <div className="chat__text">
+            {text}
+            {pending && showTyping && (
+              <span className="chat__caret" aria-hidden="true" />
+            )}
+          </div>
         )}
+
         {showTranslation && usableTranslation && (
           <p className="chat__translation" lang={translationTarget}>
             {usableTranslation}
           </p>
         )}
+
         {collapsible && (
           <button
             type="button"
@@ -166,24 +227,18 @@ export function ChatBubble({
             {expanded ? "mostrar menos" : "mostrar mais"}
           </button>
         )}
-        {showFoot && (
+
+        {onCopy && !continues && (
           <div className="chat__foot">
-            {atMs !== undefined && (
-              <span className="chat__time" title="tempo desde o início da sessão">
-                {formatClock(atMs)}
-              </span>
-            )}
-            {onCopy && (
-              <button
-                type="button"
-                className="chat__copy"
-                data-interactive
-                aria-label={`Copiar ${label}`}
-                onClick={onCopy}
-              >
-                {copied ? "Copiado" : "Copiar"}
-              </button>
-            )}
+            <button
+              type="button"
+              className="chat__copy"
+              data-interactive
+              aria-label={`Copiar ${label}`}
+              onClick={onCopy}
+            >
+              {copied ? "Copiado" : "Copiar"}
+            </button>
           </div>
         )}
       </div>

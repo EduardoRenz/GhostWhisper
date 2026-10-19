@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { subscribe } from "../../adapters/ipc/events";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
-import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import type { PanelTab } from "../../core/domain/settings";
+import { WaveformIcon } from "../../components/icons";
 import { PanelFrame } from "../panels/PanelFrame";
 import { PanelTabs } from "./PanelTabs";
 import { SummaryView } from "./SummaryView";
@@ -23,7 +23,6 @@ const PANEL_TAB_EVENT = "panel_tab";
  */
 export function PanelWindow() {
   const opened = usePanelOpen("chat");
-  const { state } = useSessionState();
   const { settings, reload } = useSettings();
   const [tab, setTab] = useState<PanelTab>(settings.panel_tab);
 
@@ -61,21 +60,21 @@ export function PanelWindow() {
     void saveSettings({ ...settings, panel_tab: next }).then(() => reload());
   };
 
-  const status = !state.listening
-    ? "Sem sessão"
-    : state.paused
-      ? "Pausado"
-      : "Gravando";
-  const subtitle = state.session_id
-    ? `${state.session_id.slice(0, 8)} · ${status}`
-    : status;
+  const heading = (
+    <div className="panel__heading-row">
+      {tab === "transcription" && (
+        <span className="panel__title-badge" aria-hidden="true">
+          <WaveformIcon size={16} />
+        </span>
+      )}
+      <span className="panel__title">
+        {tab === "summary" ? "Resumo" : "Transcrição ao Vivo"}
+      </span>
+    </div>
+  );
 
   return (
-    <PanelFrame
-      label="chat"
-      title={tab === "summary" ? "Resumo" : "Transcrição"}
-      subtitle={subtitle}
-    >
+    <PanelFrame label="chat" heading={heading}>
       <PanelTabs active={tab} onChange={changeTab} />
 
       <div className="panel-tab-body">

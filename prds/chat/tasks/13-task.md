@@ -1,6 +1,6 @@
 # 13 — Sugestão manual no Sugestões (contexto por parâmetro)
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 12
 - **Habilita:** 15
 - **Issues:** — · **BR:** BR-041, BR-038
@@ -165,3 +165,17 @@ da task 12 é apenas o correio entre as janelas.
 - O comportamento quando **já existe uma sugestão em andamento** e a janela
   aberta/fechada fica na **task 15** (BR-042); aqui só a geração manual e o
   rótulo.
+
+## Resultado (2026-10-19)
+
+- `SuggestionRequest.manual_context` e `Suggestion` com `trigger`,
+  `generation_id` e `source` (preview leve); o prompt manual inclui o bloco
+  `<selected_message>` e o foco na mensagem.
+- `useManualSuggestionContext` + `ManualContextCard`: o bloco mostra falante,
+  hora e trecho, e só gera no clique do usuário; o botão fica em “Aguardando…”
+  durante uma geração.
+- `useSuggestions` casa fases/gerações por `generation_id`, hidrata com
+  `suggestionLast` e mantém o cartão manual; a automática vai para o histórico
+  enquanto o contexto está ativo.
+- Cartão/histórico mostram “Sugestão Manual”/“Manual” e o source snapshot.
+- `cargo test --lib` 378 ✓ · `pnpm test` 261 ✓ · `tsc`/`build` ✓.

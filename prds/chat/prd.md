@@ -2,8 +2,8 @@
 
 - **Versão:** 0.2
 - **Data:** 2026-10-19
-- **Status:** v0.1 implementada (tasks 01–09 `CONCLUDED`); **v0.2 planejada**
-  (tasks 10–15 `PENDING`) — ver §9
+- **Status:** v0.1 implementada (tasks 01–09 `CONCLUDED`); **v0.2 implementada**
+  (tasks 10–16 `CONCLUDED`) — ver §9
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/chat-ui.md`](architecture/chat-ui.md),
@@ -185,12 +185,12 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 
 ## 9. Revisão 0.2 — "Transcrição ao Vivo" e sugestão manual por mensagem
 
-> **Escopo:** tasks 10–15 (`PENDING`). O layout vem do **print de referência
+> **Escopo:** tasks 10–16 (`CONCLUDED`). O layout vem do **print de referência
 > anexado pelo usuário** (2026-10-19); não é uma nova extração do Perssua. O
 > contrato técnico vigente fica em
 > [`architecture/transcription-panel.md`](architecture/transcription-panel.md);
 > a tabela de `chat-ui.md` §3 permanece como evidência histórica da v0.1. A
-> **task 15** fecha a concorrência (sugestão em andamento + janela
+> **task 15** fechou a concorrência (sugestão em andamento + janela
 > aberta/fechada) e o `_tasks.md` tem a ordem real (`13 → 15 → 14`).
 
 ### 9.1 Objetivo
@@ -205,8 +205,9 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
    Sugestões.
 4. **Sugestão Manual:** no Sugestões, o usuário vê a mensagem selecionada e
    dispara a geração manual; a resposta é marcada como **"Sugestão Manual"**.
-5. **Sem concorrência confusa:** uma geração por sessão, manual espera a atual,
-   automática não rouba o cartão manual e a janela oculta não perde estado.
+5. **Sem concorrência confusa:** uma geração por vez no serviço, manual espera a
+   atual, automática não rouba o cartão manual e a janela oculta não perde
+   estado.
 
 ### 9.2 Problema
 
@@ -248,7 +249,9 @@ Como usuário, quero que o painel da sessão siga o layout do print.
 - **CA-09.4** O layout se mantém em 360×320, sem overflow; só tokens `--oh-*`.
 - **CA-09.5** A aba Transcrição **não** mostra a linha de medidores de nível nem
   o botão de texto "Sugestões": o waveform e o atalho para Sugestões ficam no
-  notch (BR-032/BR-033). O header arrasta pelo título/ícone, sem o grip visível.
+  notch (BR-032/BR-033). O **grip de arraste** fica no canto superior direito
+  de **todas** as janelas de painel, como padrão; o header também arrasta pelo
+  título/ícone.
 
 #### US-10 — Bolhas em largura total, com identidade e hora
 
@@ -308,9 +311,9 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
 Como usuário, não quero que uma sugestão manual se misture com a que já está
 sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
 
-- **CA-13.1** **Single-flight por sessão:** no máximo uma geração
-  (`quick`/`full`) por vez. O automático e a manual não emitem deltas
-  intercalados; a segunda chamada entra na vez.
+- **CA-13.1** **Single-flight no serviço:** no máximo uma geração
+  (`quick`/`full`) por vez (janela × agendador × manual). O automático e a
+  manual não emitem deltas intercalados; a segunda chamada entra na vez.
 - **CA-13.2** A manual **não cancela** o LLM em voo: o botão mostra
   **"Aguardando a sugestão em andamento…"** e fica desabilitado até a geração
   atual terminar. Sem duas chamadas concorrentes.
@@ -318,20 +321,39 @@ sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
   **histórico** e não substitui o cartão manual; a manual tem prioridade de
   leitura. Ao limpar o contexto, o automático volta a poder ocupar o cartão.
 - **CA-13.4** A janela de Sugestões continua **montada quando oculta**: os
-  eventos são acumulados e reabrir mostra o estado em andamento/concluído.
-  `suggestionLast` hidrata o cartão sem LLM. Abrir com
-  `current`/`quick`/`generating`/contexto manual **não** dispara outra geração;
-  abrir vazia com o auto **ligado** também não gera (o agendador é a fonte); com
-  o auto **desligado**, gera no máximo uma vez.
+  eventos gerados enquanto ela estava aberta são acumulados e reabrir mostra o
+  estado. **Abrir nunca gera** (BR-028 revisada): a abertura apenas consulta
+  `suggestionLast` (cache, sem LLM) para hidratar o cartão; o automático só
+  gera com a janela aberta e após o intervalo, e o botão “Sugerir agora”
+  continua sendo a ação explícita.
 - **CA-13.5** Um novo clique no `[✦]` durante uma manual substitui o contexto;
   a manual antiga termina rotulada com seu **source snapshot** (falante/hora da
   mensagem original) e o contexto novo fica pronto para a próxima geração.
 - **CA-13.6** Trocar de sessão limpa a leitura e ignora eventos/resultados da
-  sessão antiga; a nova sessão não fica bloqueada pela geração anterior.
+  sessão antiga; a geração antiga pode terminar no serviço, mas não contamina a
+  nova sessão.
 - **CA-13.7** Ocultar a janela durante a geração manual não perde o resultado.
 - **CA-13.8** Cada geração tem um `generation_id` (UUID) compartilhado por
   `quick`/`full`/deltas; a UI usa o id como chave, então duas gerações no mesmo
   `at_ms` (relógio fixo em teste) não se confundem.
+
+#### US-14 — Linha temporal intercalada quando os canais se sobrepõem
+
+Como usuário, quero que minha fala entre no meio da fala contínua do outro lado,
+em vez de aparecer depois dela.
+
+- **CA-14.1** Se a fala de um canal começa **antes** e termina **depois** do
+  início da fala do outro, a fala longa é cortada no início da fala nova.
+- **CA-14.2** O texto é dividido proporcionalmente ao tempo, preferindo fim de
+  frase e, depois, fim de palavra; se não houver corte seguro, a fala fica
+  inteira (nada é perdido).
+- **CA-14.3** A primeira parte mantém o tempo original; a fala nova entra no
+  tempo dela; o restante entra **1 ms depois**, como uma nova bolha com rótulo e
+  hora (não como continuação silenciosa).
+- **CA-14.4** Vale nos dois sentidos (Microfone/Outros) e no **histórico**, que
+  passa a carregar o `end_ms` da fala.
+- **CA-14.5** O grip de arraste fica visível no **canto superior direito** de
+  todas as janelas de painel (Chat, Sugestões, Histórico).
 
 ### 9.5 Requisitos
 
@@ -344,8 +366,10 @@ sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
 - **RF-05** `Suggestion.trigger` (`auto | now | manual`) e rótulo "Manual".
 - **RF-06** Contexto por parâmetro no `SuggestionRequest`; auto-sugerir imune.
 - **RF-07** `Suggestion.source` (snapshot da mensagem manual),
-  `generation_id` por geração e **single-flight por sessão**; prioridade do
+  `generation_id` por geração e **single-flight no serviço**; prioridade do
   manual no cartão.
+- **RF-08** Corte da fala longa no início do outro falante, com intercalação no
+  ao vivo e no histórico; grip padrão no canto direito.
 
 **Não funcionais**
 
@@ -359,8 +383,8 @@ sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
 - **RNF-05 — Sem dependência nova** (BR-008) e **sem schema**.
 - **RNF-06 — Documentação única (BR-016):** IDs `BR-040`/`BR-041`/`BR-042`,
   `T10–T15`; contrato em `transcription-panel.md`.
-- **RNF-07 — Sem concorrência de LLM por sessão:** o lock de geração é por
-  sessão; `pin` não o usa; a ordem `generation_lock → last` evita deadlock.
+- **RNF-07 — Sem concorrência de LLM:** o `gate` do serviço serializa as
+  gerações (uma por vez); `pin` não o usa; a ordem `gate → last` evita deadlock.
 
 ### 9.6 Não-objetivos
 
@@ -371,6 +395,8 @@ sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
   rodapé por "WebRTC".
 - **Cancelar um LLM em voo** para a manual “furar a fila”: a manual espera a
   geração atual (task 15). Cancelamento/abort seria uma task própria.
+- **Timestamps por palavra** no corte de sobreposição: o corte é proporcional ao
+  tempo com fim de frase/palavra (task 16); a fala inteira continua no ASR/banco.
 - Mudar o teto de 180 caracteres/continuação (BR-031), a linha temporal (BR-021)
   ou a captura de áudio.
 - Ação de IA no histórico de sessões encerradas.
@@ -384,12 +410,13 @@ sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
 | Contexto velho de outra sessão | store keyed por `session_id`; `get` só devolve se bater; troca de sessão limpa |
 | Injeção de prompt pelo texto da mensagem | o texto vai num bloco `<selected_message>` e o system prompt já trata fala como fonte não confiável (nunca instrução) |
 | Custo de LLM ao abrir o Sugestões | com contexto manual, a janela **não** gera automaticamente; só o botão gera |
-| Automático e manual emitindo `quick`/`full` intercalados | lock de geração **por sessão** (single-flight); a manual espera a atual |
+| Automático e manual emitindo `quick`/`full` intercalados | `gate` do serviço (single-flight); a manual espera a atual |
 | Automático substituir a manual que o usuário está lendo | com contexto manual ativo, a automática vai para o histórico; a manual tem prioridade |
-| Reabrir a janela disparar geração duplicada | a janela oculta continua montada; `suggestionLast` hidrata; só gera se estiver vazia, sem manual, sem geração e com o auto **desligado** |
+| Reabrir a janela disparar geração | abrir não gera (BR-028 revisada); `suggestionLast` hidrata sem LLM |
 | Novo `[✦]` durante a manual perder a origem | `Suggestion.source` (snapshot leve: falante/hora/preview) rotula o resultado antigo |
-| Lock de geração causar deadlock | lock por sessão, ordem fixa `generation_lock → last`; `pin` não usa o lock |
+| Gate de geração causar deadlock | ordem fixa `gate → last`; `pin` não usa o gate |
 | Bolha full-width com texto longo | teto de 180 caracteres + continuação (BR-031); scroll do painel |
+| Corte proporcional da sobreposição cair no meio da frase | preferir fim de frase/palavra; se não houver corte seguro, manter a fala inteira (nada é perdido) |
 | Hora de parede sem `started_at_ms` | fallback determinístico para `mm:ss` |
 | Dois ícones no canto superior direito (tradução + IA) | grupo de ações com espaçamento; o texto nunca fica por baixo |
 
@@ -402,7 +429,7 @@ sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
   clique em "Gerar sugestão manual" gera e rotula **Manual**.
 - O automático do core continua com `trigger = auto` mesmo com contexto manual
   ativo.
-- Nenhuma sessão tem dois streams simultâneos; a manual clicada durante o
+- O serviço nunca tem dois streams simultâneos; a manual clicada durante o
   automático espera e gera depois.
 - Reabrir a janela com sugestão carregada/em andamento não faz nova chamada ao
   LLM; a automática que chega durante o contexto manual aparece no histórico.
