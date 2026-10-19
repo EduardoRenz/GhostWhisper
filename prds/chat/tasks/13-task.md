@@ -2,7 +2,7 @@
 
 - **Status:** PENDING
 - **Depende de:** 12
-- **Habilita:** 14
+- **Habilita:** 15
 - **Issues:** — · **BR:** BR-041, BR-038
 - **Refs:** [`../prd.md`](../prd.md) §9,
   [`../architecture/transcription-panel.md`](../architecture/transcription-panel.md) §5–§6,
@@ -35,6 +35,8 @@ da task 12 é apenas o correio entre as janelas.
   pub struct Suggestion {
       // ...
       pub trigger: SuggestionTrigger,
+      /// UUID da geração; quick/full (e deltas) compartilham o mesmo id.
+      pub generation_id: String,
   }
 
   pub struct SuggestionRequest {
@@ -69,8 +71,10 @@ da task 12 é apenas o correio entre as janelas.
     - `Manual` quando há `manual_context`;
     - `Now` quando `force` (Sugerir agora / atalho);
     - `Auto` no agendador.
-  - publica `trigger` no fast-first, no streaming e no resultado final; a
-    sugestão fixada (`pin`) usa `Now`;
+  - publica `trigger` e um `generation_id` (UUID por geração que chama o LLM;
+    o cache sem fala nova devolve o id da sugestão reaproveitada) no fast-first,
+    no streaming e no resultado final; a sugestão fixada (`pin`) usa `Now` e um
+    id próprio;
   - o agendador continua chamando `SuggestionRequest::ephemeral(...)` **sem**
     `manual_context` — o automático não herda contexto velho;
   - **cursor compartilhado:** o `remember` já guarda `cursor_ms`; o agendador
@@ -79,11 +83,13 @@ da task 12 é apenas o correio entre as janelas.
     sugestão manual poderia ser seguida por uma automática duplicada da mesma
     fala. Expor a consulta na porta (`last_cursor`) ou equivalente.
 - Testes Rust: `manual_context` força, usa o bloco selecionado, marca `Manual`,
-  rejeita sessão divergente; automático continua `Auto`; `Now` inalterado.
+  rejeita sessão divergente; automático continua `Auto`; `Now` inalterado;
+  `generation_id` não vazio e igual entre `quick`/`full` da mesma chamada.
 
 **Frontend**
 
-- `src/core/domain/assistant.ts`: `SuggestionTrigger` e `trigger: SuggestionTrigger`.
+- `src/core/domain/assistant.ts`: `SuggestionTrigger`, `trigger` e
+  `generation_id: string` em `Suggestion`.
 - Novo `src/core/application/useManualSuggestionContext.ts`:
   - busca `suggestion_manual_context(sessionId)` ao montar e quando a janela
     recebe `panel_opened` (label `suggestions`);
@@ -93,6 +99,8 @@ da task 12 é apenas o correio entre as janelas.
   - opção `manualContext: ManualSuggestionContext | null`;
   - `generate(force, manualContext?)` envia `manualContext` ao IPC;
   - `generateManual()` = `generate(true, manualContext)`;
+  - `applyIncoming` casa `quick`/`full` por `generation_id` e o histórico
+    deduplica pelo id (o `at_ms` segue só para exibição/ordenação);
   - **não** gera automaticamente ao abrir quando há contexto manual — o usuário
     decide (evita custo/LLM surpresa);
   - `suggestNow()` continua sendo a sugestão normal e **não** usa o contexto
@@ -116,8 +124,9 @@ da task 12 é apenas o correio entre as janelas.
   do design system.
 - Testes TS: `useManualSuggestionContext` (fetch no `panel_opened`, troca de
   sessão), `useSuggestions` (não gera ao abrir com contexto; `generateManual`
-  passa o parâmetro; automático ignora), `SuggestionsWindow` (bloco, botão,
-  rótulo Manual, limpar) e `SuggestionCard`/`SuggestionHistory` (chip).
+  passa o parâmetro; automático ignora; duas gerações no mesmo `at_ms` não se
+  misturam pelo `generation_id`), `SuggestionsWindow` (bloco, botão, rótulo
+  Manual, limpar) e `SuggestionCard`/`SuggestionHistory` (chip).
 
 ## Critérios de aceite
 
@@ -153,3 +162,6 @@ da task 12 é apenas o correio entre as janelas.
 - O rótulo "Manual" vem de `trigger`, não de uma comparação de textos; é a única
   fonte da verdade.
 - A resposta rápida continua efêmera (BR-038); só a completa é fixada/exportada.
+- O comportamento quando **já existe uma sugestão em andamento** e a janela
+  aberta/fechada fica na **task 15** (BR-042); aqui só a geração manual e o
+  rótulo.

@@ -55,24 +55,14 @@ describe("useSuggestions", () => {
     suggestionPin.mockResolvedValue(suggestion("> fale do prazo", 1_000));
   });
 
-  it("gera uma sugestão ao abrir a janela", async () => {
-    const { result } = renderHook(() => useSuggestions(options));
-
-    await waitFor(() => {
-      expect(result.current.current?.text).toContain("prazo");
-    });
-    expect(suggestionGenerate).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "s1", modeId: "meeting", sinceMs: null }),
-    );
-  });
-
-  it("não força a sugestão ao abrir (o core decide se há fala nova)", async () => {
-    // BR-039: abrir a janela não pode gerar uma sugestão nova sem fala nova.
+  it("não gera ao abrir a janela", async () => {
+    // Pedido do usuário: abrir não gera; o auto conta o intervalo e só gera
+    // com fala nova (ou o botão “Sugerir agora”).
     renderHook(() => useSuggestions(options));
-    await waitFor(() => expect(suggestionGenerate).toHaveBeenCalled());
-    expect(suggestionGenerate).toHaveBeenCalledWith(
-      expect.objectContaining({ force: false }),
-    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(suggestionGenerate).not.toHaveBeenCalled();
   });
 
   it("não gera ao trocar de agente (segue fala nova + contagem)", async () => {
@@ -80,11 +70,7 @@ describe("useSuggestions", () => {
       (props: { modeId: string }) => useSuggestions({ ...options, modeId: props.modeId }),
       { initialProps: { modeId: "meeting" } },
     );
-    await waitFor(() => expect(suggestionGenerate).toHaveBeenCalled());
-    suggestionGenerate.mockClear();
-
     rerender({ modeId: "leetcode" });
-    // Nenhuma chamada: a próxima sugestão vem da regra normal (ou do botão).
     await act(async () => {
       await Promise.resolve();
     });
@@ -93,8 +79,6 @@ describe("useSuggestions", () => {
 
   it("força a sugestão no botão “Sugerir agora”", async () => {
     const { result } = renderHook(() => useSuggestions(options));
-    await waitFor(() => expect(result.current.current).not.toBeNull());
-    suggestionGenerate.mockClear();
 
     await act(async () => {
       await result.current.suggestNow();
@@ -102,6 +86,7 @@ describe("useSuggestions", () => {
     expect(suggestionGenerate).toHaveBeenCalledWith(
       expect.objectContaining({ force: true }),
     );
+    expect(result.current.current?.text).toContain("prazo");
   });
 
   it("respeita skipped e mantém a sugestão atual", async () => {
@@ -110,7 +95,10 @@ describe("useSuggestions", () => {
       .mockResolvedValueOnce(suggestion("", 1_000, true));
 
     const { result } = renderHook(() => useSuggestions(options));
-    await waitFor(() => expect(result.current.current).not.toBeNull());
+    await act(async () => {
+      await result.current.suggestNow();
+    });
+    expect(result.current.current?.text).toContain("primeira");
 
     await act(async () => {
       await result.current.suggestNow();
@@ -122,7 +110,9 @@ describe("useSuggestions", () => {
 
   it("fixa a sugestão atual", async () => {
     const { result } = renderHook(() => useSuggestions(options));
-    await waitFor(() => expect(result.current.current).not.toBeNull());
+    await act(async () => {
+      await result.current.suggestNow();
+    });
 
     await act(async () => {
       await result.current.pin();
@@ -142,7 +132,10 @@ describe("useSuggestions", () => {
       .mockResolvedValueOnce(suggestion("> segunda", 2_000));
 
     const { result } = renderHook(() => useSuggestions(options));
-    await waitFor(() => expect(result.current.current?.text).toContain("primeira"));
+    await act(async () => {
+      await result.current.suggestNow();
+    });
+    expect(result.current.current?.text).toContain("primeira");
 
     await act(async () => {
       await result.current.suggestNow();
@@ -206,6 +199,24 @@ describe("useSuggestions", () => {
     expect(result.current.quick?.text).toContain("curta nova");
   });
 
+  it("sinaliza a completa pendente desde a rápida (aviso garantido)", async () => {
+    // O auto pode demorar entre a rápida e a completa; o aviso não pode
+    // depender do streaming (que expira em 1,5 s).
+    const { result } = renderHook(() => useSuggestions(options));
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> rápida", 5_000, false, "quick"));
+    });
+    expect(result.current.awaitingFull).toBe(true);
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> completa", 5_000));
+    });
+    expect(result.current.awaitingFull).toBe(false);
+    expect(result.current.current?.text).toContain("completa");
+  });
+
   it("descarta a resposta rápida de outra geração", async () => {
     const { result } = renderHook(() => useSuggestions(options));
     await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
@@ -222,6 +233,26 @@ describe("useSuggestions", () => {
       expect(result.current.current?.text).toContain("completa nova"),
     );
     expect(result.current.quick).toBeNull();
+  });
+
+  it("não duplica no histórico uma sugestão de conteúdo idêntico", async () => {
+    suggestionGenerate
+      .mockResolvedValueOnce(suggestion("> mesma resposta", 1_000))
+      .mockResolvedValueOnce(suggestion("> mesma resposta", 2_000));
+
+    const { result } = renderHook(() => useSuggestions(options));
+    await act(async () => {
+      await result.current.suggestNow();
+    });
+
+    await act(async () => {
+      await result.current.suggestNow();
+    });
+    await waitFor(() => expect(result.current.current?.at_ms).toBe(2_000));
+
+    // Fica só a mais recente: o histórico não mostra a mesma sugestão duas vezes.
+    expect(result.current.history).toHaveLength(1);
+    expect(result.current.history[0]?.at_ms).toBe(2_000);
   });
 
   it("não gera sem sessão", async () => {
@@ -250,7 +281,14 @@ describe("useSuggestions", () => {
 
   it("ignora evento de outra sessão", async () => {
     const { result } = renderHook(() => useSuggestions(options));
-    await waitFor(() => expect(result.current.current).not.toBeNull());
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> da sessão", 1_000));
+    });
+    await waitFor(() =>
+      expect(result.current.current?.text).toContain("da sessão"),
+    );
 
     act(() => {
       subscribeMock.emit!({
@@ -259,6 +297,6 @@ describe("useSuggestions", () => {
       });
     });
 
-    expect(result.current.current?.text).toContain("prazo");
+    expect(result.current.current?.text).toContain("da sessão");
   });
 });

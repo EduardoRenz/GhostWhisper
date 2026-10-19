@@ -38,8 +38,8 @@ export function SuggestionsWindow() {
   const {
     current,
     quick,
+    awaitingFull,
     history,
-    generating,
     loading,
     error,
     skipped,
@@ -48,7 +48,6 @@ export function SuggestionsWindow() {
     pin,
   } = useSuggestions({
     sessionId: state.session_id,
-    opened,
     modeId,
     extraContext,
   });
@@ -171,7 +170,7 @@ export function SuggestionsWindow() {
           </div>
         ) : current || quick ? (
           <>
-            {generating && current && (
+            {loading && current && (
               <StatusPill
                 label="Gerando uma nova sugestão…"
                 title="A sugestão atual continua na tela até a nova ficar pronta; a anterior vai para o histórico"
@@ -182,7 +181,7 @@ export function SuggestionsWindow() {
               quick={quick}
               pinned={Boolean(pinned)}
               copied={copied}
-              generating={generating}
+              awaitingFull={awaitingFull}
               onCopy={() => void onCopy()}
               onPin={() => void pin()}
             />

@@ -79,6 +79,12 @@ pub struct SuggestionService {
     limits: SuggestionLimits,
     /// Última sugestão por sessão (em memória).
     last: Arc<Mutex<HashMap<String, LastSuggestion>>>,
+    /// Serializa as gerações.
+    ///
+    /// A janela e o agendador podem pedir ao mesmo tempo; sem isso, os dois
+    /// passariam pela checagem do cursor antes de qualquer um gravar a última
+    /// sugestão e **duas** seriam geradas para a mesma fala.
+    gate: Arc<Mutex<()>>,
 }
 
 impl SuggestionService {
@@ -103,6 +109,7 @@ impl SuggestionService {
             publisher,
             limits: SuggestionLimits::default(),
             last: Arc::new(Mutex::new(HashMap::new())),
+            gate: Arc::new(Mutex::new(())),
         }
     }
 
@@ -179,6 +186,12 @@ fn sampling(mode: &crate::domain::assistant::AssistantMode) -> (u32, f32) {
 
 impl SuggestionGenerator for SuggestionService {
     fn generate(&self, request: SuggestionRequest) -> Result<Suggestion> {
+        // Uma geração por vez (janela × agendador): a segunda encontra a
+        // última sugestão gravada pela primeira e a reaproveita.
+        let _gate = self
+            .gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let settings = self.settings.load()?;
         let session = resolve_session(self.sessions.as_ref(), request.session_id)?;
         let mode = self.resolve_mode(request.mode_id.as_deref(), &settings)?;
@@ -198,16 +211,24 @@ impl SuggestionGenerator for SuggestionService {
             GhostWhisperError::Config("transcrição vazia: nada para sugerir".to_string())
         })?;
 
-        // O cursor da sessão: o pedido traz o dele; senão, o da última sugestão
-        // gerada. Sem fala nova, **não** há nova sugestão (BR-039).
+        // O cursor da sessão é o **mais avançado** entre o pedido e a última
+        // sugestão gerada: o agendador pode estar com um cursor velho (a janela
+        // gerou depois dele) e, sem isso, a mesma fala gerava duas sugestões
+        // (a duplicata do histórico — BR-039).
         let cached = self
             .last
             .lock()
             .ok()
             .and_then(|last| last.get(&session.id).cloned());
-        let since = request
-            .since_ms
-            .or_else(|| cached.as_ref().map(|entry| entry.cursor_ms));
+        let since = match (
+            request.since_ms,
+            cached.as_ref().map(|entry| entry.cursor_ms),
+        ) {
+            (Some(request), Some(cached)) => Some(request.max(cached)),
+            (Some(request), None) => Some(request),
+            (None, Some(cached)) => Some(cached),
+            (None, None) => None,
+        };
         if !request.force {
             if let Some(since) = since {
                 if recent.until_ms <= since {
@@ -609,6 +630,35 @@ mod tests {
         assert_eq!(fixture.llm.call_count(), 1, "não chama o LLM de novo");
         assert_eq!(second.text, first.text, "reaproveita a última sugestão");
         assert!(!second.skipped);
+    }
+
+    #[test]
+    fn a_stale_request_cursor_does_not_duplicate_the_suggestion() {
+        // A janela gerou (cache no cursor novo); o agendador ainda manda o
+        // cursor velho. Antes, a mesma fala gerava **outra** sugestão (a
+        // duplicata do histórico). Agora vale o cursor mais avançado.
+        let fixture = fixture(Settings::default(), "> uma linha");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        let first = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("primeira");
+        assert_eq!(fixture.llm.call_count(), 1);
+
+        let second = fixture
+            .service
+            .generate(
+                SuggestionRequest::ephemeral(None, "meeting".to_string())
+                    // O cursor do agendador ficou para trás (0).
+                    .with_since_ms(Some(0)),
+            )
+            .expect("segunda");
+        assert_eq!(fixture.llm.call_count(), 1, "não chama o LLM de novo");
+        assert_eq!(second.at_ms, first.at_ms, "mesma sugestão, sem duplicata");
     }
 
     #[test]

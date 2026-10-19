@@ -183,6 +183,75 @@ janela aberta e sugestões chegando; não reagia a fala nova.
 
 ---
 
+## 2026-10-19 — Automático só com a janela aberta + aviso garantido
+
+- **IDs:** BR-028 (revisto), BR-039 · **Refs:** [`../business-rules.md`](../business-rules.md)
+
+### Pedidos
+1. **Não gerar** sugestão enquanto a janela de Sugestões estiver fechada — só
+   gerar com ela aberta.
+2. **Garantir o aviso** “Gerando resposta completa…” (principalmente no auto,
+   onde o intervalo entre a rápida e a completa é maior).
+
+### Implementação
+- O agendador checa `suggestions_window_open(&app)` antes de gerar; fechada, só
+  publica a cadência. O cursor não avança — ao abrir, a janela pede a sugestão
+  (o serviço decide se há fala nova e cobre o acumulado). BR-028 revisado.
+- O aviso da completa virou estado explícito (`pendingFull`): a **rápida** marca
+  a geração como pendente e o **primeiro delta da completa** limpa — sem
+  depender do `streamActive` (que expira em 1,5 s e sumia no auto). Teto de
+  segurança de 45 s se a completa falhar. O hook expõe `awaitingFull`.
+- O pill “Gerando uma nova sugestão…” ficou só para as gerações pedidas pela
+  janela (`loading && current`); o aviso da completa vive no cartão.
+
+### Testes
+- Hook: `sinaliza a completa pendente desde a rápida (aviso garantido)`.
+- Janela: `garante o aviso “Gerando resposta completa…” na sugestão nova (auto)`.
+- `pnpm test` 250 ✓ · `tsc` ✓.
+
+### Abrir a janela não gera (pedido seguinte)
+- O efeito que gerava ao abrir foi **removido** do hook.
+- O timer do auto **reinicia na abertura**: o tick passou a considerar
+  `min(silêncio da fala, desde a abertura)`, então o auto começa do intervalo
+  (ex.: 30 s) em vez de gerar na hora.
+- Pausado, nada é gerado — só o botão “Sugerir agora”.
+- Testes: `não gera ao abrir a janela`, `não gera ao trocar de agente` e
+  `opening_the_window_restarts_the_countdown` (Rust).
+- `cargo test` 372 ✓ · `pnpm test` 249 ✓ · clippy/fmt e `tsc` limpos.
+
+---
+
+## 2026-10-19 — Duplicatas de sugestões (cursor velho do agendador)
+
+- **IDs:** BR-039 (correção) · **Refs:** [`../business-rules.md`](../business-rules.md)
+
+### Sintoma
+O histórico mostrava a **mesma sugestão duas vezes** (“Inverter uma árvore
+binária em Python” ×2).
+
+### Causa
+O cursor do agendador é local e **não sabia** quando a janela gerava: a janela
+abria (ou trocava de sessão) e gerava para a fala nova; no tick seguinte o
+agendador ainda tinha o cursor **velho** e mandava `since_ms` antigo — o serviço
+confiava no cursor do pedido (`request.since_ms.or(cache)`) e **gerava de novo**
+a mesma fala. Uma corrida (janela × agendador pedindo juntos) podia duplicar do
+mesmo jeito, antes de qualquer um gravar a última sugestão.
+
+### Correção
+- O cursor efetivo é o **mais avançado**: `max(cursor do pedido, cursor da
+  última sugestão)`.
+- Um **mutex** (`gate`) serializa as gerações: a segunda chamada encontra a
+  última sugestão gravada pela primeira e a reaproveita (sem LLM).
+- Teste novo: `a_stale_request_cursor_does_not_duplicate_the_suggestion`.
+- **Proteção no histórico:** uma sugestão de **conteúdo idêntico** à anterior
+  não vira um segundo item (fica só a mais recente) — teste
+  `não duplica no histórico uma sugestão de conteúdo idêntico`.
+
+### Verificação
+- `cargo test` 370 ✓ · clippy/fmt ✓ · `pnpm test` 248 ✓ · `tsc` ✓.
+
+---
+
 ## 2026-10-19 — Ajustes: timer por silêncio, feedback e títulos
 
 - **IDs:** BR-038, BR-039 · **Refs:** [`../business-rules.md`](../business-rules.md)

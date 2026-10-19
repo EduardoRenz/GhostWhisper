@@ -1,12 +1,12 @@
 # 14 — Documentação, verificação e pacotes (v0.2)
 
 - **Status:** PENDING
-- **Depende de:** 10, 11, 12, 13
+- **Depende de:** 10, 11, 12, 13, 15
 - **Habilita:** —
-- **Issues:** — · **BR:** BR-040, BR-041
+- **Issues:** — · **BR:** BR-040, BR-041, BR-042
 - **Refs:** [`../prd.md`](../prd.md) §9,
   [`../architecture/transcription-panel.md`](../architecture/transcription-panel.md),
-  [`../memory.md`](../memory.md)
+  [`15-task.md`](15-task.md), [`../memory.md`](../memory.md)
 
 ## Objetivo
 
@@ -19,11 +19,11 @@ memória), rodar a verificação completa e reconstruir os pacotes de release.
   arquitetura — BR-016).
 - `prds/chat/architecture/transcription-panel.md` e as notas de revisão de
   `chat-ui.md`/`suggestions-window.md` atualizadas.
-- `prds/business-rules.md`: BR-040/BR-041 conferidas e as revisões de BR-019 e
-  BR-021 apontando para elas.
+- `prds/business-rules.md`: BR-040/BR-041/BR-042 conferidas e as revisões de
+  BR-019 e BR-021 apontando para elas.
 - `prds/chat/memory.md`: entrada de implementação com IDs, decisões, desvios e
   resultados de teste.
-- `prds/chat/tasks/_tasks.md`: tasks 10–14 em `CONCLUDED` (ou justificativa de
+- `prds/chat/tasks/_tasks.md`: tasks 10–15 em `CONCLUDED` (ou justificativa de
   cancelamento).
 - Pacotes: `pnpm tauri build` (`.deb`/AppImage), se o ambiente permitir.
 

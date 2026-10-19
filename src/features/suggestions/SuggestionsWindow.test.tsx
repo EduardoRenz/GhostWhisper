@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   value: {
     current: null as Suggestion | null,
     quick: null as Suggestion | null,
+    awaitingFull: false,
     history: [] as Suggestion[],
     generating: false,
     loading: false,
@@ -123,6 +124,7 @@ describe("SuggestionsWindow — feedback da geração", () => {
     state.value = {
       current: null,
       quick: null,
+      awaitingFull: false,
       history: [],
       generating: false,
       loading: false,
@@ -137,6 +139,7 @@ describe("SuggestionsWindow — feedback da geração", () => {
   it("mostra o pill DENTRO do bloco da sugestão ao gerar uma nova", () => {
     state.value.current = suggestion();
     state.value.generating = true;
+    state.value.loading = true;
     const { container } = render(<SuggestionsWindow />);
 
     const pill = screen.getByRole("status");
@@ -211,6 +214,19 @@ describe("SuggestionsWindow — feedback da geração", () => {
 
     expect(container.querySelector(".suggestion-block--quick")).not.toBeNull();
     expect(container.querySelector(".suggestion-block--full")).toBeNull();
+  });
+
+  it("garante o aviso “Gerando resposta completa…” na sugestão nova (auto)", () => {
+    // O auto pode demorar entre a rápida e a completa: o aviso não pode
+    // depender do streaming (que expira em 1,5 s).
+    state.value.current = null;
+    state.value.quick = suggestion({ text: "resposta curta", phase: "quick" });
+    state.value.awaitingFull = true;
+    const { container } = render(<SuggestionsWindow />);
+
+    expect(
+      container.querySelector(".suggestion-block__pending")?.textContent,
+    ).toContain("Gerando resposta completa");
   });
 
   it("enquanto a nova monta, a anterior já está no histórico", () => {

@@ -32,6 +32,7 @@ task 13); o store é só o correio entre as duas janelas.
 
 - Novo `src-tauri/src/ports/manual_suggestion_context.rs`:
   ```rust
+  #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
   pub struct ManualSuggestionContext {
       pub session_id: String,
       pub speaker: Speaker,

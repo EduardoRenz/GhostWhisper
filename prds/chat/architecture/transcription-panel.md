@@ -1,8 +1,8 @@
 # Arquitetura — Painel "Transcrição ao Vivo" (v0.2)
 
-Especificação técnica da revisão 0.2 do PRD Chat (tasks 10–14): layout do painel
-ao vivo, cartões de mensagem em largura total, identidade **Microfone/Outros** e
-**sugestão manual por mensagem**. O layout vem do print de referência anexado
+Especificação técnica da revisão 0.2 do PRD Chat (tasks 10–15): layout do painel
+ao vivo, cartões de mensagem em largura total, identidade **Microfone/Outros**,
+**sugestão manual por mensagem** e a concorrência das gerações. O layout vem do print de referência anexado
 pelo usuário (2026-10-19); o contrato em
 [`chat-ui.md`](chat-ui.md) §3 permanece como evidência histórica da v0.1.
 
@@ -46,7 +46,7 @@ pelo usuário (2026-10-19); o contrato em
 
 | Elemento | Valor | Origem/token |
 |---|---|---|
-| Cabeçalho | altura ~48 px; ícone em selo 28×28; título 15/600 | `--oh-headline-md-size`, `--oh-accent` |
+| Cabeçalho | altura ~48 px; `WaveformIcon` estático em selo 28×28; título 15/600 | SVG do projeto (BR-008), `--oh-headline-md-size`, `--oh-accent` |
 | Título | **"Transcrição ao Vivo"** na aba Transcrição; **"Resumo"** na aba Resumo | `PanelWindow` |
 | Subtítulo | removido do cabeçalho | o estado vai para o rodapé e para o notch |
 | Grip de arraste | sem o `⋮⋮` visível; o cabeçalho (título/ícone) arrasta | `PanelFrame`/`panel_start_drag` |
@@ -72,7 +72,7 @@ pelo usuário (2026-10-19); o contrato em
 | Lista | `flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding:10px 2px` |
 | Linha | `width:100%` (sem `justify-content`) |
 | Cartão | `width:100%; padding:10px 12px; border-radius:12px; background:var(--oh-surface-container-low); border:1px solid var(--oh-border)` |
-| Rótulo | 12 px/600; `Microfone` = `--oh-speaker-me` (accent/cyan); `Outros` = `--oh-speaker-they` (violeta) |
+| Rótulo | 12 px/600, **title case** (sem uppercase); `Microfone` = `--oh-speaker-me` (accent/cyan); `Outros` = `--oh-speaker-they` (violeta) |
 | Hora | ao lado do rótulo; mono 10 px; `--oh-outline`; `tabular-nums` |
 | Texto | 14 px; `line-height:1.5`; `--oh-on-surface`; `overflow-wrap:anywhere` |
 | Ações | grupo no topo direito; botões 24×24; tradução existente + IA |
@@ -135,6 +135,7 @@ ChatBubble [✦]
 
 ```rust
 // ports/manual_suggestion_context.rs
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManualSuggestionContext {
     pub session_id: String,
     pub speaker: Speaker,   // "ME" | "THEY" (Speaker ganha Deserialize)
@@ -174,9 +175,19 @@ pub trait ManualSuggestionContextStore: Send + Sync {
 ```rust
 pub enum SuggestionTrigger { Auto, Now, Manual } // "auto" | "now" | "manual"
 
+pub struct SuggestionSource {
+    pub speaker: Speaker,
+    pub at_ms: i64,
+    pub preview: String, // ~160 caracteres, sem o texto completo
+}
+
 pub struct Suggestion {
     // ...
     pub trigger: SuggestionTrigger,
+    /// UUID da geração (quick/full/deltas compartilham o mesmo id).
+    pub generation_id: String,
+    /// Snapshot leve da mensagem que originou a manual (`None` no automático).
+    pub source: Option<SuggestionSource>,
 }
 
 pub struct SuggestionRequest {
@@ -195,6 +206,9 @@ pub struct SuggestionRequest {
   - `Auto` no agendador.
 - O agendador **não** monta `manual_context`; portanto o automático nunca herda
   o contexto manual.
+- **Single-flight por sessão:** `SuggestionService` mantém um lock por sessão
+  durante o fast-first + streaming + persistência. Automático e manual nunca
+  emitem `quick`/`full` intercalados; o segundo espera. `pin` não usa o lock.
 - **Cursor compartilhado:** o `remember` do serviço já guarda
   `context_until_ms`. O agendador deve consultar esse cursor (inclui a sugestão
   manual) em vez de manter um cursor local que a manual não vê; assim a manual
@@ -236,12 +250,78 @@ pub struct SuggestionRequest {
     contexto manual.
 - UI:
   - `ManualContextCard`: tag **"Contexto manual"**, falante (Microfone/Outros),
-    hora, trecho e botão **"Gerar sugestão manual"**; ✕ limpa.
+    hora, trecho e botão **"Gerar sugestão manual"**; ✕ limpa. Dica: a manual tem
+    prioridade e as automáticas vão para o histórico enquanto o contexto estiver
+    ativo.
   - O cartão atual e o item do histórico mostram **"Manual"** quando
     `trigger === "manual"`.
   - Estados vazio/erro/gerando mantêm o bloco de contexto visível.
 - O contexto permanece após gerar (permite gerar de novo) até o ✕, um novo
   clique no chat ou a troca de sessão.
+
+### 5.4 Concorrência e ciclo de vida (task 15)
+
+O ponto delicado é **não se perder** quando já existe uma sugestão em andamento
+(automática ou manual) e a janela está aberta, oculta ou nunca foi aberta.
+
+**Single-flight por sessão.** `SuggestionService` mantém um lock por sessão
+durante o fast-first + streaming + persistência. O automático e a manual chamam
+`generate` normalmente; o segundo **espera** o primeiro. Não há cancelamento de
+LLM em voo (não existe token no `LlmController`). O `pin` não usa o lock.
+
+> A UI pode não saber que o automático começou antes do primeiro evento chegar
+> (o `streamActive` só liga no primeiro `quick`/`full`). A garantia de não
+> concorrência é do **lock no core**, não do estado visual. Ao clicar, o botão
+> entra em `loading` e mostra a espera.
+
+**Prioridade de leitura.** Enquanto houver `manual_context` ativo:
+- a `quick` automática é **ignorada** (efêmera);
+- a `full` automática vai para o **histórico**, sem substituir `current`/`quick`;
+- a manual continua aplicando `quick`/`full` normalmente;
+- ao limpar o contexto, a próxima automática volta a poder ocupar o cartão.
+
+**Janela oculta.** A janela Tauri de Sugestões é criada oculta no boot e o React
+continua montado; `useSuggestions` recebe os eventos mesmo com a janela fechada.
+Ao montar/trocar de sessão, a janela consulta `suggestionLast` (cache do
+serviço, sem LLM) e hidrata o cartão se estiver vazio. Ao abrir:
+- se há `current`/`quick`, `generating` ou `manual_context`, **não** chama
+  `generate`;
+- se está vazia e o **auto-sugerir está ligado**, **não** chama `generate`: o
+  agendador é quem gera; a janela espera o evento (evita a chamada duplicada que
+  competiria com o automático);
+- se está vazia e o **auto está desligado** (e sem manual), chama
+  `generate(false)` **uma vez** por abertura/sessão (guard por `openAttempt`);
+- ocultar/mostrar durante uma manual não perde o resultado.
+
+**Novo `[✦]` durante uma manual.** O contexto novo substitui o antigo no store.
+A geração antiga termina e leva `Suggestion.source` (falante, `at_ms` e um
+`preview` curto da mensagem original) em todas as fases; o cartão/histórico
+mostram esse snapshot leve, sem repetir o texto inteiro em cada delta.
+O botão fica desabilitado até a geração antiga terminar; depois o contexto novo
+está pronto para gerar. Nunca há duas chamadas manuais concorrentes
+(`inFlight`/estado).
+
+**Troca de sessão.** `useSuggestions` limpa `current`/`quick`/histórico/contexto
+e ignora eventos/resultados cujo `session_id` não é o atual. O lock é por
+sessão, então a sessão nova não fica atrás de uma geração antiga.
+
+**Identidade da geração.** `Suggestion.generation_id` (UUID) é criado por
+`generate` e compartilhado por `quick`/`full`/deltas. A UI usa o id como chave
+de `current`, `quick` e histórico; o `at_ms` fica só para exibição/ordenação.
+Assim duas gerações no mesmo milissegundo (relógio fixo em teste) não se
+confundem. O id é efêmero e não vai ao banco.
+
+| Cenário | Comportamento |
+|---|---|
+| Janela oculta + automática em andamento | eventos acumulam; abrir mostra o estado e **não** dispara outra geração |
+| Abrir vazia + auto ligado | não gera; o agendador gera na próxima fala |
+| Abrir vazia + auto desligado | gera uma vez (ou usa `suggestionLast`) |
+| Janela fechada + `[✦]` | contexto grava, janela abre/foca; manual espera a geração atual ou fica pronta |
+| Janela aberta + automática em andamento + `[✦]` | contexto atualiza; botão “Aguardando…”; automática vai ao histórico ao completar |
+| Manual em andamento + novo `[✦]` | contexto novo substitui; manual antiga termina com `source` antigo; botão libera depois |
+| Manual em andamento + janela oculta | geração continua; reabrir mostra resultado/source |
+| Troca de sessão | UI limpa; eventos antigos ignorados; novo lock |
+| Automática depois da manual | com contexto ativo vai ao histórico; sem contexto pode ocupar o cartão |
 
 ## 6. Fluxo completo
 
@@ -283,6 +363,8 @@ store (core) ──panel_open──▶ panel_opened
 | Ação de IA só em fala finalizada e só na primeira parte do split | o texto da prévia ainda muda; a continuação é a mesma mensagem |
 | Geração manual só no clique de "Gerar sugestão manual" | evita custo/LLM surpresa ao abrir a janela; o print/fluxo pede ação do usuário |
 | Contexto manual não persiste entre reinícios | é contexto de UI/sessão; sem schema novo (BR-002/BR-004) |
+| Manual **espera** o automático em vez de cancelá-lo | não há token de cancelamento no `LlmController`; esperar evita streams intercalados e chamadas concorrentes. Cancelamento/abort fica para task própria |
+| Com contexto manual, a automática vai para o histórico | a manual é uma ação deliberada do usuário e não deve ser roubada da leitura; o histórico preserva a automática |
 | Layout vem do print do usuário, não do asar do Perssua | a v0.2 é uma evolução de forma pedida explicitamente; a evidência histórica segue em `chat-ui.md` §6 |
 
 ## 8. Testes
@@ -293,7 +375,12 @@ store (core) ──panel_open──▶ panel_opened
 - `suggestion_prepare_manual`: texto vazio/estourado, sessão encerrada, speaker
   inválido.
 - `SuggestionService`: `manual_context` força sem fala nova; prompt contém
-  `<selected_message>`; `trigger = Manual`; automático `Auto`; `Now` normal.
+  `<selected_message>`; `trigger = Manual`; `source` snapshot; `generation_id`
+  igual entre quick/full e único por geração (cache preserva o id); automático
+  `Auto`; `Now` normal.
+- Concorrência: dois `generate` na mesma sessão serializam (barreira/atraso no
+  fake LLM); sessões diferentes não bloqueiam; `quick`/`full` não se
+  intercalam; duas gerações no mesmo `at_ms` têm ids diferentes.
 - Prompt: fronteira de confiança e instrução de foco.
 
 **TS**

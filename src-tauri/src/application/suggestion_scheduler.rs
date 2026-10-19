@@ -7,6 +7,10 @@
 //! intervalo, a sugestão é gerada (BR-039). Assim uma sequência de perguntas
 //! próximas vira **uma** sugestão, não uma por balão.
 //!
+//! **Abrir a janela também reinicia o contador** (pedido do usuário): a janela
+//! não gera ao abrir; o auto começa a contar do intervalo. Sem fala nova desde a
+//! última sugestão, o contador para em 0 e espera.
+//!
 //! A thread que executa vive no composition root; aqui só a decisão (R7: sem
 //! I/O, testável sem threads nem relógio).
 
@@ -21,8 +25,23 @@ pub struct SchedulerTick {
     pub cursor_ms: Option<i64>,
     /// Início da última fala **finalizada** com texto.
     pub latest_final_ms: Option<i64>,
-    /// Tempo desde o início da última fala finalizada (ms) — o silêncio.
+    /// Tempo desde o início da última fala finalizada (ms).
     pub ms_since_latest_final: i64,
+    /// Tempo desde que a janela de Sugestões abriu (ms).
+    ///
+    /// `i64::MAX` quando a janela está fechada (sem geração).
+    pub ms_since_window_open: i64,
+}
+
+impl SchedulerTick {
+    /// Silêncio efetivo: o mais recente entre a fala e a abertura da janela.
+    ///
+    /// Abrir a janela **reinicia a contagem** (a janela não gera ao abrir).
+    fn silence_elapsed_ms(&self) -> i64 {
+        self.ms_since_latest_final
+            .min(self.ms_since_window_open)
+            .max(0)
+    }
 }
 
 /// Decide se é hora de gerar uma sugestão automática.
@@ -30,9 +49,9 @@ pub struct SchedulerTick {
 /// Regras (todas precisam valer):
 /// - ligado e com sessão aberta;
 /// - existe fala finalizada **depois** do cursor (há conteúdo novo);
-/// - o silêncio desde a última fala completou `silence_ms`.
+/// - o silêncio (fala **ou** abertura da janela) completou `silence_ms`.
 ///
-/// Uma fala nova **reinicia** o silêncio (o contador da janela também reinicia).
+/// Uma fala nova — e a abertura da janela — **reinicia** o silêncio.
 pub fn should_trigger(tick: &SchedulerTick, silence_ms: i64) -> bool {
     if !tick.enabled || !tick.has_session {
         return false;
@@ -45,7 +64,7 @@ pub fn should_trigger(tick: &SchedulerTick, silence_ms: i64) -> bool {
             return false;
         }
     }
-    tick.ms_since_latest_final >= silence_ms
+    tick.silence_elapsed_ms() >= silence_ms
 }
 
 /// Cadência do auto-sugerir: o que a janela de sugestões mostra (BR-039).
@@ -79,10 +98,22 @@ pub fn cadence(tick: &SchedulerTick, silence_ms: i64) -> Cadence {
         };
     }
 
+    // Fala nova (ou a janela recém-aberta): o contador corre.
+    let remaining = silence_ms.saturating_sub(tick.silence_elapsed_ms()).max(0);
     let has_new_speech = match tick.latest_final_ms {
         Some(latest) => tick.cursor_ms.map(|cursor| latest > cursor).unwrap_or(true),
         None => false,
     };
+
+    if remaining > 0 {
+        return Cadence {
+            enabled: true,
+            running: true,
+            remaining_ms: remaining,
+            awaiting_speech: false,
+            window_ms,
+        };
+    }
     if !has_new_speech {
         // Nada novo desde a última sugestão: espera a próxima fala.
         return Cadence {
@@ -94,11 +125,11 @@ pub fn cadence(tick: &SchedulerTick, silence_ms: i64) -> Cadence {
         };
     }
 
-    // Fala nova: o contador **reinicia** e conta o silêncio que falta.
+    // Silêncio vencido com fala nova: a geração dispara neste tick.
     Cadence {
         enabled: true,
         running: true,
-        remaining_ms: silence_ms.saturating_sub(tick.ms_since_latest_final).max(0),
+        remaining_ms: 0,
         awaiting_speech: false,
         window_ms,
     }
@@ -116,6 +147,8 @@ mod tests {
             latest_final_ms: Some(10_000),
             // Silêncio já completo (o timer de 20 s venceu).
             ms_since_latest_final: 25_000,
+            // Janela aberta há muito tempo.
+            ms_since_window_open: 120_000,
         }
     }
 
@@ -160,16 +193,36 @@ mod tests {
 
     #[test]
     fn waits_for_the_silence_to_complete() {
-        // A fala começou há 300 ms: o silêncio de 20 s ainda não veio.
         let s = SchedulerTick {
             ms_since_latest_final: 300,
             ..tick()
         };
         assert!(!should_trigger(&s, SILENCE));
-        // Com o silêncio completo, dispara.
         let s = SchedulerTick {
             ms_since_latest_final: SILENCE,
             ..tick()
+        };
+        assert!(should_trigger(&s, SILENCE));
+    }
+
+    #[test]
+    fn opening_the_window_restarts_the_countdown() {
+        // A janela acabou de abrir: mesmo com fala antiga, a contagem reinicia
+        // e não dispara (a janela não gera ao abrir).
+        let s = SchedulerTick {
+            ms_since_latest_final: 60_000,
+            ms_since_window_open: 0,
+            ..tick()
+        };
+        assert!(!should_trigger(&s, SILENCE));
+        let c = cadence(&s, SILENCE);
+        assert_eq!(c.remaining_ms, SILENCE);
+        assert!(!c.awaiting_speech);
+
+        // Depois do intervalo, a sugestão vem.
+        let s = SchedulerTick {
+            ms_since_window_open: SILENCE,
+            ..s
         };
         assert!(should_trigger(&s, SILENCE));
     }
@@ -178,7 +231,6 @@ mod tests {
 
     #[test]
     fn cadence_counts_down_the_silence() {
-        // Fala nova há 1 s: faltam 19 s do silêncio de 20 s.
         let s = SchedulerTick {
             ms_since_latest_final: 1_000,
             ..tick()
@@ -192,8 +244,6 @@ mod tests {
 
     #[test]
     fn cadence_restarts_on_each_new_speech() {
-        // Duas leituras do mesmo timer, com falas em instantes diferentes: a
-        // contagem reinicia (a fala nova zerou o silêncio).
         assert_eq!(
             cadence(
                 &SchedulerTick {
@@ -219,8 +269,21 @@ mod tests {
     }
 
     #[test]
+    fn cadence_counts_from_the_window_open_without_speech() {
+        // Sem fala (a última é antiga), a janela abriu agora: conta 20 s.
+        let s = SchedulerTick {
+            cursor_ms: Some(10_000),
+            ms_since_latest_final: 60_000,
+            ms_since_window_open: 2_000,
+            ..tick()
+        };
+        let c = cadence(&s, SILENCE);
+        assert_eq!(c.remaining_ms, 18_000);
+        assert!(!c.awaiting_speech);
+    }
+
+    #[test]
     fn cadence_reports_awaiting_speech_without_new_content() {
-        // O cursor já cobriu a última fala: não há o que sugerir ainda.
         let s = SchedulerTick {
             cursor_ms: Some(10_000),
             ..tick()

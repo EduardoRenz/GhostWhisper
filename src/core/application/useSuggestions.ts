@@ -8,7 +8,6 @@ import type { Suggestion } from "../domain/assistant";
 
 interface UseSuggestionsOptions {
   sessionId: string | null;
-  opened: boolean;
   /** Agente selecionado. */
   modeId: string;
   /** Contexto colado pelo usuário (enviado como fonte suplementar). */
@@ -20,8 +19,8 @@ const HISTORY_LIMIT = 8;
 /**
  * Sugestão viva da janela.
  *
- * A geração **automática** vive no core (reage a fala nova, sem depender da
- * janela aberta) e chega pelo evento `suggestion` em **duas fases** (BR-038):
+ * A geração **automática** vive no core (reage a fala nova, **com a janela
+ * aberta**) e chega pelo evento `suggestion` em **duas fases** (BR-038):
  * a resposta curta (`quick`, do passe *fast-first*) e a completa (`full`,
  * Markdown com deltas do streaming). As duas ficam em blocos próprios — a
  * rápida **não** substitui a completa.
@@ -31,7 +30,6 @@ const HISTORY_LIMIT = 8;
  */
 export function useSuggestions({
   sessionId,
-  opened,
   modeId,
   extraContext,
 }: UseSuggestionsOptions) {
@@ -47,6 +45,15 @@ export function useSuggestions({
   const [pinned, setPinned] = useState<string | null>(null);
   /** Há streaming recente (deltas) — o pill some 1,5 s após o último. */
   const [streamActive, setStreamActive] = useState(false);
+  /**
+   * `at_ms` da geração cuja **resposta completa** está pendente.
+   *
+   * A rápida chega primeiro; a completa pode demorar (principalmente no
+   * automático). Este estado garante o aviso “Gerando resposta completa…”
+   * durante a espera, sem depender do `streamActive` (que expira em 1,5 s).
+   */
+  const [pendingFull, setPendingFull] = useState<number | null>(null);
+  const pendingTimer = useRef<number | null>(null);
 
   const inFlight = useRef(false);
   const sessionRef = useRef<string | null>(sessionId);
@@ -73,12 +80,38 @@ export function useSuggestions({
       if (streamTimer.current !== null) {
         window.clearTimeout(streamTimer.current);
       }
+      if (pendingTimer.current !== null) {
+        window.clearTimeout(pendingTimer.current);
+      }
     },
     [],
   );
 
+  /** Marca a completa como pendente (com um teto de segurança). */
+  const markFullPending = useCallback((atMs: number) => {
+    setPendingFull(atMs);
+    if (pendingTimer.current !== null) {
+      window.clearTimeout(pendingTimer.current);
+    }
+    // Se a completa falhar (sem evento), o aviso não fica preso para sempre.
+    pendingTimer.current = window.setTimeout(() => {
+      setPendingFull(null);
+      pendingTimer.current = null;
+    }, 45_000);
+  }, []);
+
+  /** A completa começou (ou falhou): o aviso some. */
+  const clearFullPending = useCallback(() => {
+    setPendingFull(null);
+    if (pendingTimer.current !== null) {
+      window.clearTimeout(pendingTimer.current);
+      pendingTimer.current = null;
+    }
+  }, []);
+
   /** Aplica uma sugestão recebida, respeitando a fase (BR-038). */
-  const applyIncoming = useCallback((incoming: Suggestion) => {
+  const applyIncoming = useCallback(
+    (incoming: Suggestion) => {
     if (incoming.phase === "quick") {
       // A resposta rápida é o **começo** da nova sugestão: a anterior sai do
       // topo (já está no histórico) e o cartão passa a mostrar a nova sendo
@@ -87,8 +120,11 @@ export function useSuggestions({
         previous && previous.at_ms !== incoming.at_ms ? null : previous,
       );
       setQuick(incoming);
+      markFullPending(incoming.at_ms);
       return;
     }
+    // A completa chegou: o aviso de “gerando” some.
+    clearFullPending();
     // A completa só convive com a rápida da **mesma** geração.
     setQuick((previous) =>
       previous && previous.at_ms === incoming.at_ms ? previous : null,
@@ -97,9 +133,16 @@ export function useSuggestions({
     lastText.current = incoming.text;
     setHistory((previous) => {
       const rest = previous.filter((item) => item.at_ms !== incoming.at_ms);
+      // Conteúdo idêntico à sugestão anterior não vira um segundo item no
+      // histórico (proteção contra duplicatas): fica só a mais recente.
+      if (rest[0] && rest[0].text.trim() === incoming.text.trim()) {
+        return [incoming, ...rest.slice(1)].slice(0, HISTORY_LIMIT);
+      }
       return [incoming, ...rest].slice(0, HISTORY_LIMIT);
     });
-  }, []);
+    },
+    [clearFullPending, markFullPending],
+  );
 
   useEffect(() => {
     sessionRef.current = sessionId;
@@ -112,9 +155,14 @@ export function useSuggestions({
     setSkipped(false);
     setPinned(null);
     setStreamActive(false);
+    setPendingFull(null);
     if (streamTimer.current !== null) {
       window.clearTimeout(streamTimer.current);
       streamTimer.current = null;
+    }
+    if (pendingTimer.current !== null) {
+      window.clearTimeout(pendingTimer.current);
+      pendingTimer.current = null;
     }
   }, [sessionId]);
 
@@ -190,6 +238,7 @@ export function useSuggestions({
         setSkipped(false);
         applyIncoming(result);
       } catch (caught) {
+        clearFullPending();
         setError(String(caught));
       } finally {
         inFlight.current = false;
@@ -199,22 +248,10 @@ export function useSuggestions({
     [applyIncoming],
   );
 
-  /**
-   * Gera ao abrir a janela e ao trocar de sessão, para ela não começar vazia.
-   *
-   * Não forçamos: o core devolve a última sugestão quando não houve fala nova
-   * (nenhuma chamada ao LLM — BR-039).
-   *
-   * **Trocar de agente não gera**: a próxima sugestão segue a regra normal
-   * (fala nova + contagem regressiva) ou o botão “Sugerir agora”. O agente
-   * escolhido vale para a próxima geração (as settings são salvas).
-   */
-  useEffect(() => {
-    if (!opened || !sessionId) {
-      return;
-    }
-    void generate(false);
-  }, [opened, sessionId, generate]);
+  // **Abrir a janela não gera** (pedido do usuário): o automático começa a
+  // contar do intervalo (o core reinicia a contagem na abertura) e só gera se
+  // houver fala nova; pausado, só o botão “Sugerir agora”. Trocar de agente
+  // também não gera — a escolha vale para a próxima geração.
 
   const suggestNow = useCallback(() => generate(true), [generate]);
 
@@ -249,6 +286,8 @@ export function useSuggestions({
     current,
     /** Resposta curta da geração atual (fase `quick`). */
     quick,
+    /** `true` enquanto a completa da geração atual ainda não chegou. */
+    awaitingFull: pendingFull !== null && quick?.at_ms === pendingFull,
     /** Sugestões completas anteriores (mais recente primeiro). */
     history,
     /** `true` enquanto a IA gera/transmite uma sugestão (manual ou automática). */

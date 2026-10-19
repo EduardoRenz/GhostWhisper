@@ -145,6 +145,12 @@ pub struct SuggestionCadenceEvent {
   silêncio`. **Toda fala nova reinicia a contagem**; quando o silêncio completa
   o intervalo, a sugestão é gerada. Sem fala nova desde a última sugestão,
   `remaining = 0` + `awaiting_speech` (a pill fica neutra).
+- A geração automática só roda com a **janela de Sugestões aberta**
+  (`suggestions_window_open`): fechada, o agendador só mantém a cadência — sem
+  chamada ao LLM (revisa o BR-028 a pedido do usuário).
+- **Abrir a janela não gera**: o contador **reinicia na abertura**
+  (`min(silêncio da fala, desde a abertura)`) e o auto começa do intervalo; com
+  o automático pausado, nada é gerado — só o botão “Sugerir agora”.
 - O **timer** é o intervalo das settings (`suggestion_interval_secs`, 10–120 s)
   + o *debounce* de 700 ms (o turno precisa fechar). O agendador usa esse
   intervalo como frequência máxima — antes ele usava uma constante de 3 s e a
@@ -161,6 +167,10 @@ pub struct SuggestionCadenceEvent {
   “Sugerir” do chat e o atalho global. **Trocar de agente não gera** — só
   atualiza a escolha; a próxima sugestão segue a regra normal (fala nova +
   contagem) ou o botão.
+- **Sem duplicata:** o cursor efetivo é `max(cursor do pedido, cursor da última
+  sugestão)` — o agendador pode mandar um cursor velho depois de a janela gerar
+  — e um **mutex** serializa as gerações (janela × agendador). Sem isso, a
+  mesma fala virava duas sugestões no histórico.
 - Efeito colateral positivo: a janela que abre no meio da conversa mostra a
   sugestão existente (sem gerar outra) e o agendador deixa de repetir
   sugestão para a mesma fala.
@@ -225,10 +235,16 @@ useSuggestions()        ── histórico em memória ────────�
   botão **“Gerar sugestão manual”** e ✕) e **não** gera automaticamente ao abrir.
 - `useSuggestions` recebe o contexto **por parâmetro** e o envia em
   `SuggestionRequest.manual_context`; a resposta é marcada com
-  `trigger = "manual"` e exibida como **“Manual”** no cartão/histórico.
+  `trigger = "manual"`, `source` snapshot da mensagem e exibida como
+  **“Manual”** no cartão/histórico.
 - O automático do core **não** usa o contexto manual; “Sugerir agora” continua a
   sugestão normal.
-- Contrato completo (store, IPC, prompt e fluxo):
+- **Concorrência (task 15):** uma geração por sessão; a manual espera a atual
+  (botão “Aguardando…”); com contexto manual ativo, a automática vai para o
+  histórico e não substitui o cartão manual; a janela oculta continua montada,
+  `suggestionLast` hidrata o cartão sem LLM e abrir vazia com auto ligado não
+  dispara geração.
+- Contrato completo (store, IPC, prompt, concorrência e fluxo):
   [`../../chat/architecture/transcription-panel.md`](../../chat/architecture/transcription-panel.md)
   §4–§5.
 

@@ -12,6 +12,7 @@ Histórico deste PRD no formato fixo do
 | Janelas de chat/histórico | `rg -n -i 'janela de chat\|janela de histórico\|toggle único' prds/chat/memory.md` |
 | Transcrição ao Vivo | `rg -n -i 'transcrição ao vivo\|largura total\|microfone/outros' prds/chat/memory.md` |
 | Sugestão manual | `rg -n -i 'sugestão manual\|manual_context\|contexto por parâmetro' prds/chat/memory.md` |
+| Concorrência | `rg -n -i 'single-flight\|em andamento\|janela oculta\|prioridade' prds/chat/memory.md` |
 
 ---
 
@@ -149,10 +150,10 @@ silêncio, então o teto visual faz o papel que o *commit* faz lá em cima.
 
 ## 2026-10-19 — Planejamento: "Transcrição ao Vivo" e sugestão manual por mensagem
 
-- **IDs:** BR-040, BR-041, T10–T14
+- **IDs:** BR-040, BR-041, BR-042, T10–T15
 - **Refs:** [`prd.md`](prd.md) §9,
   [`architecture/transcription-panel.md`](architecture/transcription-panel.md),
-  [`tasks/10-task.md`](tasks/10-task.md)…[`tasks/14-task.md`](tasks/14-task.md),
+  [`tasks/10-task.md`](tasks/10-task.md)…[`tasks/15-task.md`](tasks/15-task.md),
   [`../suggestions/architecture/suggestions-window.md`](../suggestions/architecture/suggestions-window.md) §5.4
 
 ### Pedido (print anexado)
@@ -197,8 +198,32 @@ silêncio, então o teto visual faz o papel que o *commit* faz lá em cima.
 - O automático do core não usa `manual_context`; "Sugerir agora" continua a
   sugestão normal. Sem schema novo, sem backend novo.
 
+### Concorrência e janela (aviso do usuário)
+O usuário alertou para não se perder quando **já existe uma sugestão em
+andamento** e a janela está aberta/fechada. Decisões (BR-042, task 15):
+- **Single-flight por sessão** no `SuggestionService`: automático e manual nunca
+  emitem `quick`/`full` intercalados; a manual **espera** a atual. Sem
+  cancelamento de LLM em voo.
+- **Prioridade do manual:** com contexto manual ativo, a automática `full` vai
+  para o histórico e a `quick` é ignorada; o cartão manual não é substituído.
+  Ao limpar o contexto, a automática volta a poder ocupar o cartão.
+- **Janela oculta continua montada:** os eventos acumulam; `suggestionLast`
+  hidrata o cartão sem LLM. Abrir com `current`/`quick`/`generating`/contexto
+  manual não chama `generate`; abrir vazia com auto **ligado** também não (o
+  agendador é a fonte); com auto **desligado**, chama no máximo uma vez.
+- **Novo `[✦]` durante a manual:** o contexto novo substitui o antigo; a manual
+  antiga termina com `Suggestion.source` (falante/texto/`at_ms` original) e o
+  botão libera para o contexto novo.
+- **Troca de sessão:** limpa a leitura e ignora eventos/resultados antigos; o
+  lock é por sessão.
+- **`generation_id` (UUID por geração):** a UI usa o id como chave de
+  `current`/`quick`/histórico; `at_ms` pode empatar (relógio fixo/teste) e não
+  serve como identidade. O single-flight evita intercalação; o id identifica a
+  geração; `trigger`/`source` rotulam.
+
 ### Entregável desta rodada
 - **Nada implementado.** PRD §9, arquitetura `transcription-panel.md`, tasks
-  10–14 (`PENDING`), BR-040/BR-041 e revisões de BR-019/BR-021 registradas.
+  10–15 (`PENDING`), BR-040/BR-041/BR-042 e revisões de BR-019/BR-021
+  registradas. A task 14 é o fechamento e vem depois da 15 (`13 → 15 → 14`).
 - Próximo passo: task 10 (casca) e task 11 (cartões), depois 12 (handoff), 13
-  (Sugestões manual) e 14 (fechamento).
+  (Sugestões manual), 15 (concorrência) e 14 (fechamento).

@@ -24,8 +24,8 @@ interface SuggestionCardProps {
   pinned: boolean;
   /** `true` quando o texto acabou de ser copiado. */
   copied: boolean;
-  /** `true` enquanto a geração/streaming está em andamento. */
-  generating: boolean;
+  /** `true` enquanto a resposta completa da geração atual está pendente. */
+  awaitingFull: boolean;
   /** Ações extras (ex.: "Fixar"/"Copiar" em texto). */
   children?: React.ReactNode;
 }
@@ -57,7 +57,7 @@ export function SuggestionCard({
   onPin,
   pinned,
   copied,
-  generating,
+  awaitingFull,
   children,
 }: SuggestionCardProps) {
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
@@ -125,7 +125,7 @@ export function SuggestionCard({
         </section>
       )}
 
-      {quick && !current && generating && (
+      {quick && !current && awaitingFull && (
         <p className="suggestion-block__pending" role="status">
           <span className="suggestion-block__dot" aria-hidden="true" />
           Gerando resposta completa…

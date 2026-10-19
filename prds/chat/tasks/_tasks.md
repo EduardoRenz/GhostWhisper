@@ -20,6 +20,11 @@
 | 12 | Ação de IA por mensagem e handoff de contexto para Sugestões | PENDING |
 | 13 | Sugestão manual no Sugestões (contexto por parâmetro) | PENDING |
 | 14 | Documentação, verificação e pacotes (v0.2) | PENDING |
+| 15 | Concorrência e ciclo de vida das sugestões (single-flight e janela) | PENDING |
+
+> A **14** é a última na ordem de execução, embora apareça antes da **15** na
+> tabela (mantém o fechamento junto das demais tasks). A ordem válida é a do
+> grafo abaixo.
 
 ## Ordem e dependências
 
@@ -29,7 +34,7 @@
         └─▶ 05
 02 ─▶ 06
 01 ─▶ 07 ─▶ 08
-03 ─▶ 09 ─▶ 10 ─▶ 11 ─▶ 12 ─▶ 13 ─▶ 14
+03 ─▶ 09 ─▶ 10 ─▶ 11 ─▶ 12 ─▶ 13 ─▶ 15 ─▶ 14
 ```
 
 - A **01** corrige o bug de linha temporal e é pré-requisito de todo o resto.
@@ -45,5 +50,7 @@
   para fixar a geometria da janela.
 - A **12** liga o botão de IA ao handoff de contexto (BR-041); a **13** consome o
   contexto no Sugestões e gera a sugestão manual. A 13 depende da 12.
+- A **15** entra depois da 13 para fechar a concorrência: uma geração por sessão,
+  sugestão em andamento, janela aberta/fechada e prioridade do manual (BR-042).
 - A **14** fecha: documentação, regras, verificação e pacotes. Só começa com
-  10–13 concluídas.
+  10–13 e 15 concluídas.

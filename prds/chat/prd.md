@@ -3,7 +3,7 @@
 - **Versão:** 0.2
 - **Data:** 2026-10-19
 - **Status:** v0.1 implementada (tasks 01–09 `CONCLUDED`); **v0.2 planejada**
-  (tasks 10–14 `PENDING`) — ver §9
+  (tasks 10–15 `PENDING`) — ver §9
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/chat-ui.md`](architecture/chat-ui.md),
@@ -185,11 +185,13 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 
 ## 9. Revisão 0.2 — "Transcrição ao Vivo" e sugestão manual por mensagem
 
-> **Escopo:** tasks 10–14 (`PENDING`). O layout vem do **print de referência
+> **Escopo:** tasks 10–15 (`PENDING`). O layout vem do **print de referência
 > anexado pelo usuário** (2026-10-19); não é uma nova extração do Perssua. O
 > contrato técnico vigente fica em
 > [`architecture/transcription-panel.md`](architecture/transcription-panel.md);
-> a tabela de `chat-ui.md` §3 permanece como evidência histórica da v0.1.
+> a tabela de `chat-ui.md` §3 permanece como evidência histórica da v0.1. A
+> **task 15** fecha a concorrência (sugestão em andamento + janela
+> aberta/fechada) e o `_tasks.md` tem a ordem real (`13 → 15 → 14`).
 
 ### 9.1 Objetivo
 
@@ -203,6 +205,8 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
    Sugestões.
 4. **Sugestão Manual:** no Sugestões, o usuário vê a mensagem selecionada e
    dispara a geração manual; a resposta é marcada como **"Sugestão Manual"**.
+5. **Sem concorrência confusa:** uma geração por sessão, manual espera a atual,
+   automática não rouba o cartão manual e a janela oculta não perde estado.
 
 ### 9.2 Problema
 
@@ -223,6 +227,8 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
   revisar o contexto no Sugestões e gerar uma sugestão manual.
 - **CU-11 — Revisar no histórico:** o detalhe da sessão usa os mesmos cartões e a
   mesma hora; a ação de IA fica só no ao vivo.
+- **CU-12 — Clicar durante uma geração:** o pedido manual espera a sugestão em
+  andamento e assume o cartão quando chegar; a janela pode estar aberta ou não.
 
 ### 9.4 Estórias de usuário e critérios de aceite
 
@@ -297,6 +303,36 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
   o contexto continua disponível para nova tentativa.
 - **CA-12.6** Nenhuma migração de banco e nenhum backend novo (BR-002/BR-004).
 
+#### US-13 — Sugestão em andamento e estado da janela
+
+Como usuário, não quero que uma sugestão manual se misture com a que já está
+sendo gerada, nem perder o que estava na tela ao abrir/fechar a janela.
+
+- **CA-13.1** **Single-flight por sessão:** no máximo uma geração
+  (`quick`/`full`) por vez. O automático e a manual não emitem deltas
+  intercalados; a segunda chamada entra na vez.
+- **CA-13.2** A manual **não cancela** o LLM em voo: o botão mostra
+  **"Aguardando a sugestão em andamento…"** e fica desabilitado até a geração
+  atual terminar. Sem duas chamadas concorrentes.
+- **CA-13.3** Com contexto manual ativo, a sugestão **automática** vai para o
+  **histórico** e não substitui o cartão manual; a manual tem prioridade de
+  leitura. Ao limpar o contexto, o automático volta a poder ocupar o cartão.
+- **CA-13.4** A janela de Sugestões continua **montada quando oculta**: os
+  eventos são acumulados e reabrir mostra o estado em andamento/concluído.
+  `suggestionLast` hidrata o cartão sem LLM. Abrir com
+  `current`/`quick`/`generating`/contexto manual **não** dispara outra geração;
+  abrir vazia com o auto **ligado** também não gera (o agendador é a fonte); com
+  o auto **desligado**, gera no máximo uma vez.
+- **CA-13.5** Um novo clique no `[✦]` durante uma manual substitui o contexto;
+  a manual antiga termina rotulada com seu **source snapshot** (falante/hora da
+  mensagem original) e o contexto novo fica pronto para a próxima geração.
+- **CA-13.6** Trocar de sessão limpa a leitura e ignora eventos/resultados da
+  sessão antiga; a nova sessão não fica bloqueada pela geração anterior.
+- **CA-13.7** Ocultar a janela durante a geração manual não perde o resultado.
+- **CA-13.8** Cada geração tem um `generation_id` (UUID) compartilhado por
+  `quick`/`full`/deltas; a UI usa o id como chave, então duas gerações no mesmo
+  `at_ms` (relógio fixo em teste) não se confundem.
+
 ### 9.5 Requisitos
 
 **Funcionais**
@@ -307,6 +343,9 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
 - **RF-04** Bloco de contexto manual + geração manual no Sugestões.
 - **RF-05** `Suggestion.trigger` (`auto | now | manual`) e rótulo "Manual".
 - **RF-06** Contexto por parâmetro no `SuggestionRequest`; auto-sugerir imune.
+- **RF-07** `Suggestion.source` (snapshot da mensagem manual),
+  `generation_id` por geração e **single-flight por sessão**; prioridade do
+  manual no cartão.
 
 **Não funcionais**
 
@@ -318,8 +357,10 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
   reais.
 - **RNF-04 — Acessibilidade:** `aria-label`, foco visível, teclado.
 - **RNF-05 — Sem dependência nova** (BR-008) e **sem schema**.
-- **RNF-06 — Documentação única (BR-016):** IDs `BR-040`/`BR-041`, `T10–T14`;
-  contrato em `transcription-panel.md`.
+- **RNF-06 — Documentação única (BR-016):** IDs `BR-040`/`BR-041`/`BR-042`,
+  `T10–T15`; contrato em `transcription-panel.md`.
+- **RNF-07 — Sem concorrência de LLM por sessão:** o lock de geração é por
+  sessão; `pin` não o usa; a ordem `generation_lock → last` evita deadlock.
 
 ### 9.6 Não-objetivos
 
@@ -328,6 +369,8 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
 - Persistir o contexto manual entre reinícios do app.
 - Instrumentar latência real de decodificação ou trocar o rótulo técnico do
   rodapé por "WebRTC".
+- **Cancelar um LLM em voo** para a manual “furar a fila”: a manual espera a
+  geração atual (task 15). Cancelamento/abort seria uma task própria.
 - Mudar o teto de 180 caracteres/continuação (BR-031), a linha temporal (BR-021)
   ou a captura de áudio.
 - Ação de IA no histórico de sessões encerradas.
@@ -341,6 +384,11 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
 | Contexto velho de outra sessão | store keyed por `session_id`; `get` só devolve se bater; troca de sessão limpa |
 | Injeção de prompt pelo texto da mensagem | o texto vai num bloco `<selected_message>` e o system prompt já trata fala como fonte não confiável (nunca instrução) |
 | Custo de LLM ao abrir o Sugestões | com contexto manual, a janela **não** gera automaticamente; só o botão gera |
+| Automático e manual emitindo `quick`/`full` intercalados | lock de geração **por sessão** (single-flight); a manual espera a atual |
+| Automático substituir a manual que o usuário está lendo | com contexto manual ativo, a automática vai para o histórico; a manual tem prioridade |
+| Reabrir a janela disparar geração duplicada | a janela oculta continua montada; `suggestionLast` hidrata; só gera se estiver vazia, sem manual, sem geração e com o auto **desligado** |
+| Novo `[✦]` durante a manual perder a origem | `Suggestion.source` (snapshot leve: falante/hora/preview) rotula o resultado antigo |
+| Lock de geração causar deadlock | lock por sessão, ordem fixa `generation_lock → last`; `pin` não usa o lock |
 | Bolha full-width com texto longo | teto de 180 caracteres + continuação (BR-031); scroll do painel |
 | Hora de parede sem `started_at_ms` | fallback determinístico para `mm:ss` |
 | Dois ícones no canto superior direito (tradução + IA) | grupo de ações com espaçamento; o texto nunca fica por baixo |
@@ -354,5 +402,9 @@ Como usuário, quero gerar uma sugestão a partir da mensagem que selecionei.
   clique em "Gerar sugestão manual" gera e rotula **Manual**.
 - O automático do core continua com `trigger = auto` mesmo com contexto manual
   ativo.
+- Nenhuma sessão tem dois streams simultâneos; a manual clicada durante o
+  automático espera e gera depois.
+- Reabrir a janela com sugestão carregada/em andamento não faz nova chamada ao
+  LLM; a automática que chega durante o contexto manual aparece no histórico.
 - `cargo test`, `cargo clippy`, `cargo fmt --check`, `pnpm test`, `tsc --noEmit`
   e `pnpm build` verdes.

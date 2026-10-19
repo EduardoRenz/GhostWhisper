@@ -29,8 +29,9 @@ evidência histórica da paridade Perssua 0.27.5.
 ## Entregáveis
 
 - `src/features/panel/PanelWindow.tsx`:
-  - cabeçalho próprio (`heading`) com `TranscriptIcon` em um selo de accent +
-    título **"Transcrição ao Vivo"** na aba `transcription`;
+  - cabeçalho próprio (`heading`) com um **`WaveformIcon` estático** (novo SVG do
+    projeto em `components/icons.tsx`) em um selo de accent + título
+    **"Transcrição ao Vivo"** na aba `transcription`;
   - aba `summary` mantém o título **"Resumo"**;
   - o subtítulo `id · status` sai do cabeçalho (o estado continua no notch e no
     rodapé da Transcrição).

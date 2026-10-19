@@ -52,7 +52,8 @@ cartões de largura total.
     `--oh-speaker-they` (violeta, reusando `--oh-agent-violet` como valor);
   - remoção de `.chat__row--me/--they` com `justify-content` e do
     `max-width: 75%`;
-  - cartão neutro, borda hairline, raio 12; rótulo 12/600; hora mono 10;
+  - cartão neutro, borda hairline, raio 12; rótulo 12/600 **sem uppercase**
+    (o print usa "Microfone"/"Outros" em title case); hora mono 10;
   - estado pendente com fundo/borda cyan; selo Streaming; caret.
 - Testes: `transcript.test.ts` (rótulos/hora/fallback), `ChatView.test.tsx`
   (largura, rótulos, hora, streaming), `ChatBubble` (ações/continuação) e

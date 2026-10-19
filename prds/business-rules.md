@@ -374,14 +374,20 @@ uma nota de revisão.
   **streaming** pelo evento `suggestion` (texto acumulado; a janela substitui a
   bolha a cada delta). O contexto inclui **falas em andamento** (prévias), não só
   as finalizadas. Os **insights automáticos** rodam no core a cada **fala nova**
-  (debounce de 700 ms, no máximo uma chamada a cada 3 s) e **não dependem de a
-  janela estar aberta**; o toggle é `Settings.suggestion_auto_refresh` e a janela
-  apenas exibe/força/fixa. No chat, a bolha da IA começa **colapsada em ~3 linhas**
-  com "mostrar mais".
+  (o intervalo das settings é o **silêncio** depois da última fala; uma fala nova
+  reinicia a contagem) e só com a **janela de Sugestões aberta** — fechada, não
+  há geração (ninguém está vendo e não se gasta chamada); o toggle é
+  `Settings.suggestion_auto_refresh` e a janela exibe/força/fixa. No chat, a
+  bolha da IA começa **colapsada em ~3 linhas** com "mostrar mais".
 - **Motivo:** paridade com o Perssua (`fastFirstInsight`, `streamAutomaticInsights`,
   `questionsRequireFinalizedTranscript: false`, notch compacto) e o pedido do
-  usuário ("bolhas menores, mais rápido e mais preciso"). **Revoga** a parte do
-  BR-026 que exigia a janela aberta para o automático.
+  usuário ("bolhas menores, mais rápido e mais preciso").
+- **Revisto em 2026-10-19:** o automático voltou a exigir a **janela de
+  Sugestões aberta** (pedido do usuário: “não gerar nenhuma sugestão enquanto a
+  janela estiver fechada”). O *debounce* fixo de 700 ms + teto de 3 s foi
+  substituído pelo **silêncio das settings** (BR-039). **Abrir a janela não
+  gera**: a contagem reinicia na abertura (o auto começa do intervalo); com o
+  automático pausado, só o botão “Sugerir agora” gera.
 - **Consequência:** `suggestion_interval_secs` deixa de controlar o ritmo do
   automático (o critério passa a ser fala nova, com teto de frequência); providers
   sem SSE caem no passe único sem erro visível; falha do rascunho ou do streaming
@@ -685,6 +691,10 @@ uma nota de revisão.
 - **Sem fala nova, não há nova sugestão:** nenhuma chamada ao LLM. O serviço
   guarda a última sugestão da sessão e a devolve; o botão “Sugerir agora” (e o
   atalho/chat “Sugerir”) **forçam** a geração.
+- **Sem duplicata:** o cursor efetivo é o **mais avançado** entre o pedido e a
+  última sugestão (o agendador pode estar com um cursor velho se a janela gerou
+  depois dele), e as gerações são **serializadas** — duas chamadas concorrentes
+  (janela × agendador) não geram duas sugestões para a mesma fala.
 - **Motivo:** pedido do usuário — o usuário precisa ver **quando** a próxima
   sugestão vem e se o automático está rodando; e o automático não deve gastar
   chamada (nem repetir sugestão) sem conteúdo novo.
@@ -765,7 +775,11 @@ uma nota de revisão.
   `suggestion_clear_manual_context`; `SuggestionRequest.manual_context` e
   `Suggestion.trigger`; prompt com bloco `<selected_message>` (fonte não
   confiável). O evento `panel_opened` acorda a janela e ela busca o store — um
-  evento efêmero sozinho poderia se perder com a janela fechada.
+  evento efêmero sozinho poderia se perder com a janela fechada. A geração
+  manual também **avança o cursor** da sessão; o agendador consulta o cursor da
+  última sugestão do serviço para não gerar uma duplicata automática da mesma
+  fala. O caso de já existir sugestão em andamento e a janela aberta/fechada é
+  regido pela **BR-042** (single-flight e prioridade do manual).
 - **Detalhes:** [`chat/prd.md`](chat/prd.md) §9,
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
   §4–§6, [`chat/tasks/12-task.md`](chat/tasks/12-task.md),
@@ -773,3 +787,40 @@ uma nota de revisão.
   [`suggestions/architecture/suggestions-window.md`](suggestions/architecture/suggestions-window.md)
   §5.4.
 - **Data:** 2026-10-19 · **Status:** Ativa (tasks 12/13 planejadas)
+
+## BR-042 — Sugestões: single-flight por sessão e prioridade do contexto manual
+
+- **Decisão:** a geração de sugestões é **single-flight por sessão**: no máximo
+  um fast-first + streaming por vez. Automático e manual não emitem `quick`/
+  `full` intercalados; a segunda chamada **espera** a primeira. Não há
+  cancelamento de LLM em voo (seria uma task própria). Enquanto houver
+  **contexto manual ativo**:
+  - a `quick` automática é ignorada (efêmera);
+  - a `full` automática vai para o **histórico**, sem substituir o cartão manual;
+  - a manual tem prioridade de leitura; ao limpar o contexto, a automática volta
+    a poder ocupar o cartão.
+  A janela de Sugestões **continua montada quando oculta**: os eventos acumulam e
+  reabrir não dispara outra geração. A abertura consulta `suggestionLast` (cache,
+  sem LLM) para hidratar o cartão. Se já há `current`/`quick`/`generating` ou
+  contexto manual, não chama `generate`; se está vazia e o auto **ligado**,
+  também não (o agendador é a fonte); com o auto **desligado**, chama no máximo
+  uma vez. Um novo `[✦]` durante uma manual substitui o contexto;
+  a manual antiga termina rotulada com `Suggestion.source` (snapshot leve de
+  falante, `at_ms` e `preview`; o texto completo fica no `manual_context`/
+  prompt). Cada geração carrega um `generation_id` (UUID) compartilhado por
+  `quick`/`full`/deltas; a UI usa o id como chave, não o `at_ms`. Trocar de
+  sessão limpa a leitura e ignora eventos/resultados antigos; o lock é por
+  sessão.
+- **Motivo:** aviso do usuário — é preciso cuidar de já existir uma sugestão em
+  andamento e do estado da janela (aberta/fechada), sem streams misturados,
+  geração duplicada ao reabrir ou perda do contexto.
+- **Consequência:** `SuggestionService` ganha lock por sessão; `Suggestion` ganha
+  `generation_id` (UUID por geração; cache preserva o id), `trigger` e
+  `source: Option<SuggestionSource>` (falante/`at_ms`/preview); `useSuggestions`
+  usa o id como chave de `current`/`quick`/histórico, filtra a automática para o
+  histórico quando o manual está ativo e não gera ao abrir com estado. Sem
+  schema; sem backend novo.
+- **Detalhes:** [`chat/prd.md`](chat/prd.md) §9 (US-13),
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
+  §5.4, [`chat/tasks/15-task.md`](chat/tasks/15-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 15 planejada)

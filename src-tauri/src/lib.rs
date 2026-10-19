@@ -603,12 +603,12 @@ const SUGGESTION_TICK_MS: u64 = 1_000;
 /// (BR-039). Uma fala nova reinicia a contagem.
 const SUGGESTION_MIN_INTERVAL_MS: i64 = 1_000;
 
-/// Gera sugestões automáticas **sem depender da janela aberta** (BR-028).
+/// Gera sugestões automáticas com a janela de Sugestões **aberta** (BR-028).
 ///
 /// Roda no composition root: a decisão é pura
-/// ([`application::suggestion_scheduler::should_trigger`]) e aqui só há o polling
-/// e a chamada ao caso de uso. A sugestão é efêmera e chega à UI pelo evento
-/// `suggestion`.
+/// ([`application::suggestion_scheduler::should_trigger`]) e aqui só há o polling,
+/// a checagem da janela e a chamada ao caso de uso. A sugestão é efêmera e chega
+/// à UI pelo evento `suggestion`.
 fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
     use application::suggestion_scheduler::{should_trigger, SchedulerTick};
     use ports::suggestion_generator::SuggestionRequest;
@@ -616,12 +616,24 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut cursor: Option<i64> = None;
         let mut current_session: Option<String> = None;
+        // Quando a janela de Sugestões abriu (reinicia a contagem do auto).
+        let mut window_opened_at: Option<std::time::Instant> = None;
         loop {
             std::thread::sleep(Duration::from_millis(SUGGESTION_TICK_MS));
             let state = app.state::<state::AppState>();
             let Ok(settings) = state.settings.load() else {
                 continue;
             };
+            // A janela fechada não gera; abrir reinicia a contagem.
+            let window_open = suggestions_window_open(&app);
+            match (window_open, window_opened_at) {
+                (true, None) => window_opened_at = Some(std::time::Instant::now()),
+                (false, _) => window_opened_at = None,
+                _ => {}
+            }
+            let ms_since_window_open = window_opened_at
+                .map(|instant| instant.elapsed().as_millis() as i64)
+                .unwrap_or(i64::MAX);
             let session_id = state.session.current_session_id();
             if session_id != current_session {
                 // Sessao nova: o cursor recomeca (a primeira sugestao nao
@@ -655,6 +667,7 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
                 ms_since_latest_final: latest_final_ms
                     .map(|latest| now_rel - latest)
                     .unwrap_or(i64::MAX),
+                ms_since_window_open,
             };
             // O silêncio das settings é o timer do automático (BR-039): uma
             // fala nova reinicia a contagem.
@@ -668,6 +681,11 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
                 silence_ms,
                 settings.suggestion_auto_refresh,
             );
+            // Só gera com a janela de Sugestões **aberta** (pedido do usuário):
+            // fechada, ninguém está vendo — e o automático não gasta chamada.
+            if !window_open {
+                continue;
+            }
             if !should_trigger(&tick, silence_ms) {
                 continue;
             }
@@ -689,6 +707,13 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+/// A janela de Sugestões está visível (aberta) agora?
+fn suggestions_window_open(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window("suggestions")
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false)
 }
 
 /// Publica a cadencia do auto-sugerir para a janela de sugestoes (BR-039).

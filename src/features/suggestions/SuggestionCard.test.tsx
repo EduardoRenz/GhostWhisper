@@ -27,7 +27,7 @@ describe("SuggestionCard", () => {
         quick={null}
         pinned={false}
         copied={false}
-        generating={false}
+        awaitingFull={false}
         onCopy={() => {}}
         onPin={() => {}}
       />,
@@ -54,7 +54,7 @@ describe("SuggestionCard", () => {
         quick={null}
         pinned={false}
         copied={false}
-        generating={false}
+        awaitingFull={false}
         onCopy={() => {}}
         onPin={() => {}}
       />,
@@ -71,7 +71,7 @@ describe("SuggestionCard", () => {
         quick={suggestion({ text: "Proponho sliding window", phase: "quick" })}
         pinned={false}
         copied={false}
-        generating={false}
+        awaitingFull={false}
         onCopy={() => {}}
         onPin={() => {}}
       />,
@@ -97,7 +97,7 @@ describe("SuggestionCard", () => {
         quick={null}
         pinned={false}
         copied={false}
-        generating={false}
+        awaitingFull={false}
         onCopy={onCopy}
         onPin={onPin}
       />,
@@ -115,7 +115,7 @@ describe("SuggestionCard", () => {
         quick={suggestion({ text: "resposta curta", phase: "quick" })}
         pinned={false}
         copied={false}
-        generating
+        awaitingFull
         onCopy={() => {}}
         onPin={() => {}}
       />,
@@ -132,7 +132,7 @@ describe("SuggestionCard", () => {
         quick={suggestion({ text: "resposta curta", phase: "quick" })}
         pinned={false}
         copied={false}
-        generating
+        awaitingFull
         onCopy={() => {}}
         onPin={() => {}}
       />,
@@ -147,7 +147,7 @@ describe("SuggestionCard", () => {
         quick={null}
         pinned={false}
         copied={false}
-        generating={false}
+        awaitingFull={false}
         onCopy={() => {}}
         onPin={() => {}}
       />,
