@@ -170,34 +170,37 @@ pub struct Settings {
     /// Intervalo das sugestões automáticas (segundos).
     #[serde(default = "default_suggestion_interval")]
     pub suggestion_interval_secs: u32,
-    /// Posição da janela de resumo.
-    #[serde(default)]
-    pub summary_position: Option<(i32, i32)>,
     /// Posição da janela de sugestões.
     #[serde(default)]
     pub suggestions_position: Option<(i32, i32)>,
-    /// Tamanho (px físicos) da janela de resumo.
-    #[serde(default)]
-    pub summary_size: Option<(u32, u32)>,
     /// Tamanho (px físicos) da janela de sugestões.
     #[serde(default)]
     pub suggestions_size: Option<(u32, u32)>,
-    /// Posição da janela de chat.
+    /// Posição da janela de chat (painel da sessão).
     #[serde(default)]
     pub chat_position: Option<(i32, i32)>,
     /// Posição da janela de histórico.
     #[serde(default)]
     pub history_position: Option<(i32, i32)>,
-    /// Tamanho (px físicos) da janela de chat.
+    /// Tamanho (px físicos) da janela de chat (painel da sessão).
     #[serde(default)]
     pub chat_size: Option<(u32, u32)>,
     /// Tamanho (px físicos) da janela de histórico.
     #[serde(default)]
     pub history_size: Option<(u32, u32)>,
+    /// Aba ativa do painel da sessão: `transcription` | `summary` (BR-033).
+    #[serde(default = "default_panel_tab")]
+    pub panel_tab: String,
 }
 
 /// Rótulos das janelas de painel (ordem de boot e de persistência do layout).
-pub const PANEL_LABELS: [&str; 4] = ["summary", "suggestions", "chat", "history"];
+///
+/// O resumo **não** é mais uma janela: virou a aba `summary` do painel `chat`
+/// (BR-033).
+pub const PANEL_LABELS: [&str; 3] = ["suggestions", "chat", "history"];
+
+/// Abas válidas do painel da sessão (janela `chat`).
+pub const PANEL_TABS: [&str; 2] = ["transcription", "summary"];
 
 /// Intervalo mínimo aceito para atualizações automáticas (segundos).
 pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
@@ -231,15 +234,29 @@ impl Default for Settings {
             summary_interval_secs: default_summary_interval(),
             suggestion_auto_refresh: true,
             suggestion_interval_secs: default_suggestion_interval(),
-            summary_position: None,
             suggestions_position: None,
-            summary_size: None,
             suggestions_size: None,
             chat_position: None,
             history_position: None,
             chat_size: None,
             history_size: None,
+            panel_tab: default_panel_tab(),
         }
+    }
+}
+
+/// Aba padrão do painel da sessão (Transcrição).
+fn default_panel_tab() -> String {
+    "transcription".to_string()
+}
+
+/// Corrige uma aba desconhecida/vazia para a padrão.
+fn sanitize_panel_tab(value: &str) -> String {
+    let normalized = value.trim().to_lowercase();
+    if PANEL_TABS.contains(&normalized.as_str()) {
+        normalized
+    } else {
+        default_panel_tab()
     }
 }
 
@@ -394,17 +411,16 @@ impl Settings {
         self.suggestion_interval_secs = self
             .suggestion_interval_secs
             .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
-        self.summary_size = clamp_panel_size(self.summary_size);
         self.suggestions_size = clamp_panel_size(self.suggestions_size);
         self.chat_size = clamp_panel_size(self.chat_size);
         self.history_size = clamp_panel_size(self.history_size);
+        self.panel_tab = sanitize_panel_tab(&self.panel_tab);
         self
     }
 
     /// Posição persistida de um painel pelo rótulo (`None` se desconhecido).
     pub fn panel_position(&self, label: &str) -> Option<(i32, i32)> {
         match label {
-            "summary" => self.summary_position,
             "suggestions" => self.suggestions_position,
             "chat" => self.chat_position,
             "history" => self.history_position,
@@ -415,7 +431,6 @@ impl Settings {
     /// Atualiza a posição persistida de um painel pelo rótulo.
     pub fn set_panel_position(&mut self, label: &str, position: Option<(i32, i32)>) {
         match label {
-            "summary" => self.summary_position = position,
             "suggestions" => self.suggestions_position = position,
             "chat" => self.chat_position = position,
             "history" => self.history_position = position,
@@ -426,7 +441,6 @@ impl Settings {
     /// Tamanho persistido (px físicos) de um painel pelo rótulo.
     pub fn panel_size(&self, label: &str) -> Option<(u32, u32)> {
         match label {
-            "summary" => self.summary_size,
             "suggestions" => self.suggestions_size,
             "chat" => self.chat_size,
             "history" => self.history_size,
@@ -437,7 +451,6 @@ impl Settings {
     /// Atualiza o tamanho persistido (px físicos) de um painel pelo rótulo.
     pub fn set_panel_size(&mut self, label: &str, size: Option<(u32, u32)>) {
         match label {
-            "summary" => self.summary_size = size,
             "suggestions" => self.suggestions_size = size,
             "chat" => self.chat_size = size,
             "history" => self.history_size = size,
@@ -606,7 +619,6 @@ mod tests {
             .replace("\"summary_interval_secs\":30,", "")
             .replace("\"suggestion_auto_refresh\":true,", "")
             .replace("\"suggestion_interval_secs\":20,", "")
-            .replace("\"summary_position\":null,", "")
             .replace("\"suggestions_position\":null,", "");
         assert!(!legacy.contains("assistant_mode_id"));
         let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
@@ -642,21 +654,39 @@ mod tests {
     #[test]
     fn sanitized_clamps_panel_size_to_the_minimum() {
         let dirty = Settings {
-            summary_size: Some((100, 100)),
             suggestions_size: Some((900, 700)),
             chat_size: Some((10, 10)),
             history_size: Some((640, 480)),
             ..Settings::default()
         }
         .sanitized();
-        assert_eq!(
-            dirty.summary_size,
-            Some((MIN_PANEL_WIDTH, MIN_PANEL_HEIGHT))
-        );
         assert_eq!(dirty.suggestions_size, Some((900, 700)));
         assert_eq!(dirty.chat_size, Some((MIN_PANEL_WIDTH, MIN_PANEL_HEIGHT)));
         assert_eq!(dirty.history_size, Some((640, 480)));
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn panel_tab_defaults_to_transcription_and_sanitizes() {
+        assert_eq!(Settings::default().panel_tab, "transcription");
+        assert_eq!(
+            Settings {
+                panel_tab: " SUMMARY ".into(),
+                ..Settings::default()
+            }
+            .sanitized()
+            .panel_tab,
+            "summary"
+        );
+        assert_eq!(
+            Settings {
+                panel_tab: "desconhecida".into(),
+                ..Settings::default()
+            }
+            .sanitized()
+            .panel_tab,
+            "transcription"
+        );
     }
 
     #[test]
@@ -767,21 +797,22 @@ mod tests {
     fn legacy_settings_get_panel_size_defaults() {
         let json = serde_json::to_string(&Settings::default()).expect("json");
         let legacy = json
-            .replace("\"summary_size\":null,", "")
             .replace("\"suggestions_size\":null,", "")
             .replace("\"chat_size\":null,", "")
             .replace("\"history_size\":null,", "")
             .replace("\"chat_position\":null,", "")
-            .replace("\"history_position\":null,", "");
-        assert!(!legacy.contains("summary_size"));
+            .replace("\"history_position\":null,", "")
+            .replace(",\"panel_tab\":\"transcription\"", "");
         assert!(!legacy.contains("chat_size"));
+        assert!(!legacy.contains("panel_tab"));
         let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
-        assert_eq!(parsed.summary_size, None);
         assert_eq!(parsed.suggestions_size, None);
         assert_eq!(parsed.chat_size, None);
         assert_eq!(parsed.history_size, None);
         assert_eq!(parsed.chat_position, None);
         assert_eq!(parsed.history_position, None);
+        // Componente antigo: a aba cai na padrão.
+        assert_eq!(parsed.panel_tab, "transcription");
         assert!(parsed.validate().is_ok());
     }
 

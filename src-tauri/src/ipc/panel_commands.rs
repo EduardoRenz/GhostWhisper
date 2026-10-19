@@ -12,6 +12,8 @@ use crate::error::{GhostWhisperError, Result};
 pub const PANEL_OPENED_EVENT: &str = "panel_opened";
 /// Evento emitido quando um painel é escondido.
 pub const PANEL_HIDDEN_EVENT: &str = "panel_hidden";
+/// Evento que pede a troca da **aba** do painel da sessão (janela `chat`).
+pub const PANEL_TAB_EVENT: &str = "panel_tab";
 
 /// Valida e devolve o label do painel.
 fn resolve_label(label: &str) -> Result<String> {
@@ -26,8 +28,11 @@ fn resolve_label(label: &str) -> Result<String> {
 }
 
 /// Abre (ou foca) uma janela de painel e avisa a UI.
+///
+/// `tab` (opcional, só para o painel `chat`) já deixa a aba escolhida ativa,
+/// emitindo o mesmo evento `panel_tab` que o tray usa (task 08).
 #[tauri::command]
-pub fn panel_open(app: tauri::AppHandle, label: String) -> Result<()> {
+pub fn panel_open(app: tauri::AppHandle, label: String, tab: Option<String>) -> Result<()> {
     let label = resolve_label(&label)?;
     let window = app
         .get_webview_window(&label)
@@ -41,6 +46,15 @@ pub fn panel_open(app: tauri::AppHandle, label: String) -> Result<()> {
         .map_err(|error| GhostWhisperError::Other(error.to_string()))?;
     let payload = label.clone();
     let _ = app.emit_to(label.as_str(), PANEL_OPENED_EVENT, payload);
+    if let Some(tab) = tab {
+        let normalized = tab.trim().to_lowercase();
+        if label == "chat" && !crate::domain::settings::PANEL_TABS.contains(&normalized.as_str()) {
+            return Err(GhostWhisperError::Config(format!(
+                "aba desconhecida: {tab}"
+            )));
+        }
+        let _ = app.emit_to(label.as_str(), PANEL_TAB_EVENT, normalized);
+    }
     Ok(())
 }
 

@@ -43,6 +43,9 @@ pub trait SessionController: Send + Sync {
     fn set_channels(&self, channels: &[AudioChannel]) -> Result<()>;
     /// Continua uma sessão existente (reativa se encerrada) e captura nela.
     fn continue_session(&self, id: &str, channels: &[AudioChannel]) -> Result<String>;
+    /// Troca o **idioma de origem** da transcrição na sessão em andamento
+    /// (BR-034): aplica ao próximo passe, sem reiniciar nem recarregar o modelo.
+    fn set_language(&self, language: &str) -> Result<()>;
     /// Id da sessão ativa (inclui a pausada), se houver.
     fn current_session_id(&self) -> Option<String>;
 }

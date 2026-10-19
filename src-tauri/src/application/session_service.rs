@@ -506,6 +506,13 @@ impl SessionController for SessionService {
         Ok(id.to_string())
     }
 
+    fn set_language(&self, language: &str) -> Result<()> {
+        // O idioma é parâmetro de cada passe: aplica ao motor em cache, sem
+        // recarregar o modelo. Sem sessão ativa, é no-op (a escolha persiste nas
+        // settings e vale na próxima sessão — BR-034).
+        self.engines.update_language(language)
+    }
+
     fn current_session_id(&self) -> Option<String> {
         self.active
             .lock()

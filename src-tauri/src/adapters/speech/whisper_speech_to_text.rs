@@ -221,7 +221,10 @@ pub struct WhisperSpeechToText {
     models: Arc<dyn ModelStore>,
     model_name: String,
     /// Idioma fixado (`auto` = detecção pelo whisper).
-    language: String,
+    ///
+    /// Fica atrás de um `Mutex` para poder trocar **sem recarregar o modelo**: o
+    /// idioma é só um parâmetro de cada passe (BR-034, mesmo padrão do `prompt`).
+    language: Mutex<String>,
     /// Prompt de decodificação (`initial_prompt`), vazio para desligar.
     ///
     /// Fica atrás de um `Mutex` para poder trocar **sem recarregar o modelo**: o
@@ -249,7 +252,7 @@ impl WhisperSpeechToText {
         Self {
             models,
             model_name: model_name.into(),
-            language: language.into(),
+            language: Mutex::new(language.into()),
             prompt: Mutex::new(prompt.into()),
             use_gpu,
             threads: asr_threads(),
@@ -265,12 +268,27 @@ impl WhisperSpeechToText {
         }
     }
 
+    /// Troca o idioma dos próximos passes (sem recarregar o modelo — BR-034).
+    pub fn update_language(&self, language: impl Into<String>) {
+        if let Ok(mut slot) = self.language.lock() {
+            *slot = language.into();
+        }
+    }
+
     /// Prompt de decodificação atual.
     fn prompt_snapshot(&self) -> String {
         self.prompt
             .lock()
             .map(|guard| guard.clone())
             .unwrap_or_default()
+    }
+
+    /// Idioma atual (código aceito pelo whisper).
+    fn language_snapshot(&self) -> String {
+        self.language
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|_| "auto".to_string())
     }
 
     /// Prompt atual (usado em testes).
@@ -348,8 +366,8 @@ impl WhisperSpeechToText {
 
     /// Idioma configurado para a transcrição (usado em testes).
     #[cfg(test)]
-    pub fn language(&self) -> &str {
-        &self.language
+    pub fn language(&self) -> String {
+        self.language_snapshot()
     }
 }
 
@@ -494,7 +512,7 @@ fn run_worker(
                 &mut loaded,
                 &audio,
                 quality,
-                &this.language,
+                &this.language_snapshot(),
                 &this.prompt_snapshot(),
                 this.threads,
                 vad_model_path.as_deref(),

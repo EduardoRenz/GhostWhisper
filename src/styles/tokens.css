@@ -1,0 +1,258 @@
+/*
+ * Design system "Obsidian HUD" — tokens canônicos (BR-035).
+ *
+ * Fonte única dos valores: cores, tipografia, raio, espaçamento, vidro, sombra e
+ * glow. Componentes consomem `var(--oh-*)`; não repetir hex/tamanho no resto do
+ * CSS (ver prds/notch/architecture/design-tokens.md).
+ *
+ * Fontes empacotadas localmente (sem CDN): Geist e JetBrains Mono, SIL OFL 1.1
+ * (licenças em src/assets/fonts/*-OFL.txt). Os arquivos são as instâncias
+ * variáveis dos subsets latin/latin-ext servidas pelo Google Fonts.
+ */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/geist-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/geist-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("../assets/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("../assets/fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* --- Superfícies (tokens estruturados) ------------------------------- */
+  --oh-surface: #0f131c;
+  --oh-surface-dim: #0f131c;
+  --oh-surface-bright: #353942;
+  --oh-surface-container-lowest: #0a0e16;
+  --oh-surface-container-low: #181c24;
+  --oh-surface-container: #1c2028;
+  --oh-surface-container-high: #262a33;
+  --oh-surface-container-highest: #31353e;
+  --oh-surface-variant: #31353e;
+  --oh-background: #0f131c;
+  --oh-on-background: #dfe2ee;
+
+  /* --- Texto e contorno ------------------------------------------------- */
+  --oh-on-surface: #dfe2ee;
+  --oh-on-surface-variant: #b9cacb;
+  --oh-text: var(--oh-on-surface);
+  --oh-text-strong: #f8fafc;
+  --oh-text-muted: #94a3b8;
+  --oh-outline: #849495;
+  --oh-outline-variant: #3a494b;
+  --oh-border: rgba(255, 255, 255, 0.1);
+  --oh-border-strong: rgba(255, 255, 255, 0.14);
+  --oh-divider: rgba(255, 255, 255, 0.06);
+
+  /* --- Acentos ---------------------------------------------------------- */
+  --oh-primary: #e0fdff;
+  --oh-on-primary: #00373a;
+  --oh-primary-container: #00f2fe;
+  --oh-on-primary-container: #006a70;
+  --oh-secondary: #d0bcff;
+  --oh-on-secondary: #3c0091;
+  --oh-secondary-container: #571bc1;
+  --oh-on-secondary-container: #c4abff;
+  --oh-tertiary: #e1ffec;
+  --oh-on-tertiary: #003824;
+  --oh-tertiary-container: #67f4b7;
+  --oh-on-tertiary-container: #006e4b;
+  --oh-error: #ffb4ab;
+  --oh-on-error: #690005;
+  --oh-error-container: #93000a;
+  --oh-on-error-container: #ffdad6;
+
+  /* Alias semânticos (papéis fixos — BR-035) */
+  --oh-accent: var(--oh-primary-container);
+  --oh-ai: #8b5cf6;
+  --oh-success: #10b981;
+  --oh-danger: #f43f5e;
+
+  /* --- Elevação, vidro e foco ------------------------------------------ */
+  --oh-glass-bar: rgba(11, 15, 23, 0.78);
+  --oh-glass-card: rgba(19, 27, 46, 0.85);
+  --oh-read-surface: rgba(15, 19, 28, 0.94);
+  --oh-blur-bar: 28px;
+  --oh-blur-card: 36px;
+  --oh-shadow-rest: 0 12px 40px -10px rgba(0, 0, 0, 0.7);
+  --oh-shadow-float: 0 16px 48px -8px rgba(0, 0, 0, 0.75);
+  --oh-glow-focus: 0 0 24px -4px rgba(0, 242, 254, 0.25),
+    0 8px 32px -8px rgba(0, 0, 0, 0.6);
+  --oh-focus-ring: 0 0 0 1px rgba(0, 242, 254, 0.35);
+  --oh-edge-gradient: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.03)
+  );
+
+  /* --- Tipografia ------------------------------------------------------- */
+  --oh-font-sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --oh-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+  --oh-headline-xl-size: 24px;
+  --oh-headline-xl-line: 32px;
+  --oh-headline-lg-size: 18px;
+  --oh-headline-lg-line: 26px;
+  --oh-headline-md-size: 15px;
+  --oh-headline-md-line: 22px;
+  --oh-body-lg-size: 14px;
+  --oh-body-lg-line: 20px;
+  --oh-body-md-size: 13px;
+  --oh-body-md-line: 18px;
+  --oh-body-sm-size: 12px;
+  --oh-body-sm-line: 16px;
+  --oh-label-md-size: 12px;
+  --oh-label-md-line: 16px;
+  --oh-label-sm-size: 11px;
+  --oh-label-sm-line: 14px;
+  --oh-code-sm-size: 11px;
+  --oh-code-sm-line: 14px;
+  --oh-status-size: 10px;
+  --oh-status-line: 12px;
+
+  /* --- Raio e espaçamento ---------------------------------------------- */
+  --oh-radius-sm: 0.5rem;
+  --oh-radius: 1rem;
+  --oh-radius-md: 1.5rem;
+  --oh-radius-lg: 2rem;
+  --oh-radius-xl: 3rem;
+  --oh-radius-full: 9999px;
+  --oh-gutter: 0.75rem;
+  --oh-margin: 1rem;
+  --oh-space-xs: 0.25rem;
+  --oh-space-sm: 0.375rem;
+  --oh-space-md: 0.625rem;
+  --oh-space-lg: 1rem;
+  --oh-space-xl: 1.5rem;
+
+  font-family: var(--oh-font-sans);
+}
+
+/* --- Utilitários tipográficos ----------------------------------------- */
+
+.oh-headline-xl {
+  font-family: var(--oh-font-sans);
+  font-size: var(--oh-headline-xl-size);
+  line-height: var(--oh-headline-xl-line);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.oh-headline-lg {
+  font-family: var(--oh-font-sans);
+  font-size: var(--oh-headline-lg-size);
+  line-height: var(--oh-headline-lg-line);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.oh-headline-md {
+  font-family: var(--oh-font-sans);
+  font-size: var(--oh-headline-md-size);
+  line-height: var(--oh-headline-md-line);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.oh-body-lg {
+  font-size: var(--oh-body-lg-size);
+  line-height: var(--oh-body-lg-line);
+  letter-spacing: -0.005em;
+}
+
+.oh-body-md {
+  font-size: var(--oh-body-md-size);
+  line-height: var(--oh-body-md-line);
+}
+
+.oh-body-sm {
+  font-size: var(--oh-body-sm-size);
+  line-height: var(--oh-body-sm-line);
+}
+
+.oh-label-md {
+  font-size: var(--oh-label-md-size);
+  line-height: var(--oh-label-md-line);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.oh-label-sm {
+  font-size: var(--oh-label-sm-size);
+  line-height: var(--oh-label-sm-line);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.oh-code-sm {
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-code-sm-size);
+  line-height: var(--oh-code-sm-line);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.oh-status-badge {
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  line-height: var(--oh-status-line);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.oh-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Compatibilidade: aliases antigos ---------------------------------- */
+/*
+ * O CSS legado ainda usa `--ghostwhisper-*`; apontar para os tokens evita
+ * reescrever tudo de uma vez. Componentes novos usam `--oh-*` diretamente.
+ */
+:root {
+  --ghostwhisper-bg-transparent: var(--oh-glass-bar);
+  --ghostwhisper-text: var(--oh-text);
+  --ghostwhisper-text-muted: var(--oh-text-muted);
+  --ghostwhisper-accent: var(--oh-accent);
+  --ghostwhisper-primary: var(--oh-success);
+}

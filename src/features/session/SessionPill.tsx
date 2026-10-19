@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { StopIcon } from "../../components/TransportIcons";
-import { formatClock } from "../../core/domain/transcript";
+import { formatClockLong } from "../../core/domain/transcript";
 
 interface SessionPillProps {
   /** Início da sessão (relógio de parede, ms); `null` = sem sessão. */
@@ -77,11 +76,13 @@ export function SessionPill({
       className="session-pill"
       data-interactive
       title="Tempo de sessão — clique para encerrar"
-      aria-label={`Sessão em andamento há ${formatClock(now - startedAtMs)}; clique para encerrar`}
+      aria-label={`Sessão em andamento há ${formatClockLong(now - startedAtMs)}; clique para encerrar`}
       onClick={onRequestStop}
     >
-      <StopIcon className="session-pill__icon" />
-      <span className="session-pill__timer">{formatClock(now - startedAtMs)}</span>
+      <span className="session-pill__dot" aria-hidden="true" />
+      <span className="session-pill__timer">
+        {formatClockLong(now - startedAtMs)}
+      </span>
     </button>
   );
 }

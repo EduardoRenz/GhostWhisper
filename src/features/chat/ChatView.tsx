@@ -18,7 +18,7 @@ interface ChatViewProps {
   bubbles: ChatBubble[];
   /** Falas ainda em revisão: exibidas **depois** da linha temporal. */
   pending?: TranscriptSegment[];
-  /** Cabeçalho do chat (ex.: botão "Sugerir"). */
+  /** Cabeçalho do chat (ex.: atalho "Sugestões"). */
   header?: ReactNode;
   emptyLabel?: string;
   /** Tradução sob demanda nas bolhas de fala (botão no canto). */

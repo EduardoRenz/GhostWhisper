@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
-import type { SessionChannel } from "../../core/domain/transcript";
-import { SessionControls } from "../session/SessionControls";
+import { ALL_CHANNELS, type SessionChannel } from "../../core/domain/transcript";
+import { IconButton } from "../../components/IconButton";
+import {
+  ChevronDownIcon,
+  EyeIcon,
+  EyeOffIcon,
+  GearIcon,
+  GripIcon,
+  HistoryIcon,
+  SparkleIcon,
+} from "../../components/icons";
+import { ShortcutBadges } from "../../components/ShortcutBadges";
+import { PlayIcon } from "../../components/TransportIcons";
 import { SessionPill } from "../session/SessionPill";
+import { ChannelMenu } from "./ChannelMenu";
+import { NotchTabs } from "./NotchTabs";
 
 interface ActionBarProps {
-  stealth: boolean;
-  onToggleStealth: () => void;
   listening: boolean;
   paused: boolean;
   channels: SessionChannel[];
-  /** Início da sessão (ms) — tempo exibido na pílula de sessão. */
+  /** Início da sessão (ms) — tempo exibido no timer. */
   startedAtMs: number | null;
   busy: boolean;
   onStart: (channels: SessionChannel[]) => void;
@@ -17,11 +28,19 @@ interface ActionBarProps {
   onResume: () => void;
   onStop: () => void;
   onChannelsChange: (channels: SessionChannel[]) => void;
-  onOpenSettings: () => void;
   onStartDrag: () => void;
-  /** A janela de Chat está visível. */
-  chatOpen: boolean;
-  onToggleChat: () => void;
+  /** Atalho de iniciar/encerrar sessão (badges do botão verde). */
+  startAccelerator: string;
+  stealth: boolean;
+  onToggleStealth: () => void;
+  onOpenSettings: () => void;
+  /** Abre/foca o painel na aba Transcrição. */
+  onOpenTranscription: () => void;
+  /** Abre/foca o painel na aba Resumo. */
+  onOpenSummary: () => void;
+  /** A janela de Sugestões está visível. */
+  suggestionsOpen: boolean;
+  onToggleSuggestions: () => void;
   /** A janela de Histórico está visível. */
   historyOpen: boolean;
   onToggleHistory: () => void;
@@ -30,14 +49,15 @@ interface ActionBarProps {
 }
 
 /**
- * Barra de ações do overlay (sempre visível).
+ * Barra de ações do overlay em **dois estados** (BR-032/task 08).
  *
- * A conversa e o histórico vivem em **janelas próprias** (task 07/08): aqui só
- * ficam os controles da sessão e os toggles que escondem/mostram cada janela.
+ * - **Repouso** (sem sessão): marca, **"Começar a ouvir"** (esmeralda + badges),
+ *   Histórico, ocultar e — **por último** — Configurações.
+ * - **Ativo** (com sessão): marca, **switcher** (Transcrição + waveform ·
+ *   play/pause · Histórico · Resumo), **timer**, canais, Sugestões, stealth,
+ *   ocultar e Configurações (último).
  */
 export function ActionBar({
-  stealth,
-  onToggleStealth,
   listening,
   paused,
   channels,
@@ -48,16 +68,19 @@ export function ActionBar({
   onResume,
   onStop,
   onChannelsChange,
-  onOpenSettings,
   onStartDrag,
-  chatOpen,
-  onToggleChat,
+  startAccelerator,
+  stealth,
+  onToggleStealth,
+  onOpenSettings,
+  onOpenTranscription,
+  onOpenSummary,
+  suggestionsOpen,
+  onToggleSuggestions,
   historyOpen,
   onToggleHistory,
   onHide,
 }: ActionBarProps) {
-  const status = !listening ? "Parado" : paused ? "Pausado" : "Gravando";
-  const tone = !listening ? "idle" : paused ? "paused" : "live";
   const [confirming, setConfirming] = useState(false);
 
   // Sessão encerrada (por qualquer caminho): a confirmação não fica pendurada.
@@ -68,7 +91,11 @@ export function ActionBar({
   }, [listening]);
 
   return (
-    <div className="overlay__bar" data-interactive>
+    <div
+      className="overlay__bar"
+      data-state={listening ? "active" : "idle"}
+      data-interactive
+    >
       <span
         className="overlay__drag"
         data-interactive
@@ -76,87 +103,111 @@ export function ActionBar({
         aria-label="Mover overlay"
         onPointerDown={onStartDrag}
       >
-        ⋮⋮
-      </span>
-      <span className="overlay__brand">GhostWhisper</span>
-      <span
-        className={`overlay__status overlay__status--${tone}`}
-        data-interactive
-      >
-        <span className={`overlay__dot overlay__dot--${tone}`} aria-hidden="true" />
-        {status}
+        <GripIcon size={16} />
       </span>
 
-      <SessionControls
-        listening={listening}
-        paused={paused}
-        channels={channels}
-        busy={busy}
-        onStart={onStart}
-        onPause={onPause}
-        onResume={onResume}
-        onChannelsChange={onChannelsChange}
-      />
+      <span className="overlay__brand-core">
+        <span
+          className={`overlay__brand-dot${
+            listening && !paused ? " overlay__brand-dot--live" : ""
+          }`}
+          aria-hidden="true"
+        />
+        <span className="overlay__brand">GhostWhisper</span>
+      </span>
 
-      <SessionPill
-        startedAtMs={listening ? startedAtMs : null}
-        confirming={confirming}
-        busy={busy}
-        onRequestStop={() => setConfirming(true)}
-        onCancelStop={() => setConfirming(false)}
-        onStop={() => {
-          setConfirming(false);
-          onStop();
-        }}
-      />
+      {!listening ? (
+        <button
+          type="button"
+          className="overlay__start"
+          data-interactive
+          disabled={busy}
+          title="Começa a captura com microfone e áudio do sistema"
+          onClick={() => onStart(ALL_CHANNELS)}
+        >
+          <PlayIcon className="overlay__start-icon" />
+          <span className="overlay__start-label">Começar a ouvir</span>
+          <ShortcutBadges accelerator={startAccelerator} />
+        </button>
+      ) : (
+        <>
+          <NotchTabs
+            listening={listening}
+            paused={paused}
+            busy={busy}
+            historyOpen={historyOpen}
+            onOpenTranscription={onOpenTranscription}
+            onOpenSummary={onOpenSummary}
+            onToggleHistory={onToggleHistory}
+            onPause={onPause}
+            onResume={onResume}
+          />
 
-      <button
-        type="button"
-        className={`overlay__button${chatOpen ? " overlay__button--on" : ""}`}
-        data-interactive
-        title="Mostra ou esconde a janela da conversa"
-        onClick={onToggleChat}
-      >
-        Chat
-      </button>
+          <SessionPill
+            startedAtMs={listening ? startedAtMs : null}
+            confirming={confirming}
+            busy={busy}
+            onRequestStop={() => setConfirming(true)}
+            onCancelStop={() => setConfirming(false)}
+            onStop={() => {
+              setConfirming(false);
+              onStop();
+            }}
+          />
 
-      <button
-        type="button"
-        className={`overlay__button${historyOpen ? " overlay__button--on" : ""}`}
-        data-interactive
-        title="Mostra ou esconde o histórico de sessões"
-        onClick={onToggleHistory}
-      >
-        Histórico
-      </button>
+          <ChannelMenu
+            channels={channels}
+            busy={busy}
+            onChannelsChange={onChannelsChange}
+            onNewSession={onStart}
+          />
 
-      <button
-        type="button"
-        className="overlay__button"
-        data-interactive
-        title="Modo stealth: sai da barra de tarefas e do título. Não esconde o overlay do compartilhamento de tela (limite do Linux)."
-        onClick={onToggleStealth}
-      >
-        {stealth ? "Stealth: on" : "Stealth: off"}
-      </button>
+          <IconButton
+            label="Sugestões"
+            title="Mostra ou esconde a janela de sugestões da IA"
+            active={suggestionsOpen}
+            pressed={suggestionsOpen}
+            onClick={onToggleSuggestions}
+          >
+            <SparkleIcon />
+          </IconButton>
 
-      <button
-        type="button"
-        className="overlay__button"
-        data-interactive
-        onClick={onOpenSettings}
-      >
-        Ajustes
-      </button>
+          <IconButton
+            label={stealth ? "Stealth ligado" : "Stealth desligado"}
+            pressed={stealth}
+            active={stealth}
+            title="Modo stealth: sai da barra de tarefas. Não esconde o overlay do compartilhamento de tela (limite do Linux)."
+            onClick={onToggleStealth}
+          >
+            {stealth ? <EyeIcon /> : <EyeOffIcon />}
+          </IconButton>
+        </>
+      )}
 
-      <button
-        type="button"
-        className="overlay__button"
-        data-interactive
-        onClick={onHide}
-      >
-        Ocultar
-      </button>
+      <div className="overlay__group overlay__group--end" data-interactive>
+        {/* No repouso o Histórico fica aqui; no estado ativo ele vive no switcher. */}
+        {!listening && (
+          <IconButton
+            label="Histórico"
+            title="Mostra ou esconde o histórico de sessões"
+            active={historyOpen}
+            pressed={historyOpen}
+            onClick={onToggleHistory}
+          >
+            <HistoryIcon />
+          </IconButton>
+        )}
+        <IconButton
+          label="Ocultar overlay"
+          title="Esconde o overlay (atalho: mostrar/ocultar)"
+          onClick={onHide}
+        >
+          <ChevronDownIcon />
+        </IconButton>
+        <IconButton label="Configurações" onClick={onOpenSettings}>
+          <GearIcon />
+        </IconButton>
+      </div>
     </div>
   );
 }

@@ -16,9 +16,6 @@ describe("resolveRoute", () => {
     windowLabel.current = "settings";
     expect(resolveRoute()).toBe("settings");
 
-    windowLabel.current = "summary";
-    expect(resolveRoute()).toBe("summary");
-
     windowLabel.current = "suggestions";
     expect(resolveRoute()).toBe("suggestions");
 

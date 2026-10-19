@@ -239,3 +239,12 @@ Extração: `examples/Perssua-0.27.5-x86_64.AppImage` →
 
 Reproduzir a extração: `Perssua-*.AppImage --appimage-extract` e ler
 `resources/app.asar` (header ASAR: 12 bytes + tamanho do JSON).
+
+## 9. Evolução (2026-10-18) — PRD [`notch`](../../notch/architecture/notch-ui.md)
+
+- A janela **`summary` foi aposentada**: o resumo virou a **aba Resumo** do painel
+  (janela `chat`, agora com as abas **Transcrição | Resumo** — BR-033).
+- O **automático** do resumo passa a rodar só com a **aba Resumo ativa** (revisa a
+  BR-026, que exigia apenas a janela aberta); “Atualizar agora” vale em qualquer aba.
+- A janela `suggestions` **continua** existindo e independente; o congelamento por
+  versão do resumo e os contratos de prompt (§5/§6) **não** mudam.

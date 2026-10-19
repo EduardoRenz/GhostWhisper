@@ -27,7 +27,7 @@ describe("PanelFrame", () => {
 
   it("renderiza o painel e as 8 alças de resize", () => {
     const { container } = render(
-      <PanelFrame label="summary" title="Resumo">
+      <PanelFrame label="chat" title="Resumo">
         conteúdo
       </PanelFrame>,
     );
@@ -39,7 +39,7 @@ describe("PanelFrame", () => {
 
   it("inicia o resize na direção da alça pressionada", () => {
     const { container } = render(
-      <PanelFrame label="summary" title="Resumo">
+      <PanelFrame label="chat" title="Resumo">
         x
       </PanelFrame>,
     );

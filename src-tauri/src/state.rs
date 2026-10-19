@@ -266,6 +266,9 @@ mod tests {
         fn continue_session(&self, id: &str, _channels: &[AudioChannel]) -> Result<String> {
             Ok(id.to_string())
         }
+        fn set_language(&self, _language: &str) -> Result<()> {
+            Ok(())
+        }
         fn current_session_id(&self) -> Option<String> {
             Some("s1".into())
         }

@@ -20,14 +20,13 @@ use crate::ports::speech_to_text::SpeechToText;
 use super::serialising_speech_to_text::SerialisingSpeechToText;
 use super::whisper_speech_to_text::WhisperSpeechToText;
 
-/// Motor em cache, válido enquanto (modelo, idioma) não mudarem.
+/// Motor em cache, válido enquanto (modelo, backend) não mudarem.
 ///
-/// O **prompt** não invalida o cache: ele é um parâmetro de cada passe, então
-/// mudar o prompt só chama [`WhisperSpeechToText::update_prompt`] (sem recarregar
-/// o modelo).
+/// O **prompt** e o **idioma** não invalidam o cache: são parâmetros de cada
+/// passe, então mudá-los só chama `update_prompt`/`update_language` (sem
+/// recarregar o modelo — BR-034).
 struct CachedEngine {
     model: String,
-    language: String,
     use_gpu: bool,
     whisper: Arc<WhisperSpeechToText>,
     asr: Arc<dyn SpeechToText>,
@@ -67,6 +66,15 @@ impl WhisperSpeechEngineFactory {
     pub fn with_force_cpu(mut self, force_cpu: bool) -> Self {
         self.force_cpu = force_cpu;
         self
+    }
+
+    /// Idioma do motor em cache (usado em testes).
+    #[cfg(test)]
+    fn cached_language(&self) -> Option<String> {
+        self.cached
+            .lock()
+            .ok()
+            .and_then(|cache| cache.as_ref().map(|engine| engine.whisper.language()))
     }
 }
 
@@ -114,14 +122,12 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
             .lock()
             .map_err(|_| GhostWhisperError::Other("cache do ASR envenenado".into()))?;
 
-        // Mesmo modelo/idioma/backend ⇒ devolve o mesmo contexto (uma carga só). O
-        // prompt muda sem recarregar.
+        // Mesmo modelo/backend ⇒ devolve o mesmo contexto (uma carga só). O
+        // prompt e o idioma mudam sem recarregar (são parâmetros de cada passe).
         if let Some(engine) = cache.as_ref() {
-            if engine.model == params.model
-                && engine.language == params.language
-                && engine.use_gpu == params.use_gpu
-            {
-                engine.whisper.update_prompt(params.prompt);
+            if engine.model == params.model && engine.use_gpu == params.use_gpu {
+                engine.whisper.update_language(params.language.clone());
+                engine.whisper.update_prompt(params.prompt.clone());
                 return Ok(Arc::clone(&engine.asr));
             }
         }
@@ -130,7 +136,7 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
             Arc::clone(&self.models),
             params.model.clone(),
             params.language.clone(),
-            params.prompt,
+            params.prompt.clone(),
             params.use_gpu,
             self.publisher.clone(),
         ));
@@ -143,12 +149,29 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
         ));
         *cache = Some(CachedEngine {
             model: params.model,
-            language: params.language,
             use_gpu: params.use_gpu,
             whisper,
             asr: Arc::clone(&asr),
         });
         Ok(asr)
+    }
+
+    /// Aplica um novo idioma (e o prompt derivado) ao motor **em cache**, sem
+    /// recarregar o modelo (BR-034). Sem motor em cache (nenhuma sessão ativa),
+    /// é no-op — a próxima sessão já nasce com a configuração nova.
+    fn update_language(&self, language: &str) -> Result<()> {
+        let settings = self.settings.load().unwrap_or_default();
+        let whisper_language = map_whisper_language(language);
+        let prompt = decode_prompt(&settings.whisper_prompt, language);
+        let cache = self
+            .cached
+            .lock()
+            .map_err(|_| GhostWhisperError::Other("cache do ASR envenenado".into()))?;
+        if let Some(engine) = cache.as_ref() {
+            engine.whisper.update_language(whisper_language);
+            engine.whisper.update_prompt(prompt);
+        }
+        Ok(())
     }
 }
 
@@ -175,6 +198,28 @@ mod tests {
 
         // Um contexto só, compartilhado pelos canais (Perssua: um `whisper-server`).
         assert!(Arc::ptr_eq(&asr_a, &asr_b));
+    }
+
+    #[test]
+    fn update_language_switches_the_cached_engine_without_reloading() {
+        let factory = factory(Settings::default());
+        let asr_a = factory.create().expect("motor");
+        assert_eq!(factory.cached_language().as_deref(), Some("auto"));
+
+        // Trocar o idioma aplica ao motor vivo (BR-034)...
+        factory.update_language("pt").expect("aplica idioma");
+        assert_eq!(factory.cached_language().as_deref(), Some("pt"));
+
+        // ...e não recarrega o modelo (mesma instância).
+        let asr_b = factory.create().expect("motor");
+        assert!(Arc::ptr_eq(&asr_a, &asr_b));
+    }
+
+    #[test]
+    fn update_language_without_a_cached_engine_is_a_noop() {
+        let factory = factory(Settings::default());
+        factory.update_language("pt").expect("no-op");
+        assert_eq!(factory.cached_language(), None);
     }
 
     #[test]
@@ -245,5 +290,7 @@ mod tests {
         assert_eq!(asr.prompt(), "prompt base");
         asr.update_prompt("outro");
         assert_eq!(asr.prompt(), "outro");
+        asr.update_language("pt");
+        assert_eq!(asr.language(), "pt");
     }
 }

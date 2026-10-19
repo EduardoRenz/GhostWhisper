@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatClock,
+  formatClockLong,
   formatDateTime,
   mergeHistory,
   mergeSegment,
@@ -38,6 +39,13 @@ describe("formatClock", () => {
   it("inclui horas quando a sessão passa de uma hora", () => {
     expect(formatClock(3_600_000)).toBe("1:00:00");
     expect(formatClock(3_725_000)).toBe("1:02:05");
+  });
+
+  it("formatClockLong sempre usa HH:MM:SS (timer do notch)", () => {
+    expect(formatClockLong(0)).toBe("00:00:00");
+    expect(formatClockLong(65_000)).toBe("00:01:05");
+    expect(formatClockLong(3_725_000)).toBe("01:02:05");
+    expect(formatClockLong(-5)).toBe("00:00:00");
   });
 
   it("nunca mostra tempo negativo", () => {

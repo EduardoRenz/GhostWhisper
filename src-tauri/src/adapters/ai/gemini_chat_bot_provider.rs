@@ -12,6 +12,71 @@ use super::openai_compatible::{map_transport_error, DEFAULT_TIMEOUT_SECS};
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
+/// Quantas vezes reenviamos quando o Gemini responde sem conteúdo.
+const MAX_EMPTY_RETRIES: usize = 1;
+/// Pausa antes do reenvio (ms).
+const EMPTY_RETRY_BACKOFF_MS: u64 = 300;
+/// Teto do `maxOutputTokens` ao crescer para o reenvio.
+const MAX_GROWN_OUTPUT_TOKENS: u64 = 16_000;
+
+/// Texto, `finishReason` e eventual bloqueio do prompt na resposta do Gemini.
+fn extract_candidate(value: &Value) -> (String, Option<String>, Option<String>) {
+    let candidate = &value["candidates"][0];
+    let text = candidate["content"]["parts"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<String>()
+        })
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    (
+        text,
+        candidate["finishReason"].as_str().map(str::to_string),
+        value["promptFeedback"]["blockReason"]
+            .as_str()
+            .map(str::to_string),
+    )
+}
+
+/// Dobra o `maxOutputTokens` do corpo (para o reenvio por resposta vazia).
+fn grow_output_budget(body: &mut Value) -> bool {
+    let Some(current) = body["generationConfig"]["maxOutputTokens"].as_u64() else {
+        return false;
+    };
+    let grown = current.saturating_mul(2).min(MAX_GROWN_OUTPUT_TOKENS);
+    if grown <= current {
+        return false;
+    }
+    body["generationConfig"]["maxOutputTokens"] = json!(grown);
+    true
+}
+
+/// Mensagem de erro acionável para uma resposta vazia do Gemini.
+fn empty_response_message(finish_reason: Option<&str>, blocked: Option<&str>) -> String {
+    if let Some(reason) = blocked {
+        return format!("provider bloqueou o prompt ({reason})");
+    }
+    match finish_reason {
+        Some("MAX_TOKENS") => "provider esgotou o limite de tokens antes de escrever \
+            (finishReason=MAX_TOKENS) — aumente o limite de tokens"
+            .to_string(),
+        Some("SAFETY") | Some("RECITATION") | Some("PROHIBITED_CONTENT") => {
+            format!(
+                "provider bloqueou a resposta pelo filtro de conteúdo (finishReason={})",
+                finish_reason.unwrap_or_default()
+            )
+        }
+        Some(reason) if !reason.is_empty() => {
+            format!("provider retornou uma resposta vazia (finishReason={reason})")
+        }
+        _ => "provider retornou uma resposta vazia".to_string(),
+    }
+}
+
 /// Provider Google Gemini.
 pub struct GeminiChatBotProvider {
     config: ProviderConfig,
@@ -51,40 +116,95 @@ impl ChatBotProvider for GeminiChatBotProvider {
             body["generationConfig"] = generation_config;
         }
 
-        // A chave vai em cabeçalho (nunca na URL/query) para não vazar em logs.
-        let response = ureq::post(&url)
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-            .set("Content-Type", "application/json")
-            .set("x-goog-api-key", &self.config.api_key)
-            .send_json(body)
-            .map_err(map_transport_error)?;
+        let mut empty_retries = 0usize;
+        loop {
+            // A chave vai em cabeçalho (nunca na URL/query) para não vazar em logs.
+            let response = ureq::post(&url)
+                .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+                .set("Content-Type", "application/json")
+                .set("x-goog-api-key", &self.config.api_key)
+                .send_json(body.clone())
+                .map_err(map_transport_error)?;
 
-        let value: Value = response
-            .into_json()
-            .map_err(|e| GhostWhisperError::Other(format!("resposta inválida do provider: {e}")))?;
+            let value: Value = response.into_json().map_err(|e| {
+                GhostWhisperError::Other(format!("resposta inválida do provider: {e}"))
+            })?;
 
-        let text = value["candidates"]
-            .get(0)
-            .and_then(|candidate| candidate["content"]["parts"].as_array())
-            .map(|parts| {
-                parts
-                    .iter()
-                    .filter_map(|part| part["text"].as_str())
-                    .collect::<String>()
-            })
-            .unwrap_or_default()
-            .trim()
-            .to_string();
+            let (text, finish_reason, blocked) = extract_candidate(&value);
+            if text.is_empty() {
+                if empty_retries < MAX_EMPTY_RETRIES {
+                    empty_retries += 1;
+                    let grew = grow_output_budget(&mut body);
+                    tracing::debug!(
+                        finish_reason = ?finish_reason,
+                        grew_output_budget = grew,
+                        "Gemini respondeu sem texto; reenviando"
+                    );
+                    std::thread::sleep(Duration::from_millis(EMPTY_RETRY_BACKOFF_MS));
+                    continue;
+                }
+                return Err(GhostWhisperError::Other(empty_response_message(
+                    finish_reason.as_deref(),
+                    blocked.as_deref(),
+                )));
+            }
 
-        if text.is_empty() {
-            return Err(GhostWhisperError::Other(
-                "provider retornou uma resposta vazia".to_string(),
-            ));
+            return Ok(Completion {
+                text,
+                model: self.config.model.clone(),
+            });
         }
+    }
+}
 
-        Ok(Completion {
-            text,
-            model: self.config.model.clone(),
-        })
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_text_from_candidate_parts() {
+        let value = json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": "a" }, { "text": "b" }] },
+                "finishReason": "STOP"
+            }]
+        });
+        let (text, finish, blocked) = extract_candidate(&value);
+        assert_eq!(text, "ab");
+        assert_eq!(finish.as_deref(), Some("STOP"));
+        assert_eq!(blocked, None);
+    }
+
+    #[test]
+    fn extracts_prompt_block_reason() {
+        let value = json!({ "promptFeedback": { "blockReason": "SAFETY" } });
+        let (text, _, blocked) = extract_candidate(&value);
+        assert_eq!(text, "");
+        assert_eq!(blocked.as_deref(), Some("SAFETY"));
+    }
+
+    #[test]
+    fn grows_output_budget_up_to_the_cap() {
+        let mut body = json!({ "generationConfig": { "maxOutputTokens": 100 } });
+        assert!(grow_output_budget(&mut body));
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], json!(200));
+
+        body["generationConfig"]["maxOutputTokens"] = json!(9_000);
+        assert!(grow_output_budget(&mut body));
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], json!(16_000));
+
+        let mut none = json!({ "contents": [] });
+        assert!(!grow_output_budget(&mut none));
+    }
+
+    #[test]
+    fn empty_messages_are_actionable() {
+        assert!(empty_response_message(None, Some("SAFETY")).contains("bloqueou o prompt"));
+        assert!(empty_response_message(Some("MAX_TOKENS"), None).contains("limite de tokens"));
+        assert!(empty_response_message(Some("SAFETY"), None).contains("filtro de conteúdo"));
+        assert_eq!(
+            empty_response_message(None, None),
+            "provider retornou uma resposta vazia"
+        );
     }
 }

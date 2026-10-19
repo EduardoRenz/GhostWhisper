@@ -180,3 +180,9 @@ família de `summary`/`suggestions` (BR-026):
 - Evidência (R12): `unified-session-controls` no bundle tem exatamente
   `[play_arrow ↔ pause]` (o ícone alterna com o estado) + `[stop]`, e o "End
   session?" vive na pílula do actionbar (`.actionbar-session-pill`).
+
+> **Evolução (2026-10-18, PRD [`notch`](../../notch/prd.md) — BR-033):** a janela
+> `chat` virou o **painel da sessão** com abas **Transcrição | Resumo** (a conversa
+> é a aba Transcrição) e a janela `summary` foi **aposentada**. O transporte e o
+> comportamento das bolhas descritos aqui **não mudam**; a nota evita duplicação
+> (BR-016).

@@ -58,6 +58,7 @@ pub fn run() {
             ipc::session_commands::session_set_channels,
             ipc::session_commands::session_continue,
             ipc::session_commands::session_current,
+            ipc::session_commands::session_set_language,
             ipc::database_commands::db_list_sessions,
             ipc::database_commands::db_get_session,
             ipc::database_commands::db_session_transcriptions,
@@ -500,7 +501,8 @@ fn build_tray(app: &tauri::App) -> Result<()> {
         MenuItem::with_id(app, "summary", "Abrir resumo", true, None::<&str>).map_err(to_err)?;
     let suggestions = MenuItem::with_id(app, "suggestions", "Abrir sugestões", true, None::<&str>)
         .map_err(to_err)?;
-    let chat = MenuItem::with_id(app, "chat", "Abrir chat", true, None::<&str>).map_err(to_err)?;
+    let chat =
+        MenuItem::with_id(app, "chat", "Abrir transcrição", true, None::<&str>).map_err(to_err)?;
     let history =
         MenuItem::with_id(app, "history", "Abrir histórico", true, None::<&str>).map_err(to_err)?;
     let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>).map_err(to_err)?;
@@ -528,7 +530,10 @@ fn build_tray(app: &tauri::App) -> Result<()> {
             "toggle_overlay" => dispatch_shortcut(app, ShortcutAction::ToggleOverlay),
             "toggle_session" => dispatch_shortcut(app, ShortcutAction::ToggleSession),
             "settings" => open_settings(app),
-            "summary" => open_panel(app, "summary"),
+            "summary" => {
+                // O resumo virou aba do painel `chat` (BR-033).
+                open_panel_tab(app, "chat", "summary");
+            }
             "suggestions" => open_panel(app, "suggestions"),
             "chat" => open_panel(app, "chat"),
             "history" => open_panel(app, "history"),
@@ -561,8 +566,17 @@ fn open_settings(app: &tauri::AppHandle) {
 
 /// Abre (ou foca) uma janela de painel a partir do tray.
 fn open_panel(app: &tauri::AppHandle, label: &str) {
-    if let Err(error) = ipc::panel_commands::panel_open(app.clone(), label.to_string()) {
+    if let Err(error) = ipc::panel_commands::panel_open(app.clone(), label.to_string(), None) {
         tracing::warn!("falha ao abrir painel {label}: {error}");
+    }
+}
+
+/// Abre o painel já numa aba (ex.: tray "Abrir resumo").
+fn open_panel_tab(app: &tauri::AppHandle, label: &str, tab: &str) {
+    if let Err(error) =
+        ipc::panel_commands::panel_open(app.clone(), label.to_string(), Some(tab.to_string()))
+    {
+        tracing::warn!("falha ao abrir painel {label} na aba {tab}: {error}");
     }
 }
 

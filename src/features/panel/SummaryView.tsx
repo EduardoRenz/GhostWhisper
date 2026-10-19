@@ -1,14 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
 import { copyText } from "../../core/application/clipboard";
-import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useSummary } from "../../core/application/useSummary";
 import { summaryTopic } from "../../core/domain/assistant";
 import { formatClock } from "../../core/domain/transcript";
 import { MarkdownView } from "../../components/MarkdownView";
-import { PanelFrame } from "../panels/PanelFrame";
 
 /** Formata o relógio de parede de uma versão do resumo. */
 function formatUpdatedAt(ms: number): string {
@@ -19,9 +17,21 @@ function formatUpdatedAt(ms: number): string {
   }
 }
 
-/** Janela do resumo vivo da sessão, com histórico de versões em memória. */
-export function SummaryWindow() {
-  const opened = usePanelOpen("summary");
+interface SummaryViewProps {
+  /** A janela do painel está visível. */
+  opened: boolean;
+  /** A aba Resumo está ativa (o automático só roda com ela visível). */
+  active: boolean;
+}
+
+/**
+ * Aba **Resumo** do painel da sessão (BR-033): o resumo vivo da sessão com
+ * histórico de versões em memória — o que antes vivia na janela `summary`.
+ *
+ * O automático só chama o LLM com a **janela aberta e a aba ativa**
+ * (CA-05.2); "Atualizar agora" funciona em qualquer aba.
+ */
+export function SummaryView({ opened, active }: SummaryViewProps) {
   const { state } = useSessionState();
   const { settings } = useSettings();
   const [auto, setAuto] = useState(true);
@@ -45,7 +55,7 @@ export function SummaryWindow() {
     showLatest,
   } = useSummary({
     sessionId: state.session_id,
-    opened,
+    opened: opened && active,
     auto,
     intervalSecs: settings.summary_interval_secs,
     active: state.listening && !state.paused,
@@ -76,80 +86,60 @@ export function SummaryWindow() {
     }
   };
 
-  const status = !state.listening
-    ? "Sem sessão"
-    : state.paused
-      ? "Pausado"
-      : "Gravando";
-  const subtitle = displayed
-    ? `${summaryTopic(displayed)} · ${status}`
-    : state.session_id
-      ? `${state.session_id.slice(0, 8)} · ${status}`
-      : status;
-
-  const actions = (
-    <>
-      <button
-        type="button"
-        className="panel__button"
-        disabled={loading || !state.session_id}
-        onClick={() => void regenerate()}
-        title="Regera o resumo do zero"
-      >
-        {loading ? "Gerando…" : "Atualizar"}
-      </button>
-      <button
-        type="button"
-        className={`panel__toggle${auto ? " panel__toggle--on" : ""}`}
-        onClick={() => setAuto((previous) => !previous)}
-        title="Resumo automático enquanto a janela estiver aberta"
-      >
-        {auto ? `Auto ${settings.summary_interval_secs}s` : "Auto off"}
-      </button>
-      <button
-        type="button"
-        className="panel__button"
-        disabled={!displayed}
-        onClick={() => void onCopy()}
-      >
-        {copied ? "Copiado" : "Copiar"}
-      </button>
-    </>
-  );
-
-  const footer = viewing ? (
-    <>
-      <span className="panel__meta">
-        Vendo versão de {formatUpdatedAt(viewing.updated_at_ms)}
-      </span>
-      <button
-        type="button"
-        className="panel__button panel__button--small"
-        onClick={showLatest}
-      >
-        Voltar ao atual
-      </button>
-    </>
-  ) : (
-    summary && (
-      <span className="panel__meta">
-        Atualizado às {formatUpdatedAt(summary.updated_at_ms)}
-        {summary.summarized_from_ms > 0
-          ? " · resumo a partir do meio da sessão"
-          : ""}
-        {hasMore ? " · processando o restante…" : ""}
-      </span>
-    )
-  );
-
   return (
-    <PanelFrame
-      label="summary"
-      title="Resumo da sessão"
-      subtitle={subtitle}
-      actions={actions}
-      footer={footer}
-    >
+    <div className="summary-view" data-interactive>
+      <div className="summary-view__toolbar">
+        <button
+          type="button"
+          className="panel__button"
+          disabled={loading || !state.session_id}
+          onClick={() => void regenerate()}
+          title="Regera o resumo do zero"
+        >
+          {loading ? "Gerando…" : "Atualizar"}
+        </button>
+        <button
+          type="button"
+          className={`panel__toggle${auto ? " panel__toggle--on" : ""}`}
+          onClick={() => setAuto((previous) => !previous)}
+          title="Resumo automático enquanto a aba estiver visível"
+        >
+          {auto ? `Auto ${settings.summary_interval_secs}s` : "Auto off"}
+        </button>
+        <button
+          type="button"
+          className="panel__button"
+          disabled={!displayed}
+          onClick={() => void onCopy()}
+        >
+          {copied ? "Copiado" : "Copiar"}
+        </button>
+      </div>
+
+      {(loading || hasMore) && (
+        <div className="summary-view__status" role="status" aria-live="polite">
+          <span className="summary-view__spinner" aria-hidden="true" />
+          <span>
+            {loading
+              ? "Gerando resumo completo…"
+              : "Processando o restante do resumo…"}
+          </span>
+        </div>
+      )}
+
+      {viewing && (
+        <div className="summary-view__banner">
+          <span>Vendo versão de {formatUpdatedAt(viewing.updated_at_ms)}</span>
+          <button
+            type="button"
+            className="panel__button panel__button--small"
+            onClick={showLatest}
+          >
+            Voltar ao atual
+          </button>
+        </div>
+      )}
+
       <div
         className="panel__scroll"
         ref={scrollRef}
@@ -176,6 +166,11 @@ export function SummaryWindow() {
           </p>
         ) : displayed ? (
           <>
+            {displayed.subject && displayed.subject.trim() && (
+              <h2 className="summary-view__subject">
+                {displayed.subject.trim()}
+              </h2>
+            )}
             <MarkdownView markdown={displayed.markdown} />
             {history.length > 1 && (
               <details className="panel__history">
@@ -209,13 +204,25 @@ export function SummaryWindow() {
             )}
           </>
         ) : loading ? (
-          <p className="panel__empty">Gerando o resumo…</p>
+          <p className="panel__empty">
+            O texto completo está sendo gerado e aparece aqui assim que ficar
+            pronto.
+          </p>
         ) : (
           <p className="panel__empty">
             Ainda não há fala suficiente para resumir.
           </p>
         )}
       </div>
-    </PanelFrame>
+
+      {!viewing && summary && (
+        <div className="summary-view__meta">
+          Atualizado às {formatUpdatedAt(summary.updated_at_ms)}
+          {summary.summarized_from_ms > 0
+            ? " · resumo a partir do meio da sessão"
+            : ""}
+        </div>
+      )}
+    </div>
   );
 }

@@ -38,3 +38,50 @@ export const defaultBindings = (): ShortcutBinding[] => [
   { action: "toggle_stealth", accelerator: "CommandOrControl+Shift+H" },
   { action: "request_insight", accelerator: "CommandOrControl+Shift+I" },
 ];
+
+/** Rótulos de exibição dos modificadores (chaves em minúsculas). */
+const MODIFIER_LABELS: Record<string, string> = {
+  commandorcontrol: "Ctrl",
+  cmdorctrl: "Ctrl",
+  command: "Ctrl",
+  cmd: "Ctrl",
+  control: "Ctrl",
+  ctrl: "Ctrl",
+  shift: "Shift",
+  alt: "Alt",
+  option: "Alt",
+  altgr: "AltGr",
+  super: "Super",
+  meta: "Super",
+  win: "Super",
+};
+
+/**
+ * Quebra um *accelerator* do Tauri em tokens (puro).
+ *
+ * `"CommandOrControl+Shift+S"` → `["CommandOrControl", "Shift", "S"]`. Tokens
+ * vazios (ex.: `"Ctrl++A"`) são descartados.
+ */
+export function parseAccelerator(accelerator: string): string[] {
+  return accelerator
+    .split("+")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * Converte um *accelerator* nos *badges* exibidos ao lado da ação.
+ *
+ * Modificadores viram rótulos curtos (`CommandOrControl`→`Ctrl`); uma tecla de
+ * um caractere vira maiúscula (`s`→`S`); o resto é preservado (`F1`, `Enter`).
+ * Entrada vazia devolve `[]` (a UI não desenha nada).
+ */
+export function acceleratorBadges(accelerator: string): string[] {
+  return parseAccelerator(accelerator).map((token) => {
+    const modifier = MODIFIER_LABELS[token.toLowerCase()];
+    if (modifier) {
+      return modifier;
+    }
+    return token.length === 1 ? token.toUpperCase() : token;
+  });
+}

@@ -5,19 +5,20 @@ import {
   setSurface as setSurfaceIpc,
   startDrag as startDragIpc,
 } from "../../adapters/ipc/overlay";
-import { panelHide, panelOpen } from "../../adapters/ipc/panels";
+import { panelHide, panelOpen, panelOpenTab } from "../../adapters/ipc/panels";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
 import { useInteractiveRegions } from "../../core/application/useInteractiveRegions";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
+import { defaultBindings } from "../../core/domain/shortcuts";
 import { ActionBar } from "./ActionBar";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 
 /**
- * Casca do overlay: apenas a barra de ações (e o aviso de status do ASR). A
- * conversa e o histórico saíram para janelas próprias, abertas pelos toggles
- * **Chat** e **Histórico** (tasks 07/08, BR-026).
+ * Casca do overlay: apenas a barra de ações (e o aviso de status do ASR). O
+ * painel (Transcrição/Resumo), Sugestões e Histórico vivem em janelas próprias,
+ * abertas pelo switcher/ícones da barra (BR-032/BR-033).
  *
  * Apenas elementos `[data-interactive]` capturam o mouse; o restante é
  * click-through (input-shape por região no X11).
@@ -29,7 +30,7 @@ export function Overlay() {
     useSessionState();
   const asrStatus = useAsrStatus();
   const { settings } = useSettings();
-  const chatOpen = usePanelOpen("chat");
+  const suggestionsOpen = usePanelOpen("suggestions");
   const historyOpen = usePanelOpen("history");
   useInteractiveRegions();
 
@@ -37,6 +38,14 @@ export function Overlay() {
   useEffect(() => {
     setStealth(settings.stealth);
   }, [settings.stealth]);
+
+  // Atalho exibido ao lado de "Começar a ouvir" (badges). Deriva do binding
+  // persistido; cai no padrão quando as settings ainda não carregaram.
+  const startAccelerator =
+    settings.shortcuts.find((binding) => binding.action === "toggle_session")
+      ?.accelerator ??
+    defaultBindings().find((binding) => binding.action === "toggle_session")!
+      .accelerator;
 
   const toggleStealth = () => {
     const next = !stealth;
@@ -53,8 +62,16 @@ export function Overlay() {
     }
   };
 
-  const toggleChat = () => {
-    void (chatOpen ? panelHide("chat") : panelOpen("chat"));
+  const openTranscription = () => {
+    void panelOpenTab("chat", "transcription");
+  };
+
+  const openSummary = () => {
+    void panelOpenTab("chat", "summary");
+  };
+
+  const toggleSuggestions = () => {
+    void (suggestionsOpen ? panelHide("suggestions") : panelOpen("suggestions"));
   };
 
   const toggleHistory = () => {
@@ -70,8 +87,6 @@ export function Overlay() {
   return (
     <div className="overlay">
       <ActionBar
-        stealth={stealth}
-        onToggleStealth={toggleStealth}
         listening={state.listening}
         paused={state.paused}
         channels={state.channels}
@@ -82,10 +97,15 @@ export function Overlay() {
         onResume={() => void resume()}
         onStop={() => void stop()}
         onChannelsChange={(channels) => void setChannels(channels)}
-        onOpenSettings={() => void openSettings()}
         onStartDrag={() => void startDragIpc()}
-        chatOpen={chatOpen}
-        onToggleChat={toggleChat}
+        startAccelerator={startAccelerator}
+        stealth={stealth}
+        onToggleStealth={toggleStealth}
+        onOpenSettings={() => void openSettings()}
+        onOpenTranscription={openTranscription}
+        onOpenSummary={openSummary}
+        suggestionsOpen={suggestionsOpen}
+        onToggleSuggestions={toggleSuggestions}
         historyOpen={historyOpen}
         onToggleHistory={toggleHistory}
         onHide={hideOverlay}

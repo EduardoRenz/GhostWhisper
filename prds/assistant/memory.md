@@ -87,3 +87,42 @@ As duas devem gerar e renderizar Markdown, com código formatado e colorido.
   versões persistidas por sessão ficam para uma PRD/tarefa futura (T07).
 - `metadata` da tabela `messages` ainda não guarda o modo — no histórico a
   sugestão fixada aparece com o rótulo genérico.
+
+---
+
+## 2026-10-19 — Resposta vazia do provider: reenvio e diagnóstico
+
+- **IDs:** BR-023, BR-028 · **Refs:** `src-tauri/src/adapters/ai/openai_compatible.rs`,
+  `src-tauri/src/adapters/ai/gemini_chat_bot_provider.rs`,
+  `src-tauri/src/application/summary_service.rs`
+
+### Contexto
+Relato: às vezes o **resumo** falha com "provider retornou uma resposta vazia".
+A resposta HTTP era 200, mas o texto extraído ficava vazio — então o resumo abortava.
+
+### Diagnóstico (causas prováveis)
+- **Transiente** do provider/proxy (200 com `choices` vazio ou `content` vazio).
+- **Modelo de raciocínio** gastou todo o `max_tokens`/`max_completion_tokens`
+  antes de escrever (`finish_reason: "length"`) → `content` vazio.
+- **Formato de conteúdo** diferente: `content` como **array de partes** (endpoints
+  multimodais/proxies) ou resposta no formato legado `choices[0].text`.
+- **Bloqueio** (`content_filter`, Gemini `SAFETY`/`RECITATION` ou `blockReason`).
+
+### Correção
+- `openai_compatible::extract_text` aceita `content` string, **array de partes** e
+  `choices[0].text`; `parse_completion` captura `finish_reason` e `refusal`.
+- **Reenvio único** quando o texto vem vazio, com o orçamento de tokens **dobrado**
+  (teto de 16k), cobrindo transiente e raciocínio que consumiu o limite.
+- Erro final **acionável**: recusa do provider, `finish_reason=length`
+  (aumentar tokens/modelo sem raciocínio), `content_filter` ou motivo desconhecido.
+- Mesmo tratamento no **Gemini** (`extract_candidate`, `grow_output_budget`,
+  `finishReason`/`promptFeedback.blockReason`).
+
+### Verificação
+- **343 testes Rust** (+9: extração, orçamento, mensagens e dois testes de reenvio
+  com servidor local) · `cargo clippy --all-targets` e `cargo fmt --check` limpos.
+
+### Limite conhecido
+- Se o provider devolver vazio de forma **persistente por contexto grande**, o
+  reenvio pode não bastar (o resumo usa 24k caracteres por chunk); um fallback de
+  chunk menor fica como próximo passo.

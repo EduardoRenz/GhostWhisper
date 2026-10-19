@@ -231,6 +231,13 @@ uma nota de revisão.
 - **Detalhes:** [`chat/issues.md`](chat/issues.md) (ISS-018),
   [`chat/tasks/01-task.md`](chat/tasks/01-task.md),
   [`chat/tasks/02-task.md`](chat/tasks/02-task.md).
+- **Revisão (2026-10-18, PRD notch/T03):** a conversa deixou de ser a janela `chat`
+  isolada e passou a ser a **aba Transcrição** do painel em abas (BR-033); o
+  comportamento das bolhas (esta regra) não muda.
+- **Revisão (2026-10-19):** no painel **ao vivo**, a aba Transcrição é **só falas** —
+  o "Sugerir" e as bolhas de sugestão ao vivo saíram (a feature será revista na aba
+  **Sugestões**). Sugestões **persistidas** ("Fixar") continuam no histórico e no
+  export, que usam esta mesma linha temporal.
 - **Data:** 2026-10-18 · **Status:** Ativa (tasks 01/02)
 
 ## BR-022 — Transporte da sessão: toggle único e encerramento confirmado
@@ -273,6 +280,11 @@ uma nota de revisão.
   `sessions.subject` quando ele está vazio (o título do usuário vence).
 - **Detalhes:** [`assistant/tasks/02-task.md`](assistant/tasks/02-task.md),
   [`assistant/tasks/03-task.md`](assistant/tasks/03-task.md).
+- **Revisão (2026-10-18, PRD notch/T03):** o resumo **deixa de ter janela própria**
+  (a janela `summary` é aposentada) e passa a ser a **aba Resumo** do painel (BR-033);
+  o **automático** só chama o LLM com a **aba Resumo ativa** (revisa a parte desta
+  regra que exigia só a janela aberta). Conteúdo e persistência (`meeting_summaries`
+  / `sessions.overview`) **não mudam**.
 - **Data:** 2026-10-18 · **Status:** Ativa
 
 ## BR-024 — Sugestões por agentes, com modos personalizados
@@ -316,6 +328,11 @@ uma nota de revisão.
 - **Consequência:** como qualquer janela no Linux, elas **aparecem** no
   compartilhamento de tela (BR-006); o limite está documentado.
 - **Detalhes:** [`assistant/architecture/assistant-windows.md`](assistant/architecture/assistant-windows.md) §5-§6.
+- **Revisão (2026-10-18, PRD notch/T03):** as janelas de assistente continuam
+  existindo para **Sugestões** e **Histórico**; a janela **`summary`** foi
+  **aposentada** (vira aba do painel — BR-033) e a janela **`chat`** passa a ser o
+  **painel em abas** (Transcrição `|` Resumo). O `Surface` do overlay segue
+  `actionbar | hidden`.
 - **Data:** 2026-10-18 · **Status:** Ativa
 
 ## BR-027 — Precisão do ASR: prompt de decodificação, anti-alias e modelo por GPU
@@ -443,3 +460,103 @@ uma nota de revisão.
 - **Detalhes:** [`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md),
   [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §4.
 - **Data:** 2026-10-18 · **Status:** Ativa (E3 completo: reuso do passe final + GPU/Vulkan + AEC + commits avaliados)
+
+## BR-032 — Notch em dois estados, por ícones, com ação primária verde
+- **Decisão:** o overlay (`ActionBar`) tem **dois estados**: **repouso** (sem sessão)
+  e **ativo** (com sessão). Em repouso mostra só alça de arraste, marca, **engrenagem**
+  (Configurações), a ação primária **"Começar a ouvir"** em **verde** com o **atalho
+  em badges** e ocultar; em atividade mostra os controles da sessão (transporte único,
+  canais, pílula de tempo) e os **ícones** de Transcrição/Sugestões, mais stealth,
+  engrenagem e ocultar. O **Histórico** fica **sempre visível** (nos dois estados),
+  para abrir sessões anteriores sem iniciar uma sessão. Todos os botões de ação são
+  **ícones SVG próprios**
+  (sem rótulo de texto visível), com `title` **e** `aria-label`. O verde é a cor da
+  ação primária; o azul fica reservado a estados "ligado/ativo" de toggles. A
+  superfície segue `actionbar | hidden` (sem painel expansível).
+- **Motivo:** pedido do usuário ("notch limpo quando não há sessão ativa", "mais
+  ícones em vez de texto", "engrenagem para configurações", "botão destacado em verde
+  para dar início, junto da indicação do atalho"); paridade de **forma** com o
+  Perssua (BR-015) sem copiar a paleta.
+- **Consequência:** ícones não têm rótulo visível → `title`/`aria-label` são
+  obrigatórios; os badges derivam do binding persistido de `toggle_session` (mudam
+  quando o atalho muda); o seletor de canais continua um `select` (é dado, não ação).
+- **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-01/US-02/US-07),
+  [`notch/architecture/notch-ui.md`](notch/architecture/notch-ui.md) §2 e §6.
+- **Revisão (2026-10-19, BR-035):** o verde da ação primária passa a ser o
+  **esmeralda `#10b981`** do design system Obsidian HUD; o azul de "ligado" cede
+  lugar a **cyan** (foco/live) e **violeta** (IA), conforme o papel.
+- **Revisão (2026-10-19, task 08):** o estado **ativo** ganha o **switcher**
+  Transcrição/Histórico/Resumo + **waveform** (reage ao áudio sem re-render) +
+  **play/pause contextual** + **timer `HH:MM:SS`**; canais viram popover (com "Nova
+  sessão"). O **repouso** não muda de estrutura.
+- **Data:** 2026-10-18 · **Status:** Ativa (task 01/02)
+
+## BR-033 — Painel da sessão em abas (Transcrição | Resumo); `summary` aposentado
+- **Decisão:** a janela `chat` passa a ser o **painel da sessão**, com uma *pill* de
+  abas **Transcrição | Resumo** (aba ativa lembrada em `Settings.panel_tab`). A
+  conversa é a aba **Transcrição** (termo "Chat" sai da UI, mantendo o label técnico
+  da janela) e o resumo é a aba **Resumo**. A janela **`summary` é aposentada** (fora
+  do `tauri.conf.json`, `capabilities`, `PANEL_LABELS` e `App.tsx`; `Settings` perde
+  `summary_position`/`summary_size`). Não há botão "Resumo" duplicado no cabeçalho da
+  Transcrição: o resumo é a aba ao lado (revisão de 2026-10-19). O **automático** do
+  resumo só chama o LLM com a **aba Resumo ativa**; "Atualizar agora" vale em qualquer
+  aba. A aba **"Sessão"** fica reservada para PRD futura.
+- **Motivo:** pedido do usuário — unificar a conversa e o resumo em **abas**
+  redimensionáveis "como o Perssua", sem manter duas janelas irmãs para a mesma
+  sessão; e conter o custo do resumo com a janela sempre aberta.
+- **Consequência:** **sem** migração de `chat_position`/`chat_size` (o label da
+  janela continua `chat`); config antiga com `summary_*` é ignorada no load (serde);
+  a janela `chat` e a `history`, da task 07/08 do PRD chat, continuam existindo. A
+  task 03 do PRD notch **evolui** a task 07 do chat (não a reverte).
+- **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-03/US-04/US-05),
+  [`notch/architecture/notch-ui.md`](notch/architecture/notch-ui.md) §1 e §5,
+  [`chat/tasks/07-task.md`](chat/tasks/07-task.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (task 03)
+
+## BR-034 — Troca do idioma da transcrição em tempo real
+- **Decisão:** a **barra inferior** da aba Transcrição tem um seletor do **idioma de
+  origem** (com **Auto**). Trocar o idioma aplica ao **próximo passe de decodificação**
+  da sessão **em andamento** — **sem** reiniciar a sessão e **sem** recarregar o
+  modelo — e persiste em `settings.source_language`. O seletor muda **apenas** a
+  origem; o idioma de **destino** da tradução permanece nas Configurações.
+- **Motivo:** pedido do usuário ("mudar o idioma reflete em tempo real na transcrição
+  de áudio"); hoje o idioma só valia na próxima sessão, porque faz parte da chave de
+  cache do motor ([`notch/issues.md`](notch/issues.md) → ISS-033).
+- **Consequência:** no núcleo, `language` vira `Mutex<String>` com `update_language`
+  (mesmo padrão já usado para o **prompt**) e **sai da chave do cache** da fábrica;
+  a regra de idioma do `initial_prompt` (`decode_prompt`) é recomputada. Novo IPC
+  `session_set_language`. Um passe **em voo** termina no idioma anterior; o próximo
+  já usa o novo.
+- **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-06),
+  [`notch/architecture/notch-ui.md`](notch/architecture/notch-ui.md) §4,
+  [`notch/tasks/04-task.md`](notch/tasks/04-task.md),
+  [`precision-and-performance/tasks/01-task.md`](precision-and-performance/tasks/01-task.md) (prompt/idioma).
+- **Data:** 2026-10-18 · **Status:** Ativa (task 04)
+
+## BR-035 — Sistema visual "Obsidian HUD"
+- **Decisão:** a interface adota o design system **Obsidian HUD**, com os tokens
+  canônicos em [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md):
+  - **Superfícies** ink (`--oh-surface` `#0f131c` e containers `#181c24`…`#31353e`);
+    **vidro** (`backdrop-filter`) apenas nas **cascas** (notch, painel, popovers),
+    nunca por bolha/item (ISS-020); sem suporte, superfície opaca.
+  - **Sinais** com papéis fixos: **cyan `#00f2fe`** (foco/transcrição ao vivo),
+    **violeta `#8b5cf6`** (IA), **esmeralda `#10b981`** (gravação/sucesso e ação
+    primária) e **coral `#f43f5e`** (erro/parar). "Pausado" usa o *outline* (sem
+    âmbar).
+  - **Borda hairline** em gradiente de 1px; **glow** de foco cyan; sombra difusa
+    nos elementos inativos; raio em pill (`--oh-radius-full`) e espaçamento base
+    de 4px.
+  - **Tipografia:** **Geist** (UI) e **JetBrains Mono** (tempos, atalhos e código),
+    empacotadas **localmente** com fallback; números tabulares em timers.
+  - **Leitura:** painel/bolhas/configurações usam superfície quase opaca
+    (`--oh-read-surface`); o vidro é do HUD, não do conteúdo.
+- **Motivo:** pedido do usuário (design novo a padronizar); manter leitura e
+  desempenho (ISS-020) e dar uma identidade única às superfícies.
+- **Consequência:** o verde de BR-032 passa a ser o **esmeralda** do sistema; o
+  azul de "ligado" cede lugar a cyan/violeta conforme o papel; cores/tamanhos
+  soltos migram para `--oh-*` (escrita única — R14).
+- **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-09/US-10),
+  [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md),
+  [`notch/tasks/07-task.md`](notch/tasks/07-task.md),
+  [`notch/tasks/08-task.md`](notch/tasks/08-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (tasks 07/08 concluídas)

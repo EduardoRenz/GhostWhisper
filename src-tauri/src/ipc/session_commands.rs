@@ -100,3 +100,16 @@ pub fn session_continue(
 pub fn session_current(state: State<'_, AppState>) -> Result<Option<String>> {
     Ok(state.session.current_session_id())
 }
+
+/// Troca o **idioma de origem** da transcrição em tempo real (BR-034).
+///
+/// Persiste em `source_language` e aplica ao motor em cache no próximo passe;
+/// sem sessão ativa apenas persiste (vale na próxima sessão).
+#[tauri::command(async)]
+pub fn session_set_language(state: State<'_, AppState>, language: String) -> Result<()> {
+    let mut settings = state.settings.load()?;
+    settings.source_language = language.trim().to_lowercase();
+    settings.validate()?;
+    state.settings.save(&settings)?;
+    state.session.set_language(&settings.source_language)
+}

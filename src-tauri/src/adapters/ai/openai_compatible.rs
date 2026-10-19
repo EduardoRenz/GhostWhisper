@@ -17,6 +17,17 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
 /// Quantas vezes reenviamos após o provider rejeitar um parâmetro.
 const MAX_PARAM_RETRIES: usize = 3;
 
+/// Quantas vezes reenviamos quando o provider responde **sem conteúdo**.
+///
+/// Respostas vazias costumam ser transitórias (proxy/instabilidade) ou acontecem
+/// quando o raciocínio do modelo consumiu todo o orçamento de tokens. Um reenvio
+/// único, com o orçamento dobrado, resolve a maioria sem esconder um bloqueio real.
+const MAX_EMPTY_RETRIES: usize = 1;
+/// Pausa antes do reenvio por resposta vazia (ms).
+const EMPTY_RETRY_BACKOFF_MS: u64 = 300;
+/// Teto do orçamento de tokens ao crescer para o reenvio.
+const MAX_GROWN_TOKENS: u64 = 16_000;
+
 /// Parâmetros **opcionais** que podemos remitir/reenviar sem quebrar a chamada
 /// (contrato de amostragem; `model`/`messages` são obrigatórios e nunca removidos).
 const REMOVABLE_PARAMS: [&str; 7] = [
@@ -45,6 +56,7 @@ pub fn chat_completion(
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let mut body = build_body(config, request);
     let mut retries = 0usize;
+    let mut empty_retries = 0usize;
 
     loop {
         let mut call = ureq::post(&url)
@@ -60,14 +72,26 @@ pub fn chat_completion(
                 let value: Value = response.into_json().map_err(|e| {
                     GhostWhisperError::Other(format!("resposta inválida do provider: {e}"))
                 })?;
-                let text = extract_text(&value);
-                if text.is_empty() {
-                    return Err(GhostWhisperError::Other(
-                        "provider retornou uma resposta vazia".to_string(),
-                    ));
+                let parsed = parse_completion(&value);
+                if parsed.text.is_empty() {
+                    // Reenvia uma vez com o orçamento de tokens dobrado: cobre
+                    // resposta transitória e modelo de raciocínio que gastou tudo
+                    // antes de escrever (finish_reason=length).
+                    if empty_retries < MAX_EMPTY_RETRIES {
+                        empty_retries += 1;
+                        let grew = grow_token_budget(&mut body);
+                        tracing::debug!(
+                            finish_reason = ?parsed.finish_reason,
+                            grew_token_budget = grew,
+                            "provider respondeu sem texto; reenviando"
+                        );
+                        std::thread::sleep(Duration::from_millis(EMPTY_RETRY_BACKOFF_MS));
+                        continue;
+                    }
+                    return Err(GhostWhisperError::Other(empty_response_message(&parsed)));
                 }
                 return Ok(Completion {
-                    text,
+                    text: parsed.text,
                     model: config.model.clone(),
                 });
             }
@@ -227,13 +251,95 @@ fn build_body(config: &ProviderConfig, request: &CompletionRequest) -> Value {
 }
 
 /// Extrai o texto da primeira escolha da resposta.
+/// Conteúdo extraído de uma resposta de chat, com o motivo de eventual vazio.
+struct ParsedCompletion {
+    text: String,
+    finish_reason: Option<String>,
+    refusal: Option<String>,
+}
+
+/// Extrai o texto e o diagnóstico de uma resposta de chat.
+fn parse_completion(value: &Value) -> ParsedCompletion {
+    let choice = &value["choices"][0];
+    ParsedCompletion {
+        text: extract_text(value),
+        finish_reason: choice["finish_reason"].as_str().map(str::to_string),
+        refusal: choice["message"]["refusal"].as_str().map(str::to_string),
+    }
+}
+
+/// Texto de uma resposta de chat, aceitando os formatos que os endpoints usam.
+///
+/// `message.content` pode ser string (caso comum), **array de partes**
+/// (`[{"type":"text","text":"…"}]`, usado por endpoints multimodais/proxies) ou
+/// `null`; a resposta pode ainda vir no formato legado `choices[0].text`.
 fn extract_text(value: &Value) -> String {
-    value["choices"]
-        .get(0)
-        .and_then(|choice| choice["message"]["content"].as_str())
-        .unwrap_or_default()
-        .trim()
-        .to_string()
+    let choice = &value["choices"][0];
+
+    if let Some(text) = choice["message"]["content"].as_str() {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    if let Some(parts) = choice["message"]["content"].as_array() {
+        let joined: String = parts
+            .iter()
+            .filter_map(|part| part["text"].as_str().or_else(|| part["content"].as_str()))
+            .collect();
+        let trimmed = joined.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    if let Some(text) = choice["text"].as_str() {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    String::new()
+}
+
+/// Dobra o orçamento de tokens do corpo (para o reenvio por resposta vazia).
+///
+/// Funciona com `max_tokens` e `max_completion_tokens`; sem orçamento explícito
+/// não mexe (não inventa limite que o provider não pediu). Devolve `true` quando
+/// o valor realmente cresceu.
+fn grow_token_budget(body: &mut Value) -> bool {
+    for key in ["max_completion_tokens", "max_tokens"] {
+        if let Some(current) = body.get(key).and_then(Value::as_u64) {
+            let grown = current.saturating_mul(2).min(MAX_GROWN_TOKENS);
+            if grown > current {
+                body[key] = json!(grown);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Mensagem de erro acionável para uma resposta vazia.
+fn empty_response_message(parsed: &ParsedCompletion) -> String {
+    if let Some(refusal) = &parsed.refusal {
+        return format!("provider recusou a resposta: {refusal}");
+    }
+    match parsed.finish_reason.as_deref() {
+        Some("length") => "provider esgotou o limite de tokens antes de escrever \
+            (finish_reason=length) — aumente o limite de tokens ou use um modelo sem raciocínio"
+            .to_string(),
+        Some("content_filter") => {
+            "provider bloqueou a resposta pelo filtro de conteúdo (finish_reason=content_filter)"
+                .to_string()
+        }
+        Some(reason) if !reason.is_empty() => {
+            format!("provider retornou uma resposta vazia (finish_reason={reason})")
+        }
+        _ => "provider retornou uma resposta vazia".to_string(),
+    }
 }
 
 /// Descobre qual parâmetro o provider recusou, se a falha for de parâmetro/valor.
@@ -630,5 +736,141 @@ mod tests {
         let request = CompletionRequest::user("oi").with_temperature(0.0);
         let body = build_body(&config, &request);
         assert_eq!(body["temperature"], json!(0.0));
+    }
+
+    #[test]
+    fn extracts_text_from_content_parts_and_legacy_field() {
+        let parts = json!({"choices":[{"message":{"content":[
+            {"type":"text","text":"a"},
+            {"type":"text","text":"b"}
+        ]}}]});
+        assert_eq!(extract_text(&parts), "ab");
+
+        let legacy = json!({"choices":[{"text":"legado"}]});
+        assert_eq!(extract_text(&legacy), "legado");
+
+        let empty = json!({"choices":[]});
+        assert_eq!(extract_text(&empty), "");
+    }
+
+    #[test]
+    fn grows_token_budget_up_to_the_cap() {
+        let mut body = json!({"max_tokens": 100});
+        assert!(grow_token_budget(&mut body));
+        assert_eq!(body["max_tokens"], json!(200));
+
+        body["max_tokens"] = json!(9_000);
+        assert!(grow_token_budget(&mut body));
+        assert_eq!(body["max_tokens"], json!(16_000));
+
+        let mut completion_tokens = json!({"max_completion_tokens": 50});
+        assert!(grow_token_budget(&mut completion_tokens));
+        assert_eq!(completion_tokens["max_completion_tokens"], json!(100));
+
+        let mut none = json!({"model": "m"});
+        assert!(!grow_token_budget(&mut none));
+    }
+
+    #[test]
+    fn empty_response_messages_are_actionable() {
+        let refused = ParsedCompletion {
+            text: String::new(),
+            finish_reason: Some("stop".into()),
+            refusal: Some("não posso".into()),
+        };
+        assert!(empty_response_message(&refused).contains("recusou"));
+
+        let length = ParsedCompletion {
+            text: String::new(),
+            finish_reason: Some("length".into()),
+            refusal: None,
+        };
+        assert!(empty_response_message(&length).contains("limite de tokens"));
+
+        let filtered = ParsedCompletion {
+            text: String::new(),
+            finish_reason: Some("content_filter".into()),
+            refusal: None,
+        };
+        assert!(empty_response_message(&filtered).contains("filtro de conteúdo"));
+
+        let unknown = ParsedCompletion {
+            text: String::new(),
+            finish_reason: None,
+            refusal: None,
+        };
+        assert_eq!(
+            empty_response_message(&unknown),
+            "provider retornou uma resposta vazia"
+        );
+    }
+
+    /// Servidor mínimo: responde em sequência cada corpo da lista e encerra.
+    fn serve_bodies(bodies: Vec<&'static str>) -> std::net::SocketAddr {
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            for body in bodies {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut discard = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut discard);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn retries_once_when_the_provider_returns_an_empty_response() {
+        let addr = serve_bodies(vec![
+            r#"{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"#,
+            r#"{"choices":[{"message":{"content":"resumo ok"},"finish_reason":"stop"}]}"#,
+        ]);
+        let config = ProviderConfig {
+            kind: crate::domain::settings::ProviderKind::OpenAi,
+            model: "m".into(),
+            base_url: None,
+            api_key: "k".into(),
+        };
+        let completion = chat_completion(
+            &config,
+            &format!("http://{addr}"),
+            &CompletionRequest::user("resuma").with_max_tokens(100),
+            &[],
+        )
+        .expect("reenvio");
+        assert_eq!(completion.text, "resumo ok");
+    }
+
+    #[test]
+    fn empty_after_retry_reports_the_finish_reason() {
+        let addr = serve_bodies(vec![
+            r#"{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"#,
+            r#"{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"#,
+        ]);
+        let config = ProviderConfig {
+            kind: crate::domain::settings::ProviderKind::OpenAi,
+            model: "m".into(),
+            base_url: None,
+            api_key: "k".into(),
+        };
+        let error = chat_completion(
+            &config,
+            &format!("http://{addr}"),
+            &CompletionRequest::user("resuma").with_max_tokens(100),
+            &[],
+        )
+        .expect_err("vazio");
+        assert!(error.to_string().contains("finish_reason=length"));
     }
 }

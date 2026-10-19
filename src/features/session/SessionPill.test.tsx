@@ -30,17 +30,17 @@ describe("SessionPill", () => {
 
   it("mostra o tempo decorrido desde o início da sessão", () => {
     render(<SessionPill {...base} startedAtMs={NOW - 65_000} />);
-    expect(screen.getByText("01:05")).toBeDefined();
+    expect(screen.getByText("00:01:05")).toBeDefined();
   });
 
   it("o relógio anda a cada segundo e não zera ao pausar (tempo é da sessão)", () => {
     render(<SessionPill {...base} startedAtMs={NOW - 5_000} />);
-    expect(screen.getByText("00:05")).toBeDefined();
+    expect(screen.getByText("00:00:05")).toBeDefined();
 
     act(() => {
       vi.advanceTimersByTime(2_000);
     });
-    expect(screen.getByText("00:07")).toBeDefined();
+    expect(screen.getByText("00:00:07")).toBeDefined();
   });
 
   it("clicar na pílula pede o encerramento (não encerra sozinha)", () => {

@@ -1,45 +1,16 @@
 import { panelOpen } from "../../adapters/ipc/panels";
 
-interface ChatHeaderActionsProps {
-  /** Sessão atual; sem ela não há o que sugerir. */
-  sessionId: string | null;
-  /** Uma sugestão está sendo gerada. */
-  loading: boolean;
-  /** Pede uma sugestão da IA com base na conversa. */
-  onRequest: () => void;
-}
-
 /**
- * Ações do cabeçalho da conversa: **Sugerir** (IA) e atalhos para as janelas de
- * Resumo e Sugestões. Fica na janela de Chat, que é onde a conversa vive agora
- * (task 07).
+ * Ações do cabeçalho da Transcrição.
+ *
+ * O **Resumo** saiu daqui: ele já é a aba ao lado (o cabeçalho do painel mostra a
+ * aba ativa). O **Sugerir** também saiu — a geração de sugestões no chat deixou de
+ * fazer sentido e será revista na aba **Sugestões** (PRD `notch`, revisão de
+ * 2026-10-19). Resta o atalho para a janela de Sugestões.
  */
-export function ChatHeaderActions({
-  sessionId,
-  loading,
-  onRequest,
-}: ChatHeaderActionsProps) {
+export function ChatHeaderActions() {
   return (
     <div className="chat__head-actions">
-      <button
-        type="button"
-        className="overlay__button"
-        data-interactive
-        disabled={loading || !sessionId}
-        title="Pede uma sugestão da IA com base na conversa"
-        onClick={onRequest}
-      >
-        {loading ? "Gerando…" : "Sugerir"}
-      </button>
-      <button
-        type="button"
-        className="overlay__button"
-        data-interactive
-        title="Abre a janela de resumo da sessão"
-        onClick={() => void panelOpen("summary")}
-      >
-        Resumo
-      </button>
       <button
         type="button"
         className="overlay__button"

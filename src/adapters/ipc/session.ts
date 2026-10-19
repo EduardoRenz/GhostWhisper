@@ -36,3 +36,9 @@ export const sessionContinue = (
 /** Id da sessão ativa, se houver. */
 export const sessionCurrent = (): Promise<string | null | undefined> =>
   invokeSafe<string | null>("session_current");
+
+/** Troca o idioma de origem da transcrição em tempo real (BR-034). */
+export const sessionSetLanguage = (
+  language: string,
+): Promise<void | undefined> =>
+  invokeSafe<void>("session_set_language", { language });

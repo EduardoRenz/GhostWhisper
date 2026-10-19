@@ -78,23 +78,24 @@ export interface Settings {
   suggestion_auto_refresh: boolean;
   /** Intervalo das sugestões automáticas (segundos). */
   suggestion_interval_secs: number;
-  /** Posição da janela de resumo. */
-  summary_position: [number, number] | null;
   /** Posição da janela de sugestões. */
   suggestions_position: [number, number] | null;
-  /** Tamanho (px físicos) da janela de resumo. */
-  summary_size: [number, number] | null;
   /** Tamanho (px físicos) da janela de sugestões. */
   suggestions_size: [number, number] | null;
-  /** Posição da janela de chat. */
+  /** Posição da janela de chat (painel da sessão). */
   chat_position: [number, number] | null;
   /** Posição da janela de histórico. */
   history_position: [number, number] | null;
-  /** Tamanho (px físicos) da janela de chat. */
+  /** Tamanho (px físicos) da janela de chat (painel da sessão). */
   chat_size: [number, number] | null;
   /** Tamanho (px físicos) da janela de histórico. */
   history_size: [number, number] | null;
+  /** Aba ativa do painel da sessão (BR-033). */
+  panel_tab: PanelTab;
 }
+
+/** Abas do painel da sessão (janela `chat`). */
+export type PanelTab = "transcription" | "summary";
 
 /** Providers na ordem de exibição. */
 export const PROVIDERS: ProviderKind[] = [
@@ -166,14 +167,13 @@ export const defaultSettings = (): Settings => ({
   summary_interval_secs: 30,
   suggestion_auto_refresh: true,
   suggestion_interval_secs: 20,
-  summary_position: null,
   suggestions_position: null,
-  summary_size: null,
   suggestions_size: null,
   chat_position: null,
   history_position: null,
   chat_size: null,
   history_size: null,
+  panel_tab: "transcription",
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */

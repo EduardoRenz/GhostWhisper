@@ -16,4 +16,12 @@ use crate::ports::speech_to_text::SpeechToText;
 pub trait SpeechEngineFactory: Send + Sync {
     /// Cria (ou reusa) o motor de fala do canal.
     fn create(&self) -> Result<Arc<dyn SpeechToText>>;
+
+    /// Aplica um novo idioma (e o prompt derivado) ao motor **em cache**, sem
+    /// recarregar o modelo (BR-034). Sem motor em cache, é no-op.
+    ///
+    /// Implementações que não guardam motor podem deixar o padrão.
+    fn update_language(&self, _language: &str) -> Result<()> {
+        Ok(())
+    }
 }

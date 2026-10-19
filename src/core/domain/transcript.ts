@@ -122,6 +122,17 @@ export const formatClock = (ms: number): string => {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 };
 
+/** Formata como `HH:MM:SS` (timer do notch — BR-032/task 08). */
+export const formatClockLong = (ms: number): string => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+};
+
 /**
  * Insere ou substitui um segmento pelo id, mantendo a ordem de chegada.
  *
