@@ -1,8 +1,8 @@
 # PRD — Precisão e Desempenho (precision-and-performance)
 
-- **Versão:** 0.1 (rascunho)
+- **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Aprovada — E1 implementado (task 01 `IN PROGRESS`, aguardando teste manual)
+- **Status:** Implementado (tasks 01–03 `CONCLUDED` — E1, E2 e E3 entregues)
 - **Autor:** Equipe GhostWhisper
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),

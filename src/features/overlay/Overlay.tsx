@@ -1,4 +1,9 @@
-import { useEffect, useState, type ComponentProps } from "react";
+import {
+  useEffect,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+} from "react";
 import {
   openSettingsWindow,
   setStealth as setStealthIpc,
@@ -95,8 +100,17 @@ export function Overlay() {
 
   const shownError = error ?? settingsError;
 
+  // HUD (BR-062): densidade via `data-density` e opacidade via variável CSS.
+  const hudStyle = {
+    "--hud-alpha": settings.overlay_opacity,
+  } as CSSProperties;
+
   return (
-    <div className="overlay">
+    <div
+      className="overlay"
+      data-density={settings.hud_density}
+      style={hudStyle}
+    >
       <DwellProvider
         enabled={settings.dwell_enabled}
         durationMs={settings.dwell_ms}

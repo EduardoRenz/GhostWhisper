@@ -11,17 +11,17 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
 | ISS-023 | Bolhas de sugestão longas e sugestão tardia/ausente (paridade Perssua) | Alta | FIXED |
-| ISS-024 | Transcrição menos precisa: sem `initial_prompt` de decodificação | Alta | OPEN |
-| ISS-025 | Reamostragem linear do microfone (aliasing) e gate de ruído permissivo | Média | OPEN |
-| ISS-026 | Microfone sem AEC referenciado (eco/duplicata em viva-voz) | Média | OPEN |
-| ISS-027 | Engine CPU-only sem flash attention: modelo grande fica inviável | Média | OPEN |
-| ISS-028 | Passe final beam search duplicado no fechamento do turno | Baixa | OPEN |
+| ISS-024 | Transcrição menos precisa: sem `initial_prompt` de decodificação | Alta | FIXED |
+| ISS-025 | Reamostragem linear do microfone (aliasing) e gate de ruído permissivo | Média | FIXED |
+| ISS-026 | Microfone sem AEC referenciado (eco/duplicata em viva-voz) | Média | FIXED |
+| ISS-027 | Engine CPU-only sem flash attention: modelo grande fica inviável | Média | FIXED |
+| ISS-028 | Passe final beam search duplicado no fechamento do turno | Baixa | FIXED |
 
 ---
 
 ## ISS-023 — Bolhas de sugestão longas e sugestão tardia/ausente
 
-- **Severidade:** Alta · **Status:** FIXED (a validar no teste manual da task 02)
+- **Severidade:** Alta · **Status:** FIXED
 - **Sintoma:** no Perssua a bolha tem ~3 linhas e aparece rápido; aqui a sugestão
   sai longa, demora e, fora da janela de sugestões, não aparece.
 - **Causa raiz:** 1 chamada não-streaming de 900–1400 tokens a cada 20 s, só com
@@ -37,7 +37,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 ## ISS-024 — Transcrição menos precisa: sem `initial_prompt` de decodificação
 
-- **Severidade:** Alta · **Status:** OPEN
+- **Severidade:** Alta · **Status:** FIXED
 - **Sintoma:** mais erro e alucinação que o Perssua no mesmo áudio.
 - **Causa raiz:** nenhuma chamada define `initial_prompt` (`decode_with`); o
   Perssua envia `whisper_prompt` + regra de idioma em toda request.
@@ -48,7 +48,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 ## ISS-025 — Reamostragem linear do microfone e gate permissivo
 
-- **Severidade:** Média · **Status:** OPEN
+- **Severidade:** Média · **Status:** FIXED
 - **Sintoma:** fala do mic com qualidade inferior à do áudio do sistema; mais
   ruído passando ao ASR.
 - **Causa raiz:** `resample_linear` (48k→16k) sem anti-aliasing; gate em
@@ -59,7 +59,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 ## ISS-026 — Microfone sem AEC referenciado
 
-- **Severidade:** Média · **Status:** OPEN
+- **Severidade:** Média · **Status:** FIXED
 - **Sintoma:** em viva-voz, o microfone reouve a fala e a transcreve de novo.
 - **Causa raiz:** não há cancelamento de eco; só ganho + noise gate.
 - **Correção:** E3 — AEC com o áudio do sistema como referência.
@@ -68,7 +68,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 ## ISS-027 — Engine CPU-only sem flash attention
 
-- **Severidade:** Média · **Status:** OPEN
+- **Severidade:** Média · **Status:** FIXED
 - **Sintoma:** impossível subir de modelo sem travar a transcrição.
 - **Causa raiz:** `whisper-rs` sem features `cuda`/`vulkan`; `flash_attn=false`.
 - **Correção:** E3 — GPU + flash attention com detecção/fallback; modelo por hardware.
@@ -77,7 +77,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 ## ISS-028 — Passe final beam search duplicado
 
-- **Severidade:** Baixa · **Status:** OPEN
+- **Severidade:** Baixa · **Status:** FIXED
 - **Sintoma:** o fechamento do turno faz um segundo passe mesmo quando a prévia já
   decodificou o turno inteiro.
 - **Causa raiz:** `begin_final` sempre enfileira `SpeechQuality::Final`; o Perssua

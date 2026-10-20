@@ -20,6 +20,8 @@ só começa após a revisão da PRD pelo usuário.
 | 11 | Notch: Resumo e Sugestões com drill-hover | CONCLUDED |
 | 12 | Validação visual, documentação e pacote (drill-hover) | CONCLUDED |
 | 13 | Histórico no trailing e ícone de recolher | CONCLUDED |
+| 14 | Notch sempre à frente (reafirmar always-on-top — ISS-043) | CONCLUDED |
+| 15 | Notch encosta no topo (tamanho real da janela — ISS-044) | CONCLUDED |
 
 ## Dependências
 
@@ -39,6 +41,8 @@ só começa após a revisão da PRD pelo usuário.
 - 06 fecha a PRD (docs, verificação e pacotes).
 - 07 (design system) depende de 02/03/05: re-skina as superfícies já entregues.
   Tokens em [`../architecture/design-tokens.md`](../architecture/design-tokens.md).
+- 14 (ISS-043) é independente: reafirma o empilhamento da janela.
+- 15 (ISS-044) depende de 14: corrige o tamanho/posição da barra dentro da janela.
 - 08 (notch ativo) depende de 07: aplica a **estrutura** do protótipo (switcher,
   waveform, play/pause contextual) sobre os tokens.
 

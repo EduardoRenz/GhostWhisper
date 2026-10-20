@@ -63,10 +63,10 @@ Início do projeto GhostWhisper a partir da análise do binário
 ## 2026-10-17 — Regras de engenharia e arquitetura hexagonal
 
 ### O que foi feito
-- Criadas as regras de engenharia em [`.agents/rules.md`](../.agents/rules.md):
+- Criadas as regras de engenharia em [`.agents/rules.md`](../../.agents/rules.md):
   arquitetura hexagonal (ports & adapters), injeção de dependência, SOLID,
   testabilidade e nomenclatura sem prefixo `I`.
-- Criado o [`AGENTS.md`](../AGENTS.md) na raiz com as premissas e regras.
+- Criado o [`AGENTS.md`](../../AGENTS.md) na raiz com as premissas e regras.
 - Registradas as decisões em `business-rules.md`: **BR-011** (hexagonal + DI),
   **BR-012** (SOLID), **BR-013** (testabilidade), **BR-014** (nomenclatura).
 - Criado `prds/mvp/architecture/engineering-guidelines.md` com catálogo de portas,
@@ -916,3 +916,28 @@ primeiro balão?"*
 ### Verificação
 - **227 testes Rust** (+2) · 8 `ignored` · clippy/fmt limpos.
 - **83 testes frontend** (+2) · `tsc` limpo.
+
+---
+
+## 2026-10-20 — MVP fechado: status da PRD atualizado
+
+- **IDs:** T00–T23, ISS-001…ISS-021
+- **Refs:** [`prd.md`](prd.md), [`tasks/_tasks.md`](tasks/_tasks.md),
+  [`issues.md`](issues.md)
+
+### Contexto
+As tasks 00–23 do MVP já estavam `CONCLUDED` e todas as issues (ISS-001…ISS-021)
+`FIXED`, mas o cabeçalho da PRD ainda dizia **"Em revisão"** — status desatualizado
+relative ao estado real do projeto.
+
+### Decisão
+- `prd.md` → **Status: Implementado (tasks 00–23 `CONCLUDED`)**; versão `0.1`
+  deixa de ser rascunho.
+- Nenhuma mudança de código ou regra de negócio: foi **só** reconciliação de
+  status (R14 — o histórico continua neste arquivo).
+
+### Pendências que sobraram (não bloqueiam o fechamento)
+- O MVP entregou o escopo combinado; o que veio depois (Chat, Notch, Assistant,
+  Sugestões, Translation, AI Sources, Sessão, Precisão/Desempenho) vive nas
+  PRDs próprias, cada uma com o seu `memory.md` (R15).
+- A **tradução** (T1/T2) segue aberta em [`../translation/`](../translation/).

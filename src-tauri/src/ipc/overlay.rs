@@ -1,7 +1,7 @@
 //! Comandos IPC do overlay.
 
 use serde::Deserialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::domain::geometry::Rect;
 use crate::error::{GhostWhisperError, Result};
@@ -92,8 +92,27 @@ pub fn overlay_set_surface(
 
 /// Inicia o arraste da janela pelo usuário (posição passa a ser preservada).
 #[tauri::command]
-pub fn overlay_start_drag(state: State<'_, AppState>, window: tauri::WebviewWindow) -> Result<()> {
+pub fn overlay_start_drag(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<()> {
     state.overlay.set_anchor_bottom(false);
+    // Arrastar o notch significa "Flutuante Livre" (BR-062): a posição deixa de
+    // ser ditada pela ancoragem e passa a ser a do usuário.
+    if let Ok(mut settings) = state.settings.load() {
+        if settings.notch_anchor != "free" {
+            settings.notch_anchor = "free".to_string();
+            let _ = state.settings.save(&settings);
+            let _ = app.emit("settings_changed", ());
+        }
+        // Mantém o adaptador em sincronia: sem isso, o próximo `set_surface`
+        // reaplicaria a âncora antiga e puxaria a janela de volta.
+        let density = crate::domain::hud_layout::HudDensity::parse(&settings.hud_density);
+        state
+            .overlay
+            .set_hud_layout(density, crate::domain::hud_layout::NotchAnchor::Free);
+    }
     window
         .start_dragging()
         .map_err(|error| GhostWhisperError::Other(format!("falha ao arrastar: {error}")))

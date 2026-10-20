@@ -144,7 +144,10 @@ mod tests {
             JournalRequestSource::Preset,
             JournalRequestSource::Screenshot,
         ] {
-            assert_eq!(JournalRequestSource::from_str(source.as_str()), Some(source));
+            assert_eq!(
+                JournalRequestSource::from_str(source.as_str()),
+                Some(source)
+            );
         }
         assert_eq!(JournalRequestSource::from_str("outro"), None);
     }

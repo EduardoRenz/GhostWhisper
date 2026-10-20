@@ -153,3 +153,44 @@ Decisão do usuário: **mostrar na UI**.
   `keyring` despejar credenciais).
 
 
+
+---
+
+## 2026-10-20 — v0.2: aba "Geral & HUD" e acabamento visual (BR-062)
+
+- **IDs:** BR-062, tasks 10–13
+- **Refs:** [`prd.md`](prd.md) §10,
+  [`architecture/settings-redesign.md`](architecture/settings-redesign.md) §7,
+  [`tasks/10-task.md`](tasks/10-task.md) … [`tasks/13-task.md`](tasks/13-task.md),
+  `domain/hud_layout.rs`, `HudSettings.tsx`
+
+### Contexto
+Mockup do usuário: a tela de Configurações deve ficar mais próxima da referência
+e o comportamento do HUD ganha uma aba própria ("Geral & HUD") no lugar de
+"Ajustes", com opacidade, ancoragem, dwell-hover e densidade.
+
+### Decisões
+- **5 abas mantidas** (decisão do usuário): só "Ajustes" → **"Geral & HUD"**; as
+  6 abas do mockup ficam para outra PRD (§10.2).
+- **Dwell**: faixa do mockup, **100 ms–1,5 s**, padrão continua **500 ms**.
+- **Opacidade**: 20 %–100 %, padrão 75 %, aplicada ao fundo do notch via
+  `--hud-alpha` + canais RGB do token (`rgba(var(...), alpha)`).
+- **Ancoragem**: `top_center` (padrão) · `top_right` · `free`; as fixas usam a
+  **área útil** do monitor primário. Arrastar o notch **vira `free`** e persiste.
+- **Densidade**: `compact` 62 px · `standard` 72 px · `expanded` 84 px de janela
+  (barra 44/52/60 e padding/gap por variável CSS).
+- Geometria pura em `domain/hud_layout.rs`, sem I/O; o adaptador só pergunta ao SO.
+
+### UI
+- `HudSettings.tsx` com cabeçalho de seção + `HUD Anchor:` vivo, grade 2×2,
+  segmentados (âncora/densidade), toggle (dwell/stealth), sliders com badge e
+  legendas; card de privacidade atravessa as colunas.
+- Casca: abas com **sublinhado** na ativa (em vez de pílula) e novos estilos
+  (`.settings__grid`, `__section-header`, `__segmented`, `__toggle`, `__badge`).
+
+### Verificação
+- `cargo test --lib` **519 ✓** · `clippy -D warnings` ✓ · arquivos tocados
+  formatados (o `cargo fmt --check` global ainda acusa dívida **pré-existente**
+  em arquivos não tocados).
+- `pnpm test` **339 ✓** (55 arquivos) · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- **Pendente**: validação visual do usuário (mockup + notch real).

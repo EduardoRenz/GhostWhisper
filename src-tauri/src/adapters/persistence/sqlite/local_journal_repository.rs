@@ -7,9 +7,7 @@
 
 use rusqlite::{params, Row};
 
-use crate::domain::journal::{
-    JournalEntry, JournalImage, JournalRequestSource, JournalStatus,
-};
+use crate::domain::journal::{JournalEntry, JournalImage, JournalRequestSource, JournalStatus};
 use crate::error::Result;
 use crate::ports::journal_repository::JournalRepository;
 
@@ -158,7 +156,10 @@ impl JournalRepository for LocalJournalRepository {
         let conn = lock(&self.conn)?;
         // As imagens primeiro: o `ON DELETE CASCADE` cobre o caso normal, mas
         // não queremos depender do pragma de chaves estrangeiras estar ligado.
-        conn.execute("DELETE FROM journal_images WHERE entry_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM journal_images WHERE entry_id = ?1",
+            params![id],
+        )?;
         conn.execute("DELETE FROM journal_entries WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -244,9 +245,12 @@ mod tests {
     #[test]
     fn inserts_lists_and_answers() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e2", "s1", "segunda", 1_000)).unwrap();
-        repo.insert_question(&entry("e1", "s1", "primeira", 0)).unwrap();
-        repo.insert_question(&entry("e3", "s2", "outra sessão", 0)).unwrap();
+        repo.insert_question(&entry("e2", "s1", "segunda", 1_000))
+            .unwrap();
+        repo.insert_question(&entry("e1", "s1", "primeira", 0))
+            .unwrap();
+        repo.insert_question(&entry("e3", "s2", "outra sessão", 0))
+            .unwrap();
 
         let listed = repo.list_by_session("s1").expect("list");
         assert_eq!(listed.len(), 2);
@@ -254,8 +258,14 @@ mod tests {
         assert_eq!(listed[1].question, "segunda");
         assert_eq!(listed[0].status, JournalStatus::Pending);
 
-        repo.complete_answer("e1", "a resposta", 500, Some("openai".into()), Some("gpt".into()))
-            .unwrap();
+        repo.complete_answer(
+            "e1",
+            "a resposta",
+            500,
+            Some("openai".into()),
+            Some("gpt".into()),
+        )
+        .unwrap();
 
         let answered = repo.get("e1").expect("get").expect("presente");
         assert_eq!(answered.answer.as_deref(), Some("a resposta"));
@@ -267,7 +277,8 @@ mod tests {
     #[test]
     fn marks_a_failure() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e1", "s1", "pergunta", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "pergunta", 0))
+            .unwrap();
         repo.fail("e1", JournalStatus::Error, Some("deu ruim".into()))
             .unwrap();
 
@@ -281,7 +292,8 @@ mod tests {
         let (repo, _conn) = repo();
         repo.insert_question(&entry("e1", "s1", "como inverte linked list", 0))
             .unwrap();
-        repo.insert_question(&entry("e2", "s1", "outra pergunta", 1_000)).unwrap();
+        repo.insert_question(&entry("e2", "s1", "outra pergunta", 1_000))
+            .unwrap();
         repo.complete_answer("e2", "a resposta fala de linked list", 1_500, None, None)
             .unwrap();
 
@@ -298,8 +310,10 @@ mod tests {
     #[test]
     fn the_search_is_limited_to_the_session() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e1", "s1", "palavra comum", 0)).unwrap();
-        repo.insert_question(&entry("e2", "s2", "palavra comum", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "palavra comum", 0))
+            .unwrap();
+        repo.insert_question(&entry("e2", "s2", "palavra comum", 0))
+            .unwrap();
 
         let found = repo.search("s1", "comum", 10).expect("search");
         assert_eq!(found.len(), 1);
@@ -309,8 +323,10 @@ mod tests {
     #[test]
     fn fts_syntax_from_the_user_does_not_break_the_search() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e1", "s1", "aspas \" aqui", 0)).unwrap();
-        repo.insert_question(&entry("e2", "s1", "asterisco * aqui", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "aspas \" aqui", 0))
+            .unwrap();
+        repo.insert_question(&entry("e2", "s1", "asterisco * aqui", 0))
+            .unwrap();
 
         // Sem escape, qualquer um destes derrubaria a consulta inteira e a
         // busca voltaria vazia, sem aviso (ISS-042).
@@ -330,14 +346,16 @@ mod tests {
     #[test]
     fn an_empty_search_returns_nothing() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e1", "s1", "qualquer", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "qualquer", 0))
+            .unwrap();
         assert!(repo.search("s1", "   ", 10).expect("search").is_empty());
     }
 
     #[test]
     fn attaches_and_lists_images() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e1", "s1", "pergunta", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "pergunta", 0))
+            .unwrap();
         repo.attach_image(&JournalImage {
             id: "i1".into(),
             entry_id: "e1".into(),
@@ -360,7 +378,8 @@ mod tests {
     #[test]
     fn deleting_an_entry_deletes_its_images() {
         let (repo, _conn) = repo();
-        repo.insert_question(&entry("e1", "s1", "pergunta", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "pergunta", 0))
+            .unwrap();
         repo.attach_image(&JournalImage {
             id: "i1".into(),
             entry_id: "e1".into(),

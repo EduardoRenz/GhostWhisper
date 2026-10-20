@@ -80,7 +80,7 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tab", { name: /Fontes de IA/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Transcrição & Áudio/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Assistente/ })).toBeDefined();
-    expect(screen.getByRole("tab", { name: /Ajustes/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Geral & HUD/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Atalhos/ })).toBeDefined();
   });
 
@@ -204,26 +204,28 @@ describe("SettingsPage", () => {
     ).toBe("tiny");
   });
 
-  it("configura o drill-hover nos Ajustes", async () => {
+  it("configura o drill-hover na aba Geral & HUD", async () => {
     render(<SettingsPage />);
 
     await act(async () => {
-      screen.getByRole("tab", { name: /Ajustes/ }).click();
+      screen.getByRole("tab", { name: /Geral & HUD/ }).click();
     });
 
     const toggle = (await screen.findByRole("checkbox", {
-      name: "Ativação por permanência",
+      name: "Expandir notch por dwell",
     })) as HTMLInputElement;
     expect(toggle.checked).toBe(true);
 
     const slider = screen.getByLabelText(
-      "Duração do drill-hover em segundos",
+      "Tempo de dwell em milissegundos",
     ) as HTMLInputElement;
-    expect(slider.value).toBe("0.5");
+    expect(slider.value).toBe("500");
+    expect(slider.min).toBe("100");
+    expect(slider.max).toBe("1500");
     expect(slider.disabled).toBe(false);
 
-    fireEvent.change(slider, { target: { value: "1.2" } });
-    expect(screen.getByText("1,2 s")).toBeDefined();
+    fireEvent.change(slider, { target: { value: "1200" } });
+    expect(screen.getByText("1200ms")).toBeDefined();
 
     fireEvent.click(toggle);
     expect(toggle.checked).toBe(false);
@@ -234,10 +236,10 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await act(async () => {
-      screen.getByRole("tab", { name: /Ajustes/ }).click();
+      screen.getByRole("tab", { name: /Geral & HUD/ }).click();
     });
     const toggle = (await screen.findByRole("checkbox", {
-      name: "Ativação por permanência",
+      name: "Expandir notch por dwell",
     })) as HTMLInputElement;
 
     expect(screen.getByText(/sincronizadas localmente/)).toBeDefined();

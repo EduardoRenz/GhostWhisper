@@ -186,7 +186,9 @@ impl AskController for AskService {
         // Print sem texto é permitido: a IA decide o que fazer com a imagem
         // (paridade com o `system_prompt_image` do Perssua).
         if question.is_empty() && request.images.is_empty() {
-            return Err(GhostWhisperError::Config("a pergunta está vazia".to_string()));
+            return Err(GhostWhisperError::Config(
+                "a pergunta está vazia".to_string(),
+            ));
         }
         // O diário guarda a pergunta **do usuário** (vazia quando foi só o
         // print): é ela que a UI mostra ("se houver pergunta"). O prompt padrão
@@ -303,8 +305,7 @@ impl AskController for AskService {
     }
 
     fn cancel(&self, entry_id: &str) -> Result<()> {
-        self.journal
-            .fail(entry_id, JournalStatus::Cancelled, None)
+        self.journal.fail(entry_id, JournalStatus::Cancelled, None)
     }
 }
 
@@ -573,7 +574,11 @@ mod tests {
             .expect("lock")
             .clone()
             .expect("pedido enviado");
-        assert!(sent.prompt.contains(DEFAULT_IMAGE_PROMPT), "{}", sent.prompt);
+        assert!(
+            sent.prompt.contains(DEFAULT_IMAGE_PROMPT),
+            "{}",
+            sent.prompt
+        );
     }
 
     #[test]

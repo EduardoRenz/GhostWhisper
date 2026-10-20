@@ -440,3 +440,81 @@ ou o evento se perdia — fechando o popover antes do "Sim".
   switcher, ícone no catálogo) · `tsc` ✓ · Rust 351 ✓ · clippy/fmt limpos.
 - Screenshot headless do notch em repouso conferido.
 - AppImage (Vulkan) reconstruído.
+
+---
+
+## 2026-10-20 — Notch não ficava sempre à frente (ISS-043, task 14)
+
+- **IDs:** ISS-043, T14
+- **Refs:** [`issues.md`](issues.md),
+  [`tasks/14-task.md`](tasks/14-task.md),
+  [`../mvp/architecture/overlay.md`](../mvp/architecture/overlay.md) §1
+
+### Relato
+*“notch não tá com o recurso de ficar sempre à frente”* — descoberto durante o
+teste da aba "Geral & HUD" (BR-062), mas fora do escopo dela.
+
+### Diagnóstico
+- `xprop` com o app rodando: o overlay (`0x2200003`, sem título) tinha apenas
+  `_NET_WM_STATE_SKIP_PAGER, _NET_WM_STATE_SKIP_TASKBAR`; `chat` e `suggestions`
+  tinham `_NET_WM_STATE_ABOVE`.
+- O `alwaysOnTop: true` do `tauri.conf.json` é aplicado **na criação**. O
+  GTK/Mutter perde o hint quando a janela é mapeada/remodelada (`set_surface`,
+  resize, reexibição). Não havia **nenhum** `set_always_on_top` em runtime.
+- Os painéis escapavam por serem `show()`n depois; o overlay nasce visível.
+
+### Correção
+- `TauriOverlayWindow::apply_stacking()` reafirma `set_always_on_top(true)` e é
+  chamado dentro de `apply_stealth()` — que já roda no `show()` e no fim de
+  `set_surface()` (junto com skip-taskbar/título).
+- `spawn_overlay_stacking_reassertion()` reafirma uma vez ~900 ms após o boot,
+  cobrindo o mapeamento inicial.
+
+### Verificação
+- Depois do rebuild (AppImage 17:41):
+  `_NET_WM_STATE_SKIP_PAGER, _NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_ABOVE`.
+- `cargo test --lib` 519 ✓ · clippy/fmt (arquivos tocados) ✓.
+
+### Observação
+- O teste matou a instância anterior sem o `RunEvent::Exit`; a marca de crash
+  deixou esta execução em CPU (BR-029). Um fechamento normal reabilita a GPU.
+
+---
+
+## 2026-10-20 — Notch parava ~200 px antes do topo (ISS-044, task 15)
+
+- **IDs:** ISS-044, T15
+- **Refs:** [`issues.md`](issues.md), [`tasks/15-task.md`](tasks/15-task.md),
+  BR-062
+
+### Relato
+*“o Notch vai só até um limite no topo, como se tivesse uma div invisível acima
+dele”* — depois do ajuste de always-on-top (ISS-043).
+
+### Diagnóstico
+- `xwininfo` do overlay: **1040×260** em (440, 8), com a barra (52 px) no
+  **rodapé** — ~200 px de janela transparente acima dela.
+- `WM_NORMAL_HINTS`: **min=max = 1040×260**. O `overlay` estava com
+  `resizable: false`, então o GTK/Mutter travava os hints e o `set_size` do HUD
+  (densidade/âncora) era **ignorado na altura**.
+- O `.overlay` usava `justify-content: flex-end`; a barra nunca subia junto com o
+  topo da janela.
+
+### Correção
+- `overlay` vira **resizable** (sem moldura, sem alça) e nasce 1040×84.
+- Barra no **topo**: `justify-content: flex-start`, `padding-top: 0`.
+- Alturas da janela 72/84/96 (compacto/padrão/expandido); o excedente abaixo é o
+  banner do ASR.
+- `HUD_MARGIN = 0` e remoção da reancoragem pela base ao redimensionar.
+
+### Verificação
+- Janela nova: **1040×96** em **(440, 32)** (densidade `expanded` do usuário),
+  `WM_NORMAL_HINTS` sem min/max.
+- `XMoveWindow` para `y=0` foi clampado pelo Mutter em **y=32** — o topo da área
+  útil (abaixo do painel do GNOME). Não há mais área invisível.
+- `_NET_WM_STATE` mantém `_NET_WM_STATE_ABOVE`.
+- Rust 519 ✓ · clippy/fmt (tocados) ✓ · AppImage 18:26.
+
+### Observação
+- O desktop reporta `_NET_WORKAREA` como tela cheia, mas o Tao entrega
+  `work_area.y = 32` (abaixo do painel) — foi o que usamos na âncora.

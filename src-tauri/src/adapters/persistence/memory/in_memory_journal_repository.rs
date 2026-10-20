@@ -2,9 +2,7 @@
 
 use std::sync::Mutex;
 
-use crate::domain::journal::{
-    JournalEntry, JournalImage, JournalRequestSource, JournalStatus,
-};
+use crate::domain::journal::{JournalEntry, JournalImage, JournalRequestSource, JournalStatus};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::journal_repository::JournalRepository;
 
@@ -161,8 +159,10 @@ mod tests {
     #[test]
     fn stores_answers_and_images() {
         let repo = InMemoryJournalRepository::new();
-        repo.insert_question(&entry("e1", "s1", "pergunta", 0)).unwrap();
-        repo.complete_answer("e1", "resposta", 10, None, None).unwrap();
+        repo.insert_question(&entry("e1", "s1", "pergunta", 0))
+            .unwrap();
+        repo.complete_answer("e1", "resposta", 10, None, None)
+            .unwrap();
 
         let stored = repo.get("e1").unwrap().expect("presente");
         assert_eq!(stored.answer.as_deref(), Some("resposta"));
@@ -187,8 +187,10 @@ mod tests {
     #[test]
     fn searches_inside_the_session_only() {
         let repo = InMemoryJournalRepository::new();
-        repo.insert_question(&entry("e1", "s1", "linked list", 0)).unwrap();
-        repo.insert_question(&entry("e2", "s2", "linked list", 0)).unwrap();
+        repo.insert_question(&entry("e1", "s1", "linked list", 0))
+            .unwrap();
+        repo.insert_question(&entry("e2", "s2", "linked list", 0))
+            .unwrap();
 
         let found = repo.search("s1", "linked", 10).unwrap();
         assert_eq!(found.len(), 1);

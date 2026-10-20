@@ -67,6 +67,23 @@ pub fn settings_set(
 ) -> Result<Vec<ShortcutConflict>> {
     state.settings.save(&settings)?;
     state.overlay.set_stealth(settings.stealth);
+    // HUD (BR-062): densidade e ancoragem valem na hora, sem reiniciar.
+    let density = crate::domain::hud_layout::HudDensity::parse(&settings.hud_density);
+    let anchor = crate::domain::hud_layout::NotchAnchor::parse(&settings.notch_anchor);
+    state.overlay.set_hud_layout(density, anchor);
+    if !anchor.is_anchored() {
+        // "Flutuante Livre" volta para onde o usuário deixou o notch.
+        if let Some((x, y)) = settings
+            .overlay_position
+            .filter(|(x, y)| *x >= 0 && *y >= 0)
+        {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("overlay") {
+                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+            }
+            state.overlay.set_anchor_bottom(false);
+        }
+    }
     let conflicts = state.shortcuts.apply(&settings.shortcuts);
     // Avisa as janelas abertas (overlay/painel) para recarregarem as settings,
     // inclusive o drill-hover (BR-036).

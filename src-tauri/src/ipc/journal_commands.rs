@@ -227,10 +227,7 @@ mod tests {
         let session = FakeSession {
             ensured: AtomicUsize::new(0),
         };
-        assert_eq!(
-            resolve_ask_session(&session, None).expect("sessão"),
-            "s1"
-        );
+        assert_eq!(resolve_ask_session(&session, None).expect("sessão"), "s1");
         assert_eq!(session.ensured.load(Ordering::SeqCst), 1);
     }
 

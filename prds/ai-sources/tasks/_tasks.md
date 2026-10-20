@@ -15,6 +15,17 @@
 | 07 | Casca da tela de Configurações | CONCLUDED |
 | 08 | Aba "Fontes de IA": cards, ordem e chaves | CONCLUDED |
 | 09 | Demais abas, rotas por escopo e docs | CONCLUDED |
+| 10 | Domínio e settings do HUD (opacidade, ancoragem, densidade) | CONCLUDED |
+| 11 | Janela do notch: ancoragem e densidade | CONCLUDED |
+| 12 | UI: aba "Geral & HUD" e acabamento visual | CONCLUDED |
+| 13 | Overlay consome opacidade/densidade, docs e verificação | CONCLUDED |
+
+## Revisão v0.2 (2026-10-20)
+
+O mockup do usuário pede uma aba **"Geral & HUD"** no lugar de "Ajustes", com
+opacidade do overlay, ancoragem e densidade do notch, e o dwell-hover movido
+para lá (BR-062). A casca ganha abas com sublinhado e grade de 2 colunas. As 5
+abas atuais continuam; a reorganização de 6 abas do mockup fica fora (PRD §10.2).
 
 ## Ordem e dependências
 
@@ -23,7 +34,17 @@
                 │       └─▶ 05 ──┘        ├─▶ 09
                 └─────────────────────────┘
 07 ────────────────────────────────────▶ 09
+
+09 ─▶ 10 ─┬─▶ 11 ─┐
+          └─▶ 12 ─┴─▶ 13
 ```
+
+- A **10** é a base da v0.2 (campos + geometria pura) e não muda UI.
+- A **11** (janela) e a **12** (tela) são paralelas e dependem só da 10.
+- A **13** fecha: overlay, BR-062, docs e verificação.
+
+> 10–13 implementadas em 2026-10-20; a **validação visual/manual** do usuário
+> (mockup e notch real) é o último passo antes de considerar a v0.2 encerrada.
 
 ## Definição de pronto (geral)
 - Critérios de aceite da tarefa atendidos.

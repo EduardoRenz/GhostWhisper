@@ -237,3 +237,29 @@ dispositivo é garantido pelo `whisper_backend_init` (loga `no GPU found` e segu
 ### Verificação
 - `cargo test --lib` **330 ✓** · `clippy -D warnings` ✓ · `fmt --check` ✓ ·
   `pnpm test` 123 ✓ · `tsc` ✓. E3 encerrado (task 03 `CONCLUDED`).
+
+---
+
+## 2026-10-20 — PRD fechada: status do cabeçalho e das issues reconciliados
+
+- **IDs:** ISS-023, ISS-024, ISS-025, ISS-026, ISS-027, ISS-028
+- **Refs:** [`prd.md`](prd.md), [`tasks/_tasks.md`](tasks/_tasks.md),
+  [`issues.md`](issues.md), BR-027, BR-028, BR-029
+
+### Contexto
+As tasks 01, 02 e 03 (E1, E2, E3) já estavam `CONCLUDED` e o `memory.md` registrava
+o fechamento do E3, mas dois documentos seguiam com estado antigo:
+- `prd.md` ainda dizia **"Aprovada — E1 implementado (task 01 `IN PROGRESS`)"**;
+- `issues.md` mantinha ISS-024…ISS-028 como `OPEN` (e ISS-023 como `FIXED`, mas
+  ainda "a validar no teste manual da task 02").
+
+### Decisão
+- `prd.md` → **Status: Implementado (tasks 01–03 `CONCLUDED` — E1, E2 e E3
+  entregues)**; versão `0.1` deixa de ser rascunho.
+- `issues.md` → ISS-023…ISS-028 todos `FIXED` (as correções estão descritas em
+  "Correção:" de cada issue e aplicadas nas tasks 01 e 03).
+- Sem mudança de código: reconciliação de status (R14).
+
+### Verificação
+- `cargo test --lib` **330 ✓** · `clippy -D warnings` ✓ · `fmt --check` ✓ ·
+  `pnpm test` 123 ✓ · `tsc` ✓ (última rodada registrada no E3).

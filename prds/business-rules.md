@@ -1251,3 +1251,31 @@ uma nota de revisão.
   [`session/issues.md`](session/issues.md) ISS-041/ISS-042,
   [`session/tasks/10-task.md`](session/tasks/10-task.md).
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-062 — Aba "Geral & HUD": opacidade, ancoragem e densidade do notch
+
+- **Decisão:** o comportamento do HUD deixa de ficar disperso e passa a uma aba
+  própria — **"Geral & HUD"** (substitui "Ajustes") — com quatro controles:
+  1. **Opacidade do overlay** (`overlay_opacity`, 20 %–100 %, padrão 75 %): a
+     transparência da superfície do notch.
+  2. **Posição de ancoragem** (`notch_anchor`): **Topo Central** (padrão),
+     **Canto Superior Direito** ou **Flutuante Livre**. As duas primeiras
+     posicionam o notch na **área útil do monitor primário**; a terceira usa a
+     posição lembrada e o arraste.
+  3. **Dwell-hover** (`dwell_enabled` / `dwell_ms`): o card completo, com faixa
+     **100 ms–1,5 s** (padrão 500 ms).
+  4. **Densidade** (`hud_density`): **Compacto** (62 px), **Padrão** (72 px) ou
+     **Expandido** (84 px) — espaçamento interno e espessura da barra.
+  O card de **Privacidade** (modo stealth) permanece na mesma aba.
+- **Motivo:** o HUD é a superfície que o usuário vê o tempo todo; ajustar
+  transparência, posição e tamanho é uma decisão de **produto**, não de áudio ou
+  de IA. A aba também elimina o "Ajustes" genérico, que misturava stealth com
+  drill-hover. Paridade com o mockup do usuário (BR-015).
+- **Consequência:** **arrastar** o notch passa a ancoragem para **Flutuante
+  Livre** e persiste a posição (antes o arraste apenas desligava a reancoragem
+  pela base). Salvar as settings reaplica opacidade/ancoragem/densidade **sem
+  reiniciar**; settings antigas carregam com os padrões (campos ausentes).
+- **Detalhes:** [`ai-sources/prd.md`](ai-sources/prd.md) §10,
+  [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §7,
+  [`ai-sources/tasks/12-task.md`](ai-sources/tasks/12-task.md).
+- **Data:** 2026-10-20 · **Status:** Ativa

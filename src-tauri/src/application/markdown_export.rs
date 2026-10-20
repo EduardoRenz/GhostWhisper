@@ -106,7 +106,11 @@ pub fn render_markdown_with_questions(
             out.push_str(&format!(
                 "- **[{}] {}**\n",
                 format_clock(question.asked_at_ms),
-                if asked.is_empty() { "(print de tela)" } else { asked }
+                if asked.is_empty() {
+                    "(print de tela)"
+                } else {
+                    asked
+                }
             ));
             if let Some(answer) = question
                 .answer
@@ -114,10 +118,7 @@ pub fn render_markdown_with_questions(
                 .map(str::trim)
                 .filter(|text| !text.is_empty())
             {
-                out.push_str(&format!(
-                    "  - {}",
-                    indent_continuation(answer, 4)
-                ));
+                out.push_str(&format!("  - {}", indent_continuation(answer, 4)));
                 out.push('\n');
             }
         }
@@ -240,7 +241,8 @@ mod tests {
             &[suggestion(10_000, "Você pode confirmar o prazo.")],
         );
 
-        let markdown = render_markdown_with_questions(&session(Some("Reunião de sexta"), Some(1_700_000_060_000)),
+        let markdown = render_markdown_with_questions(
+            &session(Some("Reunião de sexta"), Some(1_700_000_060_000)),
             &entries,
             1_700_000_100_000,
             &[],
@@ -314,7 +316,8 @@ mod tests {
 
     #[test]
     fn omits_an_empty_summary() {
-        let markdown = render_markdown_with_questions(&session(Some("Sprint"), Some(1_700_000_060_000)),
+        let markdown = render_markdown_with_questions(
+            &session(Some("Sprint"), Some(1_700_000_060_000)),
             &[],
             1_700_000_060_000,
             &[],
@@ -324,7 +327,8 @@ mod tests {
 
     #[test]
     fn uses_untitled_and_ongoing_for_a_fresh_session() {
-        let markdown = render_markdown_with_questions(&session(None, None), &[], 1_700_000_120_000, &[]);
+        let markdown =
+            render_markdown_with_questions(&session(None, None), &[], 1_700_000_120_000, &[]);
 
         assert!(markdown.contains("# Sessão sem título"));
         assert!(markdown.contains("- **Fim:** em andamento"));
@@ -339,7 +343,12 @@ mod tests {
             &[suggestion(1_000, "passo 1\npasso 2")],
         );
 
-        let markdown = render_markdown_with_questions(&session(None, Some(1_700_000_010_000)), &entries, 0, &[]);
+        let markdown = render_markdown_with_questions(
+            &session(None, Some(1_700_000_010_000)),
+            &entries,
+            0,
+            &[],
+        );
 
         assert!(markdown.contains("- **[00:00] Você:** primeira linha\n  segunda linha"));
         assert!(markdown.contains("> 🤖 **Sugestão [00:01]** — passo 1\n> passo 2"));

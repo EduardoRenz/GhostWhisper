@@ -153,6 +153,12 @@ mod tests {
         }
         fn set_stealth(&self, _enabled: bool) {}
         fn set_surface(&self, _surface: Surface) {}
+        fn set_hud_layout(
+            &self,
+            _density: crate::domain::hud_layout::HudDensity,
+            _anchor: crate::domain::hud_layout::NotchAnchor,
+        ) {
+        }
         fn set_anchor_bottom(&self, _anchored: bool) {}
         fn anchor_bottom(&self) -> bool {
             true

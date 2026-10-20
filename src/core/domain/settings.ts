@@ -159,6 +159,12 @@ export interface Settings {
   dwell_enabled: boolean;
   /** Tempo de permanência do drill-hover, em milissegundos (BR-036). */
   dwell_ms: number;
+  /** Opacidade da superfície do notch (0,2–1,0) — BR-062. */
+  overlay_opacity: number;
+  /** Ancoragem do notch na área útil do monitor primário — BR-062. */
+  notch_anchor: NotchAnchor;
+  /** Densidade (espaçamento/espessura) do notch — BR-062. */
+  hud_density: HudDensity;
   saved_questions: SavedQuestion[];
   /**
    * Marca a migração das perguntas prontas (BR-054): o preset **novo**
@@ -319,6 +325,9 @@ export const defaultSettings = (): Settings => ({
   panel_tab: "transcription",
   dwell_enabled: true,
   dwell_ms: 500,
+  overlay_opacity: DEFAULT_OVERLAY_OPACITY,
+  notch_anchor: "top_center",
+  hud_density: "standard",
   saved_questions: DEFAULT_SAVED_QUESTIONS,
   saved_questions_migrated: false,
 });
@@ -327,12 +336,60 @@ export const defaultSettings = (): Settings => ({
 export const MIN_AUTO_INTERVAL_SECS = 10;
 export const MAX_AUTO_INTERVAL_SECS = 120;
 
-/** Drill-hover: padrão e faixa em milissegundos (BR-036). */
+/** Drill-hover: padrão e faixa em milissegundos (BR-036, faixa da BR-062). */
 export const DEFAULT_DWELL_MS = 500;
-export const MIN_DWELL_MS = 300;
-export const MAX_DWELL_MS = 2_000;
+export const MIN_DWELL_MS = 100;
+export const MAX_DWELL_MS = 1_500;
 /** Passo da UI de duração (0,1 s). */
 export const DWELL_STEP_MS = 100;
+
+/** HUD (BR-062) ----------------------------------------------------------- */
+
+/** Ponto de fixação do notch na área útil do monitor primário. */
+export type NotchAnchor = "top_center" | "top_right" | "free";
+
+/** Ancoragens, na ordem de exibição. */
+export const NOTCH_ANCHORS: NotchAnchor[] = ["top_center", "top_right", "free"];
+
+/** Rótulos das ancoragens. */
+export const NOTCH_ANCHOR_LABELS: Record<NotchAnchor, string> = {
+  top_center: "Topo Central",
+  top_right: "Canto Sup. Dir.",
+  free: "Flutuante Livre",
+};
+
+/** Espaçamento interno/espessura da barra do notch. */
+export type HudDensity = "compact" | "standard" | "expanded";
+
+/** Densidades, na ordem de exibição. */
+export const HUD_DENSITIES: HudDensity[] = ["compact", "standard", "expanded"];
+
+/** Rótulos das densidades. */
+export const HUD_DENSITY_LABELS: Record<HudDensity, string> = {
+  compact: "Compacto",
+  standard: "Padrão",
+  expanded: "Expandido",
+};
+
+/** Opacidade do overlay (20 %–100 %, padrão 75 %). */
+export const DEFAULT_OVERLAY_OPACITY = 0.75;
+export const MIN_OVERLAY_OPACITY = 0.2;
+export const MAX_OVERLAY_OPACITY = 1;
+
+/** Legendas do slider de opacidade (mockup). */
+export const OPACITY_LEGEND = [
+  { value: MIN_OVERLAY_OPACITY, label: "Discreto (20%)" },
+  { value: DEFAULT_OVERLAY_OPACITY, label: "Equilibrado (75%)" },
+  { value: MAX_OVERLAY_OPACITY, label: "Opaco (100%)" },
+] as const;
+
+/** Traz a opacidade para a faixa aceita (passo livre). */
+export function clampOverlayOpacity(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_OVERLAY_OPACITY;
+  }
+  return Math.min(MAX_OVERLAY_OPACITY, Math.max(MIN_OVERLAY_OPACITY, value));
+}
 
 /** Opções de cadência do resumo automático. */
 export const SUMMARY_INTERVALS = [15, 30, 60, 120] as const;

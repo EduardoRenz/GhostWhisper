@@ -62,9 +62,7 @@ impl ScreenCapture for X11ScreenCapture {
             .iter()
             .flat_map(|depth| depth.visuals.iter())
             .find(|visual| visual.visual_id == screen.root_visual)
-            .ok_or_else(|| {
-                GhostWhisperError::Other("visual da tela indisponível".to_string())
-            })?;
+            .ok_or_else(|| GhostWhisperError::Other("visual da tela indisponível".to_string()))?;
 
         let reply = connection
             .get_image(
@@ -165,9 +163,8 @@ fn encode_jpeg(rgb: &[u8], width: u32, height: u32) -> Result<(Vec<u8>, u32, u32
     use image::imageops::FilterType;
     use image::{ImageEncoder, RgbImage};
 
-    let source = RgbImage::from_raw(width, height, rgb.to_vec()).ok_or_else(|| {
-        GhostWhisperError::Other("pixels da tela inválidos".to_string())
-    })?;
+    let source = RgbImage::from_raw(width, height, rgb.to_vec())
+        .ok_or_else(|| GhostWhisperError::Other("pixels da tela inválidos".to_string()))?;
 
     // `resize` não preserva a proporção: calculamos o alvo antes.
     let resized = if width.max(height) > MAX_DIMENSION {

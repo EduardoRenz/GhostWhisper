@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser único
-no repositório). Próximo ID livre: **ISS-036**.
+no repositório). Próximo ID livre: **ISS-045**.
 
 > `ISS-032` segue reservada pelo PRD [`chat`](../chat/issues.md); esta PRD começa em
 > `ISS-033` para não colidir.
@@ -13,6 +13,8 @@ no repositório). Próximo ID livre: **ISS-036**.
 | ISS-033 | Idioma da transcrição preso à sessão (troca só valia na próxima) | Média | FIXED |
 | ISS-034 | Notch poluído em repouso e controles por texto (fora do padrão Perssua) | Baixa | FIXED |
 | ISS-035 | Hover do drill-hover atravessa duas janelas e pode fechar sem querer | Média | FIXED |
+| ISS-043 | Notch não fica sempre à frente (`_NET_WM_STATE_ABOVE` se perde no mapeamento) | Alta | FIXED |
+| ISS-044 | Notch não encosta no topo: janela 1040×260 com a barra no rodapé (~200 px invisíveis) | Alta | FIXED |
 
 ---
 
@@ -81,6 +83,59 @@ no repositório). Próximo ID livre: **ISS-036**.
   `src-tauri/src/adapters/dwell/tauri_dwell_popover.rs`.
 - **Task:** [`tasks/10-task.md`](tasks/10-task.md), [`tasks/11-task.md`](tasks/11-task.md)
 - **Dano em dados existentes:** nenhum.
+
+---
+
+## ISS-043 — Notch não fica sempre à frente
+
+- **Severidade:** Alta · **Status:** FIXED ([`tasks/14-task.md`](tasks/14-task.md))
+- **Sintoma:** o notch (janela `overlay`) some atrás das janelas de outros apps,
+  apesar de `alwaysOnTop: true` no `tauri.conf.json`. As janelas de painel
+  (Transcrição/Sugestões) continuam por cima; só o notch não.
+- **Causa raiz:** o `alwaysOnTop` é aplicado **uma vez na criação** da janela. No
+  GTK/Mutter o hint `_NET_WM_STATE_ABOVE` se perde quando a janela é
+  mapeada/remodelada (resize do `set_surface`, `hide/show`) e não havia nenhum
+  `set_always_on_top` em runtime. Os painéis escapam porque são `show()`n depois.
+  Evidência (`xprop` com o app rodando): o overlay (`0x2200003`, sem título)
+  tinha só `_NET_WM_STATE_SKIP_PAGER, _NET_WM_STATE_SKIP_TASKBAR`, enquanto
+  `chat`/`suggestions` tinham `_NET_WM_STATE_ABOVE`.
+- **Correção (task 14):** reafirmar `set_always_on_top(true)` no `show()` e depois
+  de cada `set_surface` (dentro de `apply_stealth`, que já reafirma
+  skip-taskbar/título) e uma reafirmação única ~900 ms após o boot (o overlay
+  nasce visível e não passa pelo `show()`).
+- **Arquivos:** `src-tauri/src/adapters/overlay/tauri_overlay_window.rs`,
+  `src-tauri/src/lib.rs`.
+- **Task:** [`tasks/14-task.md`](tasks/14-task.md)
+- **Dano em dados existentes:** nenhum (empilhamento de janela).
+
+---
+
+## ISS-044 — Notch não encosta no topo (janela com ~200 px invisíveis)
+
+- **Severidade:** Alta · **Status:** FIXED ([`tasks/15-task.md`](tasks/15-task.md))
+- **Sintoma:** ao arrastar o notch para cima, ele para ~200 px antes do topo — como
+  se houvesse uma `div` invisível acima. Barra e arraste parecem limitados.
+- **Causa raiz:** duas somas.
+  1. O `overlay` estava com `resizable: false` e `height: 260` no
+     `tauri.conf.json`; o GTK/Mutter fixa os hints em **min=max=1040×260**
+     (`WM_NORMAL_HINTS`) e o `set_size(1040, 72)` do HUD era **ignorado** na
+     altura — então a densidade nunca mudava a janela.
+  2. O `.overlay` usava `justify-content: flex-end`: a barra (52 px) ficava no
+     **rodapé** da janela de 260 px. Ao arrastar, o topo da janela para em y=0,
+     mas a barra fica ~200 px abaixo.
+- **Correção (task 15):** `overlay` vira **resizable** (sem moldura, sem alça de
+  resize), tamanho inicial 1040×84; a barra passa a ficar no **topo**
+  (`justify-content: flex-start`, `padding-top: 0`); alturas da janela
+  72/84/96 (compacto/padrão/expandido) reservam o banner do ASR abaixo da barra;
+  `HUD_MARGIN = 0` (encosta no topo); a reancoragem pela base ao redimensionar
+  foi removida (a barra vive no topo).
+- **Arquivos:** `src-tauri/tauri.conf.json`,
+  `src-tauri/src/domain/hud_layout.rs`,
+  `src-tauri/src/adapters/overlay/tauri_overlay_window.rs`,
+  `src/styles/globals.css`.
+- **Task:** [`tasks/15-task.md`](tasks/15-task.md)
+- **Dano em dados existentes:** nenhum (geometria; a posição salva é preservada
+  em "Flutuante Livre").
 
 ---
 

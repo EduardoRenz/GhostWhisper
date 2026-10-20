@@ -1,6 +1,7 @@
 //! Porta de controle da janela overlay.
 
 use crate::domain::geometry::Point;
+use crate::domain::hud_layout::{HudDensity, NotchAnchor};
 
 /// Superfície visível do overlay.
 ///
@@ -33,6 +34,11 @@ pub trait OverlayWindowController: Send + Sync {
     fn set_stealth(&self, enabled: bool);
     /// Ajusta a superfície (tamanho/visibilidade) da janela.
     fn set_surface(&self, surface: Surface);
+    /// Aplica a densidade e a ancoragem do HUD (BR-062).
+    ///
+    /// Âncoras fixas reposicionam a janela na área útil do monitor primário;
+    /// `Free` preserva a posição atual.
+    fn set_hud_layout(&self, density: HudDensity, anchor: NotchAnchor);
     /// Define se o redimensionamento deve reancorar pela base.
     ///
     /// `false` após o usuário mover a janela (posição passa a ser preservada).

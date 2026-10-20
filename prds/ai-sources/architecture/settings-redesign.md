@@ -9,8 +9,8 @@ Repaginação da tela de Configurações: cabeçalho próprio, barra de abas com
 
 | Antes | Depois |
 |---|---|
-| 5 abas com texto (`Fontes de IA`, `Transcrição & Áudio`, `Assistente`, `Ajustes`, `Atalhos`) | as **mesmas 5 abas**, com **ícone** + rótulo, na barra superior |
-| conteúdo em formulários soltos | conteúdo em **cards** (`.settings__card`) |
+| 5 abas com texto (`Fontes de IA`, `Transcrição & Áudio`, `Assistente`, `Ajustes`, `Atalhos`) | as **mesmas 5 abas**, com **ícone** + rótulo, na barra superior; **"Ajustes" virou "Geral & HUD"** (v0.2) |
+| conteúdo em formulários soltos | conteúdo em **cards** (`.settings__card`); a aba do HUD usa **grade de 2 colunas** (v0.2) |
 | `<h1>` "GhostWhisper — Configurações" | cabeçalho próprio: ícone + título + subtítulo + atalho `Esc` + botão `✕` |
 | um "Salvar configurações" **por aba** | **um** "Salvar Alterações" no **rodapé fixo** (com "Restaurar Padrões") |
 | cada aba carrega e salva as settings | **rascunho único** carregado uma vez e salvo pelo botão global |
@@ -150,3 +150,72 @@ Tudo em `src/styles/globals.css`, consumindo os tokens `var(--oh-*)`
 - adicionar fonte cria a entrada no rascunho (ainda não salva);
 - trocar a chave pede a nova chave e grava no keyring (IPC), sem salvar as
   settings.
+
+## 7. Aba "Geral & HUD" (v0.2)
+
+Referência: mockup do usuário (2026-10-20). A aba ocupa o lugar de "Ajustes" e
+reúne o **comportamento do HUD** num cabeçalho de seção + grade de 2 colunas.
+
+```
+Comportamento do HUD & Janela                         HUD Anchor: Topo Central
+┌──────────────────────────────┐ ┌──────────────────────────────┐
+│ Opacidade do Overlay   [75%] │ │ Posição de Ancoragem do Notch│
+│ transparência da superfície  │ │ ponto de fixação na área útil│
+│ ──────●─────────────         │ │ [Topo Central][Canto][Livre] │
+│ Discreto  Equilibrado  Opaco │ │                              │
+└──────────────────────────────┘ └──────────────────────────────┘
+┌──────────────────────────────┐ ┌──────────────────────────────┐
+│ Expandir Notch por Dwell (●) │ │ Tamanho / Densidade do Notch │
+│ Tempo de Dwell        [500ms]│ │ espaçamento e espessura      │
+│ ──●──────────────────        │ │ [Compacto][Padrão][Expandido]│
+│ 100ms (Rápido)   1,5s (Longo)│ │                              │
+└──────────────────────────────┘ └──────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Privacidade — modo stealth (fora da barra de tarefas)   [ ]   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- O **cabeçalho da seção** mostra à direita o rótulo vivo `HUD Anchor: …`
+  (deriva de `notch_anchor`), como no mockup.
+- **Segmentado** (`.settings__segmented`): botão com borda; ativo = borda ciano +
+  texto ciano + fundo ciano translúcido.
+- **Toggle** (`.settings__toggle`): trilho/pílula; ligado = ciano.
+- **Slider** com **badge** do valor atual (`.settings__badge`).
+- Os três rótulos do slider de opacidade são **presets** clicáveis? Não — são
+  legendas (`Discreto 20%` · `Equilibrado 75%` · `Opaco 100%`). O slider aceita
+  qualquer passo de 5 %.
+- O card de **Privacidade** (stealth) atravessa as duas colunas.
+
+### 7.1 Componentes
+
+| Componente | Papel |
+|---|---|
+| `src/features/settings/HudSettings.tsx` | conteúdo da aba: cabeçalho da seção + grade + cards |
+| `SettingsPage.tsx` | troca o bloco inline de "Ajustes" por `<HudSettings …/>` |
+| `src/styles/globals.css` | `.settings__grid`, `.settings__section-header`, `.settings__segmented`, `.settings__toggle`, `.settings__badge`, `.settings__range-labels` e o novo estado visual das abas |
+
+### 7.2 Dados e validação
+
+| Campo | Tipo | Padrão | Faixa/valores |
+|---|---|---|---|
+| `overlay_opacity` | `f32` | `0.75` | `0.2..=1.0` (clamp no load, erro no save) |
+| `notch_anchor` | `String` | `top_center` | `top_center` · `top_right` · `free` |
+| `hud_density` | `String` | `standard` | `compact` · `standard` · `expanded` |
+| `dwell_ms` | `u32` | `500` | `100..=1500` (era 300–2000) |
+
+### 7.3 Janela: ancoragem e densidade
+
+O adaptador `TauriOverlayWindow` passa a guardar `(density, anchor)`:
+
+- `set_surface(ActionBar)` usa a **altura da densidade**
+  (`compact` 62 · `standard` 72 · `expanded` 84 px lógicos).
+- Com âncora ≠ `free`, reposiciona pela **área útil do monitor primário**:
+  `x = work.x + (work.width − window.width) / 2` ou
+  `x = work.right − window.width − margem`; `y = work.y + margem`.
+- Com âncora = `free`, mantém a posição lembrada e o comportamento antigo de
+  reancorar pela base ao redimensionar.
+- `overlay_start_drag` grava `notch_anchor = free` antes de iniciar o arraste.
+- `settings_set` reaplica o layout na hora (sem reiniciar).
+
+A geometria pura vive em `domain/hud_layout.rs` (`anchor_position`,
+`HudDensity::window_height`) — testável sem I/O.

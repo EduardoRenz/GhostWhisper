@@ -64,6 +64,9 @@
   --oh-surface-container-lowest: #0a0e16;
   --oh-surface-container-low: #181c24;
   --oh-surface-container: #1c2028;
+  /* Canais RGB para compor opacidade sem `color-mix` (BR-062). */
+  --oh-surface-container-low-rgb: 24, 28, 36;
+  --oh-surface-container-rgb: 28, 32, 40;
   --oh-surface-container-high: #262a33;
   --oh-surface-container-highest: #31353e;
   --oh-surface-variant: #31353e;

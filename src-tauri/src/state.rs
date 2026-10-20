@@ -201,6 +201,12 @@ mod tests {
         fn set_click_through(&self, _enabled: bool) {}
         fn set_stealth(&self, _enabled: bool) {}
         fn set_surface(&self, _surface: Surface) {}
+        fn set_hud_layout(
+            &self,
+            _density: crate::domain::hud_layout::HudDensity,
+            _anchor: crate::domain::hud_layout::NotchAnchor,
+        ) {
+        }
         fn set_anchor_bottom(&self, _anchored: bool) {}
         fn anchor_bottom(&self) -> bool {
             true
@@ -487,7 +493,8 @@ mod tests {
 
     struct FakeDwell {
         open: Mutex<Option<u32>>,
-    }    impl crate::ports::dwell_popover::DwellPopoverController for FakeDwell {
+    }
+    impl crate::ports::dwell_popover::DwellPopoverController for FakeDwell {
         fn show(&self, _anchor: Rect, dwell_ms: u32) -> Result<()> {
             *self.open.lock().unwrap() = Some(dwell_ms);
             Ok(())
@@ -525,7 +532,9 @@ mod tests {
             Arc::new(InMemoryJournalRepository::new()),
             Arc::new(FakeAsk),
             Arc::new(FakeScreenCapture),
-            Arc::new(crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new()),
+            Arc::new(
+                crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new(),
+            ),
             Arc::new(crate::adapters::system::system_clock::FixedClock(1_000_000)),
             Arc::new(InMemorySettingsStore::new()),
             Arc::new(InMemorySecretStore::new()),

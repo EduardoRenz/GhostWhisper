@@ -22,7 +22,7 @@ import {
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
-import { dwellLabel } from "../../core/domain/dwell";
+import { HudSettings } from "./HudSettings";
 import {
   BoltIcon,
   KeyboardIcon,
@@ -34,13 +34,9 @@ import {
 import {
   ACCELERATION_LABELS,
   ACCELERATION_MODES,
-  DEFAULT_DWELL_MS,
   DEFAULT_MIC_GAIN,
-  DWELL_STEP_MS,
   LANGUAGES,
-  MAX_DWELL_MS,
   MAX_MIC_GAIN,
-  MIN_DWELL_MS,
   MIN_MIC_GAIN,
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
@@ -61,7 +57,7 @@ const TABS = [
   { id: "sources", label: "Fontes de IA", Icon: BoltIcon },
   { id: "transcription", label: "Transcrição & Áudio", Icon: WaveformIcon },
   { id: "assistant", label: "Assistente", Icon: UsersIcon },
-  { id: "general", label: "Ajustes", Icon: SlidersIcon },
+  { id: "general", label: "Geral & HUD", Icon: SlidersIcon },
   { id: "shortcuts", label: "Atalhos", Icon: KeyboardIcon },
 ] as const;
 
@@ -470,68 +466,7 @@ export function SettingsPage() {
         )}
 
         {tab === "general" && (
-          <section className="settings__card">
-            <header className="settings__card-header">
-              <h2 className="settings__card-title">Ajustes</h2>
-              <span className="settings__card-note">
-                Visibilidade do overlay e drill-hover
-              </span>
-            </header>
-
-            <label className="settings__field settings__field--row">
-              <input
-                type="checkbox"
-                checked={draft.stealth}
-                onChange={(event) => update("stealth", event.target.checked)}
-              />
-              <span>Modo stealth (fora da barra de tarefas)</span>
-            </label>
-            <p className="settings__hint">
-              O modo stealth esconde o overlay da barra de tarefas e do alt-tab.{" "}
-              <strong>Ele não o esconde do compartilhamento de tela</strong>: no
-              Linux não existe API para excluir uma janela de captura (BR-006).
-              Para reuniões, compartilhe <em>uma janela</em> em vez da tela
-              inteira ou deixe o overlay em outro monitor.
-            </p>
-
-            <span className="settings__group-title">Drill-hover (sem clique)</span>
-            <label className="settings__field settings__field--row">
-              <input
-                type="checkbox"
-                checked={draft.dwell_enabled}
-                onChange={(event) => update("dwell_enabled", event.target.checked)}
-              />
-              <span>Ativação por permanência</span>
-            </label>
-            <p className="settings__hint">
-              Mantenha o cursor sobre <strong>Resumo</strong> ou{" "}
-              <strong>Sugestões</strong> para abrir a confirmação sem clicar. O
-              clique continua funcionando normalmente. Padrão:{" "}
-              {dwellLabel(DEFAULT_DWELL_MS)}. (BR-036)
-            </p>
-
-            <label className="settings__field">
-              <span>
-                Duração da permanência:{" "}
-                <strong>{dwellLabel(draft.dwell_ms)}</strong>
-              </span>
-              <input
-                type="range"
-                min={MIN_DWELL_MS / 1000}
-                max={MAX_DWELL_MS / 1000}
-                step={DWELL_STEP_MS / 1000}
-                value={draft.dwell_ms / 1000}
-                disabled={!draft.dwell_enabled}
-                aria-label="Duração do drill-hover em segundos"
-                onChange={(event) =>
-                  update(
-                    "dwell_ms",
-                    Math.round(Number(event.target.value) * 1000),
-                  )
-                }
-              />
-            </label>
-          </section>
+          <HudSettings settings={draft} update={update} />
         )}
 
         {tab === "shortcuts" && (

@@ -1,11 +1,12 @@
 # PRD — GhostWhisper MVP
 
-- **Versão:** 0.1 (rascunho)
+- **Versão:** 0.1
 - **Data:** 2026-10-17
-- **Status:** Em revisão
+- **Status:** Implementado (tasks 00–23 `CONCLUDED`)
 - **Autor:** Equipe GhostWhisper
-- **Relacionados:** [`../../business-rules.md`](../../business-rules.md),
-  [`../../memory.md`](../../memory.md), [`architecture/architecture.md`](architecture/architecture.md),
+- **Relacionados:** [`../business-rules.md`](../business-rules.md),
+  [`memory.md`](memory.md), [`issues.md`](issues.md),
+  [`architecture/architecture.md`](architecture/architecture.md),
   [`tasks/_tasks.md`](tasks/_tasks.md)
 
 ---

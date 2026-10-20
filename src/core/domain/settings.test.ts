@@ -2,12 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   ACCELERATION_LABELS,
   ACCELERATION_MODES,
+  DEFAULT_OVERLAY_OPACITY,
+  HUD_DENSITIES,
+  HUD_DENSITY_LABELS,
   LANGUAGES,
+  MAX_DWELL_MS,
+  MAX_OVERLAY_OPACITY,
+  MIN_DWELL_MS,
+  MIN_OVERLAY_OPACITY,
+  NOTCH_ANCHORS,
+  NOTCH_ANCHOR_LABELS,
   PROVIDERS,
   PROVIDER_DEFAULT_BASE_URLS,
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
   WHISPER_MODELS,
+  clampOverlayOpacity,
   defaultSettings,
   providerRequiresBaseUrl,
 } from "./settings";
@@ -68,6 +78,31 @@ describe("settings (domínio)", () => {
     const settings = defaultSettings();
     expect(settings.dwell_enabled).toBe(true);
     expect(settings.dwell_ms).toBe(500);
+    // Faixa do mockup (BR-062).
+    expect(MIN_DWELL_MS).toBe(100);
+    expect(MAX_DWELL_MS).toBe(1500);
+  });
+
+  it("HUD começa equilibrado, no topo central e no padrão (BR-062)", () => {
+    const settings = defaultSettings();
+    expect(settings.overlay_opacity).toBe(0.75);
+    expect(settings.notch_anchor).toBe("top_center");
+    expect(settings.hud_density).toBe("standard");
+    expect(NOTCH_ANCHORS).toEqual(["top_center", "top_right", "free"]);
+    expect(HUD_DENSITIES).toEqual(["compact", "standard", "expanded"]);
+    for (const anchor of NOTCH_ANCHORS) {
+      expect(NOTCH_ANCHOR_LABELS[anchor]).toBeTruthy();
+    }
+    for (const density of HUD_DENSITIES) {
+      expect(HUD_DENSITY_LABELS[density]).toBeTruthy();
+    }
+  });
+
+  it("clampOverlayOpacity traz o valor para a faixa", () => {
+    expect(clampOverlayOpacity(0.05)).toBe(MIN_OVERLAY_OPACITY);
+    expect(clampOverlayOpacity(3)).toBe(MAX_OVERLAY_OPACITY);
+    expect(clampOverlayOpacity(Number.NaN)).toBe(DEFAULT_OVERLAY_OPACITY);
+    expect(clampOverlayOpacity(0.6)).toBe(0.6);
   });
 
   it("as perguntas prontas terminam com o pedido da última pergunta (BR-054)", () => {

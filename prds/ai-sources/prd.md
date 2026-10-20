@@ -1,8 +1,10 @@
 # PRD — Fontes de IA múltiplas e Configurações repaginadas
 
-- **Versão:** 0.1
-- **Data:** 2026-10-19
-- **Status:** Implementado (tasks 01–09 `CONCLUDED`)
+- **Versão:** 0.2
+- **Data:** 2026-10-20
+- **Status:** v0.1 implementada (tasks 01–09 `CONCLUDED`); **v0.2 implementada**
+  (tasks 10–13 `CONCLUDED`) — aba "Geral & HUD" e acabamento visual (§10),
+  aguardando validação visual do usuário
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/ai-sources.md`](architecture/ai-sources.md),
@@ -116,6 +118,7 @@ As regras canônicas vivem em [`../business-rules.md`](../business-rules.md):
 - **BR-049** — O modelo é digitado pelo usuário (sem catálogo).
 - **BR-050** — Log de debug do modelo em uso (com nível de raciocínio).
 - **BR-051** — O modelo que respondeu é visível na interface.
+- **BR-062** — Aba "Geral & HUD": opacidade, ancoragem e densidade do notch (§10).
 
 Regras pré-existentes que continuam valendo: BR-002 (sem backend), BR-003 (BYO
 key no keyring), BR-005 (áudio local), BR-008 (reconstruir comportamento, não
@@ -202,3 +205,70 @@ src/features/settings/AddProviderForm.tsx
 | Vazamento de chave em log/erro | Segredos só no keyring; erro de provider tipado e truncado (`ProviderStatus`) |
 | Regressão em quem já tinha `provider`/`model` | Migração idempotente no boot + teste de settings legadas |
 | Escopo grande demais | 9 tasks independentes, com a casca da tela (07) separada das fontes (08) |
+
+## 10. Revisão 0.2 — Aba "Geral & HUD" e acabamento visual (2026-10-20)
+
+O mockup do usuário reposiciona as configurações de **comportamento do HUD** numa
+aba própria e pede que a casca da tela fique mais próxima da referência. O que já
+existe (cards, abas com ícone, rodapé global — BR-047) **não muda de contrato**: a
+v0.2 acrescenta a aba e ajusta a forma.
+
+### 10.1 Escopo
+
+| Item | Antes | Depois |
+|---|---|---|
+| Aba "Ajustes" | Dwell-hover + stealth | **"Geral & HUD"**: 4 cards do HUD + card de privacidade |
+| Opacidade do overlay | — | **20 %–100 %** (padrão 75 %), aplicada à superfície do notch |
+| Posição de ancoragem | posição livre lembrada | **Topo Central** (padrão) · **Canto Sup. Dir.** · **Flutuante Livre** |
+| Densidade do notch | altura fixa (72 px) | **Compacto** · **Padrão** (padrão) · **Expandido** |
+| Dwell-hover | na aba "Ajustes" | no card próprio da aba **Geral & HUD**, faixa **100 ms–1,5 s** |
+| Abas | pílula preenchida | **ícone + rótulo com sublinhado** na aba ativa (mais próximo do mockup) |
+| Conteúdo da aba | coluna única | **grade de 2 colunas** nos cards do HUD |
+
+### 10.2 Fora do escopo
+
+- Novas abas do mockup ("Visão de Tela", "Privacidade", "Audio & Microfone",
+  "Modelo de IA & Whisper"): a reorganização de conteúdo fica para outra PRD. A
+  tela mantém as **5 abas** atuais, com "Ajustes" renomeada para "Geral & HUD".
+- Prévia ao vivo do notch dentro das configurações.
+- Opacidade por contexto ("assistente em segundo plano"): o valor vale sempre.
+
+### 10.3 Modelo de dados
+
+Três campos em `Settings` (Rust + espelho TS), com validação e sanitização:
+
+```rust
+pub overlay_opacity: f32,   // 0.2..=1.0, padrão 0.75
+pub notch_anchor: String,   // top_center | top_right | free  (padrão top_center)
+pub hud_density: String,    // compact | standard | expanded  (padrão standard)
+```
+
+`dwell_ms` passa a aceitar **100–1500 ms** (era 300–2000 ms); o padrão continua
+500 ms.
+
+### 10.4 Comportamento da janela
+
+- **Ancoragem:** o notch é posicionado na **área útil** do monitor primário —
+  centralizado (`x = (work.w − window.w) / 2`) ou à direita (`x = work.right −
+  window.w − margem`), sempre com uma margem superior pequena. Em **Flutuante
+  Livre**, vale a posição lembrada (`overlay_position`) e o arraste.
+- **Arrastar o notch** passa a ancoragem para **Flutuante Livre** e persiste a
+  posição (antes o arraste só desligava a reancoragem pela base).
+- **Densidade:** define a **altura da janela** (62/72/84 px lógicos) e as
+  variáveis CSS da barra (altura, padding e gap).
+- **Opacidade:** vira `--hud-alpha` e compõe o fundo da barra
+  (`rgba(<rgb do token>, var(--hud-alpha))`); 100 % = superfície sólida.
+
+### 10.5 Critérios de sucesso
+
+- Salvar a aba nova aplica opacidade/ancoragem/densidade **sem reiniciar** o app.
+- Trocar a ancoragem move o notch imediatamente para o canto escolhido.
+- Arrastar o notch em "Topo Central" o torna "Flutuante Livre".
+- Settings antigas (sem os três campos) carregam com os padrões.
+
+### 10.6 Tasks
+
+[`tasks/10-task.md`](tasks/10-task.md) (domínio/settings) →
+[`11-task.md`](tasks/11-task.md) (janela) →
+[`12-task.md`](tasks/12-task.md) (UI da aba e estilo) →
+[`13-task.md`](tasks/13-task.md) (overlay + docs/verificação).

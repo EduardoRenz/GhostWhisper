@@ -1,24 +1,26 @@
 //! Adaptador da janela overlay sobre `tauri::WebviewWindow`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use tauri::{LogicalSize, PhysicalPosition, WebviewWindow};
 
-use crate::domain::geometry::Point;
+use crate::domain::geometry::{Point, Rect};
+use crate::domain::hud_layout::{anchor_position, HudDensity, NotchAnchor, HUD_MARGIN};
 use crate::ports::overlay_window::{OverlayWindowController, Surface};
 
 /// Largura lógica da barra (posicionamento inicial — BR-052).
 pub const ACTIONBAR_WIDTH: f64 = 1040.0;
-
-/// Dimensões lógicas por superfície `(largura, altura)`.
-const ACTIONBAR_SIZE: (f64, f64) = (ACTIONBAR_WIDTH, 72.0);
 
 /// Implementa `OverlayWindowController` sobre a janela Tauri.
 pub struct TauriOverlayWindow {
     window: WebviewWindow,
     click_through: Arc<AtomicBool>,
     anchor_bottom: AtomicBool,
+    /// Densidade do HUD (BR-062): 0 compacto · 1 padrão · 2 expandido.
+    density: AtomicU8,
+    /// Ancoragem do notch (BR-062): 0 topo central · 1 canto direito · 2 livre.
+    anchor: AtomicU8,
     /// Estado desejado do stealth, para ser **reafirmado** quando o compositor
     /// ou o Tauri remapeiam a janela (Perssua: `scheduleOverlayTaskbarStateReassertion`).
     stealth: AtomicBool,
@@ -31,7 +33,74 @@ impl TauriOverlayWindow {
             window,
             click_through: Arc::new(AtomicBool::new(false)),
             anchor_bottom: AtomicBool::new(true),
+            density: AtomicU8::new(1),
+            anchor: AtomicU8::new(0),
             stealth: AtomicBool::new(false),
+        }
+    }
+
+    /// Densidade atual do HUD.
+    fn density(&self) -> HudDensity {
+        match self.density.load(Ordering::Relaxed) {
+            0 => HudDensity::Compact,
+            2 => HudDensity::Expanded,
+            _ => HudDensity::Standard,
+        }
+    }
+
+    /// Ancoragem atual do notch.
+    fn anchor(&self) -> NotchAnchor {
+        match self.anchor.load(Ordering::Relaxed) {
+            1 => NotchAnchor::TopRight,
+            2 => NotchAnchor::Free,
+            _ => NotchAnchor::TopCenter,
+        }
+    }
+
+    fn store_density(&self, density: HudDensity) {
+        let code = match density {
+            HudDensity::Compact => 0,
+            HudDensity::Standard => 1,
+            HudDensity::Expanded => 2,
+        };
+        self.density.store(code, Ordering::Relaxed);
+    }
+
+    fn store_anchor(&self, anchor: NotchAnchor) {
+        let code = match anchor {
+            NotchAnchor::TopCenter => 0,
+            NotchAnchor::TopRight => 1,
+            NotchAnchor::Free => 2,
+        };
+        self.anchor.store(code, Ordering::Relaxed);
+    }
+
+    /// Reposiciona o notch pela área útil do monitor primário (BR-062).
+    fn apply_anchor(&self) {
+        let anchor = self.anchor();
+        if anchor.is_anchored() {
+            self.place_at(anchor);
+        }
+    }
+
+    /// Coloca a janela na posição de uma âncora fixa (sem mudar a preferida).
+    fn place_at(&self, anchor: NotchAnchor) {
+        let Ok(Some(monitor)) = self.window.primary_monitor() else {
+            return;
+        };
+        let scale = monitor.scale_factor();
+        let work = monitor.work_area();
+        let work_area = Rect {
+            x: work.position.x,
+            y: work.position.y,
+            width: work.size.width as i32,
+            height: work.size.height as i32,
+        };
+        let width = (ACTIONBAR_WIDTH * scale).round() as i32;
+        let height = (self.density().window_height() * scale).round() as i32;
+        let margin = (HUD_MARGIN as f64 * scale).round() as i32;
+        if let Some((x, y)) = anchor_position(anchor, work_area, (width, height), margin) {
+            let _ = self.window.set_position(PhysicalPosition::new(x, y));
         }
     }
 
@@ -48,6 +117,15 @@ impl TauriOverlayWindow {
             .window
             .set_title(if enabled { "" } else { "GhostWhisper" });
         let _ = self.window.set_content_protected(enabled);
+        // O `alwaysOnTop` do `tauri.conf.json` vale na criação, mas o GTK/Mutter
+        // perde o `_NET_WM_STATE_ABOVE` quando a janela é mapeada/remodelada
+        // (ISS-043). Reafirmar aqui cobre o `show()` e todo `set_surface`.
+        self.apply_stacking();
+    }
+
+    /// Reafirma o empilhamento da janela (sempre à frente — ISS-043).
+    fn apply_stacking(&self) {
+        let _ = self.window.set_always_on_top(true);
     }
 }
 
@@ -92,32 +170,39 @@ impl OverlayWindowController for TauriOverlayWindow {
 
     fn set_surface(&self, surface: Surface) {
         let (width, height) = match surface {
-            Surface::ActionBar => ACTIONBAR_SIZE,
+            Surface::ActionBar => (ACTIONBAR_WIDTH, self.density().window_height()),
             Surface::Hidden => {
                 self.hide();
                 return;
             }
         };
 
-        let previous = self.window.outer_size().ok();
-        let position = self.window.outer_position().ok();
         let _ = self.window.set_size(LogicalSize::new(width, height));
 
-        // Reancora pela base apenas enquanto o usuário não moveu a janela.
-        if self.anchor_bottom.load(Ordering::Relaxed) {
-            if let (Some(previous), Some(position)) = (previous, position) {
-                let scale = self.window.scale_factor().unwrap_or(1.0);
-                let new_height = (height * scale).round() as i32;
-                let delta = previous.height as i32 - new_height;
-                let _ = self
-                    .window
-                    .set_position(PhysicalPosition::new(position.x, position.y + delta));
-            }
+        // Âncora fixa (BR-062) manda na posição. Em "Flutuante Livre" o
+        // redimensionamento mantém o canto superior (a barra vive no topo) —
+        // não há mais reancoragem pela base.
+        if self.anchor().is_anchored() {
+            self.apply_anchor();
         }
 
         // Redimensionar remapeia a janela em alguns compositores: reafirma o
         // stealth (T19).
         self.apply_stealth();
+    }
+
+    fn set_hud_layout(&self, density: HudDensity, anchor: NotchAnchor) {
+        self.store_density(density);
+        self.store_anchor(anchor);
+        let _ = self
+            .window
+            .set_size(LogicalSize::new(ACTIONBAR_WIDTH, density.window_height()));
+        if anchor.is_anchored() {
+            self.apply_anchor();
+        } else if self.anchor_bottom.load(Ordering::Relaxed) {
+            // "Livre" sem posição do usuário: começa no topo central (BR-062).
+            self.place_at(NotchAnchor::TopCenter);
+        }
     }
 
     fn set_anchor_bottom(&self, anchored: bool) {

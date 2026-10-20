@@ -157,6 +157,9 @@ pub fn run() {
                 tracing::warn!("bandeja indisponível: {error}");
             }
             spawn_overlay_position_tracker(app.handle().clone());
+            // ISS-043: o GTK/Mutter pode mapear o overlay **sem** o
+            // `_NET_WM_STATE_ABOVE`; reafirma logo após o boot.
+            spawn_overlay_stacking_reassertion(app.handle().clone());
             for label in domain::settings::PANEL_LABELS {
                 spawn_panel_position_tracker(app.handle().clone(), label);
             }
@@ -504,8 +507,9 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     // Captura de tela (print para a pergunta, BR-055). O print fica **pendente**
     // até o usuário confirmar a pergunta; a prévia no canto lê o mesmo estado.
     let screen: Arc<dyn ScreenCapture> = Arc::new(X11ScreenCapture::new());
-    let capture: Arc<dyn crate::ports::pending_capture::PendingCapture> =
-        Arc::new(crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new());
+    let capture: Arc<dyn crate::ports::pending_capture::PendingCapture> = Arc::new(
+        crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new(),
+    );
 
     // Perguntas do usuário (aba "Sessão", BR-053).
     let ask: Arc<dyn AskController> = Arc::new(AskService::new(
@@ -536,14 +540,19 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         tracing::warn!("{} atalho(s) não registrado(s)", conflicts.len());
     }
     overlay.set_stealth(current_settings.stealth);
-    // O **notch** mantém o comportamento antigo: posição lembrada (se válida)
-    // ou o padrão ancorado pela base.
-    let saved_position = current_settings
-        .overlay_position
-        .filter(|(x, y)| *x >= 0 && *y >= 0);
-    if let Some((x, y)) = saved_position {
-        let _ = overlay_window.set_position(tauri::PhysicalPosition::new(x, y));
-        overlay.set_anchor_bottom(false);
+    // HUD (BR-062): densidade e ancoragem. "Flutuante Livre" restaura a
+    // posição lembrada; as âncoras fixas posicionam na área útil do monitor.
+    let density = crate::domain::hud_layout::HudDensity::parse(&current_settings.hud_density);
+    let anchor = crate::domain::hud_layout::NotchAnchor::parse(&current_settings.notch_anchor);
+    overlay.set_hud_layout(density, anchor);
+    if !anchor.is_anchored() {
+        let saved_position = current_settings
+            .overlay_position
+            .filter(|(x, y)| *x >= 0 && *y >= 0);
+        if let Some((x, y)) = saved_position {
+            let _ = overlay_window.set_position(tauri::PhysicalPosition::new(x, y));
+            overlay.set_anchor_bottom(false);
+        }
     }
     // Barra "Perguntar": sempre no topo, centralizada (BR-052). Ela não é
     // arrastável — é a superfície de pesquisa, não o notch.
@@ -948,6 +957,25 @@ fn spawn_panel_position_tracker(app: tauri::AppHandle, label: &'static str) {
         }
         if changed {
             let _ = state.settings.save(&settings);
+        }
+    });
+}
+
+/// Reafirma o `always_on_top` do notch depois do boot (ISS-043).
+///
+/// No GTK/Mutter o hint `_NET_WM_STATE_ABOVE` pode se perder quando a janela é
+/// mapeada; as janelas abertas depois (`show()`) reaplicam sozinhas, mas o
+/// overlay nasce visível e não passava por esse caminho.
+fn spawn_overlay_stacking_reassertion(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        // Curto o suficiente para não aparecer, longo o suficiente para o
+        // compositor já ter mapeado a janela.
+        std::thread::sleep(Duration::from_millis(900));
+        let Some(window) = app.get_webview_window("overlay") else {
+            return;
+        };
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.set_always_on_top(true);
         }
     });
 }

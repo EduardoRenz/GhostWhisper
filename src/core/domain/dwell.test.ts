@@ -17,6 +17,7 @@ describe("dwell (domínio)", () => {
   it("rotula a duração em segundos pt-BR", () => {
     expect(dwellLabel(500)).toBe("0,5 s");
     expect(dwellLabel(1_200)).toBe("1,2 s");
-    expect(dwellLabel(2_000)).toBe("2,0 s");
+    // Acima do teto (1,5 s desde a BR-062) o rótulo reflete o clamp.
+    expect(dwellLabel(2_000)).toBe("1,5 s");
   });
 });

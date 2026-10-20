@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use crate::domain::settings::{MAX_SAVED_QUESTIONS, REPLY_TO_LAST_QUESTION, SavedQuestion};
+use crate::domain::settings::{SavedQuestion, MAX_SAVED_QUESTIONS, REPLY_TO_LAST_QUESTION};
 use crate::error::Result;
 use crate::ports::settings_store::SettingsStore;
 
@@ -185,10 +185,7 @@ mod tests {
             .expect("migra");
 
         assert!(!outcome.question_added, "lista cheia: nada é acrescentado");
-        assert_eq!(
-            store.saved().saved_questions.len(),
-            MAX_SAVED_QUESTIONS
-        );
+        assert_eq!(store.saved().saved_questions.len(), MAX_SAVED_QUESTIONS);
     }
 
     #[test]
@@ -211,9 +208,9 @@ mod tests {
     fn does_not_resurrect_a_deleted_preset() {
         let mut settings = old_settings();
         // O usuário apagou "O que posso falar?" antes de atualizar.
-        settings.saved_questions.retain(|question| {
-            question.text != "O que posso falar?"
-        });
+        settings
+            .saved_questions
+            .retain(|question| question.text != "O que posso falar?");
         let store = Arc::new(MemoryStore::with(settings));
 
         SavedQuestionsMigration::new(store.clone())

@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–13 `CONCLUDED`)
+- **Status:** Implementado (tasks 01–15 `CONCLUDED`)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/notch-ui.md`](architecture/notch-ui.md),

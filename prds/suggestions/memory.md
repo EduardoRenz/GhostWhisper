@@ -231,7 +231,7 @@ janela aberta e sugestões chegando; não reagia a fala nova.
   `tone` + `mono`; os casos de uso só acrescentam largura/alinhamento. Removeu
   borda/fundo/tipografia duplicados do CSS.
 - Convenção registrada em
-  [`../../notch/architecture/design-tokens.md`](../../notch/architecture/design-tokens.md)
+  [`../notch/architecture/design-tokens.md`](../notch/architecture/design-tokens.md)
   §4/§6 (BR-035).
 
 ---

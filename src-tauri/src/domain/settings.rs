@@ -230,6 +230,15 @@ pub struct Settings {
     /// Tempo de permanência do drill-hover, em milissegundos (BR-036).
     #[serde(default = "default_dwell_ms")]
     pub dwell_ms: u32,
+    /// Opacidade da superfície do notch (0,2–1,0) — BR-062.
+    #[serde(default = "default_overlay_opacity")]
+    pub overlay_opacity: f32,
+    /// Ancoragem do notch: `top_center` | `top_right` | `free` (BR-062).
+    #[serde(default = "default_notch_anchor")]
+    pub notch_anchor: String,
+    /// Densidade do notch: `compact` | `standard` | `expanded` (BR-062).
+    #[serde(default = "default_hud_density")]
+    pub hud_density: String,
     /// Perguntas prontas do usuário (aba "Sessão", BR-054).
     #[serde(default = "default_saved_questions")]
     pub saved_questions: Vec<SavedQuestion>,
@@ -296,10 +305,24 @@ pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
 pub const MAX_AUTO_INTERVAL_SECS: u32 = 120;
 /// Tempo padrão do drill-hover (ms) — BR-036.
 pub const DEFAULT_DWELL_MS: u32 = 500;
-/// Tempo mínimo aceito do drill-hover (ms).
-pub const MIN_DWELL_MS: u32 = 300;
+/// Tempo mínimo aceito do drill-hover (ms) — faixa do mockup (BR-062).
+pub const MIN_DWELL_MS: u32 = 100;
 /// Tempo máximo aceito do drill-hover (ms).
-pub const MAX_DWELL_MS: u32 = 2_000;
+pub const MAX_DWELL_MS: u32 = 1_500;
+/// Opacidade padrão da superfície do notch (BR-062).
+pub const DEFAULT_OVERLAY_OPACITY: f32 = 0.75;
+/// Opacidade mínima aceita (20 %).
+pub const MIN_OVERLAY_OPACITY: f32 = 0.2;
+/// Opacidade máxima aceita (100 %).
+pub const MAX_OVERLAY_OPACITY: f32 = 1.0;
+/// Valores aceitos de ancoragem do notch (BR-062).
+pub const NOTCH_ANCHORS: [&str; 3] = ["top_center", "top_right", "free"];
+/// Ancoragem padrão: centralizado no topo.
+pub const DEFAULT_NOTCH_ANCHOR: &str = "top_center";
+/// Valores aceitos de densidade do notch (BR-062).
+pub const HUD_DENSITIES: [&str; 3] = ["compact", "standard", "expanded"];
+/// Densidade padrão (72 px de janela).
+pub const DEFAULT_HUD_DENSITY: &str = "standard";
 /// Largura mínima dos painéis (piso salvo; o mínimo real de cada janela está
 /// no `tauri.conf.json` — o de Sugestões é 520 px, para o código caber).
 pub const MIN_PANEL_WIDTH: u32 = 320;
@@ -353,6 +376,9 @@ impl Default for Settings {
             panel_tab: default_panel_tab(),
             dwell_enabled: true,
             dwell_ms: default_dwell_ms(),
+            overlay_opacity: default_overlay_opacity(),
+            notch_anchor: default_notch_anchor(),
+            hud_density: default_hud_density(),
             saved_questions: default_saved_questions(),
             saved_questions_migrated: false,
         }
@@ -423,6 +449,32 @@ fn default_suggestion_interval() -> u32 {
 
 fn default_dwell_ms() -> u32 {
     DEFAULT_DWELL_MS
+}
+
+fn default_overlay_opacity() -> f32 {
+    DEFAULT_OVERLAY_OPACITY
+}
+
+fn default_notch_anchor() -> String {
+    DEFAULT_NOTCH_ANCHOR.to_string()
+}
+
+fn default_hud_density() -> String {
+    DEFAULT_HUD_DENSITY.to_string()
+}
+
+/// `true` se a ancoragem é uma das aceitas (BR-062).
+fn is_supported_anchor(value: &str) -> bool {
+    crate::domain::hud_layout::NotchAnchor::ALL
+        .iter()
+        .any(|anchor| anchor.as_str() == value)
+}
+
+/// `true` se a densidade é uma das aceitas (BR-062).
+fn is_supported_density(value: &str) -> bool {
+    crate::domain::hud_layout::HudDensity::ALL
+        .iter()
+        .any(|density| density.as_str() == value)
 }
 
 /// Traz um tamanho de painel para o mínimo permitido.
@@ -510,6 +562,27 @@ impl Settings {
                 "tempo do drill-hover deve ficar entre {MIN_DWELL_MS} e {MAX_DWELL_MS} ms"
             )));
         }
+        if !self.overlay_opacity.is_finite()
+            || !(MIN_OVERLAY_OPACITY..=MAX_OVERLAY_OPACITY).contains(&self.overlay_opacity)
+        {
+            return Err(GhostWhisperError::Config(format!(
+                "opacidade do overlay deve ficar entre {MIN_OVERLAY_OPACITY} e {MAX_OVERLAY_OPACITY}"
+            )));
+        }
+        if !is_supported_anchor(&self.notch_anchor) {
+            return Err(GhostWhisperError::Config(format!(
+                "ancoragem do notch inválida: {} (use {})",
+                self.notch_anchor,
+                NOTCH_ANCHORS.join(", ")
+            )));
+        }
+        if !is_supported_density(&self.hud_density) {
+            return Err(GhostWhisperError::Config(format!(
+                "densidade do HUD inválida: {} (use {})",
+                self.hud_density,
+                HUD_DENSITIES.join(", ")
+            )));
+        }
         Ok(())
     }
 
@@ -574,6 +647,20 @@ impl Settings {
             .suggestion_interval_secs
             .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
         self.dwell_ms = self.dwell_ms.clamp(MIN_DWELL_MS, MAX_DWELL_MS);
+        // HUD (BR-062): opacidade fora da faixa é trazida para dentro; âncora e
+        // densidade desconhecidas caem no padrão.
+        if !self.overlay_opacity.is_finite() {
+            self.overlay_opacity = DEFAULT_OVERLAY_OPACITY;
+        }
+        self.overlay_opacity = self
+            .overlay_opacity
+            .clamp(MIN_OVERLAY_OPACITY, MAX_OVERLAY_OPACITY);
+        if !is_supported_anchor(&self.notch_anchor) {
+            self.notch_anchor = default_notch_anchor();
+        }
+        if !is_supported_density(&self.hud_density) {
+            self.hud_density = default_hud_density();
+        }
         self.suggestions_size = clamp_panel_size(self.suggestions_size);
         self.chat_size = clamp_panel_size(self.chat_size);
         self.history_size = clamp_panel_size(self.history_size);
@@ -953,6 +1040,82 @@ mod tests {
         let valid = Settings {
             dwell_ms: MAX_DWELL_MS,
             dwell_enabled: false,
+            ..Settings::default()
+        };
+        assert!(valid.validate().is_ok());
+    }
+
+    #[test]
+    fn hud_defaults_are_balanced() {
+        let settings = Settings::default();
+        assert_eq!(settings.overlay_opacity, DEFAULT_OVERLAY_OPACITY);
+        assert_eq!(settings.notch_anchor, "top_center");
+        assert_eq!(settings.hud_density, "standard");
+        assert_eq!(DEFAULT_OVERLAY_OPACITY, 0.75);
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_settings_get_hud_defaults() {
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json
+            .replace(",\"overlay_opacity\":0.75", "")
+            .replace(",\"notch_anchor\":\"top_center\"", "")
+            .replace(",\"hud_density\":\"standard\"", "");
+        assert!(!legacy.contains("overlay_opacity"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert_eq!(parsed.overlay_opacity, DEFAULT_OVERLAY_OPACITY);
+        assert_eq!(parsed.notch_anchor, DEFAULT_NOTCH_ANCHOR);
+        assert_eq!(parsed.hud_density, DEFAULT_HUD_DENSITY);
+        assert!(parsed.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_clamps_opacity_and_resets_unknown_hud_values() {
+        let dirty = Settings {
+            overlay_opacity: 0.05,
+            notch_anchor: "canto_do_mundo".to_string(),
+            hud_density: "gigante".to_string(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(dirty.overlay_opacity, MIN_OVERLAY_OPACITY);
+        assert_eq!(dirty.notch_anchor, DEFAULT_NOTCH_ANCHOR);
+        assert_eq!(dirty.hud_density, DEFAULT_HUD_DENSITY);
+        assert!(dirty.validate().is_ok());
+
+        let nan = Settings {
+            overlay_opacity: f32::NAN,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(nan.overlay_opacity, DEFAULT_OVERLAY_OPACITY);
+    }
+
+    #[test]
+    fn hud_validation_rejects_out_of_contract() {
+        let opacity = Settings {
+            overlay_opacity: 1.5,
+            ..Settings::default()
+        };
+        assert!(opacity.validate().is_err());
+
+        let anchor = Settings {
+            notch_anchor: "esquerda".to_string(),
+            ..Settings::default()
+        };
+        assert!(anchor.validate().is_err());
+
+        let density = Settings {
+            hud_density: "enorme".to_string(),
+            ..Settings::default()
+        };
+        assert!(density.validate().is_err());
+
+        let valid = Settings {
+            overlay_opacity: MAX_OVERLAY_OPACITY,
+            notch_anchor: "free".to_string(),
+            hud_density: "expanded".to_string(),
             ..Settings::default()
         };
         assert!(valid.validate().is_ok());

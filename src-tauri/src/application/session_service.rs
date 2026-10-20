@@ -355,7 +355,10 @@ impl SessionController for SessionService {
             remembered
         };
         let id = self.open_session(channels, false)?;
-        tracing::info!(session_id = id, "sessão aberta pausada (pergunta sem gravação)");
+        tracing::info!(
+            session_id = id,
+            "sessão aberta pausada (pergunta sem gravação)"
+        );
         Ok(id)
     }
 
@@ -998,10 +1001,7 @@ mod tests {
         assert_eq!(f.last_state().channels, vec!["system"]);
 
         // Começar a capturar usa a escolha e continua na mesma sessão.
-        assert_eq!(
-            f.service.start(&[AudioChannel::System]).expect("start"),
-            id
-        );
+        assert_eq!(f.service.start(&[AudioChannel::System]).expect("start"), id);
         assert!(f.system.is_running());
     }
 
