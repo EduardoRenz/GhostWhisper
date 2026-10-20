@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AskWindow } from "./AskWindow";
 
@@ -7,7 +7,9 @@ const screenCapture = vi.fn();
 const capturePending = vi.fn();
 const captureClear = vi.fn();
 const askHide = vi.fn();
+const askOpen = vi.fn();
 const panelOpenTab = vi.fn();
+const subscribe = vi.fn();
 
 vi.mock("../../adapters/ipc/journal", () => ({
   journalAsk: (...args: unknown[]) => journalAsk(...args),
@@ -21,6 +23,7 @@ vi.mock("../../adapters/ipc/screen", () => ({
 
 vi.mock("../../adapters/ipc/ask", () => ({
   askHide: (...args: unknown[]) => askHide(...args),
+  askOpen: (...args: unknown[]) => askOpen(...args),
 }));
 
 vi.mock("../../adapters/ipc/panels", () => ({
@@ -28,7 +31,7 @@ vi.mock("../../adapters/ipc/panels", () => ({
 }));
 
 vi.mock("../../adapters/ipc/events", () => ({
-  subscribe: vi.fn(async () => () => {}),
+  subscribe: (...args: unknown[]) => subscribe(...args),
 }));
 
 const shot = { mime: "image/jpeg", data: "AAA", width: 1280, height: 720 };
@@ -41,7 +44,30 @@ describe("AskWindow (barra de pesquisa)", () => {
     capturePending.mockResolvedValue(null);
     captureClear.mockResolvedValue(undefined);
     askHide.mockResolvedValue(undefined);
+    askOpen.mockResolvedValue(undefined);
     panelOpenTab.mockResolvedValue(undefined);
+    subscribe.mockResolvedValue(() => {});
+  });
+
+  it("o atalho devolve o cursor ao campo de pergunta", async () => {
+    const handlers: Record<string, (payload: unknown) => void> = {};
+    subscribe.mockImplementation(
+      (event: string, handler: (payload: unknown) => void) => {
+        handlers[event] = handler;
+        return Promise.resolve(() => {});
+      },
+    );
+    render(<AskWindow />);
+
+    const input = screen.getByLabelText("Perguntar ao GhostWhisper");
+    input.blur();
+    expect(document.activeElement).not.toBe(input);
+
+    act(() => {
+      handlers["ask_focus"]?.({});
+    });
+
+    await waitFor(() => expect(document.activeElement).toBe(input));
   });
 
   it("capturar apenas anexa — não envia a pergunta", async () => {

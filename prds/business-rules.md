@@ -1091,6 +1091,13 @@ uma nota de revisão.
   Markdown; separador entre entradas é a linha (`---`). **Encerrar a sessão
   limpa a aba** (o diário é o da sessão ativa). O rodapé mostra a contagem, o
   `Sync local · SQLite` e o **Exportar MD**.
+- **Revisão 5 (2026-10-20):** a barra de pesquisa **sempre reabre centralizada
+  no topo** — a posição é recalculada a cada abertura (`show_ask_window`), com
+  o `set_position` antes **e** depois do `show` (o WM pode reencaixar a janela
+  ao mapeá-la). Arrastar vale só **enquanto ela está aberta**; ela nunca mais
+  nasce fora da tela escondendo a alça. O foco do campo é garantido pelo
+  evento `ask_focus` **e** pelo foco da janela (`onFocusChanged`), porque o
+  foco do WM chega depois do evento.
 - **Revisão 4 (2026-10-20):** a sessão do diário é **sempre a sessão ativa**
   (a mesma do notch/histórico), inclusive a aberta **pausada** pela pergunta
   (`ensure_session`) — é o que faz a resposta de um print **sem transcrição**

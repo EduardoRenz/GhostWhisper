@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { askHide, askOpen } from "../../adapters/ipc/ask";
 import { panelStartDrag } from "../../adapters/ipc/panels";
 import { journalAsk } from "../../adapters/ipc/journal";
@@ -8,6 +9,7 @@ import {
   capturePending,
   screenCapture,
 } from "../../adapters/ipc/screen";
+import { isTauriRuntime } from "../../adapters/ipc/client";
 import { subscribe } from "../../adapters/ipc/events";
 import { useSettings } from "../../core/application/useSettings";
 import { defaultBindings } from "../../core/domain/shortcuts";
@@ -112,6 +114,37 @@ export function AskWindow() {
         stop = unlisten;
       }
     });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, []);
+
+  // O foco do campo também acompanha o **foco da janela**: no atalho, a barra
+  // aparece antes de o WM entregar o foco — sem isto o cursor podia ficar fora
+  // do input (o evento `ask_focus` chega cedo demais).
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) {
+          setFocusSignal((previous) => previous + 1);
+        }
+      })
+      .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+        } else {
+          stop = unlisten;
+        }
+      })
+      .catch(() => {
+        // Sem foco observável (ex.: janela não mapeada): o evento basta.
+      });
     return () => {
       cancelled = true;
       stop?.();

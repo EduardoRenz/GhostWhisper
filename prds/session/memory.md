@@ -273,3 +273,22 @@ sessão paralela que o resto do app não via.
   duplica, respeita o teto, instalação nova, não ressuscita apagado) e o
   default no frontend.
 
+---
+
+## 2026-10-20 — v8: a barra de pesquisa reabre centralizada e com o cursor no campo
+
+- **IDs:** BR-052
+
+- **Posição:** `show_ask_window` (`ipc/ask_commands.rs`) recentraliza a barra no
+  topo **a cada abertura** (quando ela estava escondida), antes e depois do
+  `show` — o WM pode reencaixar a janela ao mapeá-la, e antes a posição só era
+  aplicada no boot (a barra reabria onde tivesse sido arrastada, às vezes fora
+  da tela e escondendo a alça). O setup do `lib.rs` usa o mesmo
+  `center_ask_window` (uma fonte só; `ASK_WIDTH` mudou para o módulo do ask).
+- **Foco:** `ask_open` e o atalho emitem `ask_focus`; a janela ainda escuta
+  `onFocusChanged` e devolve o cursor ao input — o foco do WM chega **depois**
+  do evento, então só o evento não bastava.
+- Teste: o `ask_focus` leva o `document.activeElement` para o campo; o mock do
+  `askOpen` entrou no teste (antes ele estourava em silêncio no caminho do
+  print).
+

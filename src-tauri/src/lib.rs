@@ -554,18 +554,9 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             overlay.set_anchor_bottom(false);
         }
     }
-    // Barra "Perguntar": sempre no topo, centralizada (BR-052). Ela não é
-    // arrastável — é a superfície de pesquisa, não o notch.
-    if let Some(window) = app.get_webview_window("ask") {
-        if let Ok(Some(monitor)) = app.primary_monitor() {
-            let size = monitor.size();
-            let scale = monitor.scale_factor();
-            let width = (ASK_WIDTH * scale).round() as i32;
-            let margin = (12.0 * scale).round() as i32;
-            let x = (size.width as i32 - width) / 2;
-            let _ = window.set_position(tauri::PhysicalPosition::new(x, margin));
-        }
-    }
+    // Barra "Perguntar": sempre no topo, centralizada (BR-052). A posição é
+    // recalculada a cada abertura (ver `show_ask_window`).
+    crate::ipc::ask_commands::center_ask_window(app.handle());
 
     // Prévia do print: canto **superior direito** (BR-055).
     if let Some(window) = app.get_webview_window("capture") {
@@ -1034,12 +1025,7 @@ fn dispatch_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
 
 /// Mostra a janela da barra de pesquisa e devolve o foco ao campo.
 fn open_ask_window(app: &tauri::AppHandle) {
-    use tauri::{Emitter, Manager};
-    if let Some(window) = app.get_webview_window("ask") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = app.emit_to("ask", "ask_focus", ());
-    }
+    crate::ipc::ask_commands::show_ask_window(app);
 }
 
 /// Executa a ação do atalho (pode demorar; chame pela thread certa).
@@ -1092,8 +1078,6 @@ fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
     }
 }
 
-/// Largura lógica da barra de pesquisa (janela `ask`).
-const ASK_WIDTH: f64 = 1040.0;
 /// Largura lógica da prévia do print (janela `capture`).
 const PREVIEW_WIDTH: f64 = 240.0;
 
