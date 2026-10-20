@@ -69,4 +69,11 @@ describe("settings (domínio)", () => {
     expect(settings.dwell_enabled).toBe(true);
     expect(settings.dwell_ms).toBe(500);
   });
+
+  it("o agente Padrão é o selecionado por padrão (BR-059)", () => {
+    const settings = defaultSettings();
+    expect(settings.assistant_mode_id).toBe("default");
+    // A migração do agente padrão ainda não rodou.
+    expect(settings.assistant_mode_migrated).toBe(false);
+  });
 });

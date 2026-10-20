@@ -7,6 +7,7 @@
 //! Catálogo completo em `prds/mvp/architecture/engineering-guidelines.md`.
 
 pub mod ai_source_service;
+pub mod ask_controller;
 pub mod audio_consumer;
 pub mod audio_monitor;
 pub mod audio_reference;
@@ -17,14 +18,17 @@ pub mod clock;
 pub mod dwell_popover;
 pub mod event_publisher;
 pub mod gpu_probe;
+pub mod journal_repository;
 pub mod llm_controller;
 pub mod llm_provider_factory;
 pub mod manual_suggestion_context;
 pub mod meeting_summaries_repository;
 pub mod model_store;
 pub mod overlay_window;
+pub mod pending_capture;
 pub mod pointer_source;
 pub mod repositories;
+pub mod screen_capture;
 pub mod secret_store;
 pub mod session_controller;
 pub mod settings_store;

@@ -177,9 +177,17 @@ pub struct Settings {
     /// Posição do overlay na tela (lembrada após o usuário mover).
     #[serde(default)]
     pub overlay_position: Option<(i32, i32)>,
-    /// Agente/modo selecionado para sugestões (`meeting` por padrão).
+    /// Agente/modo selecionado para sugestões (`default` — o agente Padrão).
     #[serde(default = "default_assistant_mode")]
     pub assistant_mode_id: String,
+    /// Marca a migração do agente padrão (BR-059).
+    ///
+    /// O agente **Padrão** (contextual) entrou no lugar da "Reunião" como
+    /// padrão. A marca garante que a migração acontece **uma vez**: depois
+    /// dela, a escolha do usuário é respeitada (mesmo se ele voltar para a
+    /// "Reunião").
+    #[serde(default)]
+    pub assistant_mode_migrated: bool,
     /// Agentes personalizados criados pelo usuário.
     #[serde(default)]
     pub custom_assistant_modes: Vec<AssistantMode>,
@@ -222,6 +230,45 @@ pub struct Settings {
     /// Tempo de permanência do drill-hover, em milissegundos (BR-036).
     #[serde(default = "default_dwell_ms")]
     pub dwell_ms: u32,
+    /// Perguntas prontas do usuário (aba "Sessão", BR-054).
+    #[serde(default = "default_saved_questions")]
+    pub saved_questions: Vec<SavedQuestion>,
+}
+
+/// Uma pergunta pronta do usuário (aba "Sessão", BR-054).
+///
+/// Vive nas **settings** — é configuração do usuário, não dado de sessão.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedQuestion {
+    /// Id estável (para editar/remover sem depender da posição).
+    pub id: String,
+    /// O texto da pergunta.
+    pub text: String,
+}
+
+/// Teto de perguntas prontas guardadas.
+pub const MAX_SAVED_QUESTIONS: usize = 20;
+/// Teto de caracteres de uma pergunta pronta.
+pub const MAX_SAVED_QUESTION_CHARS: usize = 200;
+
+/// Perguntas prontas semeadas (tradução das "Prompt Suggestions" do Perssua).
+pub const DEFAULT_SAVED_QUESTIONS: [&str; 4] = [
+    "Resumir tudo até agora",
+    "Listar as ações",
+    "Listar as principais ideias",
+    "O que posso falar?",
+];
+
+/// Perguntas prontas padrão (com ids derivados do texto).
+pub fn default_saved_questions() -> Vec<SavedQuestion> {
+    DEFAULT_SAVED_QUESTIONS
+        .iter()
+        .enumerate()
+        .map(|(index, text)| SavedQuestion {
+            id: format!("default-{index}"),
+            text: (*text).to_string(),
+        })
+        .collect()
 }
 
 /// Rótulos das janelas de painel (ordem de boot e de persistência do layout).
@@ -231,7 +278,7 @@ pub struct Settings {
 pub const PANEL_LABELS: [&str; 3] = ["suggestions", "chat", "history"];
 
 /// Abas válidas do painel da sessão (janela `chat`).
-pub const PANEL_TABS: [&str; 2] = ["transcription", "summary"];
+pub const PANEL_TABS: [&str; 3] = ["transcription", "summary", "session"];
 
 /// Intervalo mínimo aceito para atualizações automáticas (segundos).
 pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
@@ -281,6 +328,7 @@ impl Default for Settings {
             shortcuts: crate::domain::shortcuts::default_bindings(),
             overlay_position: None,
             assistant_mode_id: default_assistant_mode(),
+            assistant_mode_migrated: false,
             custom_assistant_modes: Vec::new(),
             summary_auto_refresh: true,
             summary_interval_secs: default_summary_interval(),
@@ -295,6 +343,7 @@ impl Default for Settings {
             panel_tab: default_panel_tab(),
             dwell_enabled: true,
             dwell_ms: default_dwell_ms(),
+            saved_questions: default_saved_questions(),
         }
     }
 }
@@ -302,6 +351,37 @@ impl Default for Settings {
 /// Aba padrão do painel da sessão (Transcrição).
 fn default_panel_tab() -> String {
     "transcription".to_string()
+}
+
+/// Sanitiza as perguntas prontas: texto vazio sai, o texto é limitado a
+/// [`MAX_SAVED_QUESTION_CHARS`] e a lista a [`MAX_SAVED_QUESTIONS`] itens.
+///
+/// O **excesso é recusado** no save (a UI avisa); no load, o que passa do teto
+/// é descartado para o arquivo não crescer sem limite.
+fn sanitize_saved_questions(questions: Vec<SavedQuestion>) -> Vec<SavedQuestion> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut out: Vec<SavedQuestion> = Vec::new();
+    for question in questions {
+        let text = question.text.trim().to_string();
+        if text.is_empty() {
+            continue;
+        }
+        let text: String = text.chars().take(MAX_SAVED_QUESTION_CHARS).collect();
+        let id = if question.id.trim().is_empty() {
+            format!("q-{}", out.len())
+        } else {
+            question.id.trim().to_string()
+        };
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id.clone());
+        out.push(SavedQuestion { id, text });
+        if out.len() >= MAX_SAVED_QUESTIONS {
+            break;
+        }
+    }
+    out
 }
 
 /// Corrige uma aba desconhecida/vazia para a padrão.
@@ -315,7 +395,7 @@ fn sanitize_panel_tab(value: &str) -> String {
 }
 
 fn default_assistant_mode() -> String {
-    "meeting".to_string()
+    crate::domain::assistant::DEFAULT_MODE_ID.to_string()
 }
 
 fn default_enabled() -> bool {
@@ -487,6 +567,7 @@ impl Settings {
         self.chat_size = clamp_panel_size(self.chat_size);
         self.history_size = clamp_panel_size(self.history_size);
         self.panel_tab = sanitize_panel_tab(&self.panel_tab);
+        self.saved_questions = sanitize_saved_questions(self.saved_questions);
         self
     }
 
@@ -764,7 +845,8 @@ mod tests {
     #[test]
     fn default_assistant_settings_are_valid() {
         let settings = Settings::default();
-        assert_eq!(settings.assistant_mode_id, "meeting");
+        assert_eq!(settings.assistant_mode_id, "default");
+        assert!(!settings.assistant_mode_migrated);
         assert_eq!(settings.summary_interval_secs, 30);
         assert_eq!(settings.suggestion_interval_secs, 20);
         assert!(settings.custom_assistant_modes.is_empty());
@@ -775,7 +857,8 @@ mod tests {
     fn legacy_settings_get_assistant_defaults() {
         let json = serde_json::to_string(&Settings::default()).expect("json");
         let legacy = json
-            .replace("\"assistant_mode_id\":\"meeting\",", "")
+            .replace("\"assistant_mode_id\":\"default\",", "")
+            .replace("\"assistant_mode_migrated\":false,", "")
             .replace("\"custom_assistant_modes\":[],", "")
             .replace("\"summary_auto_refresh\":true,", "")
             .replace("\"summary_interval_secs\":30,", "")
@@ -784,7 +867,8 @@ mod tests {
             .replace("\"suggestions_position\":null,", "");
         assert!(!legacy.contains("assistant_mode_id"));
         let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
-        assert_eq!(parsed.assistant_mode_id, "meeting");
+        assert_eq!(parsed.assistant_mode_id, "default");
+        assert!(!parsed.assistant_mode_migrated);
         assert_eq!(parsed.summary_interval_secs, 30);
         assert!(parsed.validate().is_ok());
     }
@@ -796,7 +880,7 @@ mod tests {
             ..Settings::default()
         }
         .sanitized();
-        assert_eq!(dirty.assistant_mode_id, "meeting");
+        assert_eq!(dirty.assistant_mode_id, "default");
         assert!(dirty.validate().is_ok());
     }
 

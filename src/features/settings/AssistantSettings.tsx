@@ -97,7 +97,8 @@ export function AssistantSettings({ settings, update }: AssistantSettingsProps) 
       custom.filter((mode) => mode.id !== id),
     );
     if (settings.assistant_mode_id === id) {
-      update("assistant_mode_id", "meeting");
+      // Volta para o agente Padrão (o padrão do app — BR-059).
+      update("assistant_mode_id", "default");
     }
   };
 

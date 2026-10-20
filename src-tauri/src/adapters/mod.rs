@@ -13,6 +13,8 @@ pub mod dwell;
 pub mod events;
 pub mod manual;
 pub mod overlay;
+pub mod pending;
+pub mod screen;
 pub mod persistence;
 pub mod secrets;
 pub mod settings;

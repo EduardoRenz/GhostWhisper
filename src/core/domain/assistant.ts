@@ -25,6 +25,7 @@ export interface AssistantMode {
 
 /** IDs reservados dos agentes embutidos. */
 export const BUILTIN_MODE_IDS = [
+  "default",
   "meeting",
   "technical_interview",
   "leetcode",

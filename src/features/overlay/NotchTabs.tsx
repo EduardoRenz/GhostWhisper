@@ -28,7 +28,8 @@ interface NotchTabsProps {
 
 /**
  * Switcher do notch ativo (BR-032/task 08): **Transcrição** (com waveform),
- * play/pause contextual, **Resumo** e **Sugestões**.
+ * play/pause contextual, **Resumo** e **Sugestões**. A lupa (barra de
+ * pesquisa) vive na barra, ao lado da marca (BR-052).
  *
  * A Transcrição fica destacada enquanto a sessão está captando — é o "modo vivo".
  * Clicar nela ou em Resumo abre o painel na aba correspondente; Sugestões alterna

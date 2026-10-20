@@ -64,6 +64,20 @@ pub fn run() {
             ipc::session_commands::session_continue,
             ipc::session_commands::session_current,
             ipc::session_commands::session_set_language,
+            ipc::ask_commands::ask_open,
+            ipc::ask_commands::ask_hide,
+            ipc::ask_commands::ask_is_open,
+            ipc::ask_commands::ask_focus,
+            ipc::screen_commands::screen_capture,
+            ipc::screen_commands::capture_pending,
+            ipc::screen_commands::capture_clear,
+            ipc::journal_commands::journal_list,
+            ipc::journal_commands::journal_get,
+            ipc::journal_commands::journal_search,
+            ipc::journal_commands::journal_images,
+            ipc::journal_commands::journal_delete,
+            ipc::journal_commands::journal_ask,
+            ipc::journal_commands::journal_cancel,
             ipc::database_commands::db_list_sessions,
             ipc::database_commands::db_get_session,
             ipc::database_commands::db_session_transcriptions,
@@ -203,10 +217,12 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
     use adapters::persistence::sqlite::connection as db_connection;
+    use adapters::persistence::sqlite::local_journal_repository::LocalJournalRepository;
     use adapters::persistence::sqlite::local_meeting_summaries_repository::LocalMeetingSummariesRepository;
     use adapters::persistence::sqlite::local_messages_repository::LocalMessagesRepository;
     use adapters::persistence::sqlite::local_session_repository::LocalSessionRepository;
     use adapters::persistence::sqlite::local_transcriptions_repository::LocalTranscriptionsRepository;
+    use adapters::screen::x11_screen_capture::X11ScreenCapture;
     use adapters::secrets::in_memory_secret_store::InMemorySecretStore;
     use adapters::secrets::keyring_secret_store::KeyringSecretStore;
     use adapters::settings::file_settings_store::FileSettingsStore;
@@ -218,11 +234,13 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::system::system_clock::SystemClock;
     use adapters::system::vulkan_gpu_probe::VulkanGpuProbe;
     use adapters::system::x11_pointer_source::{NullPointerSource, X11PointerSource};
+    use application::ask_service::AskService;
     use application::llm_router::LlmRouter;
     use application::session_service::SessionService;
     use application::suggestion_service::SuggestionService;
     use application::summary_service::SummaryService;
     use application::translation_service::TranslationService;
+    use ports::ask_controller::AskController;
     use ports::audio_monitor::AudioMonitor;
     use ports::audio_reference::AudioReference;
     use ports::audio_source::AudioSource;
@@ -231,6 +249,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::dwell_popover::DwellPopoverController;
     use ports::event_publisher::EventPublisher;
     use ports::gpu_probe::GpuProbe;
+    use ports::journal_repository::JournalRepository;
     use ports::llm_controller::LlmController;
     use ports::llm_provider_factory::ChatBotProviderFactory;
     use ports::manual_suggestion_context::ManualSuggestionContextStore;
@@ -239,6 +258,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::overlay_window::OverlayWindowController;
     use ports::pointer_source::PointerSource;
     use ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
+    use ports::screen_capture::ScreenCapture;
     use ports::secret_store::SecretStore;
     use ports::session_controller::SessionController;
     use ports::settings_store::SettingsStore;
@@ -355,6 +375,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let summaries: Arc<dyn MeetingSummariesRepository> = Arc::new(
         LocalMeetingSummariesRepository::new(Arc::clone(&connection)),
     );
+    let journal: Arc<dyn JournalRepository> =
+        Arc::new(LocalJournalRepository::new(Arc::clone(&connection)));
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
     // Sessões órfãs: app fechado durante uma gravação deixa a sessão `active` no
@@ -399,6 +421,20 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             }
         }
         Err(error) => tracing::warn!("falha ao migrar as fontes de IA: {error}"),
+    }
+
+    // Migração do agente padrão (BR-059): o agente **Padrão** (contextual)
+    // substitui a "Reunião" como padrão — uma vez só, para não sobrescrever a
+    // escolha do usuário depois.
+    match application::assistant_mode_migration::AssistantModeMigration::new(Arc::clone(&settings))
+        .migrate()
+    {
+        Ok(outcome) => {
+            if outcome.mode_changed {
+                tracing::info!("agente padrão migrado para o agente Padrão");
+            }
+        }
+        Err(error) => tracing::warn!("falha ao migrar o agente padrão: {error}"),
     }
 
     // Registro de saúde + circuit breaker das fontes (BR-045): compartilhado
@@ -450,6 +486,22 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let manual_context: Arc<dyn ManualSuggestionContextStore> =
         Arc::new(InMemoryManualSuggestionContextStore::new());
 
+    // Captura de tela (print para a pergunta, BR-055). O print fica **pendente**
+    // até o usuário confirmar a pergunta; a prévia no canto lê o mesmo estado.
+    let screen: Arc<dyn ScreenCapture> = Arc::new(X11ScreenCapture::new());
+    let capture: Arc<dyn crate::ports::pending_capture::PendingCapture> =
+        Arc::new(crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new());
+
+    // Perguntas do usuário (aba "Sessão", BR-053).
+    let ask: Arc<dyn AskController> = Arc::new(AskService::new(
+        Arc::clone(&llm),
+        Arc::clone(&sessions),
+        Arc::clone(&transcriptions),
+        Arc::clone(&journal),
+        Arc::clone(&clock),
+        Arc::clone(&publisher),
+    ));
+
     // Atalhos globais: o despachante resolve o `AppState` em tempo de execução.
     let shortcuts: Arc<dyn GlobalShortcutRegistry> = {
         let app_handle = app.handle().clone();
@@ -469,11 +521,40 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         tracing::warn!("{} atalho(s) não registrado(s)", conflicts.len());
     }
     overlay.set_stealth(current_settings.stealth);
-    if let Some((x, y)) = current_settings.overlay_position {
+    // O **notch** mantém o comportamento antigo: posição lembrada (se válida)
+    // ou o padrão ancorado pela base.
+    let saved_position = current_settings
+        .overlay_position
+        .filter(|(x, y)| *x >= 0 && *y >= 0);
+    if let Some((x, y)) = saved_position {
         let _ = overlay_window.set_position(tauri::PhysicalPosition::new(x, y));
-        // Posição escolhida pelo usuário: não reancorar pela base.
         overlay.set_anchor_bottom(false);
     }
+    // Barra "Perguntar": sempre no topo, centralizada (BR-052). Ela não é
+    // arrastável — é a superfície de pesquisa, não o notch.
+    if let Some(window) = app.get_webview_window("ask") {
+        if let Ok(Some(monitor)) = app.primary_monitor() {
+            let size = monitor.size();
+            let scale = monitor.scale_factor();
+            let width = (ASK_WIDTH * scale).round() as i32;
+            let margin = (12.0 * scale).round() as i32;
+            let x = (size.width as i32 - width) / 2;
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, margin));
+        }
+    }
+
+    // Prévia do print: canto **superior direito** (BR-055).
+    if let Some(window) = app.get_webview_window("capture") {
+        if let Ok(Some(monitor)) = app.primary_monitor() {
+            let size = monitor.size();
+            let scale = monitor.scale_factor();
+            let width = (PREVIEW_WIDTH * scale).round() as i32;
+            let margin = (16.0 * scale).round() as i32;
+            let x = size.width as i32 - width - margin;
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, margin));
+        }
+    }
+
     // Painéis: reaplica a última posição e o último tamanho (px físicos).
     for label in domain::settings::PANEL_LABELS {
         let Some(window) = app.get_webview_window(label) else {
@@ -524,6 +605,10 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         sessions,
         transcriptions,
         messages,
+        journal,
+        ask,
+        screen,
+        capture,
         clock,
         settings,
         secrets,
@@ -888,7 +973,10 @@ fn dispatch_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
     match action {
         // Rápidos e ligados a janela/arquivo pequeno (alguns ms): seguem na thread
         // que recebeu o evento, sem custo de thread nova.
-        ShortcutAction::ToggleOverlay | ShortcutAction::ToggleStealth => run_shortcut(app, action),
+        ShortcutAction::ToggleOverlay
+        | ShortcutAction::ToggleStealth
+        | ShortcutAction::FocusAsk
+        | ShortcutAction::CaptureScreen => run_shortcut(app, action),
         // Demorados: o menu da bandeja roda na **main thread** do GTK e o listener
         // de atalhos do X11 na thread dele. Parar a sessão espera o passe final do
         // turno (até 20 s) e pedir insight faz HTTP bloqueante (até 60 s) — na main
@@ -898,6 +986,16 @@ fn dispatch_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
             let app = app.clone();
             std::thread::spawn(move || run_shortcut(&app, action));
         }
+    }
+}
+
+/// Mostra a janela da barra de pesquisa e devolve o foco ao campo.
+fn open_ask_window(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    if let Some(window) = app.get_webview_window("ask") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = app.emit_to("ask", "ask_focus", ());
     }
 }
 
@@ -932,6 +1030,15 @@ fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
                 tracing::warn!("falha ao iniciar sessão pelo atalho: {error}");
             }
         }
+        ShortcutAction::FocusAsk => {
+            // Abre a barra de pesquisa e pede o foco do campo (BR-052).
+            open_ask_window(app);
+        }
+        ShortcutAction::CaptureScreen => {
+            // A própria barra faz a captura + pergunta (um caminho só).
+            open_ask_window(app);
+            let _ = app.emit_to("ask", "capture_screen", ());
+        }
         ShortcutAction::RequestInsight => {
             let request = crate::ports::suggestion_generator::SuggestionRequest::persist(None);
             match state.suggestions.generate(request) {
@@ -941,6 +1048,11 @@ fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
         }
     }
 }
+
+/// Largura lógica da barra de pesquisa (janela `ask`).
+const ASK_WIDTH: f64 = 1040.0;
+/// Largura lógica da prévia do print (janela `capture`).
+const PREVIEW_WIDTH: f64 = 240.0;
 
 /// Identificador do app antes da renomeação (OpenSua → GhostWhisper).
 const LEGACY_IDENTIFIER: &str = "com.opensua.desktop";

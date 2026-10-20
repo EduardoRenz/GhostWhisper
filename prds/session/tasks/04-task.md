@@ -1,6 +1,6 @@
 # 04 — UI do diário: lista, streaming, estados e composer
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 02, 03
 - **Habilita:** 05, 08
 - **Issues:** — · **BR:** BR-025, BR-040, BR-052
@@ -39,17 +39,21 @@ abaixo, com streaming, estados de erro e o botão de retry.
 
 ## Critérios de aceite
 
-- [ ] As entradas aparecem **em ordem cronológica** (mais recente no fim).
-- [ ] A resposta chega **em streaming**, substituindo o texto a cada delta.
-- [ ] Entrada com erro mostra a mensagem e o botão de retry; o retry
+- [x] As entradas aparecem **em ordem cronológica** (mais recente no fim).
+- [x] A resposta chega **em streaming**, substituindo o texto a cada delta.
+- [x] Entrada com erro mostra a mensagem e o botão de retry; o retry
       **reenvia a mesma pergunta** e **não** duplica a entrada.
-- [ ] Entrada **pending** mostra "pensando…" e **não** mostra resposta vazia
+- [x] Entrada **pending** mostra "pensando…" e **não** mostra resposta vazia
       como se fosse resposta.
-- [ ] Estado vazio: "Nenhuma pergunta ainda. Use **Perguntar** para perguntar
+- [x] Estado vazio: "Nenhuma pergunta ainda. Use **Perguntar** para perguntar
       à IA." — com o botão de atalho.
-- [ ] A entrada **nunca** aparece na aba Transcrição (BR-040).
-- [ ] `pnpm test` verde: `JournalView` (lista vazia, lista com entradas,
+- [x] A entrada **nunca** aparece na aba Transcrição (BR-040).
+- [x] `pnpm test` verde: `JournalView` (lista vazia, lista com entradas,
       streaming), `JournalEntryCard` (estados), `AskComposer` (Enter/Shift+Enter).
+
+## Verificação
+
+- `pnpm test` ✓ (`JournalView`: 9 testes — lista, vazio, envio, Enter, chips, print, busca)
 
 ## Notas
 

@@ -1,8 +1,8 @@
 # PRD — Sugestões: novo layout, identidade dos agentes e usabilidade
 
-- **Versão:** 1.0
+- **Versão:** 1.1
 - **Data:** 2026-10-19
-- **Status:** Implementado (tasks 01–07 concluídas)
+- **Status:** Implementado (tasks 01–08 concluídas)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/suggestions-window.md`](architecture/suggestions-window.md),
@@ -29,6 +29,10 @@ vários ajustes de usabilidade, sem quebrar o que já funciona:
 3. **Modelo de sugestão em duas fases** — a resposta **rápida** (curta, gerada
    primeiro) e a **completa** (Markdown) coexistem, em vez de uma substituir a
    outra.
+4. **Agente Padrão** — o agente que identifica a **cena** da conversa e age
+   como o especialista correspondente (reunião → pauta; entrevista de código →
+   LeetCode), sem **nunca** perguntar de volta e sempre com **código puro**
+   (BR-059…BR-061).
 
 Paridade de comportamento com o **Perssua 0.27.5** (BR-015), sem copiar assets
 (BR-008).
@@ -171,6 +175,27 @@ Como usuário, quero reler uma sugestão antiga sem perder a atual.
 - **CA-05.5** A janela continua **sem moldura, móvel e redimensionável**, com o
   layout fluido (largura mínima 520 px para o código caber).
 
+### US-06 — Agente Padrão, agentes que respondem e código puro
+
+Como usuário, quero um agente que **entenda o contexto** sozinho (reunião,
+entrevista de código, conversa) e quero que nenhum agente me devolva uma
+pergunta.
+
+- **CA-06.1** Existe o agente **Padrão** (id `default`), **primeiro** da lista e
+  **padrão** do app: ele **identifica a cena** e age como o especialista
+  correspondente — reunião → sugestões baseadas na **pauta** em discussão;
+  entrevista de LeetCode → assume o enquadramento e responde como o agente
+  LeetCode; system design → requisitos, dimensionamento e desenho; conversa
+  geral → responde à pergunta (BR-059).
+- **CA-06.2** Instalação antiga com a “Reunião” selecionada (o padrão anterior)
+  é migrada **uma vez** para o Padrão; depois disso, a escolha do usuário é
+  respeitada.
+- **CA-06.3** **Nenhum** agente pergunta de volta: sempre tenta responder e,
+  faltando contexto, a sugestão sai curta, dizendo que há poca informação
+  (BR-060).
+- **CA-06.4** O bloco de código sai **sem comentário de linha**; a explicação
+  fica no Markdown **fora** do bloco (BR-061).
+
 ## 6. Requisitos
 
 ### Funcionais (RF)
@@ -181,6 +206,10 @@ Como usuário, quero reler uma sugestão antiga sem perder a atual.
 - **RF-03** Sugestão com **título + resposta rápida + resposta completa**.
 - **RF-04** Histórico em accordion com scroll até o bloco expandido.
 - **RF-05** Identidade (ícone + cor) no domínio de agentes.
+- **RF-06** Agente **Padrão** (contextual) como agente padrão, com migração
+  única da seleção anterior.
+- **RF-07** Regras comuns a todos os agentes: **responder** (nunca perguntar de
+  volta) e **código puro** (sem comentário de linha).
 
 ### Não funcionais (RNF)
 
@@ -194,8 +223,8 @@ Como usuário, quero reler uma sugestão antiga sem perder a atual.
   carregando (defaults) e o schema do banco não muda.
 - **RNF-05 — Acessibilidade:** foco visível, `aria-label` em todo controle,
   popover navegável por teclado, contagem lida por leitor de tela.
-- **RNF-06 — Documentação única (BR-016):** IDs `BR-037`…`BR-039`, `ISS-037`+,
-  `NN-task`; sem duplicar o que já está no PRD assistant.
+- **RNF-06 — Documentação única (BR-016):** IDs `BR-037`…`BR-039`, `BR-059`…`BR-061`,
+  `ISS-037`+, `NN-task`; sem duplicar o que já está no PRD assistant.
 
 ## 7. Não-objetivos
 

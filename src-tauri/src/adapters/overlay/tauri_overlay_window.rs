@@ -8,8 +8,11 @@ use tauri::{LogicalSize, PhysicalPosition, WebviewWindow};
 use crate::domain::geometry::Point;
 use crate::ports::overlay_window::{OverlayWindowController, Surface};
 
+/// Largura lógica da barra (posicionamento inicial — BR-052).
+pub const ACTIONBAR_WIDTH: f64 = 1040.0;
+
 /// Dimensões lógicas por superfície `(largura, altura)`.
-const ACTIONBAR_SIZE: (f64, f64) = (900.0, 72.0);
+const ACTIONBAR_SIZE: (f64, f64) = (ACTIONBAR_WIDTH, 72.0);
 
 /// Implementa `OverlayWindowController` sobre a janela Tauri.
 pub struct TauriOverlayWindow {

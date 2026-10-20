@@ -6,7 +6,7 @@
 use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
-    EventPublisher, LlmSourceUsage, SessionStateEvent, SuggestionCadenceEvent,
+    EventPublisher, JournalUpdate, LlmSourceUsage, SessionStateEvent, SuggestionCadenceEvent,
 };
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -23,4 +23,5 @@ impl EventPublisher for NullEventPublisher {
     fn emit_suggestion_cadence(&self, _cadence: &SuggestionCadenceEvent) {}
     fn emit_asr_status(&self, _status: &AsrStatus) {}
     fn emit_llm_source_used(&self, _usage: &LlmSourceUsage) {}
+    fn emit_journal(&self, _update: &JournalUpdate) {}
 }

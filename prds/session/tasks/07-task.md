@@ -1,6 +1,6 @@
 # 07 — Multimodal: `CompletionRequest` com imagens e o print na pergunta
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 06
 - **Habilita:** —
 - **Issues:** — · **BR:** BR-005, BR-053, BR-056
@@ -32,17 +32,21 @@ precisa **ver** a imagem anexada.
 
 ## Critérios de aceite
 
-- [ ] Um pedido **sem** imagem produz exatamente o mesmo corpo HTTP de hoje
+- [x] Um pedido **sem** imagem produz exatamente o mesmo corpo HTTP de hoje
       (nenhuma regressão nos providers).
-- [ ] Um pedido **com** imagem manda `image_url` (OpenAI-compatível) e
+- [x] Um pedido **com** imagem manda `image_url` (OpenAI-compatível) e
       `inline_data` (Gemini), com o `mime` e o base64 corretos.
-- [ ] A imagem enviada é a **comprimida** (≤1280 px, JPEG q0.86), não a
+- [x] A imagem enviada é a **comprimida** (≤1280 px, JPEG q0.86), não a
       original do display.
-- [ ] Provider que rejeita `image_url` → erro **claro** na entrada do
+- [x] Provider que rejeita `image_url` → erro **claro** na entrada do
       diário ("esse modelo não aceita imagem"), sem retry cego (R-04).
-- [ ] O print fica **gravado** no diário (miniatura recuperável depois).
-- [ ] `cargo test --lib` verde: construção do corpo com e sem imagem, nos
+- [x] O print fica **gravado** no diário (miniatura recuperável depois).
+- [x] `cargo test --lib` verde: construção do corpo com e sem imagem, nos
       dois formatos.
+
+## Verificação
+
+- `cargo test --lib` ✓ · `CompletionRequest.images` + `image_url`/`inline_data`
 
 ## Notas
 

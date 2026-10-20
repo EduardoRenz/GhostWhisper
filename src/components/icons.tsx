@@ -124,6 +124,97 @@ export function SummaryIcon({ className, size = 18 }: IconProps) {
   );
 }
 
+/** Lupa: o botão "Perguntar" (BR-057). */
+export function SearchIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="10.6" cy="10.6" r="6.2" />
+        <path d="M15.4 15.4 20.4 20.4" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Diário: a aba "Sessão" (BR-052). */
+export function JournalIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M6 3.5h12v17H6Z" />
+        <path d="M9 8h6" />
+        <path d="M9 12h6" />
+        <path d="M9 16h3.5" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Câmera: o print de tela (BR-055). */
+export function CameraIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3.6 8.4h3.2l1.4-2.2h7.6l1.4 2.2h3.2v10.4H3.6Z" />
+        <circle cx="12" cy="13.4" r="3.4" />
+      </g>
+    </Icon>
+  );
+}
+
+/** X: remover anexo. */
+export function CloseIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      >
+        <path d="M6 6l12 12" />
+        <path d="M18 6 6 18" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Avião de papel: enviar a pergunta. */
+export function SendIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20.5 3.5 10.8 13.2" />
+        <path d="M20.5 3.5 14 20.5l-3.2-7.3L3.5 10Z" />
+      </g>
+    </Icon>
+  );
+}
+
 /** Relógio com seta: "Histórico". */
 export function HistoryIcon({ className, size = 18 }: IconProps) {
   return (

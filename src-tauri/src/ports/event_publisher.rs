@@ -63,6 +63,36 @@ pub struct LlmSourceUsage {
     pub latency_ms: u64,
 }
 
+/// Fase de uma entrada do diário (aba "Sessão", BR-052).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JournalPhase {
+    /// Pergunta registrada; a resposta ainda não chegou.
+    Pending,
+    /// Resposta em andamento (texto acumulado).
+    Streaming,
+    /// Resposta completa.
+    Answered,
+    /// Falhou.
+    Error,
+}
+
+/// Progresso de uma entrada do diário publicado para a UI.
+///
+/// Espelha o evento de sugestão (BR-028): a UI substitui o texto da entrada
+/// a cada evento, sem esperar o fim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct JournalUpdate {
+    /// Entrada do diário.
+    pub entry_id: String,
+    /// Fase atual.
+    pub phase: JournalPhase,
+    /// Texto acumulado da resposta (ou a pergunta, enquanto pendente).
+    pub text: String,
+    /// Mensagem de erro (quando `phase = error`).
+    pub error: Option<String>,
+}
+
 /// Publica eventos do domínio para a interface.
 ///
 /// Adaptador: `TauriEventPublisher`; dobra de teste: `RecordingEventPublisher`.
@@ -84,4 +114,6 @@ pub trait EventPublisher: Send + Sync {
     fn emit_asr_status(&self, status: &AsrStatus);
     /// Emite qual fonte de IA respondeu (e se foi fallback) — BR-045.
     fn emit_llm_source_used(&self, usage: &LlmSourceUsage);
+    /// Emite o progresso de uma entrada do diário (pergunta/resposta) — BR-052.
+    fn emit_journal(&self, update: &JournalUpdate);
 }

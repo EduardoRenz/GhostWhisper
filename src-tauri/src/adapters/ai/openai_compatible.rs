@@ -93,6 +93,7 @@ pub fn chat_completion(
                 return Ok(Completion {
                     text: parsed.text,
                     model: config.model.clone(),
+                    provider: Some(config.kind.as_str().to_string()),
                     usage: parse_usage(&value),
                 });
             }
@@ -226,6 +227,7 @@ fn try_stream(
     Ok(StreamOutcome::Done(Completion {
         text: accumulated.trim().to_string(),
         model: config.model.clone(),
+        provider: Some(config.kind.as_str().to_string()),
         usage: stream_usage,
     }))
 }
@@ -271,7 +273,7 @@ fn build_body(config: &ProviderConfig, request: &CompletionRequest) -> Value {
     if let Some(system) = &request.system {
         messages.push(json!({ "role": "system", "content": system }));
     }
-    messages.push(json!({ "role": "user", "content": request.prompt }));
+    messages.push(json!({ "role": "user", "content": user_content(request) }));
 
     let mut body = json!({ "model": config.model, "messages": messages });
     if let Some(max_tokens) = request.max_tokens {
@@ -285,6 +287,36 @@ fn build_body(config: &ProviderConfig, request: &CompletionRequest) -> Value {
         }
     }
     body
+}
+
+/// Conteúdo da mensagem do usuário.
+///
+/// Sem imagem, é o **texto puro** (o corpo de sempre — nenhum provider
+/// existente é afetado). Com imagem, vira a lista de partes do formato
+/// multimodal (`input_text` + `input_image` com data URL), o mesmo formato do
+/// Perssua (`userContentParts`).
+fn user_content(request: &CompletionRequest) -> Value {
+    if request.images.is_empty() {
+        return json!(request.prompt);
+    }
+    let mut parts: Vec<Value> = vec![json!({ "type": "text", "text": request.prompt })];
+    for image in &request.images {
+        parts.push(json!({
+            "type": "image_url",
+            "image_url": { "url": data_url(&image.mime, &image.data) }
+        }));
+    }
+    json!(parts)
+}
+
+/// Data URL de uma imagem (`data:<mime>;base64,<dados>`).
+fn data_url(mime: &str, data: &[u8]) -> String {
+    use base64::Engine;
+    format!(
+        "data:{};base64,{}",
+        mime,
+        base64::engine::general_purpose::STANDARD.encode(data)
+    )
 }
 
 /// Extrai o texto da primeira escolha da resposta.

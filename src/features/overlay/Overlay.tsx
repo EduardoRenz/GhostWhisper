@@ -6,6 +6,7 @@ import {
   startDrag as startDragIpc,
 } from "../../adapters/ipc/overlay";
 import { panelHide, panelOpen, panelOpenTab } from "../../adapters/ipc/panels";
+import { askOpen } from "../../adapters/ipc/ask";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
 import { useInteractiveRegions } from "../../core/application/useInteractiveRegions";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
@@ -47,6 +48,11 @@ export function Overlay() {
       ?.accelerator ??
     defaultBindings().find((binding) => binding.action === "toggle_session")!
       .accelerator;
+  const askAccelerator =
+    settings.shortcuts.find((binding) => binding.action === "focus_ask")
+      ?.accelerator ??
+    defaultBindings().find((binding) => binding.action === "focus_ask")!
+      .accelerator;
 
   const toggleStealth = () => {
     const next = !stealth;
@@ -69,6 +75,10 @@ export function Overlay() {
 
   const openSummary = () => {
     void panelOpenTab("chat", "summary");
+  };
+
+  const openAsk = () => {
+    void askOpen();
   };
 
   const toggleSuggestions = () => {
@@ -105,11 +115,13 @@ export function Overlay() {
           onChannelsChange={(channels) => void setChannels(channels)}
           onStartDrag={() => void startDragIpc()}
           startAccelerator={startAccelerator}
+          askAccelerator={askAccelerator}
           stealth={stealth}
           onToggleStealth={toggleStealth}
           onOpenSettings={() => void openSettings()}
           onOpenTranscription={openTranscription}
           onOpenSummary={openSummary}
+          onOpenAsk={openAsk}
           suggestionsOpen={suggestionsOpen}
           onToggleSuggestions={toggleSuggestions}
           historyOpen={historyOpen}

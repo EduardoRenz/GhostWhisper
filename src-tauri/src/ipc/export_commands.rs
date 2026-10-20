@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use tauri::State;
 
-use crate::application::markdown_export::render_markdown;
+use crate::application::markdown_export::render_markdown_with_questions;
 use crate::application::session_timeline::build_timeline;
 use crate::error::{GhostWhisperError, Result};
 use crate::state::AppState;
@@ -18,8 +18,14 @@ fn build_markdown(state: &AppState, session_id: &str) -> Result<String> {
     let segments = state.transcriptions.list_by_session(session_id)?;
     let messages = state.messages.list_by_session(session_id)?;
     let entries = build_timeline(&segments, &messages);
+    let questions = state.journal.list_by_session(session_id)?;
     // Uma sessão em andamento usa "agora" para a duração.
-    Ok(render_markdown(&session, &entries, state.clock.now_ms()))
+    Ok(render_markdown_with_questions(
+        &session,
+        &entries,
+        state.clock.now_ms(),
+        &questions,
+    ))
 }
 
 /// Exporta a sessão como Markdown e devolve o texto (para copiar).

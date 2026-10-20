@@ -304,13 +304,19 @@ duas abas — **Transcrição** e **Resumo** — e complementa o overlay:
   aparece no histórico e no export da sessão.
 - **Sugestões** (ícone de faísca no overlay, ou botão *Sugestões* na Transcrição): olha
   os **últimos momentos**
-  da conversa e sugere a próxima fala, no **agente** escolhido — **Reunião**,
-  **Entrevista Técnica**, **LeetCode** e **System Design**, além dos seus
+  da conversa e sugere a próxima fala, no **agente** escolhido — **Padrão** (o
+  padrão: identifica a cena e age como o especialista correspondente),
+  **Reunião**, **Entrevista Técnica**, **LeetCode** e **System Design**, além dos
+  seus
   **agentes personalizados**. A atualização automática (20 s, configurável) só
   chama a IA quando há fala nova; **Sugerir agora** força uma nova análise e
   **Fixar** grava a sugestão na conversa/export. A caixa **Contexto extra** aceita
   um enunciado ou trecho de código (útil no modo LeetCode, já que o app é
   áudio-only).
+- **Os agentes respondem, não perguntam:** nenhum agente devolve uma pergunta
+  para você — com a informação disponível ele responde e, quando falta contexto,
+  diz em uma frase curta que há pouca informação na conversa. O **código sai
+  puro** (sem comentário de linha): a explicação fica no Markdown fora do bloco.
 - **Código e Markdown:** as respostas são renderizadas com títulos, listas,
   tabelas e **código colorido** (com botão copiar); HTML bruto não é executado.
 - **Janelas:** o painel (Transcrição/Resumo), o **Histórico** e as **Sugestões** são

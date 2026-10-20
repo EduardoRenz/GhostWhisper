@@ -154,3 +154,35 @@ gerando outra sugestão ou melhorando a última.
 - `pnpm test` **160 ✓** (3 novos de `SuggestionsWindow`, 2 de `StatusPill`) ·
   `tsc --noEmit` ✓ · `pnpm build` ✓.
 - AppImage (Vulkan) reconstruído.
+
+---
+
+## 2026-10-19 — Contratos dos agentes: respondem, não perguntam; código puro
+
+- **IDs:** BR-059, BR-060, BR-061 · **Refs:**
+  [`../suggestions/tasks/08-task.md`](../suggestions/tasks/08-task.md),
+  [`../business-rules.md`](../business-rules.md),
+  [`architecture/assistant-windows.md`](architecture/assistant-windows.md) §7.2
+
+### Pedido
+O usuário pediu três ajustes nos **contratos dos agentes**
+(`application/prompts/assistant.rs`): (1) LeetCode e Entrevista Técnica sem
+comentário de linha no código (a explicação no Markdown fora do bloco);
+(2) um **agente Padrão** que identifica a cena (reunião → pauta; entrevista de
+LeetCode → responde como o LeetCode) e vira o agente padrão; (3) **nenhum**
+agente pergunta de volta — sem contexto, a sugestão sai curta dizendo que há
+pouca informação.
+
+### Entregue
+- **Regras comuns** (`NEVER_ASK_BACK_RULE`, `PURE_CODE_RULE`) injetadas no prompt
+  de sistema de **todo** agente (embutido **e** personalizado) e no rascunho
+  *fast-first* — os contratos deixaram de devolver `"..."`.
+- **Agente Padrão** (`default`): contrato de **cena** + formato de cada cena
+  (reunião / entrevista de código / system design / geral).
+- Contratos de LeetCode e Entrevista Técnica reescritos: o código sai **puro** e
+  a explicação fica no Markdown em volta do bloco.
+
+### Verificação
+- `cargo test` **451 ✓** (regras comuns em todos os prompts, código sem
+  "comentário por linha", agente Padrão no catálogo) · clippy/fmt ✓ ·
+  `pnpm test` **295 ✓** · `tsc` ✓.

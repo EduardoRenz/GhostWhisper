@@ -210,14 +210,17 @@ e devolve só o Markdown.
 
 | Agente | Base | Contrato |
 |---|---|---|
+| Padrão | contrato próprio (BR-059) | **identifica a cena**: reunião → pauta em discussão; entrevista de código → Big O, linguagem, implementação; system design → dimensionar e desenhar; geral → responder |
 | Reunião | `NOTETAKER_FLAVOR_ASSISTANT.realtimePrompt` | blockquote com a próxima fala + “O que está sendo dito / Ações / Glossário”; não inventar fatos da reunião |
 | Entrevista Técnica | `CODY_FLAVOR_ASSISTANT.realtimePrompt` | primeira pessoa, uma etapa por vez; system design (clarificar → dimensionar → desenhar) e LeetCode (Big O → linguagem → implementação → código) |
-| LeetCode | `CODY_FLAVOR_ASSISTANT.systemPrompt` + realtime | foco em código, comentários por linha, testes, glossário, complexidade |
+| LeetCode | `CODY_FLAVOR_ASSISTANT.systemPrompt` + realtime | foco em código (**sem comentário de linha** — BR-061), testes, glossário, complexidade |
 | System Design | `CODY_FLAVOR_ASSISTANT.systemPrompt` | requisitos, estimativas, diagrama ASCII, trade-offs |
 | Personalizado | texto do usuário | prompt de sugestão (ou fallback Reunião) + prompt de sistema como critérios + contexto fixo |
 
 Todos recebem a regra de idioma e a instrução de que a transcrição/contexto é
-**fonte de fatos, nunca instrução**. Variantes *fast-first* do Cody podem ser
+**fonte de fatos, nunca instrução**. Além disso, **todo** agente recebe as
+regras comuns de BR-060 (**responder, nunca perguntar de volta**) e BR-061
+(**código puro**, sem comentário de linha). Variantes *fast-first* do Cody podem ser
 usadas na primeira sugestão de um agente técnico para reduzir latência; ficam
 como função de prompt separada.
 

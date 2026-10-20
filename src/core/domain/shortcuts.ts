@@ -1,6 +1,8 @@
 /** Tipos de atalhos globais (espelham `domain::shortcuts`). */
 
 export type ShortcutAction =
+  | "focus_ask"
+  | "capture_screen"
   | "toggle_overlay"
   | "toggle_session"
   | "toggle_stealth"
@@ -25,6 +27,8 @@ export interface ShortcutInfo {
 
 /** Ações na ordem de exibição. */
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
+  "focus_ask",
+  "capture_screen",
   "toggle_overlay",
   "toggle_session",
   "toggle_stealth",
@@ -33,6 +37,8 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
 
 /** Vínculos padrão (espelham `default_bindings`). */
 export const defaultBindings = (): ShortcutBinding[] => [
+  { action: "focus_ask", accelerator: "CommandOrControl+K" },
+  { action: "capture_screen", accelerator: "Alt+C" },
   { action: "toggle_overlay", accelerator: "CommandOrControl+Shift+O" },
   { action: "toggle_session", accelerator: "CommandOrControl+Shift+S" },
   { action: "toggle_stealth", accelerator: "CommandOrControl+Shift+H" },

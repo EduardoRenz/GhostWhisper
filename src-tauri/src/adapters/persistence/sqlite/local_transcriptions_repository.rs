@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::ports::repositories::TranscriptionsRepository;
 
 use super::connection::{lock, SharedConnection};
+use super::fts::escape_query;
 
 const COLUMNS: &str = "id, session_id, speaker, text, timestamp, end_ms, is_final";
 
@@ -52,14 +53,23 @@ impl TranscriptionsRepository for LocalTranscriptionsRepository {
     }
 
     fn search(&self, query: &str, limit: usize) -> Result<Vec<TranscriptSegment>> {
+        // A query do usuário é **sintaxe** para o FTS5: sem escape, uma
+        // aspa/asterisco quebra a consulta inteira e a busca volta vazia
+        // (ISS-042).
+        let Some(fts_query) = escape_query(query) else {
+            return Ok(Vec::new());
+        };
         let conn = lock(&self.conn)?;
+        // O FTS é casado pelo **id** (chave de negócio), não pelo `rowid`: o
+        // rowid implícito é renumerado num `VACUUM` e o casamento passaria a
+        // apontar para a linha errada, em silêncio (ISS-041).
         let sql = format!(
             "SELECT {COLUMNS} FROM transcriptions t \
-             WHERE t.rowid IN (SELECT rowid FROM transcriptions_fts WHERE transcriptions_fts MATCH ?1) \
+             WHERE t.id IN (SELECT segment_id FROM transcriptions_fts WHERE transcriptions_fts MATCH ?1) \
              ORDER BY t.timestamp ASC LIMIT ?2"
         );
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![query, limit as i64], map_segment)?;
+        let rows = stmt.query_map(params![fts_query, limit as i64], map_segment)?;
         collect(rows)
     }
 

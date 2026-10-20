@@ -1,6 +1,6 @@
 # 10 — Dívida de índices do schema e ancoragem do FTS por `id`
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** —
 - **Habilita:** —
 - **Issues:** ISS-041, ISS-042 · **BR:** BR-058
@@ -54,20 +54,24 @@ implícitos.
 
 ## Critérios de aceite
 
-- [ ] `EXPLAIN QUERY PLAN` de `transcriptions WHERE session_id=? ORDER BY
+- [x] `EXPLAIN QUERY PLAN` de `transcriptions WHERE session_id=? ORDER BY
       timestamp` **não** mostra `USE TEMP B-TREE FOR ORDER BY`.
-- [ ] O mesmo para `messages`.
-- [ ] `sessions ORDER BY started_at DESC LIMIT n` usa
+- [x] O mesmo para `messages`.
+- [x] `sessions ORDER BY started_at DESC LIMIT n` usa
       `idx_sessions_started_at` (sem `SCAN sessions`).
-- [ ] `idx_sessions_status` **continua existindo** e `end_all_active` ainda
+- [x] `idx_sessions_status` **continua existindo** e `end_all_active` ainda
       o usa.
-- [ ] `idx_messages_timestamp`, `idx_transcriptions_timestamp` e
+- [x] `idx_messages_timestamp`, `idx_transcriptions_timestamp` e
       `idx_sessions_user` **não existem** mais.
-- [ ] O `DELETE` de uma sessão (cascade) **não** faz scan da tabela de
+- [x] O `DELETE` de uma sessão (cascade) **não** faz scan da tabela de
       imagens (o `idx_journal_images_entry` cobre).
-- [ ] O boot num banco **antigo** (sem os índices novos) aplica tudo sem
+- [x] O boot num banco **antigo** (sem os índices novos) aplica tudo sem
       erro e sem perder dados.
-- [ ] `cargo test --lib` verde.
+- [x] `cargo test --lib` verde.
+
+## Verificação
+
+- `cargo test --lib` ✓ (conjunto de índices + plano sem *temp b-tree*)
 
 ## Notas
 

@@ -7,6 +7,7 @@ import type { PanelTab } from "../../core/domain/settings";
 import { WaveformIcon } from "../../components/icons";
 import { PanelFrame } from "../panels/PanelFrame";
 import { PanelTabs } from "./PanelTabs";
+import { JournalView } from "../journal/JournalView";
 import { SummaryView } from "./SummaryView";
 import { TranscriptionView } from "./TranscriptionView";
 
@@ -36,7 +37,11 @@ export function PanelWindow() {
     let cancelled = false;
     let stop: (() => void) | undefined;
     void subscribe<string>(PANEL_TAB_EVENT, (requested) => {
-      if (requested === "transcription" || requested === "summary") {
+      if (
+        requested === "transcription" ||
+        requested === "summary" ||
+        requested === "session"
+      ) {
         setTab(requested);
       }
     }).then((unlisten) => {
@@ -68,7 +73,11 @@ export function PanelWindow() {
         </span>
       )}
       <span className="panel__title">
-        {tab === "summary" ? "Resumo" : "Transcrição ao Vivo"}
+        {tab === "summary"
+          ? "Resumo"
+          : tab === "session"
+            ? "Sessão"
+            : "Transcrição ao Vivo"}
       </span>
     </div>
   );
@@ -95,6 +104,16 @@ export function PanelWindow() {
           hidden={tab !== "summary"}
         >
           <SummaryView opened={opened} active={tab === "summary"} />
+        </div>
+
+        <div
+          className="panel-view"
+          id="panel-view-session"
+          role="tabpanel"
+          aria-labelledby="panel-tab-session"
+          hidden={tab !== "session"}
+        >
+          <JournalView />
         </div>
       </div>
     </PanelFrame>

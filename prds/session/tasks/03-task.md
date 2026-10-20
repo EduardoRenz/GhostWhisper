@@ -1,6 +1,6 @@
 # 03 — `AskService`: perguntar com contexto da sessão
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01
 - **Habilita:** 04
 - **Issues:** — · **BR:** BR-042, BR-045, BR-048, BR-053
@@ -40,19 +40,31 @@ publicar o progresso.
 
 ## Critérios de aceite
 
-- [ ] A pergunta é respondida com o **contexto** da sessão (as falas até
+- [x] A pergunta é respondida com o **contexto** da sessão (as falas até
       aquele instante).
-- [ ] A entrada aparece no diário **antes** da resposta (status `pending`).
-- [ ] O texto chega **em streaming** pelo evento `journal`.
-- [ ] **Single-flight**: um segundo envio durante uma resposta em curso não
+- [x] A entrada aparece no diário **antes** da resposta (status `pending`).
+- [x] O texto chega **em streaming** pelo evento `journal`.
+- [x] **Single-flight**: um segundo envio durante uma resposta em curso não
       duplica texto (BR-042).
-- [ ] Falha **antes** de emitir texto → tenta a próxima fonte da cadeia
+- [x] Falha **antes** de emitir texto → tenta a próxima fonte da cadeia
       (BR-045); falha **depois** → o erro sobe para a entrada, sem trocar de
       fonte (evita duplicar).
-- [ ] A rota `Capability(Search)` é respeitada: com rota, usa a fonte
+- [x] A rota `Capability(Search)` é respeitada: com rota, usa a fonte
       vinculada; sem rota, a primária (BR-048).
-- [ ] `cargo test --lib` verde: casos de sucesso, de erro, de fallback e de
+- [x] `cargo test --lib` verde: casos de sucesso, de erro, de fallback e de
       single-flight (com `FakeChatBotProvider`).
+
+## Verificação (v2 — 2026-10-20)
+
+- Print **sem texto**: o core aplica `DEFAULT_IMAGE_PROMPT` e a IA decide
+  (`an_image_without_a_question_uses_the_default_prompt`).
+- **A pergunta abre a sessão** quando não há nenhuma
+  (`a_question_without_a_session_opens_one`); perguntas seguintes reusam a
+  mesma sessão (`the_second_question_reuses_the_opened_session`).
+
+## Verificação
+
+- `cargo test --lib` ✓ (sucesso, erro, streaming, single-flight, origem, imagens)
 
 ## Notas
 

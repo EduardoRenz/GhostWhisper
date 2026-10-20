@@ -121,8 +121,16 @@ export interface Settings {
   shortcuts: ShortcutBinding[];
   /** Posição do overlay na tela (lembrada após o usuário mover). */
   overlay_position: [number, number] | null;
-  /** Agente/modo selecionado para sugestões (`meeting` por padrão). */
+  /** Agente/modo selecionado para sugestões (`default` — o agente Padrão). */
   assistant_mode_id: string;
+  /**
+   * Marca a migração do agente padrão (BR-059).
+   *
+   * O agente **Padrão** (contextual) entrou no lugar da "Reunião" como
+   * padrão; a marca garante que a migração acontece **uma vez** (depois dela,
+   * a escolha do usuário é respeitada).
+   */
+  assistant_mode_migrated: boolean;
   /** Agentes personalizados criados pelo usuário. */
   custom_assistant_modes: AssistantMode[];
   /** Atualização automática do resumo enquanto a janela está aberta. */
@@ -151,10 +159,33 @@ export interface Settings {
   dwell_enabled: boolean;
   /** Tempo de permanência do drill-hover, em milissegundos (BR-036). */
   dwell_ms: number;
+  /** Perguntas prontas do usuário (aba "Sessão", BR-054). */
+  saved_questions: SavedQuestion[];
 }
 
 /** Abas do painel da sessão (janela `chat`). */
-export type PanelTab = "transcription" | "summary";
+export type PanelTab = "transcription" | "summary" | "session";
+
+/** Uma pergunta pronta do usuário (BR-054). */
+export interface SavedQuestion {
+  /** Id estável (para editar/remover sem depender da posição). */
+  id: string;
+  /** O texto da pergunta. */
+  text: string;
+}
+
+/** Teto de perguntas prontas guardadas (BR-054). */
+export const MAX_SAVED_QUESTIONS = 20;
+/** Teto de caracteres de uma pergunta pronta (BR-054). */
+export const MAX_SAVED_QUESTION_CHARS = 200;
+
+/** Perguntas prontas semeadas (tradução das "Prompt Suggestions" do Perssua). */
+export const DEFAULT_SAVED_QUESTIONS: SavedQuestion[] = [
+  { id: "default-0", text: "Resumir tudo até agora" },
+  { id: "default-1", text: "Listar as ações" },
+  { id: "default-2", text: "Listar as principais ideias" },
+  { id: "default-3", text: "O que posso falar?" },
+];
 
 /** Providers na ordem de exibição. */
 export const PROVIDERS: ProviderKind[] = [
@@ -266,7 +297,8 @@ export const defaultSettings = (): Settings => ({
   stealth: false,
   shortcuts: defaultBindings(),
   overlay_position: null,
-  assistant_mode_id: "meeting",
+  assistant_mode_id: "default",
+  assistant_mode_migrated: false,
   custom_assistant_modes: [],
   summary_auto_refresh: true,
   summary_interval_secs: 30,
@@ -281,6 +313,7 @@ export const defaultSettings = (): Settings => ({
   panel_tab: "transcription",
   dwell_enabled: true,
   dwell_ms: 500,
+  saved_questions: DEFAULT_SAVED_QUESTIONS,
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */

@@ -19,8 +19,8 @@ overlay:
 1. **Janela de Resumo** — resume a conversa de tempos em tempos, de forma
    incremental, enquanto estiver aberta.
 2. **Janela de Sugestões** — analisa os últimos momentos da conversa e sugere a
-   próxima fala/resposta, com **seleção de agentes** (Reunião, Entrevista Técnica,
-   LeetCode, System Design e agentes personalizados).
+   próxima fala/resposta, com **seleção de agentes** (Padrão, Reunião, Entrevista
+   Técnica, LeetCode, System Design e agentes personalizados).
 
 As duas superfícies produzem **Markdown** e o renderizam com código formatado e
 colorido. As sugestões automáticas são efêmeras; o usuário pode **fixar** uma
@@ -133,8 +133,9 @@ Como usuário, quero agentes prontos que reproduzam o comportamento do Perssua.
   para perguntas técnicas usa “Easy / Practical / Deep”; para system design
   esclarece requisitos, dimensiona e desenha incrementalmente.
 - **CA-03.3 LeetCode:** coloca **Big O** no topo, detecta a linguagem, apresenta
-  implementação inicial em bloco de código, explica a abordagem, complexidade,
-  testes e glossário.
+  implementação inicial em bloco de código **sem comentário de linha** (a
+  explicação fica no Markdown fora do bloco — BR-061), explica a abordagem,
+  complexidade, testes e glossário.
 - **CA-03.4 System Design:** requisitos funcionais/não funcionais, estimativas
   (DAU, QPS de leitura/escrita, storage, banda), diagrama ASCII e trade-offs.
 - **CA-03.5** Sem tela/OCR, o modo LeetCode trabalha com o enunciado falado e com

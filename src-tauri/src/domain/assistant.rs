@@ -15,8 +15,22 @@ pub const MODE_PROMPT_MAX_CHARS: usize = 16_384;
 /// Limite do nome de exibição.
 pub const MODE_NAME_MAX_CHARS: usize = 120;
 
+/// Id do agente **Padrão** — o agente contextual, selecionado por padrão
+/// (BR-059).
+pub const DEFAULT_MODE_ID: &str = "default";
+
+/// Nome exibido do agente Padrão.
+pub const DEFAULT_MODE_NAME: &str = "Padrão";
+
+/// Id do agente padrão **antes** do agente Padrão (BR-059).
+///
+/// Quem tinha a "Reunião" selecionada (o valor padrão antigo) é migrado para
+/// o agente Padrão — que também cobre reuniões.
+pub const LEGACY_DEFAULT_MODE_ID: &str = "meeting";
+
 /// IDs dos agentes embutidos (reservados).
-pub const BUILTIN_MODE_IDS: [&str; 4] = [
+pub const BUILTIN_MODE_IDS: [&str; 5] = [
+    DEFAULT_MODE_ID,
     "meeting",
     "technical_interview",
     "leetcode",

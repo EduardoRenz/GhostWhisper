@@ -4,9 +4,10 @@
 //! transcrição"): a sessão inteira vira um documento com a **linha temporal**,
 //! incluindo as **sugestões da IA com o tempo em que foram pedidas**.
 //!
-//! Função pura (`render_markdown` recebe o `now_ms` do chamador) para o
+//! Função pura (`render_markdown_with_questions` recebe o `now_ms` do chamador) para o
 //! resultado ser determinístico e testável.
 
+use crate::domain::journal::JournalEntry;
 use crate::domain::session::Session;
 
 use super::session_timeline::{TimelineEntry, TimelineKind};
@@ -39,7 +40,17 @@ pub fn format_clock(ms: i64) -> String {
 ///
 /// `now_ms` é usado apenas para a duração de uma sessão ainda em andamento — a
 /// função não lê o relógio para continuar pura.
-pub fn render_markdown(session: &Session, entries: &[TimelineEntry], now_ms: i64) -> String {
+/// Renderiza a sessão inteira como Markdown, **com as perguntas do diário**.
+///
+/// As perguntas são a seção "Perguntas" (BR-052): o que o usuário perguntou e
+/// o que a IA respondeu, com o instante. A seção só aparece quando há
+/// perguntas.
+pub fn render_markdown_with_questions(
+    session: &Session,
+    entries: &[TimelineEntry],
+    now_ms: i64,
+    questions: &[JournalEntry],
+) -> String {
     let title = session
         .subject
         .as_deref()
@@ -85,6 +96,31 @@ pub fn render_markdown(session: &Session, entries: &[TimelineEntry], now_ms: i64
         out.push_str("## Resumo\n\n");
         out.push_str(overview);
         out.push_str("\n\n---\n\n");
+    }
+
+    // Diário de perguntas (BR-052): o que o usuário perguntou na sessão.
+    if !questions.is_empty() {
+        out.push_str("## Perguntas\n\n");
+        for question in questions {
+            out.push_str(&format!(
+                "- **[{}] {}**\n",
+                format_clock(question.asked_at_ms),
+                question.question
+            ));
+            if let Some(answer) = question
+                .answer
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+            {
+                out.push_str(&format!(
+                    "  - {}",
+                    indent_continuation(answer, 4)
+                ));
+                out.push('\n');
+            }
+        }
+        out.push_str("\n---\n\n");
     }
 
     if entries.is_empty() {
@@ -203,10 +239,10 @@ mod tests {
             &[suggestion(10_000, "Você pode confirmar o prazo.")],
         );
 
-        let markdown = render_markdown(
-            &session(Some("Reunião de sexta"), Some(1_700_000_060_000)),
+        let markdown = render_markdown_with_questions(&session(Some("Reunião de sexta"), Some(1_700_000_060_000)),
             &entries,
             1_700_000_100_000,
+            &[],
         );
 
         assert!(markdown.starts_with("# Reunião de sexta\n"));
@@ -226,7 +262,7 @@ mod tests {
         session.overview = Some("## Visão geral\n\nDecidimos priorizar o login.".to_string());
         let entries = timeline(&[speech(0, Speaker::They, "podemos fechar?")], &[]);
 
-        let markdown = render_markdown(&session, &entries, 1_700_000_060_000);
+        let markdown = render_markdown_with_questions(&session, &entries, 1_700_000_060_000, &[]);
 
         assert!(markdown.contains("## Resumo"));
         assert!(markdown.contains("Decidimos priorizar o login."));
@@ -237,18 +273,56 @@ mod tests {
     }
 
     #[test]
-    fn omits_an_empty_summary() {
-        let markdown = render_markdown(
+    fn includes_the_questions_of_the_journal() {
+        let questions = vec![JournalEntry {
+            id: "e1".to_string(),
+            session_id: "s1".to_string(),
+            question: "o que eu disse?".to_string(),
+            answer: Some("isto".to_string()),
+            asked_at_ms: 4_000,
+            answered_at_ms: Some(4_500),
+            status: crate::domain::journal::JournalStatus::Answered,
+            request_source: crate::domain::journal::JournalRequestSource::Search,
+            provider: None,
+            model: None,
+            error: None,
+        }];
+        let markdown = render_markdown_with_questions(
             &session(Some("Sprint"), Some(1_700_000_060_000)),
             &[],
             1_700_000_060_000,
+            &questions,
+        );
+        assert!(markdown.contains("## Perguntas"));
+        assert!(markdown.contains("o que eu disse?"));
+        assert!(markdown.contains("isto"));
+        assert!(markdown.contains("[00:04]"), "{}", markdown);
+    }
+
+    #[test]
+    fn omits_the_questions_section_when_there_are_none() {
+        let markdown = render_markdown_with_questions(
+            &session(Some("Sprint"), Some(1_700_000_060_000)),
+            &[],
+            1_700_000_060_000,
+            &[],
+        );
+        assert!(!markdown.contains("## Perguntas"));
+    }
+
+    #[test]
+    fn omits_an_empty_summary() {
+        let markdown = render_markdown_with_questions(&session(Some("Sprint"), Some(1_700_000_060_000)),
+            &[],
+            1_700_000_060_000,
+            &[],
         );
         assert!(!markdown.contains("## Resumo"));
     }
 
     #[test]
     fn uses_untitled_and_ongoing_for_a_fresh_session() {
-        let markdown = render_markdown(&session(None, None), &[], 1_700_000_120_000);
+        let markdown = render_markdown_with_questions(&session(None, None), &[], 1_700_000_120_000, &[]);
 
         assert!(markdown.contains("# Sessão sem título"));
         assert!(markdown.contains("- **Fim:** em andamento"));
@@ -263,7 +337,7 @@ mod tests {
             &[suggestion(1_000, "passo 1\npasso 2")],
         );
 
-        let markdown = render_markdown(&session(None, Some(1_700_000_010_000)), &entries, 0);
+        let markdown = render_markdown_with_questions(&session(None, Some(1_700_000_010_000)), &entries, 0, &[]);
 
         assert!(markdown.contains("- **[00:00] Você:** primeira linha\n  segunda linha"));
         assert!(markdown.contains("> 🤖 **Sugestão [00:01]** — passo 1\n> passo 2"));

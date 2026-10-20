@@ -48,6 +48,7 @@ impl ChatBotProvider for FakeChatBotProvider {
         Ok(Completion {
             text,
             model: "fake".to_string(),
+            provider: None,
             usage: None,
         })
     }

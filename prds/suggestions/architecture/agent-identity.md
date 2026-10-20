@@ -28,7 +28,7 @@ pub color: String,
 
 | id | Desenho | Agente padrão |
 |---|---|---|
-| `sparkle` | faísca | fallback de qualquer agente |
+| `sparkle` | faísca | `default` (agente Padrão) e fallback de qualquer agente |
 | `users` | pessoas | `meeting` |
 | `braces` | chaves/código | `technical_interview` |
 | `code` | código (`</>`) | `leetcode` |
@@ -64,12 +64,16 @@ pub color: String,
 
 | id | nome | ícone | cor |
 |---|---|---|---|
+| `default` | Padrão | `sparkle` | `slate` |
 | `meeting` | Reunião | `users` | `cyan` |
 | `technical_interview` | Entrevista Técnica | `braces` | `violet` |
 | `leetcode` | LeetCode / Algoritmos | `code` | `emerald` |
 | `system_design` | System Design | `layers` | `coral` |
 
 - `application::prompts::assistant::builtin_modes()` preenche ícone e cor.
+- O **Padrão** (`default`) é o **primeiro** da lista e o agente padrão das
+  settings (BR-059); ele identifica a cena da conversa e age como o especialista
+  correspondente.
 - O **snapshot** na sugestão (`mode_icon`/`mode_color`) garante que o histórico
   mostre a identidade **daquele** agente, mesmo que o usuário troque depois.
 
@@ -103,6 +107,6 @@ export const agentColorToken = (mode: { color?: string | null }): string =>
 ## 7. Testes
 
 - **Rust:** default de ícone/cor em agente antigo; `validate_mode` recusa ícone e
-  cor desconhecidos; `builtin_modes()` devolve os 4 com ícone/cor válidos.
+  cor desconhecidos; `builtin_modes()` devolve os 5 com ícone/cor válidos.
 - **TS:** `agentIconId`/`agentColorToken` com fallback; catálogo completo.
 - **UI:** pill renderiza ícone + nome + cor; popover lista todos os agentes.

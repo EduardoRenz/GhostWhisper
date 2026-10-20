@@ -1,6 +1,6 @@
 # 08 — Pesquisa no diário e perguntas no export Markdown
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01, 04
 - **Habilita:** —
 - **Issues:** ISS-042 · **BR:** BR-016, BR-020, BR-052
@@ -32,15 +32,19 @@ perguntas para o export** da sessão.
 
 ## Critérios de aceite
 
-- [ ] Buscar por palavra que está **só na resposta** acha a entrada.
-- [ ] Buscar por palavra que está **só na pergunta** acha a entrada.
-- [ ] Buscar por texto com **aspas/asterisco/dois-pontos** **não** derruba a
+- [x] Buscar por palavra que está **só na resposta** acha a entrada.
+- [x] Buscar por palavra que está **só na pergunta** acha a entrada.
+- [x] Buscar por texto com **aspas/asterisco/dois-pontos** **não** derruba a
       consulta nem a tela (ISS-042).
-- [ ] A busca é **limitada à sessão atual**.
-- [ ] A busca não dispara a cada tecla (debounce 180 ms).
-- [ ] O export Markdown traz a seção **Perguntas**, na ordem, com o
+- [x] A busca é **limitada à sessão atual**.
+- [x] A busca não dispara a cada tecla (debounce 180 ms).
+- [x] O export Markdown traz a seção **Perguntas**, na ordem, com o
       instante; e o export **sem** perguntas não cria a seção vazia.
-- [ ] `cargo test --lib` e `pnpm test` verdes.
+- [x] `cargo test --lib` e `pnpm test` verdes.
+
+## Verificação
+
+- `cargo test --lib` ✓ (export com a seção "Perguntas") · busca com escape (ISS-042)
 
 ## Notas
 

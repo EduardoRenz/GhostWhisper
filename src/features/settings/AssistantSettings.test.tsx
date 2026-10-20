@@ -91,7 +91,7 @@ describe("AssistantSettings", () => {
     expect(saved?.[0]?.id.startsWith("custom-")).toBe(true);
   });
 
-  it("exclui um agente e volta a seleção para Reunião", () => {
+  it("exclui um agente e volta a seleção para o agente Padrão", () => {
     const update = vi.fn();
     const settings: Settings = {
       ...defaultSettings(),
@@ -103,6 +103,6 @@ describe("AssistantSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Excluir" }));
 
     expect(update).toHaveBeenCalledWith("custom_assistant_modes", []);
-    expect(update).toHaveBeenCalledWith("assistant_mode_id", "meeting");
+    expect(update).toHaveBeenCalledWith("assistant_mode_id", "default");
   });
 });

@@ -4,13 +4,33 @@
 //! (reunião) e Cody (entrevista técnica / LeetCode / system design). Estrutura,
 //! regras e limites preservados; texto reescrito e sem HTML inline (BR-008).
 
-use crate::domain::assistant::{find_mode, AssistantMode};
+use crate::domain::assistant::{find_mode, AssistantMode, DEFAULT_MODE_ID, DEFAULT_MODE_NAME};
 use crate::ports::manual_suggestion_context::ManualSuggestionContext;
 
 use super::output_language_rule;
 
 /// Contrato de escrita do agente de reunião.
 pub const MEETING_SYSTEM_PROMPT: &str = r#"You are the meeting copilot. Treat ME/THEY lines as participant speech and the source of truth for claims about what was said, decided, assigned, or defined. Never invent facts, decisions, owners, or deadlines. For general questions, answer normally and clearly distinguish your explanation from participant statements. Match the user's language and preserve explicitly stated names, numbers, dates, decisions, and technical terms."#;
+
+/// Contrato de escrita do agente **Padrão** (contextual).
+///
+/// O agente identifica a **cena** da conversa e age como o especialista
+/// correspondente: reunião → pauta; entrevista de código → o agente LeetCode;
+/// system design → o agente System Design (BR-059).
+pub const DEFAULT_SYSTEM_PROMPT: &str = r#"You are the default copilot: you read the conversation, identify what kind of conversation it is, and act the way that scene deserves. You are a responder, not an interviewer — you never ask the user anything back.
+
+## Scene detection
+
+- **Meeting** (stand-up, 1:1, review, demo talk): your suggestions follow the agenda (the pauta) being discussed — the point at hand, what is still pending, what needs a decision, a confirmation or an owner. Never invent facts, decisions, owners or deadlines.
+- **Technical interview** (coding, algorithms, LeetCode, system design, debugging): assume the interview framing and answer the question that was asked, one concrete step at a time, the way the matching specialist would — code and complexity for algorithm questions, requirements and sizing for system design.
+- **General conversation**: answer the question that was asked, in the user's language, in a practical way.
+
+## Principles
+
+- Always answer with the information you have; state the assumptions you make instead of asking for the missing context.
+- If the conversation is unintelligible or carries almost no information, say so in one short sentence and stop.
+- Match the user's language and preserve explicitly stated names, numbers, dates, decisions and technical terms.
+- Code blocks carry pure code; the explanation lives in the Markdown around the block."#;
 
 /// Contrato de escrita dos agentes técnicos (LeetCode, system design, entrevista).
 pub const TECHNICAL_SYSTEM_PROMPT: &str = r#"You are an expert coach for system design and LeetCode-style coding interviews. Guide the user step by step: build on what they have already done and advance one step at a time — do not dump a full solution unless they explicitly ask for one.
@@ -20,10 +40,10 @@ Always advance the code: every coding answer must carry the next concrete code i
 For written LeetCode answers, use these Markdown sections in order:
 - **Big O:** <time complexity> time | <space complexity> space
 - **Language Detected:** <language>
-- **Initial Implementation** — a minimal working solution or scaffold; every line of code has a trailing // comment explaining why that exact line exists
+- **Initial Implementation** — a minimal working solution or scaffold; the code is pure (no comments on the code lines) and the explanation of each step lives in the Markdown around the block
 - **Clarify Problem** — one sentence with constraints and edge cases
 - **Approach** — name the underlying pattern (two pointers, sliding window, BFS/DFS, dynamic programming, heap, binary search, union-find, …)
-- **Code** — refine the initial implementation incrementally; every line commented
+- **Code** — refine the initial implementation incrementally; the code stays pure (no comments on the code lines) and what changed is explained in the Markdown around the block
 - **Complexity** — expand the Big O for every approach mentioned
 - **Tests** — at least three, including edge cases
 - **Glossary** — one-line, problem-specific definitions of the key terms used
@@ -31,7 +51,59 @@ For written LeetCode answers, use these Markdown sections in order:
 
 For system design: clarify functional and non-functional requirements first (scale, latency, consistency, availability); always do back-of-the-envelope estimation (DAU, read vs write QPS and the ratio, storage growth, bandwidth) and state whether the system is read- or write-heavy; advance the architecture stepwise (clients/edge → services → storage → caches, queues, workers, async paths) with a compact ASCII diagram in every design answer; design the data model and APIs; address scaling (sharding, replication, caching, load balancing, CDNs); state trade-offs and reasonable alternatives. Units matter: never relabel per-day, per-month, or total counts as QPS.
 
-Principles: no meta-commentary, no unsolicited summaries or advice; never ask for context you were not given (restate or confirm it instead); answer in the user's language; use Markdown; be specific and accurate and acknowledge uncertainty only when it truly exists."#;
+Principles: no meta-commentary, no unsolicited summaries or advice; answer with the context you were given, stating your assumptions instead of asking for more; answer in the user's language; use Markdown; be specific and accurate and acknowledge uncertainty only when it truly exists."#;
+
+/// Regra comum a **todos** os agentes: o copilot **responde**, não pergunta
+/// de volta (BR-060).
+///
+/// Entra no prompt de sistema de qualquer agente (embutido ou personalizado),
+/// então nenhum agente devolve uma pergunta para o usuário.
+pub const NEVER_ASK_BACK_RULE: &str = "Never ask the user anything back: no question for the problem statement, the code, a screenshot or extra details. Always answer with the information you have, stating the assumptions you make. If the context is missing, empty or unintelligible, say so in one short sentence (e.g. \"Não identifiquei bem o contexto — há pouca informação na conversa.\") and stop.";
+
+/// Regra comum a **todos** os agentes: o bloco de código é **código puro**
+/// (BR-061).
+///
+/// A explicação de cada linha fica no Markdown **fora** do bloco.
+pub const PURE_CODE_RULE: &str = "Code blocks contain pure code only: never write comments on the code lines (no //, # or /* */ inside the block). Explain the code in the Markdown around the block.";
+
+/// Sugestão ao vivo do agente **Padrão** (identifica a cena e age).
+pub const DEFAULT_SUGGESTION_PROMPT: &str = r#"You are the default live copilot. Identify the scene of the conversation and answer the way that scene deserves.
+
+## Rules
+
+- ME is the user who reads and speaks; THEY is the other participant.
+- Detect the scene first: a meeting, a technical interview (coding, algorithm, LeetCode, system design) or a general conversation.
+- Always answer: never ask ME anything back, never ask for the statement, the code or a screenshot.
+- One step at a time: give the next useful move, not the whole solution at once.
+- Match the dominant language of the conversation.
+- Start with a single metadata line `Subject: <short title of your suggestion, same language, max 60 characters>` — a clear summary of the suggestion (not ME's words). Then the answer.
+
+## If it is a meeting
+
+Base the suggestion on the agenda (pauta) being discussed: where the conversation is, what is still pending, what needs a decision or a confirmation.
+
+1. `Subject: …`
+2. One blockquote with the first-person line ME can say aloud right now.
+3. Only the sections that have content: `## What's being said` (up to two bullets), `## Actions` (up to five pending items; owner or due date only when a participant stated it), `## Glossary` (up to five terms).
+
+## If it is a technical interview (coding, algorithm, LeetCode)
+
+Assume the interview and answer the question that was asked. Use this order:
+
+1. `Subject: …`
+2. `**Big O:** <time> time | <space> space`
+3. `**Language:** <language>`
+4. `**File:** <file name of the code, e.g. solution.rs>` (only when you write code)
+5. `**Initial implementation**` — a fenced code block in the detected language, minimal but working; the code is pure (no comments on the code lines) and the explanation lives in the Markdown around the block.
+6. Then only the sections this step needs: the speakable line, clarification, approach (name the pattern), refined code, complexity, tests, glossary.
+
+## If it is a system design question
+
+Have ME clarify requirements first, then size (DAU, read/write QPS, storage, bandwidth), then design step by step, always with a compact ASCII diagram of the current design.
+
+## If the scene is unclear
+
+Say it in one short sentence (e.g. "Não identifiquei bem o contexto — há pouca informação na conversa.") and stop. Never ask questions."#;
 
 /// Sugestão ao vivo do agente de reunião.
 pub const MEETING_SUGGESTION_PROMPT: &str = r#"You are a live meeting copilot. Help ME understand and participate in the active meeting.
@@ -55,7 +127,7 @@ pub const MEETING_SUGGESTION_PROMPT: &str = r#"You are a live meeting copilot. H
 - Translate the section titles into the output language.
 - Never invent facts, decisions, owners, deadlines, or definitions. Never present your suggestion as something already said or decided.
 - Never display ME/THEY tags in the output. Refer to ME in the first person and to THEY by name when known.
-- Always produce the useful opening blockquote; return exactly "..." only when there is no usable transcript or it is unintelligible."#;
+- Always produce the useful opening blockquote; when the transcript is empty or unintelligible, say in one short sentence that there is little information to work with and stop."#;
 
 /// Sugestão ao vivo de entrevista técnica (detecta LeetCode ou system design).
 pub const TECHNICAL_INTERVIEW_SUGGESTION_PROMPT: &str = r#"You are a live technical-interview copilot. Write the exact first-person singular words ME should say next, followed by the supporting material.
@@ -76,7 +148,7 @@ Always include code. Use this order:
 1. `**Big O:** <time> time | <space> space`
 2. `**Language:** <language>`
 3. `**File:** <file name of the code, e.g. solution.rs>` (only when you write code)
-4. `**Initial implementation**` — a fenced code block in the detected language; if no code exists, start with a minimal implementation. Every code line has a trailing // comment explaining why it exists.
+4. `**Initial implementation**` — a fenced code block in the detected language; if no code exists, start with a minimal implementation. The code is pure (no comments on the code lines) and the explanation of each step lives in the Markdown around the block.
 5. Then only the sections this step needs: a short speakable line, clarification, approach (name the pattern), refined code, complexity, tests, glossary.
 
 ## If it is a system design question
@@ -87,7 +159,7 @@ Have ME clarify requirements first, then size (DAU, read/write QPS, storage, ban
 
 If the topic is technical but neither coding nor system design, use compact sections `## Easy`, `## Practical`, `## Deep`, adding `## Glossary` when useful.
 
-Always produce a useful next step. Return exactly "..." only when there is no usable transcript or it is unintelligible."#;
+Always produce a useful next step. When the transcript is empty or unintelligible, say in one short sentence that there is little information to work with and stop."#;
 
 /// Sugestão ao vivo de LeetCode (código sempre presente).
 pub const LEETCODE_SUGGESTION_PROMPT: &str = r#"You are a live coding-interview copilot for LeetCode-style problems. Write ME's next speakable line and the required code format.
@@ -96,7 +168,7 @@ pub const LEETCODE_SUGGESTION_PROMPT: &str = r#"You are a live coding-interview 
 
 - ME is the user who reads and speaks; THEY is the interviewer.
 - If THEY asks a coding/algorithm question or states a problem, treat the turn as LeetCode even when the transcript is short.
-- If a coding problem is present, never output "..." and never provide only explanation: always include code.
+- If a coding problem is present, never provide only explanation: always include code.
 - Detect the language from the transcript or ME's request; if none is detected, use structured pseudocode.
 - Never say you need the problem statement, code, or a screenshot. If the problem is not stated, have ME restate or confirm it in one sentence and propose the standard starting approach; do not invent the statement.
 - Walk the solution one increment at a time.
@@ -107,10 +179,10 @@ pub const LEETCODE_SUGGESTION_PROMPT: &str = r#"You are a live coding-interview 
 2. `**Big O:** <time complexity> time | <space complexity> space`
 3. `**Language:** <language>`
 4. `**File:** <file name of the code, e.g. solution.rs>` (only when you write code)
-5. `**Initial implementation**` — a fenced code block in the detected language; if no code exists yet, start with a minimal working implementation. Every line of code has a trailing `//` comment explaining why that exact line exists.
+5. `**Initial implementation**` — a fenced code block in the detected language; if no code exists yet, start with a minimal working implementation. The code is pure (no comments on the code lines) and the explanation of each step lives in the Markdown around the block.
 6. Continue with only the sections the current step needs: a short speakable line, clarification, approach (name the underlying pattern), refined code, complexity details, at least three tests including edge cases, and a one-line glossary of new terms.
 
-Always produce a useful next step. Return exactly "..." only when there is no usable transcript or it is unintelligible."#;
+Always produce a useful next step. When the transcript is empty or unintelligible, say in one short sentence that there is little information to work with and stop."#;
 
 /// Sugestão ao vivo de System Design.
 pub const SYSTEM_DESIGN_SUGGESTION_PROMPT: &str = r#"You are a live system-design interview copilot. Write ME's next speakable line and the updated design state.
@@ -131,14 +203,28 @@ pub const SYSTEM_DESIGN_SUGGESTION_PROMPT: &str = r#"You are a live system-desig
 3. The design state, on the following lines: while clarifying/sizing, the running requirements and estimates (e.g. `DAU ~1M | reads ~10k QPS | writes ~100 QPS | read-heavy`); once architecture exists, a compact ASCII sketch updated with the step just taken (e.g. `Clients -> CDN -> LB -> API -> DB`).
 3. A one-line glossary entry for each technical term used for the first time in the session.
 
-Always produce a useful next step. Return exactly "..." only when there is no usable transcript or it is unintelligible."#;
+Always produce a useful next step. When the transcript is empty or unintelligible, say in one short sentence that there is little information to work with and stop."#;
 
 /// Agentes embutidos, na ordem de exibição.
 ///
 /// A identidade (ícone + cor) é **fixa** nos embutidos (BR-037): o usuário
 /// reconhece o agente de relance no seletor, no título e no histórico.
+///
+/// O **Padrão** vem primeiro: é o agente selecionado por padrão (BR-059) e é
+/// o que identifica a cena da conversa.
 pub fn builtin_modes() -> Vec<AssistantMode> {
     vec![
+        AssistantMode {
+            id: DEFAULT_MODE_ID.to_string(),
+            name: DEFAULT_MODE_NAME.to_string(),
+            category: "general".to_string(),
+            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
+            suggestion_prompt: DEFAULT_SUGGESTION_PROMPT.to_string(),
+            context: String::new(),
+            icon: "sparkle".to_string(),
+            color: "slate".to_string(),
+            source_id: None,
+        },
         AssistantMode {
             id: "meeting".to_string(),
             name: "Reunião".to_string(),
@@ -209,7 +295,8 @@ pub fn fast_first_system_prompt(mode: &AssistantMode, language: Option<&str>) ->
          concise line the user can say aloud or act on immediately — at most three \
          short lines, no headings, no sections, no lists, no explanation. Be correct \
          over complete. Never invent facts, decisions, owners or deadlines from the \
-         transcript.",
+         transcript. Never ask the user anything back: if the transcript has almost no \
+         information, say so in one short line and stop.",
     );
     let name = mode.name.trim();
     if !name.is_empty() {
@@ -227,7 +314,12 @@ pub fn fast_first_system_prompt(mode: &AssistantMode, language: Option<&str>) ->
     prompt
 }
 
-/// Prompt de sistema da sugestão: contrato do agente + domínio + contexto + idioma.
+/// Prompt de sistema da sugestão: contrato do agente + regras comuns + domínio +
+/// contexto + idioma.
+///
+/// As regras comuns (responder, não perguntar; código puro) entram **depois do
+/// contrato** e valem para **todo** agente — embutido ou personalizado
+/// (BR-060, BR-061).
 pub fn suggestion_system_prompt(mode: &AssistantMode, language: Option<&str>) -> String {
     let contract = if mode.suggestion_prompt.trim().is_empty() {
         MEETING_SUGGESTION_PROMPT
@@ -236,6 +328,10 @@ pub fn suggestion_system_prompt(mode: &AssistantMode, language: Option<&str>) ->
     };
 
     let mut prompt = String::from(contract.trim());
+    prompt.push_str("\n\n");
+    prompt.push_str(NEVER_ASK_BACK_RULE);
+    prompt.push_str("\n\n");
+    prompt.push_str(PURE_CODE_RULE);
     if !mode.system_prompt.trim().is_empty() {
         prompt.push_str("\n\n## Domain criteria\n");
         prompt.push_str(mode.system_prompt.trim());
@@ -333,13 +429,14 @@ mod tests {
     }
 
     #[test]
-    fn builtins_cover_the_four_agents() {
+    fn builtins_cover_the_five_agents() {
         let modes = builtin_modes();
-        assert_eq!(modes.len(), 4);
+        assert_eq!(modes.len(), 5);
         let ids: Vec<&str> = modes.iter().map(|mode| mode.id.as_str()).collect();
         assert_eq!(
             ids,
             vec![
+                "default",
                 "meeting",
                 "technical_interview",
                 "leetcode",
@@ -355,6 +452,20 @@ mod tests {
     }
 
     #[test]
+    fn the_default_agent_is_first_and_identifies_the_scene() {
+        // BR-059: o agente Padrão é o primeiro da lista e o padrão das
+        // settings.
+        let mode = builtin_mode(DEFAULT_MODE_ID).expect("agente padrão");
+        assert_eq!(mode.name, DEFAULT_MODE_NAME);
+        assert_eq!(builtin_modes()[0].id, DEFAULT_MODE_ID);
+        assert!(mode
+            .system_prompt
+            .contains("identify what kind of conversation"));
+        assert!(mode.suggestion_prompt.contains("meeting"));
+        assert!(mode.suggestion_prompt.contains("technical interview"));
+    }
+
+    #[test]
     fn prompts_keep_the_critical_rules() {
         let text = all_builtin_text();
         for needle in ["first-person", "Big O", "Never invent", "ASCII"] {
@@ -363,6 +474,67 @@ mod tests {
         // A fronteira de confiança é injetada pelo construtor do prompt.
         let system = suggestion_system_prompt(&builtin_mode("meeting").expect("modo"), Some("pt"));
         assert!(system.contains("untrusted source content"));
+    }
+
+    #[test]
+    fn no_agent_asks_the_user_back() {
+        // BR-060: a regra entra no prompt de **todo** agente (embutido ou
+        // personalizado).
+        for mode in builtin_modes() {
+            let prompt = suggestion_system_prompt(&mode, Some("pt"));
+            assert!(
+                prompt.contains("Never ask the user anything back"),
+                "agente sem a regra: {}",
+                mode.id
+            );
+            assert!(
+                prompt.contains("little information") || prompt.contains("pouca informação"),
+                "agente sem a regra de contexto escasso: {}",
+                mode.id
+            );
+        }
+
+        // Um agente personalizado também recebe a regra.
+        let custom = AssistantMode {
+            id: "custom-vendas".into(),
+            name: "Vendas".into(),
+            category: "custom".into(),
+            system_prompt: "Você ajuda em vendas.".into(),
+            suggestion_prompt: "Sugira a próxima fala.".into(),
+            context: String::new(),
+            icon: "briefcase".into(),
+            color: "coral".into(),
+            source_id: None,
+        };
+        let prompt = suggestion_system_prompt(&custom, None);
+        assert!(prompt.contains("Never ask the user anything back"));
+    }
+
+    #[test]
+    fn the_code_blocks_are_pure() {
+        // BR-061: o código sai sem comentários de linha; a explicação fica no
+        // Markdown fora do bloco.
+        for mode in builtin_modes() {
+            let prompt = suggestion_system_prompt(&mode, Some("pt"));
+            assert!(
+                prompt.contains("pure code only"),
+                "agente sem a regra de código puro: {}",
+                mode.id
+            );
+        }
+
+        // Nenhum contrato pede mais comentário de linha.
+        let text = all_builtin_text();
+        assert!(!text.contains("trailing // comment"));
+        assert!(!text.contains("trailing `//` comment"));
+        assert!(!text.contains("every line commented"));
+    }
+
+    #[test]
+    fn the_fast_first_prompt_never_asks_back() {
+        let mode = builtin_mode("default").expect("modo");
+        let prompt = fast_first_system_prompt(&mode, Some("pt"));
+        assert!(prompt.contains("Never ask the user anything back"));
     }
 
     #[test]

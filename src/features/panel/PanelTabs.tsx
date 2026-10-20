@@ -1,5 +1,6 @@
 import type { KeyboardEvent, ReactElement } from "react";
 import {
+  JournalIcon,
   SummaryIcon,
   TranscriptIcon,
   type IconProps,
@@ -15,6 +16,7 @@ interface TabDefinition {
 const TABS: TabDefinition[] = [
   { id: "transcription", label: "Transcrição", Icon: TranscriptIcon },
   { id: "summary", label: "Resumo", Icon: SummaryIcon },
+  { id: "session", label: "Sessão", Icon: JournalIcon },
 ];
 
 interface PanelTabsProps {

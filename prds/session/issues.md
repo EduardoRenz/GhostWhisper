@@ -7,14 +7,14 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
-| ISS-041 | FTS ancorado no `rowid` da tabela base — quebra num `VACUUM` | Média | ABERTO |
-| ISS-042 | Busca FTS com texto do usuário quebra a consulta (sem escape) | Média | ABERTO |
+| ISS-041 | FTS ancorado no `rowid` da tabela base — quebra num `VACUUM` | Média | FIXED |
+| ISS-042 | Busca FTS com texto do usuário quebra a consulta (sem escape) | Média | FIXED |
 
 ---
 
 ## ISS-041 — FTS ancorado no `rowid` da tabela base quebra num `VACUUM`
 
-- **Severidade:** Média · **Status:** ABERTO (pré-existente; não bloqueia a PRD)
+- **Severidade:** Média · **Status:** FIXED
 - **Sintoma:** as buscas full-text (`TranscriptionsRepository::search` e a
   nova busca do diário) casam a linha da tabela base com a linha do FTS por
   `rowid`:
@@ -58,13 +58,17 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
   `journal_fts` casa por `entry_id`.
 - **Arquivos:** `adapters/persistence/sqlite/local_transcriptions_repository.rs`,
   `adapters/persistence/schema.sql`, `adapters/persistence/sqlite/local_journal_repository.rs`.
+- **Correção aplicada:** as tabelas novas nascem ancoradas (`journal_entries`
+  tem `rowid_pk INTEGER PRIMARY KEY`) e as duas buscas existentes passaram a
+  casar pelo **id** (`journal_fts.entry_id` e `transcriptions_fts.segment_id`),
+  nunca pelo `rowid` do FTS.
 - **Task:** [`tasks/10-task.md`](tasks/10-task.md)
 
 ---
 
 ## ISS-042 — Busca FTS com texto do usuário quebra a consulta
 
-- **Severidade:** Média · **Status:** ABERTO
+- **Severidade:** Média · **Status:** FIXED
 - **Sintoma:** a busca do diário (e a de transcrições) passa a string do
   usuário **crua** para o `MATCH` do FTS5. Uma pergunta com aspas, `*`, `:`
   ou `-` é **sintaxe FTS**, não texto: o SQLite devolve
@@ -88,4 +92,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
   unir com `AND`.
 - **Arquivos:** `adapters/persistence/sqlite/local_journal_repository.rs`,
   `adapters/persistence/sqlite/local_transcriptions_repository.rs`.
+- **Correção aplicada:** `adapters/persistence/sqlite/fts.rs::escape_query`
+  transforma a query do usuário em **termos literais** unidos por `AND`
+  (aspas duplicadas). Vale para o diário e para a busca de transcrições.
 - **Task:** [`tasks/08-task.md`](tasks/08-task.md)

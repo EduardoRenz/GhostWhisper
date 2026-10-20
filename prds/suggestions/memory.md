@@ -340,3 +340,49 @@ nova ou ainda a antiga.”
 - Screenshot do layout (header, seletor, cartão com os dois blocos + código,
   histórico com accordions, popover do agente) conferido no navegador headless.
 - AppImage e `.deb` gerados (Vulkan, `libvulkan.so.1` embutido).
+
+---
+
+## 2026-10-19 — Agente Padrão, agentes que respondem e código puro
+
+- **IDs:** BR-059, BR-060, BR-061 · **Refs:**
+  [`tasks/08-task.md`](tasks/08-task.md),
+  [`architecture/agent-identity.md`](architecture/agent-identity.md) §4,
+  [`../business-rules.md`](../business-rules.md)
+
+### Pedido
+1. **LeetCode e Entrevista Técnica:** não gerar comentários nas linhas do código
+   gerado — a explicação vai no Markdown **fora** do código; o código sai puro.
+2. **Novo agente padrão** ("Padrão"): identifica o contexto e sabe o que fazer;
+   em reunião as sugestões são baseadas nas **pautas**; se identificar uma
+   entrevista de LeetCode, assume e responde como o agente próprio.
+3. **Nenhum agente pergunta de volta**: sempre tentam responder; faltando
+   contexto, a sugestão sai simples dizendo que não entendeu / que há pouca
+   informação.
+
+### Implementação
+- **Agente Padrão** (`default`, `sparkle/slate`): primeiro do catálogo e padrão
+  das settings. O contrato tem duas partes — a **cena** (reunião → pauta;
+  entrevista de código → especialista LeetCode; system design → dimensionar e
+  desenhar; geral → responder) e o **formato** de cada cena.
+- **Migração única** (`application/assistant_mode_migration.rs`, boot): quem
+  tinha a "Reunião" (o padrão antigo) passa pelo Padrão **uma vez** — a marca
+  `settings.assistant_mode_migrated` garante que a escolha do usuário passa a
+  valer depois disso (inclusive voltar para a "Reunião").
+- **Respondem, não perguntam**: `NEVER_ASK_BACK_RULE` entra no prompt de
+  sistema de **todo** agente (embutido **e** personalizado) e no rascunho
+  *fast-first*. Os contratos pararam de devolver `"..."`: sem contexto, a
+  sugestão diz em uma frase curta que há poca informação.
+- **Código puro**: `PURE_CODE_RULE` entra no prompt de todo agente; os
+  contratos de LeetCode/Entrevista Técnica passaram a pedir a explicação no
+  Markdown em volta do bloco (antes: "cada linha com comentário `//`").
+- O agente Padrão leva o orçamento de tokens dos técnicos (pode virar
+  entrevista de código).
+
+### Testes
+- Rust: agente Padrão no catálogo e no prompt; regras comuns em **todos** os
+  prompts; nenhum contrato pede "comentário por linha"; migração (uma vez,
+  respeita a escolha do usuário, não mexe em agente personalizado).
+- TS: `default` é embutido, é o padrão das settings e é o fallback ao excluir
+  um agente personalizado.
+- `cargo test` 451 ✓ · clippy/fmt ✓ · `pnpm test` 294 ✓ · `tsc` ✓.

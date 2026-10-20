@@ -34,6 +34,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2.8.3"
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.15"
 libpulse-binding = "2"
@@ -50,6 +51,7 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 x11rb = { version = "0.13", features = ["shape"] }
 raw-window-handle = "0.6"
 

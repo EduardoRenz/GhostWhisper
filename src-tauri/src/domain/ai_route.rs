@@ -20,6 +20,8 @@ pub enum AiCapability {
     Suggestions,
     /// Tradução ao vivo.
     Translation,
+    /// Perguntas do usuário (aba "Sessão", BR-053).
+    Search,
 }
 
 impl AiCapability {
@@ -29,6 +31,7 @@ impl AiCapability {
             AiCapability::Summary => "summary",
             AiCapability::Suggestions => "suggestions",
             AiCapability::Translation => "translation",
+            AiCapability::Search => "search",
         }
     }
 }

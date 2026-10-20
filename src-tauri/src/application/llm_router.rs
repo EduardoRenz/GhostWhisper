@@ -492,6 +492,7 @@ mod tests {
             Ok(Completion {
                 text: self.response.clone(),
                 model: "flaky".to_string(),
+                provider: None,
                 usage: None,
             })
         }
@@ -549,6 +550,7 @@ mod tests {
         fn emit_llm_source_used(&self, usage: &LlmSourceUsage) {
             self.usages.lock().expect("usages").push(usage.clone());
         }
+        fn emit_journal(&self, _update: &crate::ports::event_publisher::JournalUpdate) {}
     }
 
     fn source(id: &str, kind: ProviderKind, model: &str) -> AiSource {

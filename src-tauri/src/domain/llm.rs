@@ -14,6 +14,15 @@ pub struct ProviderConfig {
     pub api_key: String,
 }
 
+/// Uma imagem anexada a um pedido (print de tela, BR-056).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionImage {
+    /// Tipo MIME (ex.: `image/jpeg`).
+    pub mime: String,
+    /// Bytes da imagem (já comprimidos).
+    pub data: Vec<u8>,
+}
+
 /// Pedido de completude.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompletionRequest {
@@ -21,6 +30,8 @@ pub struct CompletionRequest {
     pub prompt: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
+    /// Imagens anexadas (vazio = pedido só de texto — o caso comum).
+    pub images: Vec<CompletionImage>,
 }
 
 impl CompletionRequest {
@@ -31,6 +42,7 @@ impl CompletionRequest {
             prompt: prompt.into(),
             max_tokens: None,
             temperature: None,
+            images: Vec::new(),
         }
     }
 
@@ -49,6 +61,12 @@ impl CompletionRequest {
     /// Ajusta a temperatura.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
+        self
+    }
+
+    /// Anexa imagens ao pedido (BR-056).
+    pub fn with_images(mut self, images: Vec<CompletionImage>) -> Self {
+        self.images = images;
         self
     }
 }
@@ -82,6 +100,10 @@ impl CompletionUsage {
 pub struct Completion {
     pub text: String,
     pub model: String,
+    /// Provedor que respondeu (`openai`, `gemini`, `deepseek`, …).
+    ///
+    /// `None` quando o provider não soube dizer.
+    pub provider: Option<String>,
     /// Uso de tokens (quando o provider reporta).
     pub usage: Option<CompletionUsage>,
 }

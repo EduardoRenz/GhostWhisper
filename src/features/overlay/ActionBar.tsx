@@ -7,6 +7,7 @@ import {
   EyeOffIcon,
   GearIcon,
   HistoryIcon,
+  SearchIcon,
 } from "../../components/icons";
 import { DragHandle } from "../../components/DragHandle";
 import { ShortcutBadges } from "../../components/ShortcutBadges";
@@ -30,6 +31,8 @@ interface ActionBarProps {
   onStartDrag: () => void;
   /** Atalho de iniciar/encerrar sessão (badges do botão verde). */
   startAccelerator: string;
+  /** Atalho da barra de pesquisa (badge da lupa). */
+  askAccelerator: string;
   stealth: boolean;
   onToggleStealth: () => void;
   onOpenSettings: () => void;
@@ -37,6 +40,8 @@ interface ActionBarProps {
   onOpenTranscription: () => void;
   /** Abre/foca o painel na aba Resumo. */
   onOpenSummary: () => void;
+  /** Abre a barra de pesquisa (janela `ask`) — BR-052. */
+  onOpenAsk: () => void;
   /** A janela de Sugestões está visível. */
   suggestionsOpen: boolean;
   onToggleSuggestions: () => void;
@@ -50,11 +55,15 @@ interface ActionBarProps {
 /**
  * Barra de ações do overlay em **dois estados** (BR-032/task 08).
  *
- * - **Repouso** (sem sessão): marca, **"Começar a ouvir"** (esmeralda + badges),
- *   ocultar, Histórico e — **por último** — Configurações.
- * - **Ativo** (com sessão): marca, **switcher** (Transcrição + waveform ·
- *   play/pause · Resumo · Sugestões), **timer**, canais, stealth, **ocultar**,
- *   **Histórico** e Configurações (último).
+ * - **Repouso** (sem sessão): marca, **lupa** (barra de pesquisa),
+ *   **"Começar a ouvir"** (esmeralda + badges), ocultar, Histórico e — **por
+ *   último** — Configurações.
+ * - **Ativo** (com sessão): marca, **lupa**, **switcher** (Transcrição +
+ *   waveform · play/pause · Resumo · Sugestões), **timer**, canais, stealth,
+ *   **ocultar**, **Histórico** e Configurações (último).
+ *
+ * A **lupa** existe nos dois estados (BR-052): a barra de pesquisa não depende
+ * de haver transcrição.
  */
 export function ActionBar({
   listening,
@@ -69,11 +78,13 @@ export function ActionBar({
   onChannelsChange,
   onStartDrag,
   startAccelerator,
+  askAccelerator,
   stealth,
   onToggleStealth,
   onOpenSettings,
   onOpenTranscription,
   onOpenSummary,
+  onOpenAsk,
   suggestionsOpen,
   onToggleSuggestions,
   historyOpen,
@@ -110,6 +121,20 @@ export function ActionBar({
         />
         <span className="overlay__brand">GhostWhisper</span>
       </span>
+
+      {/* Lupa: abre a barra de pesquisa (BR-052), com ou sem transcrição. */}
+      <button
+        type="button"
+        className="overlay__search"
+        data-interactive
+        disabled={busy}
+        title={`Perguntar ao GhostWhisper sobre a tela ou áudio (${askAccelerator})`}
+        aria-label="Perguntar ao GhostWhisper"
+        onClick={onOpenAsk}
+      >
+        <SearchIcon className="overlay__search-icon" size={16} />
+        <ShortcutBadges accelerator={askAccelerator} />
+      </button>
 
       {!listening ? (
         <button

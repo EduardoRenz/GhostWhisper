@@ -229,7 +229,9 @@ impl SuggestionService {
 /// Ajustes de amostragem por agente (técnicos são mais precisos e longos).
 fn sampling(mode: &crate::domain::assistant::AssistantMode) -> (u32, f32) {
     match mode.id.as_str() {
-        "technical_interview" | "leetcode" | "system_design" => {
+        // O agente Padrão é contextual: pode virar entrevista técnica (código),
+        // então leva o mesmo orçamento dos técnicos.
+        "default" | "technical_interview" | "leetcode" | "system_design" => {
             (TECHNICAL_MAX_TOKENS, TECHNICAL_TEMPERATURE)
         }
         _ => (MEETING_MAX_TOKENS, MEETING_TEMPERATURE),
@@ -606,6 +608,7 @@ mod tests {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
         fn emit_llm_source_used(&self, _usage: &crate::ports::event_publisher::LlmSourceUsage) {}
+        fn emit_journal(&self, _update: &crate::ports::event_publisher::JournalUpdate) {}
     }
 
     struct Fixture {
@@ -900,6 +903,7 @@ mod tests {
                 Ok(Completion {
                     text: "> completo".into(),
                     model: "chunked".into(),
+                    provider: None,
                     usage: None,
                 })
             }
@@ -913,6 +917,7 @@ mod tests {
                 Ok(Completion {
                     text: "> olá, tudo bem?".into(),
                     model: "chunked".into(),
+                    provider: None,
                     usage: None,
                 })
             }

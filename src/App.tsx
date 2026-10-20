@@ -6,6 +6,8 @@ import { SuggestionsWindow } from "./features/suggestions/SuggestionsWindow";
 import { PanelWindow } from "./features/panel/PanelWindow";
 import { HistoryWindow } from "./features/history/HistoryWindow";
 import { DwellPopoverWindow } from "./features/dwell/DwellPopoverWindow";
+import { AskWindow } from "./features/ask/AskWindow";
+import { CapturePreviewWindow } from "./features/ask/CapturePreviewWindow";
 
 /** Rotas de janela suportadas pelo GhostWhisper. */
 export type Route =
@@ -15,6 +17,8 @@ export type Route =
   | "chat"
   | "history"
   | "dwell"
+  | "ask"
+  | "capture"
   | "unknown";
 
 /**
@@ -33,6 +37,8 @@ export function resolveRoute(): Route {
     if (label === "chat") return "chat";
     if (label === "history") return "history";
     if (label === "dwell") return "dwell";
+    if (label === "ask") return "ask";
+    if (label === "capture") return "capture";
     if (label === "overlay") return "overlay";
     return "unknown";
   } catch {
@@ -43,6 +49,8 @@ export function resolveRoute(): Route {
       if (target === "chat") return "chat";
       if (target === "history") return "history";
       if (target === "dwell") return "dwell";
+    if (target === "ask") return "ask";
+    if (target === "capture") return "capture";
     }
     return "overlay";
   }
@@ -79,6 +87,14 @@ export function App() {
 
   if (route === "dwell") {
     return <DwellPopoverWindow />;
+  }
+
+  if (route === "ask") {
+    return <AskWindow />;
+  }
+
+  if (route === "capture") {
+    return <CapturePreviewWindow />;
   }
 
   return (

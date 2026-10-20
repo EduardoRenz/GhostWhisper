@@ -14,6 +14,7 @@ só começa após a revisão da PRD pelo usuário.
 | 05 | Blocos de resposta rápida/completa + metadados + caption de código | CONCLUDED |
 | 06 | Histórico em accordion: seção, itens, scroll até o bloco e pill do agente | CONCLUDED |
 | 07 | Acabamento, usabilidade, validação visual, docs e pacote | CONCLUDED |
+| 08 | Agente Padrão (contextual), agentes que respondem e código puro | CONCLUDED |
 
 ## Dependências
 

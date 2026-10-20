@@ -7,6 +7,7 @@ pub mod ai_source;
 pub mod assistant;
 pub mod audio;
 pub mod geometry;
+pub mod journal;
 pub mod llm;
 pub mod message;
 pub mod overview;

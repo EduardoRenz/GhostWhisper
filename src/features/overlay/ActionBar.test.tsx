@@ -16,11 +16,13 @@ const base = {
   onChannelsChange: vi.fn(),
   onStartDrag: vi.fn(),
   startAccelerator: "CommandOrControl+Shift+S",
+  askAccelerator: "CommandOrControl+K",
   stealth: false,
   onToggleStealth: vi.fn(),
   onOpenSettings: vi.fn(),
   onOpenTranscription: vi.fn(),
   onOpenSummary: vi.fn(),
+    onOpenAsk: vi.fn(),
   suggestionsOpen: false,
   onToggleSuggestions: vi.fn(),
   historyOpen: false,
@@ -32,11 +34,13 @@ const button = (name: string) =>
   screen.getByRole("button", { name }) as HTMLButtonElement;
 
 describe("ActionBar — notch em dois estados", () => {
-  it("repouso: marca, ação esmeralda, Histórico, ocultar e engrenagem (última)", () => {
+  it("repouso: lupa, ação verde, Histórico, ocultar e engrenagem (última)", () => {
     const { container } = render(
       <ActionBar {...base} listening={false} paused={false} />,
     );
 
+    // A lupa (barra de pesquisa) existe **independente** da sessão (BR-052).
+    expect(button("Perguntar ao GhostWhisper")).toBeDefined();
     expect(button("Começar a ouvir")).toBeDefined();
     expect(button("Histórico")).toBeDefined();
     expect(button("Ocultar overlay")).toBeDefined();
@@ -58,16 +62,12 @@ describe("ActionBar — notch em dois estados", () => {
       "Configurações",
     );
 
-    // Atalho em badges.
-    const badges = document.querySelectorAll(".shortcut-badge");
-    expect([...badges].map((badge) => badge.textContent)).toEqual([
-      "Ctrl",
-      "Shift",
-      "S",
-    ]);
+    // O atalho da lupa aparece em badges (Ctrl K).
+    const lupa = button("Perguntar ao GhostWhisper");
+    expect(lupa.textContent).toContain("K");
   });
 
-  it("repouso: a ação verde inicia com os canais padrão", () => {
+  it("repouso: o microfone inicia com os canais padrão", () => {
     const onStart = vi.fn();
     render(
       <ActionBar
@@ -172,8 +172,32 @@ describe("ActionBar — notch em dois estados", () => {
     expect(onToggleHistory).toHaveBeenCalledTimes(1);
   });
 
-  it("menu de canais troca ao vivo e oferece Nova sessão", () => {
-    const onChannelsChange = vi.fn();
+  it("a lupa abre a barra de pesquisa nos dois estados", () => {
+    const onOpenAsk = vi.fn();
+    const { rerender } = render(
+      <ActionBar {...base} onOpenAsk={onOpenAsk} listening={false} paused={false} />,
+    );
+
+    // Em repouso (sem transcrição) a lupa já está lá.
+    fireEvent.click(button("Perguntar ao GhostWhisper"));
+    expect(onOpenAsk).toHaveBeenCalledTimes(1);
+
+    // E continua no estado ativo.
+    onOpenAsk.mockClear();
+    rerender(
+      <ActionBar {...base} onOpenAsk={onOpenAsk} listening paused={false} />,
+    );
+    fireEvent.click(button("Perguntar ao GhostWhisper"));
+    expect(onOpenAsk).toHaveBeenCalledTimes(1);
+  });
+
+  it("o switcher ativo não tem mais o item Perguntar (a lupa vive na barra)", () => {
+    render(<ActionBar {...base} listening paused={false} />);
+    expect(screen.queryByRole("button", { name: "Perguntar" })).toBeNull();
+    expect(button("Transcrição")).toBeDefined();
+  });
+
+  it("menu de canais troca ao vivo e oferece Nova sessão", () => {    const onChannelsChange = vi.fn();
     const onStart = vi.fn();
     const { rerender } = render(
       <ActionBar

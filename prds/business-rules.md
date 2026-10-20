@@ -299,11 +299,12 @@ uma nota de revisão.
 
 ## BR-024 — Sugestões por agentes, com modos personalizados
 - **Decisão:** a sugestão ao vivo tem **agentes** selecionáveis — embutidos
-  (Reunião, Entrevista Técnica, LeetCode, System Design) e **personalizados**
+  (Padrão, Reunião, Entrevista Técnica, LeetCode, System Design) e **personalizados**
   (nome, prompt de sistema, prompt de sugestão e contexto fixo). O contexto são os
   **últimos momentos** da conversa (≈3 min, até 40 falas, teto de 6 k caracteres),
   com a última sugestão para evitar repetição. O agente **sempre tenta** produzir
-  algo útil; `...` só sem transcrição/ininteligível. Sugestões automáticas são
+  algo útil; quando falta contexto, ele diz isso em uma frase curta em vez de
+  devolver `...` (BR-060). Sugestões automáticas são
   **efêmeras**; "Fixar" grava em `messages` (linha temporal/export).
 - **Motivo:** pedido do usuário ("modos sugestores personalizados, para dar mais
   contexto") e a referência do Perssua (Cody/Note Taker).
@@ -621,8 +622,9 @@ uma nota de revisão.
 - **Decisão:** todo agente de sugestão (embutido **e** personalizado) tem **ícone**
   (catálogo: `sparkle`, `users`, `braces`, `code`, `layers`, `book`, `briefcase`,
   `terminal`) e **cor** (tokens do design system: `cyan`, `violet`, `emerald`,
-  `coral`, `slate`). Os embutidos são fixos (Reunião `users/cyan`, Entrevista
-  Técnica `braces/violet`, LeetCode `code/emerald`, System Design `layers/coral`);
+  `coral`, `slate`). Os embutidos são fixos (Padrão `sparkle/slate`, Reunião
+  `users/cyan`, Entrevista Técnica `braces/violet`, LeetCode `code/emerald`,
+  System Design `layers/coral`);
   os personalizados escolhem nas Configurações (default `sparkle/slate`). A identidade
   é **snapshotada** na sugestão, para o histórico mostrar quem respondeu. Ícones são
   SVG do projeto (BR-008); a cor é o **nome do token** (não hex), então o tema
@@ -638,6 +640,61 @@ uma nota de revisão.
   [`suggestions/tasks/01-task.md`](suggestions/tasks/01-task.md),
   [`suggestions/tasks/04-task.md`](suggestions/tasks/04-task.md).
 - **Data:** 2026-10-19 · **Status:** Ativa (task 01 concluída)
+
+## BR-059 — Agente "Padrão": identifica a cena e age como o especialista
+- **Decisão:** existe um **quinto** agente embutido, o **Padrão** (id `default`,
+  `sparkle/slate`), que é o **agente padrão** do app (primeiro da lista e
+  `settings.assistant_mode_id` em instalação nova). Ele **identifica a cena**
+  da conversa e age como o especialista correspondente: **reunião** → as
+  sugestões seguem a **pauta** em discussão (o ponto em aberto, o que está
+  pendente, o que precisa de decisão/confirmação); **entrevista de código
+  (LeetCode)** → assume o enquadramento de entrevista e responde à pergunta
+  como o agente LeetCode (Big O, linguagem, implementação, complexidade);
+  **system design** → requisitos → dimensionamento → desenho; **conversa
+  geral** → responde à pergunta. Instalação antiga com a "Reunião" selecionada
+  (o padrão anterior) é **migrada uma vez** para o Padrão — que também cobre
+  reuniões — e, depois disso, a escolha do usuário é respeitada.
+- **Motivo:** pedido do usuário ("criar novo agente que será o padrão; se for
+  reunião, as sugestões são baseadas nas pautas; se identificar uma entrevista
+  de LeetCode, assume e responde como o agente próprio").
+- **Consequência:** `BUILTIN_MODE_IDS` ganha `default` (Rust + TS);
+  `default_assistant_mode()` passa a devolver `default`; a migração única vive
+  em `application::assistant_mode_migration` (marcada por
+  `settings.assistant_mode_migrated`); o agente Padrão leva o orçamento de
+  tokens dos agentes técnicos (pode virar entrevista de código).
+- **Detalhes:** [`suggestions/architecture/agent-identity.md`](suggestions/architecture/agent-identity.md) §4,
+  [`suggestions/tasks/08-task.md`](suggestions/tasks/08-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 08 concluída)
+
+## BR-060 — O agente responde, não pergunta de volta
+- **Decisão:** **nenhum** agente devolve uma pergunta para o usuário. Com a
+  informação disponível, o agente **responde** (assumindo e declarando
+  premissas quando falta algo); quando o contexto está ausente, vazio ou
+  ininteligível, a sugestão sai **simples e curta**, dizendo que não
+  identificou bem o contexto / que há pouca informação na conversa. A regra é
+  injetada **no prompt de sistema de todo agente** (embutido ou
+  personalizado), e vale também para o rascunho *fast-first*.
+- **Motivo:** pedido do usuário ("os agentes nunca devem fazer perguntas de
+  volta a mim; sempre tentar responder").
+- **Consequência:** os contratos deixam de devolver `"..."` como resposta
+  vazia; `suggestion_system_prompt()` acrescenta a regra comum a todos os
+  agentes.
+- **Detalhes:** [`suggestions/architecture/agent-identity.md`](suggestions/architecture/agent-identity.md) §4,
+  [`suggestions/tasks/08-task.md`](suggestions/tasks/08-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 08 concluída)
+
+## BR-061 — Código puro: a explicação fica no Markdown, fora do bloco
+- **Decisão:** o bloco de código gerado pelos agentes é **código puro** — sem
+  comentário de linha (`//`, `#`, `/* */`) dentro do bloco. A explicação de
+  cada passo fica no **Markdown ao redor** do bloco. Vale para todos os
+  agentes (LeetCode, Entrevista Técnica, System Design e o Padrão).
+- **Motivo:** pedido do usuário ("não gerar comentários nas linhas dos códigos
+  gerados; a explicação deve ser feita no markdown fora do código").
+- **Consequência:** os contratos técnicos (LeetCode/Entrevista Técnica) deixam
+  de pedir "comentário por linha"; a regra entra por `PURE_CODE_RULE` no
+  prompt de sistema de todo agente.
+- **Detalhes:** [`suggestions/tasks/08-task.md`](suggestions/tasks/08-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (task 08 concluída)
 
 ## BR-038 — Sugestão em duas fases: título, resposta rápida e resposta completa
 - **Decisão:** a sugestão passa a ter **resposta rápida** e **resposta completa**,
@@ -1010,6 +1067,17 @@ uma nota de revisão.
   [`session/tasks/01-task.md`](session/tasks/01-task.md),
   [`session/tasks/03-task.md`](session/tasks/03-task.md),
   [`session/tasks/04-task.md`](session/tasks/04-task.md).
+- **Revisão (2026-10-20):** a **pergunta abre a sessão**. Sem sessão ativa, o
+  `AskService` cria uma sessão própria (sem captura de áudio) e o diário passa
+  a mostrar as perguntas nela; com uma gravação ativa, a pergunta entra nela.
+  É o "somente depois da pergunta/captura é que a sessão abre" do pedido.
+- **Revisão 2 (2026-10-20):** o **notch volta** a ser a superfície principal e
+  ganha, ao lado da marca, um botão de **lupa** (cor primária + atalho
+  Ctrl+K) **sempre disponível** — com ou sem transcrição. A lupa abre a
+  **barra de pesquisa** (janela própria, no topo), que **desaparece** depois
+  do envio e abre o painel na aba Sessão. O print **só anexa** (prévia no
+  canto superior direito, com remover); o envio é sempre confirmado pelo
+  usuário (BR-055).
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-053 — "Busca" é a superfície de pergunta: perguntar, print e perguntas prontas
@@ -1080,6 +1148,11 @@ uma nota de revisão.
 - **Detalhes:** [`session/prd.md`](session/prd.md) US-03,
   [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §4.2/§5.2,
   [`session/tasks/06-task.md`](session/tasks/06-task.md).
+- **Revisão (2026-10-20):** capturar **não envia** — o print fica **pendente**
+  (porta `PendingCapture`, em memória), a **prévia** aparece no canto superior
+  direito com botão de remover, e o envio só acontece quando o usuário confirma
+  a pergunta. O `hide()` das janelas é assíncrono: a captura espera o
+  compositor antes do `GetImage`.
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-056 — O pedido ao LLM é multimodal (imagens)
@@ -1110,9 +1183,14 @@ uma nota de revisão.
   projeto** (BR-008).
 - **Motivo:** pedido do usuário ("o botão perguntar deve ficar ao lado do
   botão Resumo, quando iniciado a sessão, com um ícone de uma lupa").
-- **Consequência:** o overlay continua `actionbar | hidden` (BR-032) — **não**
-  há "Ask" flutuante (desvio consciente, R12); a origem do botão é o
-  `Overlay` → `panelOpenTab("chat", "session")`.
+- **Consequência:** o overlay continua `actionbar | hidden` (BR-032); a origem
+  do botão é o `Overlay` → `panelOpenTab("chat", "session")`.
+- **Revisão (2026-10-20):** a superfície **padrão** do overlay deixa de ser o
+  botão verde e passa a ser a **barra "Perguntar"** no **topo** (pill com lupa,
+  campo, atalho e **Capturar Tela**), como a referência do Perssua. O botão
+  "Perguntar" do switcher continua existindo no estado **ativo** (sessão
+  gravando). Atalhos globais: **Ctrl+Space** foca a barra e **Alt+C** captura a
+  tela (paridade com ⌘ Space / ⌥ C).
 - **Detalhes:** [`session/prd.md`](session/prd.md) US-05,
   [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §8,
   [`session/tasks/02-task.md`](session/tasks/02-task.md).

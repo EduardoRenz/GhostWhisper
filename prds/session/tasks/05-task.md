@@ -1,6 +1,6 @@
 # 05 — Perguntas prontas: settings, chips e editor
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 04
 - **Habilita:** —
 - **Issues:** — · **BR:** BR-054
@@ -32,16 +32,20 @@ Permitir **salvar perguntas prontas**, **repeti-las com um clique** e
 
 ## Critérios de aceite
 
-- [ ] Clicar num chip **envia** a pergunta e a entrada do diário fica com a
+- [x] Clicar num chip **envia** a pergunta e a entrada do diário fica com a
       origem **"Pergunta pronta"** (`request_source = preset`).
-- [ ] Salvar a pergunta atual a adiciona aos chips (e à lista do editor).
-- [ ] Remover uma pergunta some dos chips.
-- [ ] **Limites**: a 21ª pergunta é recusada com aviso; o texto é truncado em
+- [x] Salvar a pergunta atual a adiciona aos chips (e à lista do editor).
+- [x] Remover uma pergunta some dos chips.
+- [x] **Limites**: a 21ª pergunta é recusada com aviso; o texto é truncado em
       200 caracteres **no máximo** (o excedente é recusado, não cortado em
       silêncio).
-- [ ] Os quatro defaults aparecem na primeira execução.
-- [ ] `pnpm test` e `cargo test --lib` verdes (sanitização no Rust,
+- [x] Os quatro defaults aparecem na primeira execução.
+- [x] `pnpm test` e `cargo test --lib` verdes (sanitização no Rust,
       chips/editor no frontend).
+
+## Verificação
+
+- `pnpm test` ✓ · limites no `sanitize_saved_questions` (Rust) e no editor (TS)
 
 ## Notas
 

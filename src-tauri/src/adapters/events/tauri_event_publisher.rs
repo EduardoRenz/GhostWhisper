@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
-    EventPublisher, LlmSourceUsage, SessionStateEvent, SuggestionCadenceEvent,
+    EventPublisher, JournalUpdate, LlmSourceUsage, SessionStateEvent, SuggestionCadenceEvent,
 };
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -27,6 +27,8 @@ pub const ASR_STATUS_EVENT: &str = "asr_status";
 pub const SUGGESTION_CADENCE_EVENT: &str = "suggestion_cadence";
 /// Nome do evento de fonte de IA que respondeu (BR-045).
 pub const LLM_SOURCE_USED_EVENT: &str = "llm_source_used";
+/// Nome do evento de progresso do diário de perguntas (BR-052).
+pub const JOURNAL_EVENT: &str = "journal";
 
 /// Payload do evento `audio_level` (canal + nível).
 #[derive(Debug, Clone, Serialize)]
@@ -86,5 +88,9 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_llm_source_used(&self, usage: &LlmSourceUsage) {
         let _ = self.app.emit(LLM_SOURCE_USED_EVENT, usage);
+    }
+
+    fn emit_journal(&self, update: &JournalUpdate) {
+        let _ = self.app.emit(JOURNAL_EVENT, update);
     }
 }

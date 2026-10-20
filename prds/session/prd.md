@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-19
-- **Status:** Planejado (tasks `PENDING`)
+- **Status:** Implementado (tasks 01–10 `CONCLUDED`)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/session-journal.md`](architecture/session-journal.md),
@@ -70,6 +70,32 @@ desta PRD:
 
 ## 4. Histórias de usuário e critérios de aceite
 
+### US-00 — Lupa no notch e barra de pesquisa no topo
+
+Como usuário, quero **uma lupa no notch** (sempre disponível, com ou sem
+transcrição) que abre uma **barra de pesquisa** discreta no topo.
+
+**Critérios de aceite**
+
+- [ ] O **notch** (barra de ações) ganha, ao lado da marca, um botão de
+      **lupa** em cor primária (cyan) com o atalho em badge (**Ctrl+K**).
+- [ ] A lupa existe **nos dois estados** — em repouso (sem sessão) e com
+      transcrição gravando. **Não** depende de haver transcrição.
+- [ ] Clicar na lupa (ou **Ctrl+K**) abre a **barra de pesquisa** (janela
+      própria, no **topo**, centralizada): lupa + campo + `Ctrl K` + divisor +
+      **Capturar Tela** (`Alt C`) — o layout da referência do Perssua.
+- [ ] A barra de pesquisa **desaparece** depois do envio, e o painel abre na
+      aba **Sessão** com a resposta em streaming.
+- [ ] A pergunta **não exige** transcrição: sem sessão de áudio, o contexto é
+      vazio e a resposta considera só a pergunta (e o print, se houver).
+- [ ] `Esc` fecha a barra sem perguntar.
+- [ ] A barra de pesquisa tem a **alça de arraste** (⋮⋮) à esquerda, como o
+      notch.
+- [ ] O notch mantém o **fundo** (pill opaca); o estado de repouso não perde a
+      superfície.
+- [ ] O notch mantém o comportamento e a posição de antes (arrastável,
+      ancorado pela base).
+
 ### US-01 — Aba Sessão: o diário da sessão
 
 Como usuário, quero uma **aba Sessão** no painel onde vejo, em ordem, tudo
@@ -133,6 +159,16 @@ o que eu vejo.
 - [ ] A imagem é reescalada para **≤1280 px** no lado maior e recomprimida em
       **JPEG q0.86** (paridade com o preset `balanced` do Perssua) antes de ir
       ao provider.
+- [ ] **Capturar não envia**: o botão **Capturar Tela** (ou `Alt+C`) apenas
+      **anexa** o print. A prévia aparece no **canto superior direito** da
+      tela, com um botão de **remover** (como no Perssua).
+- [ ] O envio é **sempre explícito**: o usuário confirma no botão **Perguntar**
+      (ou `Enter`). Sem texto e com print, o core aplica um prompt padrão
+      ("Analise a imagem da tela…") — a IA decide o que fazer com a imagem.
+- [ ] **Em nenhuma tela** o texto é obrigatório quando há print anexado (barra
+      de pesquisa **e** composer da aba Sessão).
+- [ ] Depois do print, **todas as janelas que estavam ativas voltam** (a barra
+      de pesquisa inclusive, com o foco) — sem depender de sorte com o WM.
 - [ ] **Uma imagem por pergunta** (paridade com o limite do Perssua): pedir
       uma segunda mostra "Só uma imagem por pergunta".
 - [ ] A miniatura pode ser **removida** antes do envio (botão `×`).
@@ -145,6 +181,10 @@ o que eu vejo.
 - [ ] As janelas do próprio app são **escondidas durante a captura** (o
       print não sai com o HUD em cima) e restauradas depois — mesmo cuidado do
       Perssua (`protectPerssuaWindowsForCapture`).
+- [ ] O `hide()` é **assíncrono**: a captura espera o compositor tirar as
+      janelas da tela (settle + confirmação do `unmap`) antes do `GetImage` —
+      sem isso o print sai com o app. Regressão observada no teste de
+      2026-10-19.
 
 ### US-04 — Perguntas prontas
 
@@ -309,6 +349,7 @@ Extraída com REA do `Perssua-0.27.5-x86_64.AppImage`
 | Comportamento no Perssua | Onde | Decisão aqui |
 |---|---|---|
 | Sessão como **diário**: `messages` (`role` user/assistant/system) + `transcriptions` + `subject`/`overview`, com `messages_fts` | `electron/database/DatabaseManager.js`, schema de `conversations.db` | Diário **por sessão** em tabela **própria** (`journal_entries` + `journal_fts`) — a tabela `messages` fica com as sugestões (BR-052) |
+| **Ask** é uma **barra** flutuante: lupa + campo + atalho + botão de print, com os atalhos ⌘ Space / ⌥ C | barra do Perssua (`text-input`, `9707.9385c2cc.chunk.js`) | **Barra "Perguntar" no topo** (US-00), com Ctrl+Space / Alt+C |
 | **Ask** = uma superfície só, com taxonomia `requestType` (`ask`/`followup`/`word`/`transcription`/`clipboard`/`screenshot`) e `requestSource` | `build/static/js/310.8def3e52.chunk.js` (`Cr`), `main.f180d025.js` (módulo 4924) | Origem registrada na entrada (`search`/`preset`/`screenshot`), para o diário distinguir |
 | **Print**: `capture-screenshot` → JPEG q80 ≤1920×1080; reencode por preset (`balanced` = 1280/q0.86, default do Ask) | `electron/ipc/screen-capture/index.js`, `main.f180d025.js` (módulo 5525) | Reencode **1280/q0.86**; fonte do print é **X11** (`x11rb`), não `desktopCapturer` (Electron) |
 | Limite do Perssua: **1 imagem por request** no plano free | `310.8def3e52.chunk.js` (`useImageManager`) | **1 imagem por pergunta** |

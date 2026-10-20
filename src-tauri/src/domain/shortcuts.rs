@@ -10,6 +10,10 @@ pub enum ShortcutAction {
     ToggleSession,
     ToggleStealth,
     RequestInsight,
+    /// Leva o foco para a barra "Perguntar" (BR-052).
+    FocusAsk,
+    /// Captura a tela e pergunta (BR-055).
+    CaptureScreen,
 }
 
 impl ShortcutAction {
@@ -20,12 +24,16 @@ impl ShortcutAction {
             ShortcutAction::ToggleSession => "toggle_session",
             ShortcutAction::ToggleStealth => "toggle_stealth",
             ShortcutAction::RequestInsight => "request_insight",
+            ShortcutAction::FocusAsk => "focus_ask",
+            ShortcutAction::CaptureScreen => "capture_screen",
         }
     }
 
     /// Todas as ações, na ordem de exibição.
-    pub fn all() -> [ShortcutAction; 4] {
+    pub fn all() -> [ShortcutAction; 6] {
         [
+            ShortcutAction::FocusAsk,
+            ShortcutAction::CaptureScreen,
             ShortcutAction::ToggleOverlay,
             ShortcutAction::ToggleSession,
             ShortcutAction::ToggleStealth,
@@ -40,6 +48,8 @@ impl ShortcutAction {
             ShortcutAction::ToggleSession => "Iniciar/encerrar sessão",
             ShortcutAction::ToggleStealth => "Alternar stealth",
             ShortcutAction::RequestInsight => "Pedir sugestão",
+            ShortcutAction::FocusAsk => "Perguntar ao GhostWhisper",
+            ShortcutAction::CaptureScreen => "Capturar a tela e perguntar",
         }
     }
 
@@ -50,6 +60,9 @@ impl ShortcutAction {
             ShortcutAction::ToggleSession => "CommandOrControl+Shift+S",
             ShortcutAction::ToggleStealth => "CommandOrControl+Shift+H",
             ShortcutAction::RequestInsight => "CommandOrControl+Shift+I",
+            // Paridade com a barra do Perssua (⌘ Space / ⌥ C no macOS).
+            ShortcutAction::FocusAsk => "CommandOrControl+Space",
+            ShortcutAction::CaptureScreen => "Alt+C",
         }
     }
 }
@@ -101,7 +114,13 @@ mod tests {
         assert_eq!(ids.len(), ShortcutAction::all().len());
         for action in ShortcutAction::all() {
             assert!(!action.label().is_empty());
-            assert!(action.default_accelerator().contains("CommandOrControl"));
+            // O padrão usa CommandOrControl; a captura usa Alt (⌥C no Perssua).
+            let accelerator = action.default_accelerator();
+            assert!(
+                accelerator.contains("CommandOrControl") || accelerator.contains("Alt+"),
+                "acelerador inesperado para {:?}: {accelerator}",
+                action
+            );
         }
     }
 

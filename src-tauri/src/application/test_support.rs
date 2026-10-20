@@ -225,6 +225,7 @@ impl FakeLlmController {
         Ok(Completion {
             text,
             model: "fake".into(),
+            provider: None,
             usage: None,
         })
     }

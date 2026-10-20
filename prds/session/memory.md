@@ -72,8 +72,128 @@ timestamp`), **full scan** em `sessions ORDER BY started_at` e **três
 **é** usado (pelo `end_all_active`) e **fica**. A correção está na task 10,
 junta da ancoragem do FTS (ISS-041).
 
+### Implementação (2026-10-19)
+
+Todas as **10 tasks** foram implementadas e estão `CONCLUDED`.
+
+| Task | Entregue |
+|---|---|
+| 01 | `domain/journal.rs`, `ports/journal_repository.rs`, `LocalJournalRepository`, `InMemoryJournalRepository`, tabelas `journal_entries`/`journal_images`/`journal_fts` com FTS ancorado por `id` |
+| 02 | Terceira aba **Sessão** no painel + botão **"Perguntar"** (lupa) no switcher do notch, entre "Resumo" e "Sugestões" |
+| 03 | `application/ask_service.rs` (+ porta `AskController`), evento `journal`, escopo de rota `AiCapability::Search` |
+| 04 | `features/journal/*` (aba, composer, cartão da entrada) + `useJournal` |
+| 05 | `settings.saved_questions` (20 × 200) + chips + editor |
+| 06 | `ports/screen_capture.rs` + `X11ScreenCapture` (`x11rb` `GetImage`, ≤1280 px, JPEG q0.86) + comando `screen_capture` (esconde as janelas do app) |
+| 07 | `CompletionRequest.images` + `image_url` (OpenAI-compatível) e `inline_data` (Gemini) |
+| 08 | Busca no diário com escape do `MATCH` (ISS-042) + seção **"Perguntas"** no export Markdown |
+| 09 | BRs, ISS, memória, verificação e pacotes |
+| 10 | Índices compostos (`(session_id, timestamp)`, `sessions.started_at`), remoções dos índices mortos e ancoragem do FTS por `id` (ISS-041) |
+
+**Verificação:** `cargo test --lib` 492 ✓ · `cargo clippy --all-targets` limpo ·
+`pnpm test` 307 ✓ · `tsc --noEmit` ✓ · `pnpm build` ✓. A captura real foi
+validada no X11 desta máquina (1280 px, JPEG válido).
+
+**Desvios do plano:** `Completion` ganhou `provider: Option<String>` (o
+diário registra quem respondeu — BR-052); a dependência `image` (só JPEG)
+entrou para reescalar/comprimir; `base64` para a imagem colada da área de
+transferência.
+
+**Ajustes depois do teste no app:** `journal_list`/`journal_search` passaram a
+devolver **lista vazia** (e não erro) quando não há sessão — o estado vazio
+da aba é a mensagem certa, não um erro. O **colar imagem** (`Ctrl+V` no
+campo) entrou junto, como o caminho que funciona em Wayland.
+
+**Validação no app rodando (round trip real):** 6 entradas no banco local
+com `provider=openai`, `model=gpt-6-luna` e respostas em Markdown — duas com
+print (`request_source=screenshot`) e quatro pelos chips
+(`request_source=preset`). As 6 imagens (914 KB) estão em `journal_images` e
+o `journal_fts` tem as 6 linhas. A busca por "ações" devolveu 2 entradas e
+as queries com sintaxe FTS (`"aspas"`, `a*b`, `x:y`, `NEAR(`) devolveram 0
+resultados **sem erro** (ISS-042 corrigido).
+
 ### Pendências
 
 - Wayland nativo: sem captura pelo X11 (BR-007) — o caminho é **colar
   imagem**, com erro explícito quando não há display X11.
 - Busca web / busca em documentos: PRD própria, se e quando for pedido.
+- A captura pega a **tela inteira** (root window): em multi-monitor, todos os
+  monitores entram na imagem.
+
+---
+
+## 2026-10-20 — v2: barra "Perguntar" no topo (referência do Perssua)
+
+- **IDs:** BR-052 (revisada), BR-056 (revisada) · **Refs:** [`prd.md`](prd.md) US-00/US-03,
+  [`architecture/session-journal.md`](architecture/session-journal.md) §8,
+  [`tasks/02-task.md`](tasks/02-task.md), [`tasks/03-task.md`](tasks/03-task.md),
+  [`tasks/06-task.md`](tasks/06-task.md)
+
+### Pedido
+O usuário achou a v1 incoerente com o Perssua: queria uma **barra discreta no
+topo** como superfície padrão, a sessão abrindo **só depois** da pergunta/
+captura, **screenshot sem texto** (a IA decide) e o layout da referência.
+
+### Decisões
+- **Barra no topo, centralizada** (1 040 px), uma pill: lupa + campo +
+  `Ctrl Space` + divisor + **Capturar Tela** (`Alt C`). Ícones (microfone,
+  ocultar, histórico, configurações) **fora da pill**.
+- **A pergunta abre a sessão:** sem sessão ativa, o `AskService` cria uma
+  sessão de perguntas (sem áudio); com gravação ativa, entra nela.
+- **Print sem texto:** `DEFAULT_IMAGE_PROMPT` no core — a IA decide o que fazer
+  com a imagem.
+- **Atalhos globais:** `focus_ask` (Ctrl+Space) e `capture_screen` (Alt+C).
+- **Espera do compositor** na captura: era a causa de o app aparecer no print.
+
+### Ambiente (não é do código)
+Após o reboot de 2026-10-20 o **WebKitGTK não pinta** nenhuma janela do app
+(tela preta), inclusive com o código anterior à v2 — enquanto o **Chrome**
+renderiza a mesma página. O layout da v2 foi validado no Chrome; o app em si
+precisa ser revalidado numa sessão/compositor saudáveis.
+
+---
+
+## 2026-10-20 — v3: lupa no notch, barra de pesquisa e print só anexado
+
+- **IDs:** BR-052 (revisão 2), BR-055 (revisão) · **Refs:** [`prd.md`](prd.md) US-00/US-03,
+  [`architecture/session-journal.md`](architecture/session-journal.md) §8
+
+### Pedido
+O notch antigo **não devia ter sido substituído**: ele fica, e ganha um botão
+de **pesquisa** (lupa, cor primária + atalho) **independente de transcrição**,
+que abre a barra de pesquisa. A captura **não envia**: ela só **anexa**, com a
+prévia no canto superior direito (como no Perssua); o envio é sempre
+confirmado.
+
+### Decisões
+- **Notch restaurado** (marca, "Começar a ouvir", switcher, timer, canais,
+  ícones) com a **lupa** ao lado da marca; estilo alinhado ao da barra.
+- **Barra de pesquisa** numa janela própria (`ask`), aberta pela lupa ou por
+  **Ctrl+K**; `Esc` fecha; some depois do envio.
+- **Prévia do print** em janela própria (`capture`) no canto superior direito,
+  com `×`; o print vive na porta `PendingCapture` (memória) até ser enviado.
+- O envio leva o print pendente junto; sem texto, o core usa o prompt padrão.
+
+### Ambiente (não é do código)
+O WebKitGTK desta sessão (pós-reboot) **não pinta** nenhuma janela do app —
+inclusive o release e o código anterior. O `dist` embutido foi validado no
+Chrome (renderiza o notch com a lupa exatamente como o mockup).
+
+---
+
+## 2026-10-20 — v4: fundo do notch, alça na barra, print sem texto e retorno das janelas
+
+- **IDs:** BR-052, BR-055 · **Refs:** [`prd.md`](prd.md) US-00/US-03
+
+### Correções do teste do usuário
+- **Fundo do notch** restaurado: a regra `.overlay__bar[data-state="idle"]`
+  (que deixava a pill transparente para a barra de pesquisa embutida) saiu
+  junto com a versão antiga; o notch volta a ser pill opaca e ancorada pela
+  base.
+- **Alça de arraste** na barra de pesquisa (à esquerda), como no notch.
+- **Texto nunca obrigatório com print**: a barra e o composer da aba Sessão
+  checam o **print pendente** do core; com ele, `Enter`/Perguntar vão sem
+  texto (prompt padrão no core).
+- **Janelas voltam** depois do print: o `hide`/`show` ganhou respiro
+  (`RESTORE_SETTLE_MS`), `unminimize` antes do `show`, e o foco é devolvido à
+  janela que o tinha; a barra ainda chama `ask_open` depois da captura como
+  garantia.

@@ -46,6 +46,7 @@ body,
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* O notch é ancorado pela base (BR-032): a barra fica no rodapé da janela. */
   justify-content: flex-end;
   gap: 6px;
   padding: 8px;
@@ -55,16 +56,16 @@ body,
   position: relative;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--oh-space-sm);
-  padding: var(--oh-space-xs) var(--oh-space-md);
-  background: var(--oh-glass-bar);
-  -webkit-backdrop-filter: blur(var(--oh-blur-bar)) saturate(180%);
-  backdrop-filter: blur(var(--oh-blur-bar)) saturate(180%);
+  flex-wrap: nowrap;
+  gap: var(--oh-space-2);
+  height: 52px;
+  padding: 0 var(--oh-space-2) 0 var(--oh-space-3);
+  /* Mesmo vocabulário da barra de pesquisa (BR-052). */
+  background: var(--oh-surface-container-low);
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius-full);
   color: var(--oh-text);
-  box-shadow: var(--oh-shadow-rest), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -3676,4 +3677,604 @@ body,
   color: var(--oh-ai);
   border-color: rgba(139, 92, 246, 0.4);
   background: rgba(139, 92, 246, 0.12);
+}
+
+/* --- Aba Sessão: o diário de perguntas (BR-052) ------------------------- */
+
+.journal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-2);
+  min-height: 0;
+  height: 100%;
+  padding: var(--oh-space-2);
+}
+
+.journal__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-2);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.journal__entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1-5);
+  padding: var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  background: var(--oh-read-surface, var(--oh-surface-container-low));
+}
+
+.journal__entry[data-status="pending"] {
+  border-color: rgba(0, 242, 254, 0.4);
+}
+
+.journal__entry[data-status="error"] {
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.journal__head {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1-5);
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  color: var(--oh-text-muted);
+}
+
+.journal__source {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--oh-outline);
+}
+
+.journal__model {
+  margin-left: auto;
+  color: var(--oh-ai);
+}
+
+.journal__question {
+  margin: 0;
+  font-size: var(--oh-body-size);
+  font-weight: 600;
+  color: var(--oh-text-strong);
+  white-space: pre-wrap;
+}
+
+.journal__answer {
+  font-size: var(--oh-body-size);
+  color: var(--oh-text);
+}
+
+.journal__pending {
+  margin: 0;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-primary-container);
+}
+
+.journal__failed {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-2);
+}
+
+.journal__error {
+  margin: 0;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-error);
+}
+
+.journal__retry {
+  padding: var(--oh-space-1) var(--oh-space-2);
+  border: 1px solid var(--oh-border-strong);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  cursor: pointer;
+}
+
+.journal__retry:hover {
+  border-color: var(--oh-primary-container);
+  color: var(--oh-primary-container);
+}
+
+.journal__attachment {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: var(--oh-radius-sm);
+  border: 1px solid var(--oh-border);
+}
+
+.journal__search {
+  display: flex;
+}
+
+.journal__search-input {
+  flex: 1;
+  padding: var(--oh-space-1-5) var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: var(--oh-surface-container-lowest);
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-label-md-size);
+}
+
+.journal__search-input:focus-visible {
+  outline: none;
+  border-color: var(--oh-primary-container);
+}
+
+/* --- Composer da Busca (BR-053) ----------------------------------------- */
+
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1-5);
+}
+
+.ask__field {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--oh-space-1-5);
+  padding: var(--oh-space-1-5);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  background: var(--oh-surface-container-lowest);
+}
+
+.ask__input {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-body-size);
+}
+
+.ask__input:focus-visible {
+  outline: none;
+}
+
+.ask__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+}
+
+.ask__icon,
+.ask__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ask__icon:hover:not(:disabled) {
+  color: var(--oh-text-strong);
+  border-color: var(--oh-border-strong);
+}
+
+.ask__send {
+  color: var(--oh-on-primary-container);
+  background: var(--oh-primary-container);
+  border-color: transparent;
+}
+
+.ask__icon:disabled,
+.ask__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ask__attachment {
+  position: relative;
+  display: inline-flex;
+  align-self: flex-start;
+}
+
+.ask__thumb {
+  max-height: 120px;
+  border-radius: var(--oh-radius-sm);
+  border: 1px solid var(--oh-border);
+}
+
+.ask__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--oh-border-strong);
+  border-radius: var(--oh-radius-full);
+  background: var(--oh-surface-container-high);
+  color: var(--oh-text);
+  cursor: pointer;
+}
+
+.ask__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--oh-space-1);
+}
+
+.ask__preset {
+  padding: var(--oh-space-1) var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-muted);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  cursor: pointer;
+}
+
+.ask__preset:hover:not(:disabled) {
+  color: var(--oh-text-strong);
+  border-color: var(--oh-primary-container);
+}
+
+.ask__error {
+  margin: 0;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-error);
+}
+
+/* --- Editor das perguntas prontas (BR-054) ------------------------------ */
+
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1-5);
+  padding: var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  background: var(--oh-surface-container-low);
+}
+
+.presets__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.presets__title {
+  font-size: var(--oh-label-md-size);
+  font-weight: 600;
+  color: var(--oh-text-strong);
+}
+
+.presets__count {
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  color: var(--oh-text-muted);
+}
+
+.presets__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.presets__row {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+}
+
+.presets__input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--oh-space-1) var(--oh-space-1-5);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm);
+  background: var(--oh-surface-container-lowest);
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-label-md-size);
+}
+
+.presets__remove {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.presets__error {
+  margin: 0;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-error);
+}
+
+.presets__actions {
+  display: flex;
+  gap: var(--oh-space-1);
+}
+
+/* --- Barra "Perguntar": superfície padrão do overlay (BR-052) ------------ */
+
+.askbar {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: var(--oh-space-2);
+  height: 52px;
+  padding: 0 var(--oh-space-2) 0 var(--oh-space-3);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: var(--oh-surface-container-low);
+}
+
+.askbar__drag {
+  margin-left: calc(-1 * var(--oh-space-1));
+  color: var(--oh-text-muted);
+  cursor: grab;
+}
+
+.askbar__drag:hover {
+  color: var(--oh-text-strong);
+}
+
+.askbar__icon {
+  display: inline-flex;
+  color: var(--oh-primary-container);
+  flex: none;
+}
+
+.askbar__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-body-size);
+  letter-spacing: 0.01em;
+}
+
+.askbar__input::placeholder {
+  color: var(--oh-text-muted);
+}
+
+.askbar__input:focus-visible {
+  outline: none;
+}
+
+.askbar__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm);
+  background: var(--oh-surface-container-high);
+}
+
+.askbar__key {
+  color: var(--oh-text-muted);
+  font-family: var(--oh-font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Os badges dentro do pill não têm borda própria (um pill só). */
+.askbar__keys .shortcut-badge {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--oh-text-muted);
+}
+
+.askbar__keys--subtle {
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.askbar__keys--subtle .askbar__key {
+  color: var(--oh-outline);
+}
+
+.askbar__divider {
+  width: 1px;
+  height: 24px;
+  flex: none;
+  background: var(--oh-border);
+}
+
+.askbar__capture {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oh-space-1-5);
+  flex: none;
+  height: 40px;
+  padding: 0 var(--oh-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-strong);
+  font: inherit;
+  font-size: var(--oh-label-md-size);
+  cursor: pointer;
+}
+
+.askbar__capture:hover:not(:disabled) {
+  border-color: var(--oh-border-strong);
+}
+
+.askbar__capture:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.askbar__capture-icon {
+  display: inline-flex;
+  color: var(--oh-success);
+}
+
+.askbar__capture-label {
+  white-space: nowrap;
+}
+
+/* O microfone discreto no estado de repouso (fora da barra). */
+.overlay__bar[data-state="idle"] .overlay__group--end {
+  gap: var(--oh-space-1);
+}
+
+
+/* --- Lupa do notch: abre a barra de pesquisa (BR-052) ------------------- */
+
+.overlay__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 1px solid rgba(0, 242, 254, 0.45);
+  border-radius: var(--oh-radius-full);
+  background: rgba(0, 242, 254, 0.1);
+  color: var(--oh-primary-container);
+  font: inherit;
+  cursor: pointer;
+}
+
+.overlay__search:hover:not(:disabled) {
+  background: rgba(0, 242, 254, 0.18);
+  border-color: var(--oh-primary-container);
+}
+
+.overlay__search:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* O atalho vira **um** pill escuro dentro da lupa (como o mockup). */
+.overlay__search .shortcut-badges {
+  padding: 2px 6px;
+  border-radius: var(--oh-radius-sm);
+  background: var(--oh-surface-container-high);
+}
+
+.overlay__search .shortcut-badge {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--oh-text);
+}
+
+/* A marca ocupa menos espaço no notch (o mockup é compacto). */
+.overlay__bar .overlay__brand {
+  font-size: 15px;
+}
+
+.overlay__bar .overlay__group--end {
+  margin-left: auto;
+}
+
+/* --- Janela da barra de pesquisa (janela `ask`) ------------------------- */
+
+.ask-window {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.ask-window__error {
+  margin: 0;
+  padding: 0 8px;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-error);
+}
+
+
+/* Print anexado: o botão fica "cheio" até o envio (BR-055). */
+.askbar__capture--attached {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+/* --- Prévia do print (janela `capture`, canto superior direito) --------- */
+
+.capture-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 8px;
+}
+
+.capture-preview__card {
+  position: relative;
+  border: 1px solid var(--oh-border-strong);
+  border-radius: var(--oh-radius-md);
+  overflow: hidden;
+  background: var(--oh-surface-container);
+  box-shadow: var(--oh-shadow-rest);
+}
+
+.capture-preview__image {
+  display: block;
+  width: 224px;
+  height: auto;
+  max-height: 150px;
+  object-fit: cover;
+}
+
+.capture-preview__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--oh-border-strong);
+  border-radius: var(--oh-radius-full);
+  background: rgba(15, 19, 28, 0.85);
+  color: var(--oh-text);
+  cursor: pointer;
+}
+
+.capture-preview__remove:hover {
+  border-color: var(--oh-error);
+  color: var(--oh-error);
+}
+
+.capture-preview__hint {
+  margin: 0;
+  padding: 0 4px;
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  color: var(--oh-text-muted);
 }

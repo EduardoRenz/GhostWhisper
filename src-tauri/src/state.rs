@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use crate::ports::ai_source_service::AiSourceService;
+use crate::ports::ask_controller::AskController;
 use crate::ports::audio_monitor::AudioMonitor;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
@@ -13,10 +14,13 @@ use crate::ports::clock::Clock;
 use crate::ports::dwell_popover::DwellPopoverController;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::gpu_probe::GpuProbe;
+use crate::ports::journal_repository::JournalRepository;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::manual_suggestion_context::ManualSuggestionContextStore;
 use crate::ports::overlay_window::OverlayWindowController;
+use crate::ports::pending_capture::PendingCapture;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
+use crate::ports::screen_capture::ScreenCapture;
 use crate::ports::secret_store::SecretStore;
 use crate::ports::session_controller::SessionController;
 use crate::ports::settings_store::SettingsStore;
@@ -49,6 +53,14 @@ pub struct AppState {
     pub transcriptions: Arc<dyn TranscriptionsRepository>,
     /// Repositório de mensagens (sugestões da IA).
     pub messages: Arc<dyn MessagesRepository>,
+    /// Repositório do diário de perguntas (aba "Sessão", BR-052).
+    pub journal: Arc<dyn JournalRepository>,
+    /// Perguntas à IA (aba "Sessão", BR-053).
+    pub ask: Arc<dyn AskController>,
+    /// Captura de tela (print para a pergunta, BR-055).
+    pub screen: Arc<dyn ScreenCapture>,
+    /// Print capturado e ainda **não enviado** (anexo da pergunta).
+    pub capture: Arc<dyn PendingCapture>,
     /// Relógio do sistema (duração de sessões em andamento no export).
     pub clock: Arc<dyn Clock>,
     /// Configurações do usuário (sem segredos).
@@ -91,6 +103,10 @@ impl AppState {
         sessions: Arc<dyn SessionRepository>,
         transcriptions: Arc<dyn TranscriptionsRepository>,
         messages: Arc<dyn MessagesRepository>,
+        journal: Arc<dyn JournalRepository>,
+        ask: Arc<dyn AskController>,
+        screen: Arc<dyn ScreenCapture>,
+        capture: Arc<dyn PendingCapture>,
         clock: Arc<dyn Clock>,
         settings: Arc<dyn SettingsStore>,
         secrets: Arc<dyn SecretStore>,
@@ -116,6 +132,10 @@ impl AppState {
             sessions,
             transcriptions,
             messages,
+            journal,
+            ask,
+            screen,
+            capture,
             clock,
             settings,
             secrets,
@@ -145,6 +165,7 @@ mod tests {
     use crate::ports::audio_consumer::AudioConsumer;
     use crate::ports::audio_monitor::AudioMonitor;
     use crate::ports::overlay_window::Surface;
+    use crate::ports::screen_capture::CapturedImage;
     use crate::ports::session_controller::AudioChannel;
     use crate::ports::suggestion_generator::{
         PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionPhase, SuggestionRequest,
@@ -312,6 +333,7 @@ mod tests {
             Ok(crate::domain::llm::Completion {
                 text: "ok".into(),
                 model: "fake".into(),
+                provider: None,
                 usage: None,
             })
         }
@@ -413,6 +435,7 @@ mod tests {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
         fn emit_llm_source_used(&self, _usage: &crate::ports::event_publisher::LlmSourceUsage) {}
+        fn emit_journal(&self, _update: &crate::ports::event_publisher::JournalUpdate) {}
     }
 
     struct FakeShortcutRegistry;
@@ -428,10 +451,40 @@ mod tests {
         }
     }
 
+    /// Dobra da porta de captura de tela.
+    struct FakeScreenCapture;
+    impl ScreenCapture for FakeScreenCapture {
+        fn capture(&self) -> crate::error::Result<CapturedImage> {
+            Ok(CapturedImage {
+                mime: "image/jpeg".into(),
+                data: vec![1, 2, 3],
+                width: 1280,
+                height: 720,
+            })
+        }
+    }
+
+    /// Dobra da porta de perguntas (aba "Sessão").
+    struct FakeAsk;
+    impl AskController for FakeAsk {
+        fn ask(
+            &self,
+            _request: crate::ports::ask_controller::AskRequest,
+        ) -> crate::error::Result<crate::ports::ask_controller::AskOutcome> {
+            Ok(crate::ports::ask_controller::AskOutcome {
+                entry_id: "e1".into(),
+                answer: "ok".into(),
+            })
+        }
+
+        fn cancel(&self, _entry_id: &str) -> crate::error::Result<()> {
+            Ok(())
+        }
+    }
+
     struct FakeDwell {
         open: Mutex<Option<u32>>,
-    }
-    impl crate::ports::dwell_popover::DwellPopoverController for FakeDwell {
+    }    impl crate::ports::dwell_popover::DwellPopoverController for FakeDwell {
         fn show(&self, _anchor: Rect, dwell_ms: u32) -> Result<()> {
             *self.open.lock().unwrap() = Some(dwell_ms);
             Ok(())
@@ -448,6 +501,7 @@ mod tests {
     fn build_state() -> AppState {
         use crate::adapters::ai_sources::in_memory_ai_source_service::InMemoryAiSourceService;
         use crate::adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
+        use crate::adapters::persistence::memory::in_memory_journal_repository::InMemoryJournalRepository;
         use crate::adapters::persistence::memory::in_memory_messages_repository::InMemoryMessagesRepository;
         use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
         use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
@@ -465,6 +519,10 @@ mod tests {
             Arc::new(InMemorySessionRepository::new()),
             Arc::new(InMemoryTranscriptionsRepository::new()),
             Arc::new(InMemoryMessagesRepository::new()),
+            Arc::new(InMemoryJournalRepository::new()),
+            Arc::new(FakeAsk),
+            Arc::new(FakeScreenCapture),
+            Arc::new(crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new()),
             Arc::new(crate::adapters::system::system_clock::FixedClock(1_000_000)),
             Arc::new(InMemorySettingsStore::new()),
             Arc::new(InMemorySecretStore::new()),

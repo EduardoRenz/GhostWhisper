@@ -1,6 +1,6 @@
 # 06 — Captura de tela: porta `ScreenCapture` e adaptador X11
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** —
 - **Habilita:** 07
 - **Issues:** — · **BR:** BR-007, BR-053, BR-055
@@ -37,17 +37,28 @@ com o caminho de **colar imagem** como alternativa (funciona em Wayland).
 
 ## Critérios de aceite
 
-- [ ] Em X11, o print devolve um JPEG **≤1280 px** com qualidade 0.86.
-- [ ] As janelas do app **não** aparecem no print (escondidas durante a
+- [x] Em X11, o print devolve um JPEG **≤1280 px** com qualidade 0.86.
+- [x] As janelas do app **não** aparecem no print (escondidas durante a
       capture) e voltam depois.
-- [ ] Sem display X11, o erro é **explícito** ("Captura de tela indisponível
+- [x] Sem display X11, o erro é **explícito** ("Captura de tela indisponível
       neste ambiente — cole a imagem com Ctrl+V") e **nada** falha em
       silêncio.
-- [ ] Colar imagem anexa a imagem do clipboard.
-- [ ] A segunda imagem é recusada com aviso.
-- [ ] A miniatura pode ser removida antes do envio.
-- [ ] `cargo test --lib` verde (o `FakeScreenCapture` cobre o caminho
+- [x] Colar imagem anexa a imagem do clipboard.
+- [x] A segunda imagem é recusada com aviso.
+- [x] A miniatura pode ser removida antes do envio.
+- [x] `cargo test --lib` verde (o `FakeScreenCapture` cobre o caminho
       testável; o X11 real é verificado à mão).
+
+## Verificação (v2 — 2026-10-20)
+
+- **Regressão corrigida:** o `hide()` é assíncrono e o print saía com o HUD.
+  `screen_commands` agora espera o compositor (`HIDE_SETTLE_MS` = 200 ms +
+  confirmação do `unmap` até 600 ms) antes do `GetImage`.
+- O print **sem pergunta** é enviado direto (prompt padrão).
+
+## Verificação
+
+- `cargo test --lib` ✓ · captura real validada no X11 (`--ignored`, 1280 px, JPEG)
 
 ## Notas
 

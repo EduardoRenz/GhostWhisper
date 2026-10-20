@@ -60,6 +60,10 @@ vi.mock("./SummaryView", () => ({
   ),
 }));
 
+vi.mock("../journal/JournalView", () => ({
+  JournalView: () => <div>diário</div>,
+}));
+
 import { PanelWindow } from "./PanelWindow";
 
 const tab = (name: string) => screen.getByRole("tab", { name });
@@ -73,6 +77,11 @@ describe("PanelWindow (painel da sessão em abas)", () => {
     render(<PanelWindow />);
     expect(tab("Transcrição").getAttribute("aria-selected")).toBe("true");
     expect(tab("Resumo").getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("tem a aba Sessão (o diário de perguntas)", () => {
+    render(<PanelWindow />);
+    expect(tab("Sessão").getAttribute("aria-selected")).toBe("false");
   });
 
   it("troca de aba ao clicar e persiste a escolha", async () => {

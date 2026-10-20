@@ -1,6 +1,6 @@
 # 09 — Documentação, verificação e pacotes
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 04, 05, 07, 08, 10
 - **Habilita:** —
 - **Issues:** ISS-041, ISS-042 · **BR:** BR-014, BR-016, BR-017, BR-052…BR-058
@@ -38,13 +38,17 @@ pnpm tauri build     # .deb + AppImage
 
 ## Critérios de aceite
 
-- [ ] `pnpm test` e `cargo test --lib` verdes, com a cobertura do núcleo
+- [x] `pnpm test` e `cargo test --lib` verdes, com a cobertura do núcleo
       acima de 80% (RNF-03).
-- [ ] `cargo clippy` sem avisos novos.
-- [ ] As BRs descrevem o que **foi implementado** (não o que foi planejado).
-- [ ] `memory.md` tem a entrada da data, com `IDs:` e `Refs:`.
-- [ ] Os issues reflecting o estado final.
-- [ ] AppImage e `.deb` reconstruídos e o app aberto com o build novo.
+- [x] `cargo clippy` sem avisos novos.
+- [x] As BRs descrevem o que **foi implementado** (não o que foi planejado).
+- [x] `memory.md` tem a entrada da data, com `IDs:` e `Refs:`.
+- [x] Os issues reflecting o estado final.
+- [x] AppImage e `.deb` reconstruídos e o app aberto com o build novo.
+
+## Verificação
+
+- `pnpm test` 307 ✓ · `cargo test --lib` 492 ✓ · `cargo clippy` limpo · `tsc` ✓ · `pnpm build` ✓
 
 ## Notas
 

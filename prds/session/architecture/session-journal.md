@@ -294,7 +294,49 @@ pub struct JournalUpdate {
 Espelha `emit_suggestion` (BR-028) — o frontend substitui o texto da entrada
 a cada delta.
 
-## 8. Frontend
+## 8. A barra "Perguntar" (janela `ask`)
+
+O **notch** continua sendo a superfície principal (arrastável, ancorado pela
+base) e ganha, ao lado da marca, um botão de **lupa** (cor primária + badge
+`Ctrl K`). A lupa — **disponível com ou sem transcrição** — abre a barra numa
+**janela própria** (`ask`, 1 040 px, no topo, centralizada):
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ 🔍  Perguntar ao GhostWhisper sobre a tela ou áudio…  [Ctrl Space] │ ⛶ Capturar Tela Alt C │  🎤  👁  🕘  ⚙ │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Perguntar** (Enter) → `journalAsk` (com o print, se houver) → **a barra
+  some** e o painel abre na aba **Sessão**.
+- **Capturar Tela** (ou `Alt+C`) → **só anexa**. O print fica pendente
+  (`PendingCapture`) e a **prévia** aparece no **canto superior direito**
+  (janela `capture`), com o botão de remover. Nada é enviado ainda.
+- **Ctrl+K** (`focus_ask`) → abre a barra e foca o campo.
+- `Esc` fecha a barra sem perguntar.
+- O notch mantém o switcher (Transcrição | Resumo | Sugestões) + timer quando
+  há gravação; a lupa fica disponível nos dois estados.
+
+### 8.1 Captura de tela: anexo + prévia + espera do compositor
+
+`window.hide()` apenas **enfileira** o pedido; o X11/compositor leva alguns
+quadros para tirar a janela do que está desenhado. Por isso o comando
+`screen_capture` faz:
+
+1. esconde todas as janelas do app;
+2. espera `HIDE_SETTLE_MS` (200 ms) **e** confirma o `unmap` no Tauri (até
+   600 ms);
+3. só então `GetImage`; depois restaura as janelas.
+
+Sem essa espera o print sai com o próprio HUD — regressão observada no teste de
+2026-10-19.
+
+O print capturado **não é enviado**: ele entra na porta `PendingCapture`
+(em memória) e a janela `capture` mostra a prévia no canto superior direito.
+O `×` (ou `Esc` na prévia) descarta. Só o **Perguntar** da barra consome o
+print (e o `capture_clear` fecha a prévia).
+
+## 9. Frontend
 
 | Arquivo | Papel |
 |---|---|
@@ -307,7 +349,8 @@ a cada delta.
 | `src/features/journal/SavedQuestionsEditor.tsx` | Editor das perguntas prontas |
 | `src/features/panel/PanelTabs.tsx` | Terceira aba |
 | `src/features/panel/PanelWindow.tsx` | Monta a aba Sessão |
-| `src/features/overlay/NotchTabs.tsx` | Botão **"Perguntar"** (lupa) ao lado de "Resumo" |
+| `src/features/overlay/AskBar.tsx` | A **barra padrão**: lupa, campo, atalho e "Capturar Tela" |
+| `src/features/overlay/NotchTabs.tsx` | Botão **"Perguntar"** (lupa) ao lado de "Resumo" (estado ativo) |
 | `src/features/overlay/Overlay.tsx` | `onOpenAsk` → `panelOpenTab("chat", "session")` |
 | `src/components/icons.tsx` | `SearchIcon` (lupa, SVG do projeto — BR-008) |
 | `src/adapters/ipc/journal.ts` | Adaptador IPC do diário |
@@ -331,7 +374,7 @@ Posicionado **entre "Resumo" e "Sugestões"** — o switcher só é renderizado 
 estado ativo do notch (BR-032), então o botão **só existe com sessão
 iniciada**.
 
-## 9. Persistência e ciclo de vida
+## 10. Persistência e ciclo de vida
 
 - A pergunta é persistida **antes** da chamada à IA (RNF-06): se o app
   cair no meio, a entrada fica `pending` e aparece no diário.
@@ -345,7 +388,7 @@ iniciada**.
 - O export Markdown ganha a seção **"Perguntas"** — montada no core
   (`application/markdown_export.rs`), nunca na UI (BR-020, BR-016).
 
-## 10. Privacidade
+## 11. Privacidade
 
 - A imagem e o texto saem **só** para a fonte de IA escolhida pelo usuário
   (BR-002, BR-005). Nada mais.
@@ -354,7 +397,7 @@ iniciada**.
 - O print é **local** até o envio; depois de gravado no diário, fica no banco
   local (o usuário pode excluir a sessão).
 
-## 11. Referências
+## 12. Referências
 
 - PRD: [`../prd.md`](../prd.md)
 - Issues: [`../issues.md`](../issues.md)

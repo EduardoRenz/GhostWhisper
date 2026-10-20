@@ -6,16 +6,23 @@
 
 | # | Resumo | Status |
 |---|--------|--------|
-| 01 | Domínio do diário + porta `JournalRepository` + schema (tabelas, FTS ancorado, índices) | PENDING |
-| 02 | Aba "Sessão" no painel + botão "Perguntar" (lupa) no notch | PENDING |
-| 03 | `AskService`: perguntar com contexto da sessão, streaming e persistência | PENDING |
-| 04 | UI do diário: lista, streaming, estados de erro e composer | PENDING |
-| 05 | Perguntas prontas: settings, chips e editor | PENDING |
-| 06 | Captura de tela: porta `ScreenCapture` + adaptador X11 + colar imagem | PENDING |
-| 07 | Multimodal: `CompletionRequest.images` + providers + anexar o print | PENDING |
-| 08 | Pesquisa no diário (FTS com escape) + perguntas no export Markdown | PENDING |
-| 09 | Documentação (BRs/ISS/memory), verificação e pacotes | PENDING |
-| 10 | Dívida de índices do schema + ancoragem do FTS por `id` | PENDING |
+| 01 | Domínio do diário + porta `JournalRepository` + schema (tabelas, FTS ancorado, índices) | CONCLUDED |
+| 02 | Aba "Sessão" no painel + botão "Perguntar" (lupa) no notch | CONCLUDED |
+| 03 | `AskService`: perguntar com contexto da sessão, streaming e persistência | CONCLUDED |
+| 04 | UI do diário: lista, streaming, estados de erro e composer | CONCLUDED |
+| 05 | Perguntas prontas: settings, chips e editor | CONCLUDED |
+| 06 | Captura de tela: porta `ScreenCapture` + adaptador X11 + colar imagem | CONCLUDED |
+| 07 | Multimodal: `CompletionRequest.images` + providers + anexar o print | CONCLUDED |
+| 08 | Pesquisa no diário (FTS com escape) + perguntas no export Markdown | CONCLUDED |
+| 09 | Documentação (BRs/ISS/memory), verificação e pacotes | CONCLUDED |
+| 10 | Dívida de índices do schema + ancoragem do FTS por `id` | CONCLUDED |
+
+## Revisão v2 (2026-10-20)
+
+A superfície padrão do overlay virou a **barra "Perguntar" no topo** (US-00),
+a pergunta **abre a sessão** e o print pode ir **sem texto** (prompt padrão).
+As tasks 02, 03 e 06 ganharam nota de verificação; a captura agora **espera o
+compositor** tirar as janelas antes do `GetImage`.
 
 ## Ordem e dependências
 

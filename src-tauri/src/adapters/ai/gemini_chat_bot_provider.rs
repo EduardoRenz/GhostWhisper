@@ -82,6 +82,12 @@ pub struct GeminiChatBotProvider {
     config: ProviderConfig,
 }
 
+/// Dados da imagem em base64 (o Gemini usa `inline_data`).
+fn base64_data(data: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(data)
+}
+
 impl GeminiChatBotProvider {
     /// Cria o provider com a configuração resolvida.
     pub fn new(config: ProviderConfig) -> Self {
@@ -102,6 +108,19 @@ impl ChatBotProvider for GeminiChatBotProvider {
                 { "role": "user", "parts": [ { "text": request.prompt } ] }
             ]
         });
+        if !request.images.is_empty() {
+            // Multimodal: a imagem vai em `inline_data` (BR-056).
+            let mut parts: Vec<Value> = vec![json!({ "text": request.prompt })];
+            for image in &request.images {
+                parts.push(json!({
+                    "inline_data": {
+                        "mime_type": image.mime,
+                        "data": base64_data(&image.data)
+                    }
+                }));
+            }
+            body["contents"][0]["parts"] = json!(parts);
+        }
         if let Some(system) = &request.system {
             body["systemInstruction"] = json!({ "parts": [ { "text": system } ] });
         }
@@ -152,6 +171,7 @@ impl ChatBotProvider for GeminiChatBotProvider {
             return Ok(Completion {
                 text,
                 model: self.config.model.clone(),
+                provider: None,
                 usage: parse_usage(&value),
             });
         }

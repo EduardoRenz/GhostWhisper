@@ -1,6 +1,6 @@
 # 01 — Domínio do diário, porta `JournalRepository` e schema
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** —
 - **Habilita:** 03, 08
 - **Issues:** ISS-041 (parcial) · **BR:** BR-052, BR-058
@@ -42,16 +42,20 @@ porta de persistência, com as **tabas novas** `journal_entries` +
 
 ## Critérios de aceite
 
-- [ ] `cargo test --lib` verde, com testes do domínio (round-trip de
+- [x] `cargo test --lib` verde, com testes do domínio (round-trip de
       `JournalStatus`, serialização) e do repositório (inserir → listar em
       ordem; pergunta sem resposta; busca acha por pergunta **e** por
       resposta; cascade apaga as imagens ao excluir a sessão).
-- [ ] A busca com texto que **quebraria** o FTS (`"aspas"`, `a*b`, `x:y`)
+- [x] A busca com texto que **quebraria** o FTS (`"aspas"`, `a*b`, `x:y`)
       **não** derruba a consulta (ISS-042).
-- [ ] `EXPLAIN QUERY PLAN` da listagem do diário **não** mostra
+- [x] `EXPLAIN QUERY PLAN` da listagem do diário **não** mostra
       `USE TEMP B-TREE FOR ORDER BY` (índice composto).
-- [ ] O schema é aplicado **idempotentemente** num banco já existente
+- [x] O schema é aplicado **idempotentemente** num banco já existente
       (boot de um app que já rodou) sem erro.
+
+## Verificação
+
+- `cargo test --lib` 492 ✓ · `cargo clippy` limpo · `tsc` ✓
 
 ## Notas
 
