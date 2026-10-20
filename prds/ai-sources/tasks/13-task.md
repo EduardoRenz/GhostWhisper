@@ -24,7 +24,7 @@ documentação do PRD e fechar a verificação completa.
     `rgba(var(--oh-surface-container-low-rgb), var(--hud-alpha, 0.75))`;
   - fallback sem `backdrop-filter` mantém a mesma opacidade.
 - Docs:
-  - `prds/ai-sources/prd.md` §10, `architecture/settings-redesign.md` §7,
+  - `prds/ai-sources/prd.md` §10, `architecture/settings-redesign.md` §9,
     `tasks/10..13` e `_tasks.md` (v0.2);
   - `prds/business-rules.md` **BR-062**;
   - `memory.md` do PRD com a entrada do dia (`IDs:`/`Refs:`).

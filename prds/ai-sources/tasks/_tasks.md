@@ -19,6 +19,7 @@
 | 11 | Janela do notch: ancoragem e densidade | CONCLUDED |
 | 12 | UI: aba "Geral & HUD" e acabamento visual | CONCLUDED |
 | 13 | Overlay consome opacidade/densidade, docs e verificação | CONCLUDED |
+| 14 | Redesign da aba "Fontes de IA" | PENDING |
 
 ## Revisão v0.2 (2026-10-20)
 
@@ -26,6 +27,14 @@ O mockup do usuário pede uma aba **"Geral & HUD"** no lugar de "Ajustes", com
 opacidade do overlay, ancoragem e densidade do notch, e o dwell-hover movido
 para lá (BR-062). A casca ganha abas com sublinhado e grade de 2 colunas. As 5
 abas atuais continuam; a reorganização de 6 abas do mockup fica fora (PRD §10.2).
+
+## Revisão v0.3 (2026-10-20)
+
+A aba **"Fontes de IA"** recebe o mesmo tratamento visual de "Geral & HUD":
+cabeçalho de seção, cards de fonte com hierarquia (modelo, estado, chave e
+ações) e formulário de adição em grid. É uma entrega **somente de frontend e
+CSS**; não altera autenticação, backend, `Settings`, keyring nem o contrato de
+fallback (PRD §11).
 
 ## Ordem e dependências
 
@@ -36,12 +45,14 @@ abas atuais continuam; a reorganização de 6 abas do mockup fica fora (PRD §10
 07 ────────────────────────────────────▶ 09
 
 09 ─▶ 10 ─┬─▶ 11 ─┐
-          └─▶ 12 ─┴─▶ 13
+          └─▶ 12 ─┴─▶ 13 ─▶ 14
 ```
 
 - A **10** é a base da v0.2 (campos + geometria pura) e não muda UI.
 - A **11** (janela) e a **12** (tela) são paralelas e dependem só da 10.
 - A **13** fecha: overlay, BR-062, docs e verificação.
+- A **14** é independente do HUD no backend: só consome o padrão visual da 13
+  e pode ser feita em uma única entrega de frontend/CSS.
 
 > 10–13 implementadas em 2026-10-20; a **validação visual/manual** do usuário
 > (mockup e notch real) é o último passo antes de considerar a v0.2 encerrada.

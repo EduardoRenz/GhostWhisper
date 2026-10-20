@@ -160,7 +160,7 @@ Decisão do usuário: **mostrar na UI**.
 
 - **IDs:** BR-062, tasks 10–13
 - **Refs:** [`prd.md`](prd.md) §10,
-  [`architecture/settings-redesign.md`](architecture/settings-redesign.md) §7,
+  [`architecture/settings-redesign.md`](architecture/settings-redesign.md) §9,
   [`tasks/10-task.md`](tasks/10-task.md) … [`tasks/13-task.md`](tasks/13-task.md),
   `domain/hud_layout.rs`, `HudSettings.tsx`
 
