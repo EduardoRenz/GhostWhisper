@@ -22,6 +22,17 @@ pub enum AiCapability {
     Translation,
 }
 
+impl AiCapability {
+    /// Rótulo curto (usado no log e no evento `llm_source_used`).
+    pub fn label(&self) -> &'static str {
+        match self {
+            AiCapability::Summary => "summary",
+            AiCapability::Suggestions => "suggestions",
+            AiCapability::Translation => "translation",
+        }
+    }
+}
+
 /// Escopo de uma rota de IA.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -35,11 +46,13 @@ pub enum AiRouteScope {
 }
 
 impl AiRouteScope {
-    /// Rótulo curto do escopo (log de debug do roteador).
+    /// Rótulo curto do escopo (log de debug e evento `llm_source_used`).
+    ///
+    /// Formato: `default`, `capability:summary`, `agent:meeting`.
     pub fn label(&self) -> String {
         match self {
             AiRouteScope::Default => "default".to_string(),
-            AiRouteScope::Capability(capability) => format!("capability:{capability:?}"),
+            AiRouteScope::Capability(capability) => format!("capability:{}", capability.label()),
             AiRouteScope::Agent(mode_id) => format!("agent:{mode_id}"),
         }
     }

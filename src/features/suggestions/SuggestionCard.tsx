@@ -9,9 +9,11 @@ import {
   suggestionTitle,
 } from "../../core/domain/suggestion";
 import { AgentBadge } from "../../components/AgentBadge";
+import { LlmSourceBadge } from "../../components/LlmSourceBadge";
 import { CopyIcon, PinIcon, SparkleIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import { MarkdownView } from "../../components/MarkdownView";
+import type { LlmSourceUsage } from "../../core/application/useLlmSource";
 
 interface SuggestionCardProps {
   /** Sugestão completa (Markdown). */
@@ -32,6 +34,8 @@ interface SuggestionCardProps {
   startedAtMs?: number | null;
   /** Ações extras (ex.: "Fixar"/"Copiar" em texto). */
   children?: React.ReactNode;
+  /** Modelo que respondeu a sugestão (BR-051). */
+  llmSource?: LlmSourceUsage | null;
 }
 
 /** Tempo relativo curto (“Há 12s”, “Há 2min”). */
@@ -64,6 +68,7 @@ export function SuggestionCard({
   awaitingFull,
   startedAtMs,
   children,
+  llmSource,
 }: SuggestionCardProps) {
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -118,7 +123,10 @@ export function SuggestionCard({
             </span>
           )}
         </span>
-        <AgentBadge mode={agent} />
+        <div className="suggestion-card__badges">
+          <AgentBadge mode={agent} />
+          <LlmSourceBadge usage={llmSource ?? null} />
+        </div>
       </div>
 
       <h2 className="suggestion-card__title">{title}</h2>

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
 import { copyText } from "../../core/application/clipboard";
+import { useLlmSource } from "../../core/application/useLlmSource";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useSummary } from "../../core/application/useSummary";
@@ -61,6 +62,10 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
     intervalSecs: settings.summary_interval_secs,
     active: state.listening && !state.paused,
   });
+
+  // Modelo que respondeu o **resumo** (BR-051): o escopo filtra o evento para
+  // não mostrar o modelo da sugestão.
+  const llmSource = useLlmSource("capability:summary");
 
   // A versão exibida é a selecionada no histórico (congelada) ou a atual.
   const displayed = viewing ?? summary;
@@ -222,6 +227,13 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
           {summary.summarized_from_ms > 0
             ? " · resumo a partir do meio da sessão"
             : ""}
+          {llmSource && (
+            <>
+              {" · "}
+              {llmSource.label} · {llmSource.model}
+              {llmSource.is_fallback ? " (fallback)" : ""}
+            </>
+          )}
         </div>
       )}
     </div>

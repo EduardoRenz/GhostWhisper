@@ -245,6 +245,9 @@ impl LlmRouter {
         self.publisher.emit_llm_source_used(&LlmSourceUsage {
             source_id: source.id.clone(),
             label: source.display_label(),
+            provider: source.kind.as_str().to_string(),
+            model: source.model.clone(),
+            scope: scope.label(),
             is_fallback,
             latency_ms,
         });
@@ -632,12 +635,66 @@ mod tests {
         assert_eq!(AiRouteScope::Default.label(), "default");
         assert_eq!(
             AiRouteScope::Capability(crate::domain::ai_route::AiCapability::Summary).label(),
-            "capability:Summary"
+            "capability:summary"
         );
         assert_eq!(
             AiRouteScope::Agent("meeting".into()).label(),
             "agent:meeting"
         );
+    }
+
+    #[test]
+    fn the_event_carries_the_model_and_the_scope() {
+        // A UI mostra **qual** modelo respondeu cada tarefa (BR-051): o evento
+        // precisa trazer modelo, provider e escopo.
+        let settings = Settings {
+            ai_sources: vec![source("a", ProviderKind::DeepSeek, "deepseek-reasoner")],
+            ..Settings::default()
+        };
+        let (router, _factory, _secrets, publisher, _health, _clock) =
+            router(settings, &[("a", "chave")]);
+
+        router
+            .complete_for(
+                &AiRouteScope::Agent("meeting".into()),
+                &CompletionRequest::user("oi"),
+            )
+            .expect("ok");
+
+        let usages = publisher.usages.lock().expect("usages").clone();
+        assert_eq!(usages.len(), 1);
+        let usage = &usages[0];
+        assert_eq!(usage.source_id, "a");
+        assert_eq!(usage.label, "DeepSeek");
+        assert_eq!(usage.provider, "deepseek");
+        assert_eq!(usage.model, "deepseek-reasoner");
+        assert_eq!(usage.scope, "agent:meeting");
+        assert!(!usage.is_fallback);
+    }
+
+    #[test]
+    fn the_event_marks_the_fallback() {
+        let settings = Settings {
+            ai_sources: vec![
+                source("a", ProviderKind::OpenAi, "sempre-falha"),
+                source("b", ProviderKind::DeepSeek, "deepseek-chat"),
+            ],
+            ..Settings::default()
+        };
+        let (router, _factory, _secrets, publisher, _health, _clock) =
+            router(settings, &[("a", "chave"), ("b", "chave")]);
+        router
+            .complete_for(
+                &AiRouteScope::Capability(crate::domain::ai_route::AiCapability::Summary),
+                &CompletionRequest::user("oi"),
+            )
+            .expect("ok");
+
+        let usages = publisher.usages.lock().expect("usages").clone();
+        assert_eq!(usages.len(), 1);
+        assert!(usages[0].is_fallback);
+        assert_eq!(usages[0].scope, "capability:summary");
+        assert_eq!(usages[0].model, "deepseek-chat");
     }
 
     #[test]

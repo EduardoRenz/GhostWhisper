@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { copyText } from "../../core/application/clipboard";
 import { useAssistantModes } from "../../core/application/useAssistantModes";
+import { useLlmSource } from "../../core/application/useLlmSource";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
@@ -39,6 +40,10 @@ export function SuggestionsWindow() {
   }, [settings.assistant_mode_id]);
 
   const manual = useManualSuggestionContext({ sessionId: state.session_id });
+
+  // Modelo que respondeu a **sugestão** deste agente (BR-051): o escopo filtra
+  // o evento, para não mostrar o modelo do resumo.
+  const llmSource = useLlmSource(`agent:${modeId}`);
 
   const {
     current,
@@ -229,6 +234,7 @@ export function SuggestionsWindow() {
               copied={copied}
               awaitingFull={awaitingFull}
               startedAtMs={state.started_at_ms}
+              llmSource={llmSource}
               onCopy={() => void onCopy()}
               onPin={() => void pin()}
             />

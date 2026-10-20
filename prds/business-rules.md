@@ -965,3 +965,181 @@ uma nota de revisão.
   parse de `usage`/`usageMetadata` nos adapters, e
   `RUST_LOG=debug` para ver.
 - **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-051 — O modelo que respondeu é visível na interface
+
+- **Decisão:** a fonte de IA que respondeu fica **visível na UI**: um pill com
+  o **modelo** no card da sugestão e na linha de metadados do resumo (com a
+  marca de *fallback* quando a resposta veio de uma fonte secundária). O evento
+  `llm_source_used` carrega `model`, `provider` e o **escopo** da chamada
+  (`agent:<id>`, `capability:<nome>`, `default`) — o escopo permite mostrar o
+  modelo certo em cada tela.
+- **Motivo:** o log de terminal não serve para um app de desktop (o `.deb`
+  instalado não tem terminal). O usuário precisa saber, de relance, **qual
+  modelo** respondeu a sugestão e o resumo.
+- **Consequência:** `LlmSourceUsage` com `model`/`provider`/`scope`,
+  `useLlmSource(scope)` no frontend, `LlmSourceBadge` (componente único) e a
+  linha de metadados do resumo. O **resumo** mostra o modelo da **última
+  resposta** (não é persistido): reabrir uma sessão antiga mostra a última
+  fonte, não a que gerou aquele resumo.
+- **Detalhes:** [`ai-sources/architecture/ai-sources.md`](ai-sources/architecture/ai-sources.md)
+  §3.1.
+- **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-052 — A aba "Sessão" é o diário de perguntas da sessão
+
+- **Decisão:** o painel da sessão ganha a **terceira aba "Sessão"** (o slot
+  reservado pela BR-033). Nela vive o **diário**: a lista, em ordem
+  cronológica, de **tudo que o usuário perguntou** e o que a IA respondeu,
+  **por sessão** (`session_id`). A pergunta e a resposta são persistidas em
+  **tabas próprias** — `journal_entries` (com `journal_images`) e
+  `journal_fts` — **sem** mexer na tabela `messages` (que continua com as
+  sugestões da IA, BR-020). A entrada na aba Transcrição **não** aparece
+  (BR-040: a Transcrição é só falas).
+- **Motivo:** pedido do usuário ("uma aba, onde vai adicionando em um diário
+  tudo que o usuário perguntar") e paridade com o Perssua, em que a sessão é o
+  agregado do diário (perguntas, respostas, falas e resumo) pesquisável por
+  FTS5.
+- **Consequência:** novo domínio (`domain/journal.rs`), nova porta
+  (`JournalRepository`, com dobra em memória) e esquema novo; a entrada é
+  **persistida antes** da chamada à IA (um crash deixa a entrada `pending`);
+  o escopo de tempo é **relativo ao início da sessão** (BR-019); o diário é
+  apagado em cascade quando a sessão é excluída.
+- **Detalhes:** [`session/prd.md`](session/prd.md) US-01,
+  [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §2–§3,
+  [`session/tasks/01-task.md`](session/tasks/01-task.md),
+  [`session/tasks/03-task.md`](session/tasks/03-task.md),
+  [`session/tasks/04-task.md`](session/tasks/04-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-053 — "Busca" é a superfície de pergunta: perguntar, print e perguntas prontas
+
+- **Decisão:** a **Busca** é o composer da aba Sessão e tem exatamente três
+  capacidades na v1: **perguntar** (texto, com o **contexto da sessão** — as
+  falas até aquele instante), **tirar print de tela** e anexar, e **salvar
+  perguntas prontas**. A resposta chega **em streaming** e é Markdown
+  (BR-025). **Uma pergunta por vez** (single-flight, como BR-042) e **uma
+  imagem por pergunta**.
+- **Motivo:** pedido do usuário ("uma funcionalidade que é de busca, onde
+  permite perguntar e tirar print de tela, e salvar perguntas prontas") e
+  paridade com o "Ask" do Perssua, que é uma superfície única com taxonomia
+  `requestType` (`ask`/`followup`/`word`/`transcription`/`clipboard`/
+  `screenshot`).
+- **Consequência:** novo caso de uso (`application/ask_service.rs`) com
+  escopo de rota `AiCapability::Search` (BR-048); novo evento
+  `emit_journal`; a entrada registra a **origem** (`search`/`preset`/
+  `screenshot`) e o `provider`/`model` que responderam. **Busca web** e
+  **busca em documentos** ficam **fora** da v1 (no Perssua, a busca de
+  documentos é via **MCP** — Drive/Docs/Sheets/Notion/Obsidian —, e a busca
+  web é uma chamada à parte, só para Gemini/OpenAI).
+- **Detalhes:** [`session/prd.md`](session/prd.md) US-02/US-03,
+  [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §5–§7,
+  [`session/tasks/03-task.md`](session/tasks/03-task.md),
+  [`session/tasks/07-task.md`](session/tasks/07-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-054 — Perguntas prontas são configuração do usuário (nas settings)
+
+- **Decisão:** as perguntas prontas (o equivalente às "Prompt Suggestions" do
+  Perssua) ficam nas **settings** (`settings.saved_questions`), **não** no
+  banco: são configuração, não dado de sessão. Limites: **20 perguntas × 200
+  caracteres**; o que exceder é **recusado com aviso**, nunca truncado em
+  silêncio. Quatro defaults semeados (tradução das do Perssua): *"Resumir
+  tudo até agora"*, *"Listar as ações"*, *"Listar as principais ideias"*,
+  *"O que posso falar?"*. Clicar num chip **envia** a pergunta, e a entrada
+  do diário nasce com a origem "Pergunta pronta".
+- **Motivo:** pedido do usuário ("salvar perguntas prontas") e paridade com o
+  Perssua, que guarda as "Prompt Suggestions" em `localStorage`
+  (`perssua.textInput.promptSuggestions`, máx. 4 × 140 chars, com
+  editar/resetar/salvar).
+- **Consequência:** **nenhuma porta nova** — o IPC de settings já existe; o
+  teto é maior que o do Perssua (4 × 140) porque lá a limitação é de
+  *paywall* e aqui não há login (BR-002) — desvio consciente (R12).
+- **Detalhes:** [`session/prd.md`](session/prd.md) US-04,
+  [`session/tasks/05-task.md`](session/tasks/05-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-055 — Captura de tela no Linux por X11 (`x11rb`), com colar imagem
+
+- **Decisão:** o print de tela é capturado por uma **porta `ScreenCapture`**
+  cujo adaptador Linux é **X11/XWayland** (`x11rb`, `GetImage` na root
+  window). A imagem é reescalada para **≤1280 px** no lado maior e
+  recomprimida em **JPEG q0.86** antes de ir ao provider (paridade com o
+  preset `balanced` do Perssua). As janelas do app são **escondidas durante a
+  captura** e restauradas depois. **Colar imagem** (`Ctrl+V`) é o caminho
+  alternativo — e o único em Wayland. Sem display X11, o erro é **explícito**
+  ("Captura de tela indisponível neste ambiente — cole a imagem com Ctrl+V").
+- **Motivo:** pedido do usuário ("tirar print de tela") e paridade com o
+  Perssua (`capture-screenshot` → JPEG q80 ≤1920×1080, reencode por preset,
+  janelas escondidas durante a captura, colar imagem também anexa). O
+  `desktopCapturer` do Electron não existe no Tauri → transposição de
+  tecnologia (BR-015), não de comportamento (R11/R12).
+- **Consequência:** **Wayland nativo não é suportado** (BR-007); **1 imagem
+  por pergunta** (paridade com o limite free do Perssua); o redimensionamento
+  fica num módulo **puro**, testável sem display.
+- **Detalhes:** [`session/prd.md`](session/prd.md) US-03,
+  [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §4.2/§5.2,
+  [`session/tasks/06-task.md`](session/tasks/06-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-056 — O pedido ao LLM é multimodal (imagens)
+
+- **Decisão:** `CompletionRequest` passa a carregar `images:
+  Vec<CompletionImage>` (`mime` + bytes). O caminho **sem** imagem produz
+  **exatamente** o mesmo corpo HTTP de hoje; com imagem, o formato
+  OpenAI-compatível usa `content` em lista (`input_text` + `image_url` com
+  data URL) e o Gemini usa `inline_data`. Provider que rejeita imagem dá
+  **erro claro**, sem retry cego.
+- **Motivo:** sem isso o print não tem efeito — a IA precisa **ver** a
+  imagem (paridade com o `userContentParts` do Perssua).
+- **Consequência:** `domain/llm.rs` muda, mas resumo, sugestão e tradução
+  (que não usam imagem) ficam **intactos**; a imagem sai **só** para a fonte
+  escolhida pelo usuário (BR-005).
+- **Detalhes:** [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §6,
+  [`session/tasks/07-task.md`](session/tasks/07-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-057 — O botão "Perguntar" (lupa) no switcher do notch
+
+- **Decisão:** o switcher do notch **ativo** ganha o botão **"Perguntar"**,
+  com **ícone de lupa**, **ao lado do botão "Resumo"** (entre "Resumo" e
+  "Sugestões"). Ele **só existe com sessão iniciada** (o switcher só é
+  renderizado no estado ativo, BR-032). Clicar abre/foca o painel (`chat`)
+  **na aba Sessão**, com o campo de pergunta pronto. O botão tem `title` e
+  `aria-label` (BR-032) e tem **drill-hover** (BR-036). O ícone é **SVG do
+  projeto** (BR-008).
+- **Motivo:** pedido do usuário ("o botão perguntar deve ficar ao lado do
+  botão Resumo, quando iniciado a sessão, com um ícone de uma lupa").
+- **Consequência:** o overlay continua `actionbar | hidden` (BR-032) — **não**
+  há "Ask" flutuante (desvio consciente, R12); a origem do botão é o
+  `Overlay` → `panelOpenTab("chat", "session")`.
+- **Detalhes:** [`session/prd.md`](session/prd.md) US-05,
+  [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §8,
+  [`session/tasks/02-task.md`](session/tasks/02-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)
+
+## BR-058 — Índices compostos no schema e FTS ancorado por chave estável
+
+- **Decisão:** o schema passa a ter **índices compostos** onde há listagem
+  ordenada — `(transcriptions.session_id, timestamp)`,
+  `(messages.session_id, timestamp)` e `(sessions.started_at DESC)` — e
+  **remove** os índices **mortos** (`idx_messages_timestamp`,
+  `idx_transcriptions_timestamp`, `idx_sessions_user`; `user_id` é sempre
+  `NULL`, BR-002). `idx_sessions_status` **é mantido** (é usado por
+  `end_all_active`). A **busca FTS casa pela chave de negócio** (`id` /
+  `segment_id` / `entry_id`), **não** pelo `rowid` do FTS: o `rowid` implícito
+  é renumerado num `VACUUM`, o que quebraria o casamento **em silêncio**. As
+  tabelas novas nascem com `INTEGER PRIMARY KEY` explícito
+  (`journal_entries.rowid_pk`) como âncora estável.
+- **Motivo:** a listagem do diário (e a transcrição) fazia *temp b-tree* em
+  toda leitura ordenada, e `sessions ORDER BY started_at` fazia **full
+  scan**; o defeito do `rowid` foi encontrado ao desenhar o diário (ISS-041).
+- **Consequência:** a migração é o próprio `schema.sql` — ele roda em
+  `conn.execute_batch(SCHEMA)` a cada boot, então `CREATE INDEX IF NOT
+  EXISTS` + `DROP INDEX IF EXISTS` bastam (**sem framework de migração**); o
+  `VACUUM` deixa de ser um risco silencioso; o `MATCH` do FTS **escapa** a
+  query do usuário (o Perssua não escapa e a consulta quebra — ISS-042).
+- **Detalhes:** [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §2.3,
+  [`session/issues.md`](session/issues.md) ISS-041/ISS-042,
+  [`session/tasks/10-task.md`](session/tasks/10-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (planejada)

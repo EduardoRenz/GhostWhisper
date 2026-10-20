@@ -1380,6 +1380,34 @@ body,
   color: var(--oh-text-muted);
 }
 
+/* Pill de modelo da fonte que respondeu (BR-051). */
+.llm-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.66rem;
+  font-family: var(--oh-font-mono, monospace);
+  color: var(--oh-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-source-badge__model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-source-badge--fallback {
+  color: var(--oh-warning, #fbbf24);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
 /* Status de preparação do ASR (download/carga do modelo). */
 .asr-status {
   display: flex;
@@ -2917,6 +2945,14 @@ body,
   align-items: center;
   justify-content: space-between;
   gap: var(--oh-space-1-5);
+}
+
+/* Badges à direita do cabeçalho (agente + modelo da fonte — BR-051). */
+.suggestion-card__badges {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  min-width: 0;
 }
 
 .suggestion-card__tag {

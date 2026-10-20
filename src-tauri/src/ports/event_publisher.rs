@@ -48,8 +48,15 @@ pub struct SuggestionCadenceEvent {
 pub struct LlmSourceUsage {
     /// Fonte que respondeu (`AiSource.id`).
     pub source_id: String,
-    /// Nome de exibição da fonte.
+    /// Nome de exibição da fonte ("DeepSeek").
     pub label: String,
+    /// Provedor da fonte (`openai`, `deepseek`, …).
+    pub provider: String,
+    /// **Modelo** que respondeu ("deepseek-reasoner") — BR-051.
+    pub model: String,
+    /// Tarefa que pediu a chamada (`agent:meeting`, `capability:Summary`,
+    /// `default`) — BR-051.
+    pub scope: String,
     /// A fonte respondeu em **fallback** (não era a primeira da cadeia).
     pub is_fallback: bool,
     /// Latência da chamada (ms).

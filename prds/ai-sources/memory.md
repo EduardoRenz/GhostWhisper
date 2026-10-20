@@ -134,4 +134,22 @@ validação passa a emitir o evento. O log de debug ficou num struct
 (`ModelCallInfo`) para ser testável sem depender do subscriber global do
 `tracing` (que era flaky com testes paralelos).
 
+### 5) Onde ver o modelo que respondeu (BR-051)
+O log de debug vai para o **stdout** (o terminal que lançou o app) e só no
+nível `debug` — o filtro padrão é `info`, então sem `RUST_LOG` a linha é
+descartada. Para o `.deb` instalado (sem terminal) isso não resolve nada.
+Decisão do usuário: **mostrar na UI**.
+
+- `LlmSourceUsage` ganhou `model`, `provider` e `scope` (o escopo da tarefa:
+  `agent:<id>` / `capability:<nome>` / `default`) — o escopo permite que cada
+  tela mostre o modelo **daquela** tarefa.
+- `useLlmSource(scope)` (frontend) guarda o último uso, filtrado por escopo.
+- `LlmSourceBadge` (componente único, no padrão do `AgentBadge`): pill com o
+  modelo no card da sugestão; no resumo, a linha de metadados ganhou
+  `fonte · modelo` (+ `(fallback)`).
+- O **resumo** mostra o modelo da **última resposta** (não é persistido —
+  sem migration de banco).
+- README corrigido: `RUST_LOG=ghostwhisper_lib=debug` (o `debug` global faz o
+  `keyring` despejar credenciais).
+
 

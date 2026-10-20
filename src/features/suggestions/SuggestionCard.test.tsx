@@ -47,6 +47,74 @@ describe("SuggestionCard", () => {
     expect(badge?.getAttribute("style")).toContain("--oh-agent-emerald");
   });
 
+  it("mostra o modelo que respondeu (BR-051)", () => {
+    const { container } = render(
+      <SuggestionCard
+        current={suggestion()}
+        quick={null}
+        pinned={false}
+        copied={false}
+        awaitingFull={false}
+        llmSource={{
+          source_id: "fonte-1",
+          label: "DeepSeek",
+          provider: "deepseek",
+          model: "deepseek-reasoner",
+          scope: "agent:leetcode",
+          is_fallback: false,
+          latency_ms: 142,
+        }}
+        onCopy={() => {}}
+        onPin={() => {}}
+      />,
+    );
+    const badge = container.querySelector(".llm-source-badge");
+    expect(badge?.textContent).toContain("deepseek-reasoner");
+    // O tooltip traz a fonte completa.
+    expect(badge?.getAttribute("title")).toBe("DeepSeek · deepseek-reasoner");
+  });
+
+  it("marca o modelo que respondeu em fallback", () => {
+    const { container } = render(
+      <SuggestionCard
+        current={suggestion()}
+        quick={null}
+        pinned={false}
+        copied={false}
+        awaitingFull={false}
+        llmSource={{
+          source_id: "fonte-2",
+          label: "OpenAI",
+          provider: "openai",
+          model: "gpt-4o-mini",
+          scope: "agent:leetcode",
+          is_fallback: true,
+          latency_ms: 90,
+        }}
+        onCopy={() => {}}
+        onPin={() => {}}
+      />,
+    );
+    const badge = container.querySelector(".llm-source-badge");
+    expect(badge?.className).toContain("llm-source-badge--fallback");
+    expect(badge?.getAttribute("title")).toContain("fallback");
+  });
+
+  it("sem uso de IA, não mostra o pill de modelo", () => {
+    const { container } = render(
+      <SuggestionCard
+        current={suggestion()}
+        quick={null}
+        pinned={false}
+        copied={false}
+        awaitingFull={false}
+        onCopy={() => {}}
+        onPin={() => {}}
+      />,
+    );
+    expect(container.querySelector(".llm-source-badge")).toBeNull();
+  });
+
   it("usa o título gerado pelo agente (Subject) quando existe", () => {
     const { container } = render(
       <SuggestionCard

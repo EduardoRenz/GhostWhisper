@@ -48,6 +48,11 @@ automático com circuit breaker, DeepSeek como provedor de primeira classe e a
 tela de Configurações repaginada com salvamento global. Detalhes em
 [`prds/ai-sources/prd.md`](prds/ai-sources/prd.md).
 
+**Sessão (planejado)** — a terceira aba do painel será o **diário de
+perguntas** da sessão, com a feature **Busca** (perguntar com o contexto da
+sessão, anexar print de tela e salvar perguntas prontas). Spec em
+[`prds/session/prd.md`](prds/session/prd.md).
+
 ## Requisitos
 
 - Rust (stable) + `cargo`
@@ -98,10 +103,20 @@ cargo test --manifest-path src-tauri/Cargo.toml   # testes do core
 ### Log de debug das chamadas de IA
 
 Com várias fontes e fallback, é preciso saber **qual** modelo respondeu cada
-tarefa. Suba o app com `RUST_LOG=debug` para ver uma linha por chamada:
+tarefa. O app **mostra na tela** (pill no card da sugestão e na linha do
+resumo); para o detalhe, suba com `RUST_LOG=ghostwhisper_lib=debug`:
+
+```bash
+RUST_LOG=ghostwhisper_lib=debug pnpm tauri dev
+# ou o binário já compilado:
+RUST_LOG=ghostwhisper_lib=debug ./src-tauri/target-vulkan/release/ghostwhisper
+```
+
+> Use `ghostwhisper_lib=debug` e **não** `debug` global: com o global, o crate
+> `keyring` despeja os atributos das credenciais e o log fica ilegível.
 
 ```
-DEBUG ghostwhisper::application::llm_router: llm: resposta concluída
+DEBUG ghostwhisper_lib: llm: resposta concluída
   scope=agent:meeting source=DeepSeek provider=deepseek model=deepseek-reasoner
   is_fallback=false max_tokens=420 temperature=0 latency_ms=1420
   prompt_tokens=1180 completion_tokens=260 total_tokens=1440
@@ -179,6 +194,9 @@ A configuração é feita na tela **Settings** do app e persistida localmente:
 - **O modelo é digitado por você:** não há lista de modelos sugerida (envelhece
   rápido e prende num modelo antigo) — digite o nome (`gpt-6`,
   `deepseek-chat`, …).
+- **O modelo usado aparece na tela:** o card da sugestão e a linha do resumo
+  mostram qual fonte/modelo respondeu (com a marca de *fallback* quando a
+  primária falhou).
 - **Fallback automático:** se a fonte primária falhar (429, chave expirada,
   timeout), a próxima fonte da lista assume sozinha. Cada fonte tem um
   **circuit breaker**: depois de 3 falhas seguidas ela é pulada por 60 s (não

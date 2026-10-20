@@ -42,6 +42,22 @@ vi.mock("../../core/application/clipboard", () => ({
   copyText: vi.fn(async () => true),
 }));
 
+const llmSource = vi.hoisted(() => ({
+  value: null as null | {
+    source_id: string;
+    label: string;
+    provider: string;
+    model: string;
+    scope: string;
+    is_fallback: boolean;
+    latency_ms: number;
+  },
+}));
+
+vi.mock("../../core/application/useLlmSource", () => ({
+  useLlmSource: () => llmSource.value,
+}));
+
 vi.mock("../../adapters/ipc/overlay", () => ({
   openSettingsWindow: vi.fn(),
 }));
@@ -66,6 +82,7 @@ const summary = (overrides: Partial<MeetingSummary> = {}): MeetingSummary => ({
 
 describe("SummaryView — feedback da geração", () => {
   beforeEach(() => {
+    llmSource.value = null;
     state.value = {
       summary: null,
       history: [],
@@ -108,5 +125,37 @@ describe("SummaryView — feedback da geração", () => {
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByText("Planejamento do trimestre")).toBeDefined();
     expect(screen.getByText(/Resumo completo/)).toBeDefined();
+  });
+
+  it("mostra o modelo que respondeu o resumo (BR-051)", () => {
+    state.value.summary = summary();
+    llmSource.value = {
+      source_id: "fonte-1",
+      label: "DeepSeek",
+      provider: "deepseek",
+      model: "deepseek-reasoner",
+      scope: "capability:summary",
+      is_fallback: false,
+      latency_ms: 142,
+    };
+    render(<SummaryView opened active />);
+
+    expect(screen.getByText(/DeepSeek · deepseek-reasoner/)).toBeDefined();
+  });
+
+  it("marca o resumo que veio de uma fonte em fallback", () => {
+    state.value.summary = summary();
+    llmSource.value = {
+      source_id: "fonte-2",
+      label: "OpenAI",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      scope: "capability:summary",
+      is_fallback: true,
+      latency_ms: 90,
+    };
+    render(<SummaryView opened active />);
+
+    expect(screen.getByText(/\(fallback\)/)).toBeDefined();
   });
 });

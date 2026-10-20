@@ -87,6 +87,8 @@ Mesmas personas do MVP ([`../mvp/prd.md`](../mvp/prd.md) §3), com foco em:
   fallback / falhou).
 - **Log de debug** com os dados do modelo usado na tarefa atual, com o nível
   de raciocínio quando existir (BR-050).
+- **O modelo que respondeu é visível na UI** (BR-051): pill no card da
+  sugestão e na linha do resumo, com a marca de fallback.
 - Tela de Configurações repaginada com salvamento global.
 - Rotas por escopo **no modelo de dados** (fonte vinculada por agente ou por
   capacidade), sem UI de vínculo.
@@ -113,6 +115,7 @@ As regras canônicas vivem em [`../business-rules.md`](../business-rules.md):
 - **BR-048** — Rotas de IA por escopo (modelo pronto, UI depois).
 - **BR-049** — O modelo é digitado pelo usuário (sem catálogo).
 - **BR-050** — Log de debug do modelo em uso (com nível de raciocínio).
+- **BR-051** — O modelo que respondeu é visível na interface.
 
 Regras pré-existentes que continuam valendo: BR-002 (sem backend), BR-003 (BYO
 key no keyring), BR-005 (áudio local), BR-008 (reconstruir comportamento, não

@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use crate::domain::ai_route::AiRouteScope;
 use crate::domain::ai_source::AiSource;
 use crate::domain::ai_source::AiSourceHealth;
 use crate::domain::llm::{CompletionRequest, ProviderConfig};
@@ -168,6 +169,9 @@ impl AiSourceService for LocalAiSourceService {
                 self.publisher.emit_llm_source_used(&LlmSourceUsage {
                     source_id: source.id.clone(),
                     label: source.display_label(),
+                    provider: source.kind.as_str().to_string(),
+                    model: source.model.clone(),
+                    scope: AiRouteScope::Default.label(),
                     is_fallback: false,
                     latency_ms: latency,
                 });

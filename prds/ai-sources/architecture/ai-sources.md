@@ -154,14 +154,18 @@ fn emit_llm_source_used(&self, usage: &LlmSourceUsage);
 ```rust
 pub struct LlmSourceUsage {
     pub source_id: String,
-    pub label: String,
+    pub label: String,      // "DeepSeek" (a fonte)
+    pub provider: String,   // "deepseek"
+    pub model: String,      // "deepseek-reasoner"  (BR-051)
+    pub scope: String,      // "agent:meeting" | "capability:summary" | "default"
     pub is_fallback: bool,
     pub latency_ms: u64,
 }
 ```
 
 Evento Tauri `llm_source_used`: a tela de Configurações usa para atualizar o
-badge da fonte em tempo real.
+badge da fonte em tempo real e a **UI mostra o modelo que respondeu** (BR-051) —
+o `scope` permite que cada tela mostre o modelo da **sua** tarefa.
 
 ## 4. Circuit breaker (`application/ai_source_health.rs`)
 

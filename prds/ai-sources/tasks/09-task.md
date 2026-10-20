@@ -40,6 +40,9 @@ escopo (BR-048) e consolidar a documentação.
   raciocínio (`CompletionUsage` + parse de `usage`/`usageMetadata`).
 - **Badge "Nunca usada" fixo** (ISS-040): a tela rebusca a saúde ao ganhar
   foco (a janela nasce oculta) e a validação emite `llm_source_used`.
+- **Modelo visível na UI** (BR-051): `LlmSourceUsage` com `model`/`provider`/
+  `scope`, hook `useLlmSource(scope)`, componente `LlmSourceBadge` no card da
+  sugestão e modelo na linha de metadados do resumo.
 
 ## Critérios de aceite
 
