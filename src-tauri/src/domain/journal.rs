@@ -105,6 +105,9 @@ pub struct JournalEntry {
     pub model: Option<String>,
     /// Mensagem de erro (quando `status = error`).
     pub error: Option<String>,
+    /// Resumo do par pergunta/resposta (até 240 caracteres): o que a IA já
+    /// respondeu. Entra no contexto das perguntas seguintes (BR-053).
+    pub summary: Option<String>,
 }
 
 /// Uma imagem anexada a uma entrada (print de tela).
@@ -169,6 +172,7 @@ mod tests {
                 provider: Some("openai".into()),
                 model: Some("gpt-4o".into()),
                 error: None,
+                summary: Some("resumo".into()),
             })
             .expect("json"),
         )
@@ -186,6 +190,7 @@ mod tests {
         assert_eq!(json["provider"], "openai");
         assert_eq!(json["model"], "gpt-4o");
         assert!(json["error"].is_null());
+        assert_eq!(json["summary"], "resumo");
     }
 
     #[test]

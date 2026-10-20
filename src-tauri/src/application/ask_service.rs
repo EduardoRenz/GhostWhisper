@@ -31,6 +31,8 @@ use crate::ports::journal_repository::JournalRepository;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
 
+use super::answer_summary;
+use super::prompts::assistant as assistant_prompts;
 use super::context;
 use super::session_lookup::resolve_session;
 
@@ -41,8 +43,15 @@ const CONTEXT_MAX_CHARS: usize = 6_000;
 const CONTEXT_WINDOW_MS: i64 = 180_000;
 /// Teto de falas no contexto.
 const CONTEXT_MAX_SEGMENTS: usize = 40;
+/// Quantos resumos anteriores entram no contexto (janela deslizante).
+const CONTEXT_SUMMARIES: usize = 5;
+/// Teto de caracteres dos resumos no prompt.
+const CONTEXT_SUMMARIES_MAX_CHARS: usize = 1_500;
 /// Teto de tokens da resposta.
-const MAX_TOKENS: u32 = 900;
+///
+/// Folgado o bastante para uma resposta com código + exemplo **e** o bloco de
+/// resumo no fim (modelos que contam raciocínio no mesmo teto também cabem).
+const MAX_TOKENS: u32 = 1_500;
 /// Temperatura da resposta.
 const TEMPERATURE: f32 = 0.3;
 
@@ -53,11 +62,41 @@ const TEMPERATURE: f32 = 0.3;
 pub const DEFAULT_IMAGE_PROMPT: &str =
     "Analise a imagem da tela e responda ao que for mais útil para a conversa.";
 
-/// Prompt de sistema da Busca.
-const SYSTEM_PROMPT: &str = "Você é um assistente que responde perguntas sobre \
-     uma reunião em andamento. Use o contexto da transcrição quando ele ajudar e \
-     diga quando a resposta não está no contexto. Responda em Markdown, de forma \
-     direta e curta. Não invente o que não foi dito.";
+/// Regras do **pedido**. A persona vem do agente **Padrão** (BR-059).
+///
+/// O Padrão identifica a cena (reunião, entrevista técnica, conversa geral) e
+/// **nunca devolve a pergunta** — é o que faz uma pergunta ditada, com erro de
+/// transcrição, ser respondida em vez de "você quis dizer…?".
+const ASK_RULES: &str = "Esta é uma pergunta direta do usuário (não uma sugestão \
+     ao vivo): responda em **Markdown completo**, de uma vez. Quando a pergunta \
+     pedir código, use um bloco com a linguagem (por exemplo ```python) e inclua \
+     um exemplo de uso; quando pedir uma explicação, traga os passos. Seja \
+     direto, mas não omita o que a pergunta pede. \
+     A pergunta pode ter vindo de ditado (voz) e chegar com erros de \
+     transcrição: interprete a intenção e responda; nunca devolva a pergunta nem \
+     peça confirmação — se algo estiver ambíguo, assuma a interpretação mais \
+     provável e diga em uma linha o que assumiu. \
+     A transcrição da reunião é contexto, não requisito: perguntas gerais \
+     (código, conceitos, exercícios) são respondidas normalmente, sem exigir que \
+     estejam na reunião. Não invente o que foi dito nela. \
+     Depois da resposta completa, numa linha própria, escreva exatamente: \
+     <!--resumo: até 240 caracteres resumindo o que você respondeu--> \
+     Esse bloco é apenas o fecho; a resposta acima dele deve estar completa.";
+
+/// Prompt de sistema da Busca: o agente **Padrão** (o que se adapta à cena) +
+/// as regras do pedido. Não há persona de reunião fixa: a pergunta pode ser
+/// sobre qualquer assunto e pode ter vindo de ditado.
+///
+/// **Não** entra aqui o `NEVER_ASK_BACK_RULE` dos agentes ao vivo: ele manda
+/// parar quando "o contexto está vazio", e aqui o contexto é opcional — a
+/// regra derrubaria justamente a pergunta feita sem reunião. O Padrão já diz
+/// que o copiloto "nunca devolve a pergunta" e que assume em vez de perguntar.
+fn system_prompt() -> String {
+    format!(
+        "{}\n\n{}",
+        assistant_prompts::DEFAULT_SYSTEM_PROMPT, ASK_RULES
+    )
+}
 
 /// Pergunta à IA e registra no diário da sessão.
 pub struct AskService {
@@ -140,44 +179,133 @@ impl AskService {
         (self.clock.now_ms() - *started_at_ms).max(0)
     }
 
-    /// Contexto: as falas da sessão até o instante da pergunta.
+    /// Contexto de uma pergunta: o **delta** da transcrição + os resumos.
     ///
-    /// Reusa a janela das sugestões (BR-024): falas finalizadas **e** prévias.
-    fn build_context(&self, session_id: &str, now_rel_ms: i64) -> Option<context::RecentContext> {
+    /// O corte é o instante da última pergunta **respondida** (BR-053): o que
+    /// veio antes dela já foi usado para responder e voltaria a ser enviado à
+    /// toa. A janela de tempo continua como rede de segurança (uma pergunta
+    /// depois de uma pausa longa não manda meia hora de fala).
+    fn build_context(&self, session_id: &str, now_rel_ms: i64) -> AskContext {
+        let entries = self
+            .journal
+            .list_by_session(session_id)
+            .unwrap_or_default();
+
+        // O início da última pergunta respondida (o par pergunta/resposta dela
+        // já está coberto pelo resumo; a fala durante a resposta é nova).
+        let since = entries
+            .iter()
+            .rev()
+            .find(|entry| entry.status == JournalStatus::Answered)
+            .map(|entry| entry.asked_at_ms);
+
         let segments: Vec<TranscriptSegment> = self
             .transcriptions
             .list_by_session(session_id)
             .unwrap_or_default();
-        context::recent_context_live(
-            &segments,
-            now_rel_ms,
-            CONTEXT_WINDOW_MS,
-            CONTEXT_MAX_SEGMENTS,
-            CONTEXT_MAX_CHARS,
-        )
+        let transcript = match since {
+            Some(since) => context::context_since(
+                &segments,
+                since,
+                now_rel_ms,
+                CONTEXT_WINDOW_MS,
+                CONTEXT_MAX_SEGMENTS,
+                CONTEXT_MAX_CHARS,
+            ),
+            None => context::recent_context_live(
+                &segments,
+                now_rel_ms,
+                CONTEXT_WINDOW_MS,
+                CONTEXT_MAX_SEGMENTS,
+                CONTEXT_MAX_CHARS,
+            ),
+        };
+
+        AskContext {
+            transcript,
+            summaries: recent_summaries(&entries, CONTEXT_SUMMARIES, CONTEXT_SUMMARIES_MAX_CHARS),
+        }
     }
 
-    /// Monta o pedido: contexto + pergunta (+ imagens).
+    /// Monta o pedido: resumos + transcrição + pergunta (+ imagens).
     fn build_request(
         &self,
         question: &str,
         images: &[CompletionImage],
-        context: Option<context::RecentContext>,
+        context: AskContext,
     ) -> CompletionRequest {
         let mut prompt = String::new();
-        if let Some(context) = context {
+        if !context.summaries.is_empty() {
+            prompt.push_str("<previous_questions>\n");
+            for summary in &context.summaries {
+                prompt.push_str("- ");
+                prompt.push_str(summary);
+                prompt.push('\n');
+            }
+            prompt.push_str("</previous_questions>\n\n");
+        }
+        if let Some(transcript) = context.transcript {
             prompt.push_str("<transcript>\n");
-            prompt.push_str(&context.text);
+            prompt.push_str(&transcript.text);
             prompt.push_str("\n</transcript>\n\n");
         }
         prompt.push_str(question);
 
         CompletionRequest::user(prompt)
-            .with_system(SYSTEM_PROMPT)
+            .with_system(system_prompt())
             .with_max_tokens(MAX_TOKENS)
             .with_temperature(TEMPERATURE)
             .with_images(images.to_vec())
     }
+}
+
+/// Contexto montado para uma pergunta (BR-053).
+struct AskContext {
+    /// Falas desde a última pergunta respondida (ou a janela recente).
+    transcript: Option<context::RecentContext>,
+    /// Resumos dos pares pergunta/resposta anteriores (mais antigo primeiro).
+    summaries: Vec<String>,
+}
+
+/// Últimos `limit` resumos da sessão, em ordem cronológica, com teto de chars.
+///
+/// A janela deslizante mantém o prompt pequeno: os resumos mais antigos saem
+/// primeiro; o teto é aplicado do mais novo para o mais antigo.
+fn recent_summaries(
+    entries: &[JournalEntry],
+    limit: usize,
+    max_chars: usize,
+) -> Vec<String> {
+    if limit == 0 || max_chars == 0 {
+        return Vec::new();
+    }
+    let mut picked: Vec<&JournalEntry> = entries
+        .iter()
+        .filter(|entry| {
+            entry
+                .summary
+                .as_deref()
+                .map(|text| !text.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .collect();
+    if picked.len() > limit {
+        picked = picked.split_off(picked.len() - limit);
+    }
+
+    let mut kept: Vec<String> = Vec::new();
+    let mut chars = 0usize;
+    for entry in picked.iter().rev() {
+        let text = entry.summary.as_deref().unwrap_or_default().trim().to_string();
+        let len = text.chars().count();
+        if !kept.is_empty() && chars + len > max_chars {
+            break;
+        }
+        chars += len;
+        kept.push(text);
+    }
+    kept.reverse();
+    kept
 }
 
 impl AskController for AskService {
@@ -217,6 +345,7 @@ impl AskController for AskService {
             provider: None,
             model: None,
             error: None,
+            summary: None,
         };
         self.journal.insert_question(&entry)?;
 
@@ -254,10 +383,12 @@ impl AskController for AskService {
             &completion_request,
             &mut |text| {
                 streamed.push_str(text);
+                // O bloco de resumo do fim não aparece no streaming.
+                let visible = answer_summary::visible_stream(&streamed).to_string();
                 self.publisher.emit_journal(&JournalUpdate {
                     entry_id: entry.id.clone(),
                     phase: JournalPhase::Streaming,
-                    text: streamed.clone(),
+                    text: visible,
                     error: None,
                 });
             },
@@ -265,11 +396,20 @@ impl AskController for AskService {
 
         match result {
             Ok(completion) => {
-                let answer = if completion.text.trim().is_empty() {
+                let raw = if completion.text.trim().is_empty() {
                     streamed.clone()
                 } else {
                     completion.text.clone()
                 };
+                // A resposta exibida/gravada sai **sem** o trailer; o resumo
+                // vai para o diário e alimenta a próxima pergunta. Sem o
+                // bloco (modelo desobediente ou resposta cortada), o digest
+                // determinístico cobre (BR-053).
+                let answer = answer_summary::without_summary(&raw).to_string();
+                let summary = answer_summary::extract(&raw).or_else(|| {
+                    let digest = answer_summary::digest(&question, &answer);
+                    (!digest.is_empty()).then_some(digest)
+                });
                 let answered_at_ms = self.elapsed_ms(&session.started_at_ms);
                 self.journal.complete_answer(
                     &entry.id,
@@ -277,6 +417,7 @@ impl AskController for AskService {
                     answered_at_ms,
                     completion.provider.clone(),
                     Some(completion.model.clone()),
+                    summary.as_deref(),
                 )?;
                 self.publisher.emit_journal(&JournalUpdate {
                     entry_id: entry.id.clone(),
@@ -296,7 +437,7 @@ impl AskController for AskService {
                 self.publisher.emit_journal(&JournalUpdate {
                     entry_id: entry.id.clone(),
                     phase: JournalPhase::Error,
-                    text: streamed,
+                    text: answer_summary::without_summary(&streamed).to_string(),
                     error: Some(message.clone()),
                 });
                 Err(error)
@@ -317,7 +458,8 @@ mod tests {
     use crate::adapters::persistence::memory::in_memory_journal_repository::InMemoryJournalRepository;
     use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
-    use crate::adapters::system::system_clock::FixedClock;
+    use crate::adapters::persistence::memory::in_memory_journal_repository::entry as journal_entry;
+    use crate::adapters::system::system_clock::MutableClock;
     use crate::domain::journal::JournalRequestSource;
     use crate::domain::llm::Completion;
     use crate::domain::session::{Session, SessionStatus};
@@ -424,6 +566,7 @@ mod tests {
         sessions: Arc<InMemorySessionRepository>,
         transcriptions: Arc<InMemoryTranscriptionsRepository>,
         publisher: Arc<RecordingPublisher>,
+        clock: Arc<MutableClock>,
     }
 
     fn fixture(llm: Arc<FakeLlm>) -> Fixture {
@@ -431,12 +574,13 @@ mod tests {
         let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
         let journal = Arc::new(InMemoryJournalRepository::new());
         let publisher = Arc::new(RecordingPublisher::default());
+        let clock = Arc::new(MutableClock::new(5_000));
         let service = AskService::new(
             llm.clone(),
             sessions.clone(),
             transcriptions.clone(),
             journal.clone(),
-            Arc::new(FixedClock(5_000)),
+            clock.clone(),
             publisher.clone(),
         );
         Fixture {
@@ -446,7 +590,31 @@ mod tests {
             sessions,
             transcriptions,
             publisher,
+            clock,
         }
+    }
+
+    /// Fala final na sessão `s1` (tempos relativos ao início dela).
+    fn speech(id: &str, at: i64, text: &str) -> TranscriptSegment {
+        TranscriptSegment {
+            id: id.to_string(),
+            session_id: "s1".to_string(),
+            speaker: Speaker::They,
+            text: text.to_string(),
+            start_ms: at,
+            end_ms: at + 500,
+            is_final: true,
+        }
+    }
+
+    /// Entrada respondida (com resumo) direto no diário.
+    fn answered_entry(f: &Fixture, id: &str, at: i64, summary: &str) {
+        f.journal
+            .insert_question(&journal_entry(id, "s1", "pergunta antiga", at))
+            .expect("entrada");
+        f.journal
+            .complete_answer(id, "resposta antiga", at + 100, None, None, Some(summary))
+            .expect("responde");
     }
 
     /// Cria a sessão `s1` (início em 1 000; o relógio fixo está em 5 000).
@@ -475,6 +643,51 @@ mod tests {
             source: JournalRequestSource::Search,
             images: Vec::new(),
         }
+    }
+
+    #[test]
+    fn the_ask_uses_the_default_agent_and_never_asks_back() {
+        // A pergunta pode vir de ditado (com erros): o agente **Padrão** é o
+        // que se adapta à cena e responde — devolver a pergunta é defeito.
+        let prompt = system_prompt();
+        assert!(prompt.contains(assistant_prompts::DEFAULT_SYSTEM_PROMPT));
+        assert!(
+            !prompt.contains(assistant_prompts::NEVER_ASK_BACK_RULE),
+            "a regra ao vivo manda parar sem contexto — aqui o contexto é opcional"
+        );
+        assert!(prompt.contains("nunca devolva a pergunta"));
+        assert!(prompt.contains("erros de transcrição"));
+        assert!(prompt.contains("sem exigir que estejam na reunião"));
+        // A persona fixa de reunião saiu.
+        assert!(!prompt.contains("perguntas sobre uma reunião em andamento"));
+    }
+
+    #[test]
+    fn the_system_prompt_asks_for_a_complete_answer_before_the_summary() {
+        // Regressão: "não repetir o que já foi dito" + "termine sempre com o
+        // resumo" deixava as respostas telegráficas (sem código nem exemplos).
+        let prompt = system_prompt();
+        assert!(prompt.contains("Markdown completo"));
+        assert!(prompt.contains("exemplo de uso"));
+        assert!(prompt.contains("<!--resumo:"));
+        assert!(!prompt.contains("direta e curta"));
+        assert!(!prompt.contains("não repetir"));
+    }
+
+    #[test]
+    fn the_request_has_room_for_code_and_the_summary() {
+        let f = fixture(Arc::new(FakeLlm::ok("x")));
+        session(&f);
+        f.service.ask(ask("inverta uma árvore binária em python"))
+            .expect("pergunta");
+        let sent = f
+            .llm
+            .request
+            .lock()
+            .expect("lock")
+            .clone()
+            .expect("pedido");
+        assert_eq!(sent.max_tokens, Some(MAX_TOKENS));
     }
 
     #[test]
@@ -579,6 +792,135 @@ mod tests {
             "{}",
             sent.prompt
         );
+    }
+
+    #[test]
+    fn the_answer_drops_the_summary_trailer_and_stores_it() {
+        let f = fixture(Arc::new(FakeLlm::ok(
+            "Use eventos.\n<!--resumo: eventos com idempotência-->",
+        )));
+        session(&f);
+
+        let outcome = f.service.ask(ask("como?")).expect("pergunta");
+
+        assert_eq!(outcome.answer, "Use eventos.");
+        let entries = f.journal.list_by_session("s1").expect("diário");
+        assert_eq!(entries[0].answer.as_deref(), Some("Use eventos."));
+        assert_eq!(
+            entries[0].summary.as_deref(),
+            Some("eventos com idempotência")
+        );
+    }
+
+    #[test]
+    fn without_the_trailer_the_digest_is_stored() {
+        let f = fixture(Arc::new(FakeLlm::ok("a resposta")));
+        session(&f);
+
+        f.service.ask(ask("o que eu disse?")).expect("pergunta");
+
+        let entries = f.journal.list_by_session("s1").expect("diário");
+        assert_eq!(
+            entries[0].summary.as_deref(),
+            Some("P: o que eu disse? / R: a resposta")
+        );
+    }
+
+    #[test]
+    fn a_new_question_sends_only_the_delta_and_the_previous_summary() {
+        let f = fixture(Arc::new(FakeLlm::ok("primeira resposta")));
+        session(&f);
+        // Fala que a primeira pergunta já usou.
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala antiga"))
+            .expect("fala");
+
+        f.service.ask(ask("primeira?")).expect("pergunta");
+        let first = f
+            .llm
+            .request
+            .lock()
+            .expect("lock")
+            .clone()
+            .expect("pedido");
+        assert!(first.prompt.contains("fala antiga"), "{}", first.prompt);
+        assert!(
+            !first.prompt.contains("<previous_questions>"),
+            "a primeira não tem resumo anterior"
+        );
+
+        // Um minuto depois, com uma fala nova.
+        f.clock.advance(60_000);
+        f.transcriptions
+            .insert(&speech("t2", 10_000, "fala nova"))
+            .expect("fala");
+        f.service.ask(ask("segunda?")).expect("pergunta");
+
+        let second = f
+            .llm
+            .request
+            .lock()
+            .expect("lock")
+            .clone()
+            .expect("pedido");
+        assert!(
+            second.prompt.contains("<previous_questions>"),
+            "{}",
+            second.prompt
+        );
+        assert!(
+            second.prompt.contains("P: primeira? / R: primeira resposta"),
+            "{}",
+            second.prompt
+        );
+        assert!(second.prompt.contains("fala nova"), "{}", second.prompt);
+        assert!(
+            !second.prompt.contains("fala antiga"),
+            "o que já foi respondido não volta: {}",
+            second.prompt
+        );
+    }
+
+    #[test]
+    fn the_cut_ignores_pending_and_failed_entries() {
+        let f = fixture(Arc::new(FakeLlm::ok("x")));
+        session(&f);
+        answered_entry(&f, "e1", 1_000, "resumo da primeira");
+
+        // Uma pergunta que falhou depois **não** move o corte.
+        f.journal
+            .insert_question(&journal_entry("e2", "s1", "falhou", 3_000))
+            .expect("entrada");
+        f.journal
+            .fail("e2", JournalStatus::Error, Some("fora".into()))
+            .expect("falha");
+
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala entre as duas"))
+            .expect("fala");
+
+        let context = f.service.build_context("s1", 4_000);
+        assert_eq!(context.summaries.len(), 1);
+        let transcript = context.transcript.expect("transcrição");
+        assert!(
+            transcript.text.contains("fala entre as duas"),
+            "o corte continua na última **respondida**"
+        );
+    }
+
+    #[test]
+    fn the_summaries_are_a_rolling_window_of_five() {
+        let f = fixture(Arc::new(FakeLlm::ok("x")));
+        session(&f);
+        for index in 0..7 {
+            answered_entry(&f, &format!("e{index}"), index * 1_000, &format!("resumo {index}"));
+        }
+
+        let context = f.service.build_context("s1", 10_000);
+
+        assert_eq!(context.summaries.len(), CONTEXT_SUMMARIES);
+        assert_eq!(context.summaries.first().map(String::as_str), Some("resumo 2"));
+        assert_eq!(context.summaries.last().map(String::as_str), Some("resumo 6"));
     }
 
     #[test]

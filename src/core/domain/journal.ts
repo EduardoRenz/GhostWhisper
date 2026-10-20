@@ -30,6 +30,11 @@ export interface JournalEntry {
   model: string | null;
   /** Mensagem de erro (quando `status = error`). */
   error: string | null;
+  /**
+   * Resumo do par pergunta/resposta (até 240 caracteres) — o que a IA já
+   * respondeu. Alimenta o contexto das perguntas seguintes; a UI não usa.
+   */
+  summary?: string | null;
 }
 
 /** Progresso de uma entrada (evento `journal`). */

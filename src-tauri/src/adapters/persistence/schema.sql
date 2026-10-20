@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS journal_entries (
   provider TEXT,
   model TEXT,
   error TEXT,
+  -- Resumo do par pergunta/resposta (BR-053): contexto das próximas
+  -- perguntas. Bancos antigos ganham a coluna pela migração do `connection`.
+  summary TEXT,
   created_at INTEGER DEFAULT (strftime('%s', 'now')),
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );

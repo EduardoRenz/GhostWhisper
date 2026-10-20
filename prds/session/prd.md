@@ -151,15 +151,27 @@ mesma aba.
       opcional quando há print.
 - [ ] A pergunta é respondida pela **fonte de IA da rota da capacidade
       `Search`** (BR-048) — ou, sem rota, pela fonte primária.
-- [ ] A pergunta leva o **contexto da sessão**: as falas finalizadas até
-      aquele instante (mesma janela e mesmos tetos das sugestões — BR-024),
-      para que a resposta "saiba" da conversa.
+- [ ] A pergunta leva o **contexto da sessão de forma incremental** (BR-053):
+      as falas **posteriores à última pergunta respondida** (com a janela de
+      180 s e os mesmos tetos das sugestões — BR-024) **mais** os resumos dos
+      pares pergunta/resposta anteriores (janela deslizante de **5**, ~1 500
+      caracteres). O que já foi respondido **não** volta inteiro para o prompt.
+- [ ] A própria resposta fecha com o bloco `<!--resumo: …-->`: o backend o
+      remove do texto exibido/exportado, guarda em `journal_entries.summary` e
+      usa na próxima pergunta (sem chamada extra ao provider). Sem o bloco,
+      entra um digest determinístico (`P: … / R: …`).
 - [ ] A resposta é **Markdown**, renderizada pelo `MarkdownView` (BR-025).
 - [ ] **Uma pergunta por vez**: um novo envio durante uma resposta em curso
       **não** duplica texto (paridade com o single-flight de BR-042).
 - [ ] O envio é **cancelável** enquanto a resposta não chegou (botão
       "Cancelar"); a entrada fica com status "cancelada" e pode ser
       reenviada.
+- [ ] A pergunta usa a persona do agente **Padrão** (o que se adapta à cena —
+      reunião, técnica, conversa) e **nunca devolve a pergunta**: a pergunta
+      pode vir de **ditado** e chegar com erro de transcrição, então o
+      assistente assume a interpretação mais provável e responde (no máximo diz
+      em uma linha o que assumiu). Perguntas gerais (código, exercícios) são
+      respondidas mesmo sem transcrição.
 - [ ] Falha do provider mostra o erro **na entrada** (não em um toast
       genérico) e a fonte seguinte da cadeia é tentada (BR-045).
 

@@ -38,11 +38,13 @@ impl JournalRepository for InMemoryJournalRepository {
         answered_at_ms: i64,
         provider: Option<String>,
         model: Option<String>,
+        summary: Option<&str>,
     ) -> Result<()> {
         if let Ok(mut entries) = self.entries.lock() {
             if let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) {
                 entry.answer = Some(answer.to_string());
                 entry.answered_at_ms = Some(answered_at_ms);
+                entry.summary = summary.map(str::to_string);
                 entry.status = JournalStatus::Answered;
                 if provider.is_some() {
                     entry.provider = provider;
@@ -149,6 +151,7 @@ pub fn entry(id: &str, session_id: &str, question: &str, at: i64) -> JournalEntr
         provider: None,
         model: None,
         error: None,
+        summary: None,
     }
 }
 
@@ -161,12 +164,13 @@ mod tests {
         let repo = InMemoryJournalRepository::new();
         repo.insert_question(&entry("e1", "s1", "pergunta", 0))
             .unwrap();
-        repo.complete_answer("e1", "resposta", 10, None, None)
+        repo.complete_answer("e1", "resposta", 10, None, None, Some("resumo"))
             .unwrap();
 
         let stored = repo.get("e1").unwrap().expect("presente");
         assert_eq!(stored.answer.as_deref(), Some("resposta"));
         assert_eq!(stored.status, JournalStatus::Answered);
+        assert_eq!(stored.summary.as_deref(), Some("resumo"));
 
         repo.attach_image(&JournalImage {
             id: "i1".into(),

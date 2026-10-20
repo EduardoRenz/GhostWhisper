@@ -4,6 +4,7 @@
 //! direto: recebe as portas por injeção de dependência (construtor).
 
 pub mod ai_source_health;
+pub mod answer_summary;
 pub mod ai_source_migration;
 pub mod ai_source_service;
 pub mod ask_service;

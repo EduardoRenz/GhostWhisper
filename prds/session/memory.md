@@ -292,3 +292,78 @@ sessão paralela que o resto do app não via.
   `askOpen` entrou no teste (antes ele estourava em silêncio no caminho do
   print).
 
+---
+
+## 2026-10-20 — v9: contexto incremental + resumo na própria resposta
+
+- **IDs:** BR-053, BR-024 · **Refs:** [`prd.md`](prd.md) US-02
+
+### O problema
+Cada pergunta reenviava os **últimos 180 s** de transcrição (até 40 falas /
+6 000 chars), mesmo o trecho já usado para responder a pergunta anterior — e a
+IA não sabia o que já tinha respondido (as respostas não entravam no prompt).
+
+### O desenho
+- **Corte:** `asked_at_ms` da última entrada **`answered`** da sessão; entra só
+  a fala posterior a ela, limitada por `max(cut, now − 180 s)`
+  (`context::context_since`, função pura).
+- **Resumos:** janela deslizante de **5** entradas com `summary` (~1 500 chars),
+  em `<previous_questions>` no prompt, antes de `<transcript>`.
+- **Resumo sem chamada extra:** o `SYSTEM_PROMPT` pede um trailer
+  `<!--resumo: …-->` no fim da resposta; `application/answer_summary.rs` o
+  remove (streaming com *hold-back* do prefixo, texto final sem trailer) e o
+  guarda em `journal_entries.summary`. Fallback determinístico
+  (`digest = "P: … / R: …"`) quando o bloco não vem.
+- **Schema:** coluna `summary` (nullable) + migração `ALTER TABLE` idempotente
+  em `connection.rs` (testada com um banco "antigo").
+- **Prompt do sistema** ganhou: não repetir o que já foi respondido; a
+  transcrição é só o depois.
+
+### Verificação
+- `cargo test --lib` 537 ✓ · `pnpm test` 340 ✓ · `clippy` limpo · `tsc` ✓.
+- Testes novos: trailer (extração, streaming sem vazar o marcador, texto final,
+  fallback), `context_since` (delta, janela, nada novo), segunda pergunta só com
+  o delta + resumo, corte ignorando `error`, rolling de 5, migração da coluna.
+
+---
+
+## 2026-10-20 — v10: o prompt volta a pedir a resposta completa
+
+- **IDs:** BR-053 · **Refs:** [`prd.md`](prd.md) US-02
+
+- **Sintoma:** depois da v9, respostas como "inverta uma árvore binária em
+  Python" saíam rasas — sem bloco de código completo nem exemplo.
+- **Causa:** o prompt da v9 juntou "use os resumos para **não repetir** o que
+  já foi dito" e "termine **sempre** com o bloco de resumo". Juntas, soam como
+  "seja breve": o modelo tratava a resposta como um resumo. O "direta e curta"
+  que já existia só piorava.
+- **Correção:** o prompt agora pede **Markdown completo** (bloco com a
+  linguagem + exemplo de uso, passos quando for explicação) e diz que o bloco
+  de resumo é **apenas o fecho** — "a resposta acima deve estar completa". Os
+  resumos anteriores servem para manter o fio, não para encurtar. `MAX_TOKENS`
+  900 → **1 500** (código + exemplo + resumo; modelos que contam raciocínio no
+  mesmo teto também cabem).
+- **Teste:** regressão do prompt (contém "Markdown completo"/"exemplo de uso",
+  não contém "direta e curta"/"não repetir").
+
+---
+
+## 2026-10-20 — v11: a Busca usa o agente **Padrão** e nunca devolve a pergunta
+
+- **IDs:** BR-053, BR-059, BR-060 · **Refs:** [`prd.md`](prd.md) US-02
+
+- **Sintoma:** "inverta uma árvore binária em Python" virou *"Você quis dizer
+  inverter…? Pode enviar o código?"* — a IA devolvia a pergunta.
+- **Causa:** o prompt da Busca era uma persona fixa de reunião ("responda
+  perguntas sobre uma reunião em andamento… diga quando a resposta não está no
+  contexto"). Sem a pergunta na transcrição, o modelo pedia confirmação.
+- **Correção:** a Busca passa a compor `DEFAULT_SYSTEM_PROMPT` (agente
+  **Padrão**: identifica a cena, "a responder, não um entrevistador — nunca
+  pergunta de volta") + `ASK_RULES` (resposta completa de uma vez, bloco de
+  código com exemplo, **assume erros de ditado**, transcrição é contexto e não
+  requisito, trailer de resumo como fecho). `NEVER_ASK_BACK_RULE` **não** entra
+  (ele manda parar sem contexto). `MAX_TOKENS` 1 500.
+- **Teste:** o prompt compõe o Padrão, contém "nunca devolva a pergunta" e
+  "erros de transcrição", não contém a persona fixa de reunião nem a regra ao
+  vivo.
+

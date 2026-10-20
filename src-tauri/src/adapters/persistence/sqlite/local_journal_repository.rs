@@ -15,7 +15,8 @@ use super::connection::{lock, SharedConnection};
 use super::fts::escape_query;
 
 const COLUMNS: &str = "id, session_id, question, answer, asked_at_ms, answered_at_ms, \
-                       status, request_source, provider, model, error, created_at";
+                       status, request_source, provider, model, error, created_at, \
+                       summary";
 
 /// Implementa `JournalRepository` em SQLite.
 pub struct LocalJournalRepository {
@@ -61,14 +62,16 @@ impl JournalRepository for LocalJournalRepository {
         answered_at_ms: i64,
         provider: Option<String>,
         model: Option<String>,
+        summary: Option<&str>,
     ) -> Result<()> {
         let conn = lock(&self.conn)?;
         conn.execute(
             "UPDATE journal_entries \
              SET answer = ?2, answered_at_ms = ?3, status = 'answered', \
-                 provider = COALESCE(?4, provider), model = COALESCE(?5, model) \
+                 provider = COALESCE(?4, provider), model = COALESCE(?5, model), \
+                 summary = COALESCE(?6, summary) \
              WHERE id = ?1",
-            params![id, answer, answered_at_ms, provider, model],
+            params![id, answer, answered_at_ms, provider, model, summary],
         )?;
         Ok(())
     }
@@ -193,6 +196,7 @@ fn map_entry(row: &Row<'_>) -> rusqlite::Result<JournalEntry> {
         error: row.get(10)?,
         // `created_at` é gravado em **segundos** pelo default do schema.
         created_at_ms: row.get::<_, Option<i64>>(11)?.unwrap_or(0) * 1_000,
+        summary: row.get(12)?,
     })
 }
 
@@ -239,6 +243,7 @@ mod tests {
             provider: None,
             model: None,
             error: None,
+            summary: None,
         }
     }
 
@@ -264,6 +269,7 @@ mod tests {
             500,
             Some("openai".into()),
             Some("gpt".into()),
+            Some("resumo do par"),
         )
         .unwrap();
 
@@ -272,6 +278,7 @@ mod tests {
         assert_eq!(answered.answered_at_ms, Some(500));
         assert_eq!(answered.status, JournalStatus::Answered);
         assert_eq!(answered.provider.as_deref(), Some("openai"));
+        assert_eq!(answered.summary.as_deref(), Some("resumo do par"));
     }
 
     #[test]
@@ -294,8 +301,15 @@ mod tests {
             .unwrap();
         repo.insert_question(&entry("e2", "s1", "outra pergunta", 1_000))
             .unwrap();
-        repo.complete_answer("e2", "a resposta fala de linked list", 1_500, None, None)
-            .unwrap();
+        repo.complete_answer(
+            "e2",
+            "a resposta fala de linked list",
+            1_500,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let found = repo.search("s1", "linked", 10).expect("search");
         assert_eq!(found.len(), 2, "a pergunta e a resposta casam");

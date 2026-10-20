@@ -290,6 +290,7 @@ mod tests {
             provider: None,
             model: None,
             error: None,
+            summary: None,
         }];
         let markdown = render_markdown_with_questions(
             &session(Some("Sprint"), Some(1_700_000_060_000)),

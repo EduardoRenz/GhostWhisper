@@ -194,13 +194,41 @@ pub fn recent_context_live(
     max_segments: usize,
     max_chars: usize,
 ) -> Option<RecentContext> {
+    let cutoff = now_rel_ms.saturating_sub(window_ms.max(0));
+    recent_context_from(segments, cutoff, max_segments, max_chars)
+}
+
+/// Contexto **incremental**: falas desde `since_ms` (o instante da última
+/// pergunta respondida), sem olhar o que já foi respondido.
+///
+/// A janela de tempo continua valendo como teto: `since_ms` nunca recua além
+/// de `now_rel_ms - window_ms` (uma pergunta depois de uma pausa longa não
+/// manda meia hora de transcrição).
+pub fn context_since(
+    segments: &[TranscriptSegment],
+    since_ms: i64,
+    now_rel_ms: i64,
+    window_ms: i64,
+    max_segments: usize,
+    max_chars: usize,
+) -> Option<RecentContext> {
+    let window_start = now_rel_ms.saturating_sub(window_ms.max(0));
+    recent_context_from(segments, since_ms.max(window_start), max_segments, max_chars)
+}
+
+/// Falas a partir de `cutoff_ms` (inclusive), com os tetos de sempre.
+fn recent_context_from(
+    segments: &[TranscriptSegment],
+    cutoff_ms: i64,
+    max_segments: usize,
+    max_chars: usize,
+) -> Option<RecentContext> {
     if max_segments == 0 || max_chars == 0 {
         return None;
     }
-    let cutoff = now_rel_ms.saturating_sub(window_ms.max(0));
     let window: Vec<&TranscriptSegment> = usable_sorted_live(segments)
         .into_iter()
-        .filter(|segment| segment.start_ms >= cutoff)
+        .filter(|segment| segment.start_ms >= cutoff_ms)
         .collect();
     build_recent(window, max_segments, max_chars)
 }
@@ -339,6 +367,40 @@ mod tests {
         let segments = vec![seg("1", 0, Speaker::Me, "   ", false)];
         assert!(recent_context_live(&segments, 1_000, 5_000, 40, 100).is_none());
         assert!(recent_context_live(&[], 1_000, 5_000, 40, 100).is_none());
+    }
+
+    #[test]
+    fn context_since_skips_what_was_already_answered() {
+        let segments = vec![
+            seg("1", 1_000, Speaker::They, "já foi respondido", true),
+            seg("2", 10_000, Speaker::They, "pergunta nova", true),
+            seg("3", 11_000, Speaker::Me, "resposta", true),
+        ];
+        // A última pergunta respondida foi feita em 5 s: só o que veio depois.
+        let context =
+            context_since(&segments, 5_000, 12_000, 180_000, 40, 1_000).expect("contexto");
+        assert!(!context.text.contains("já foi respondido"));
+        assert!(context.text.contains("pergunta nova"));
+        assert!(context.text.contains("ME: resposta"));
+    }
+
+    #[test]
+    fn context_since_never_goes_further_back_than_the_window() {
+        let segments = vec![
+            seg("1", 1_000, Speaker::They, "muito antigo", true),
+            seg("2", 20_000, Speaker::They, "recente", true),
+        ];
+        // O corte pedido é 0 ms, mas a janela de 10 s manda só o recente.
+        let context =
+            context_since(&segments, 0, 21_000, 10_000, 40, 1_000).expect("contexto");
+        assert!(!context.text.contains("muito antigo"));
+        assert!(context.text.contains("recente"));
+    }
+
+    #[test]
+    fn context_since_is_none_when_nothing_new_happened() {
+        let segments = vec![seg("1", 1_000, Speaker::They, "antigo", true)];
+        assert!(context_since(&segments, 10_000, 12_000, 180_000, 40, 1_000).is_none());
     }
 
     #[test]

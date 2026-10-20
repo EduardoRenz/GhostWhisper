@@ -13,7 +13,8 @@ pub trait JournalRepository: Send + Sync {
     /// deixa a entrada no diário como `pending` (RNF-06).
     fn insert_question(&self, entry: &JournalEntry) -> Result<()>;
 
-    /// Grava a resposta e marca a entrada como respondida.
+    /// Grava a resposta (já sem o trailer de resumo), o **resumo** do par
+    /// pergunta/resposta e marca a entrada como respondida.
     fn complete_answer(
         &self,
         id: &str,
@@ -21,6 +22,7 @@ pub trait JournalRepository: Send + Sync {
         answered_at_ms: i64,
         provider: Option<String>,
         model: Option<String>,
+        summary: Option<&str>,
     ) -> Result<()>;
 
     /// Marca a entrada como erro ou cancelada.

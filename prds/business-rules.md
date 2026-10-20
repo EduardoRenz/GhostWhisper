@@ -1132,6 +1132,28 @@ uma nota de revisão.
   pesquisa** (a lupa do notch): pergunta, print (`Alt+C`) e as **perguntas
   prontas** como chips em repouso. A aba Sessão fica só com o diário — é o
   mockup do Perssua. A busca FTS continua no core, sem superfície na v1.
+- **Revisão 2 (2026-10-20) — contexto incremental (BR-024):** a pergunta não
+  reenvia mais a janela inteira (180 s / 6 000 chars) a cada vez. O corte é o
+  `asked_at_ms` da **última entrada `answered`**: entra só o que veio depois
+  dela (limitado pela janela, como rede de segurança) **mais** os resumos dos
+  pares pergunta/resposta anteriores (janela deslizante de **5**, teto de
+  1 500 chars), em `<previous_questions>`. Entradas `pending`/`error`/
+  `cancelled` **não** movem o corte.
+- **Revisão 4 (2026-10-20) — persona e "nunca perguntar de volta":** a Busca usa
+  o **agente Padrão** (BR-059) — o que identifica a cena e se adapta — e não
+  uma persona fixa de reunião. A pergunta pode vir de **ditado** e chegar com
+  erro de transcrição: o assistente **assume a interpretação mais provável e
+  responde**, nunca devolve a pergunta nem pede o código/print que faltou
+  (BR-060). O prompt da Busca **não** inclui o `NEVER_ASK_BACK_RULE` dos
+  agentes ao vivo, porque aquele texto manda parar quando "o contexto está
+  vazio" — aqui a transcrição é opcional.
+- **Revisão 3 (2026-10-20) — o resumo vem na própria resposta:** o modelo
+  termina com um bloco `<!--resumo: …-->` (comentário HTML, até 240 chars); o
+  backend o **remove** do texto (inclusive no streaming, com *hold-back* do
+  prefixo do marcador), guarda em `journal_entries.summary` e usa na próxima
+  pergunta — **sem chamada extra** ao provider. Sem o bloco (modelo
+  desobediente ou resposta cortada), grava um digest determinístico
+  (`P: … / R: …`). Coluna nova com migração `ALTER TABLE` idempotente.
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-054 — Perguntas prontas são configuração do usuário (nas settings)
@@ -1283,6 +1305,6 @@ uma nota de revisão.
   pela base). Salvar as settings reaplica opacidade/ancoragem/densidade **sem
   reiniciar**; settings antigas carregam com os padrões (campos ausentes).
 - **Detalhes:** [`ai-sources/prd.md`](ai-sources/prd.md) §10,
-  [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §7,
+  [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §9,
   [`ai-sources/tasks/12-task.md`](ai-sources/tasks/12-task.md).
 - **Data:** 2026-10-20 · **Status:** Ativa
