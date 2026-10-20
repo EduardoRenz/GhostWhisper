@@ -30,8 +30,19 @@ impl AudioChannel {
 /// reativa uma sessão encerrada; só [`start`](SessionController::start) começa um
 /// id novo.
 pub trait SessionController: Send + Sync {
-    /// Inicia uma **nova** sessão capturando todos os canais dados; retorna o id.
+    /// Inicia a captura numa sessão; retorna o id.
+    ///
+    /// Com uma sessão aberta (gravando ou pausada), a captura **continua nela**
+    /// (mesmo id) — a sessão é a unidade de continuidade (BR-019). Só sem
+    /// sessão aberta um id novo é criado.
     fn start(&self, channels: &[AudioChannel]) -> Result<String>;
+    /// Garante uma sessão aberta: devolve a ativa ou abre uma **pausada**
+    /// (sem capturar áudio) quando não há nenhuma.
+    ///
+    /// É o que permite perguntar sem ter iniciado uma transcrição: a pergunta
+    /// passa a ter uma sessão (histórico, diário e tempo) e a captura fica
+    /// pausada até o usuário mandar (BR-019, BR-052).
+    fn ensure_session(&self) -> Result<String>;
     /// Encerra a sessão atual (se houver).
     fn stop(&self) -> Result<()>;
     /// Suspende a captura mantendo a sessão aberta.

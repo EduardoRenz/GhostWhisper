@@ -197,7 +197,8 @@ describe("ActionBar — notch em dois estados", () => {
     expect(button("Transcrição")).toBeDefined();
   });
 
-  it("menu de canais troca ao vivo e oferece Nova sessão", () => {    const onChannelsChange = vi.fn();
+  it("menu de canais troca ao vivo e começa a capturar na sessão", () => {
+    const onChannelsChange = vi.fn();
     const onStart = vi.fn();
     const { rerender } = render(
       <ActionBar
@@ -223,7 +224,7 @@ describe("ActionBar — notch em dois estados", () => {
       />,
     );
     fireEvent.click(button("Canais de áudio"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Nova sessão" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Começar a capturar" }));
     expect(onStart).toHaveBeenCalledWith(["system"]);
   });
 });

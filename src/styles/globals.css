@@ -3681,40 +3681,36 @@ body,
 
 /* --- Aba Sessão: o diário de perguntas (BR-052) ------------------------- */
 
+/* --- Diário da sessão (BR-052) ------------------------------------------ */
+
 .journal {
   display: flex;
   flex-direction: column;
-  gap: var(--oh-space-2);
   min-height: 0;
   height: 100%;
-  padding: var(--oh-space-2);
 }
 
 .journal__list {
   display: flex;
   flex-direction: column;
-  gap: var(--oh-space-2);
   overflow-y: auto;
   min-height: 0;
   flex: 1;
+  padding: 0 var(--oh-space-3);
 }
 
+/* A interação mais recente fica no topo; cada uma é separada por uma linha
+   (o equivalente ao `---` do Markdown). */
 .journal__entry {
   display: flex;
   flex-direction: column;
-  gap: var(--oh-space-1-5);
-  padding: var(--oh-space-2);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-md);
-  background: var(--oh-read-surface, var(--oh-surface-container-low));
+  gap: var(--oh-space-2);
+  padding: var(--oh-space-3) 0;
+  border-top: 1px solid var(--oh-border);
 }
 
-.journal__entry[data-status="pending"] {
-  border-color: rgba(0, 242, 254, 0.4);
-}
-
-.journal__entry[data-status="error"] {
-  border-color: rgba(244, 63, 94, 0.4);
+.journal__entry:first-child {
+  border-top: none;
 }
 
 .journal__head {
@@ -3726,32 +3722,147 @@ body,
   color: var(--oh-text-muted);
 }
 
+.journal__origin-icon {
+  display: inline-flex;
+  color: var(--oh-primary-container);
+}
+
+.journal__entry[data-origin="screenshot"] .journal__origin-icon,
+.journal__entry[data-origin="both"] .journal__origin-icon {
+  color: var(--oh-ai);
+}
+
 .journal__source {
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  color: var(--oh-text-muted);
+}
+
+.journal__time {
   color: var(--oh-outline);
 }
 
-.journal__model {
+.journal__clock {
+  color: var(--oh-outline);
+  opacity: 0.85;
+}
+
+/* Selo à direita: "Mais Recente" na primeira, o modelo nas demais. */
+.journal__badge {
   margin-left: auto;
-  color: var(--oh-ai);
+  padding: 2px var(--oh-space-1-5);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  border-radius: var(--oh-radius-sm);
+  background: rgba(0, 242, 254, 0.1);
+  color: var(--oh-primary-container);
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .journal__question {
   margin: 0;
   font-size: var(--oh-body-size);
-  font-weight: 600;
+  line-height: 1.5;
   color: var(--oh-text-strong);
   white-space: pre-wrap;
 }
 
-.journal__answer {
-  font-size: var(--oh-body-size);
+.journal__question-label {
+  color: var(--oh-text-muted);
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-label-md-size);
+}
+
+/* Print anexado: miniatura com a legenda sobre a imagem. */
+.journal__shot {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  overflow: hidden;
+  background: var(--oh-surface-container-lowest);
+}
+
+.journal__shot-image {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  object-position: top;
+}
+
+.journal__shot-caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  padding: var(--oh-space-1) var(--oh-space-2);
+  background: linear-gradient(transparent, rgba(4, 7, 12, 0.92));
   color: var(--oh-text);
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+}
+
+.journal__shot-size {
+  margin-left: auto;
+  color: var(--oh-text-muted);
+}
+
+/* Bloco da resposta: tudo abaixo do cabeçalho é o Markdown da IA. */
+.journal__answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1-5);
+  padding: var(--oh-space-2) var(--oh-space-3);
+  border: 1px solid var(--oh-border);
+  border-left: 2px solid rgba(0, 242, 254, 0.45);
+  border-radius: var(--oh-radius-md);
+  background: var(--oh-surface-container-lowest);
+}
+
+.journal__answer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--oh-primary-container);
+}
+
+.journal__answer-brand {
+  font-weight: 600;
+}
+
+.journal__answer-sep {
+  color: var(--oh-outline);
+}
+
+.journal__answer-mode {
+  color: var(--oh-text-muted);
+}
+
+.journal__answer-body {
+  font-size: var(--oh-body-size);
+  line-height: 1.55;
+  color: var(--oh-text);
+}
+
+.journal__answer-body .markdown > :first-child {
+  margin-top: 0;
+}
+
+.journal__answer-body .markdown > :last-child {
+  margin-bottom: 0;
 }
 
 .journal__pending {
   margin: 0;
+  font-family: var(--oh-font-mono);
   font-size: var(--oh-label-sm-size);
   color: var(--oh-primary-container);
 }
@@ -3784,236 +3895,95 @@ body,
   color: var(--oh-primary-container);
 }
 
-.journal__attachment {
-  max-width: 100%;
-  max-height: 160px;
-  border-radius: var(--oh-radius-sm);
-  border: 1px solid var(--oh-border);
-}
-
-.journal__search {
-  display: flex;
-}
-
-.journal__search-input {
-  flex: 1;
-  padding: var(--oh-space-1-5) var(--oh-space-2);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-full);
-  background: var(--oh-surface-container-lowest);
-  color: var(--oh-text);
-  font: inherit;
-  font-size: var(--oh-label-md-size);
-}
-
-.journal__search-input:focus-visible {
-  outline: none;
-  border-color: var(--oh-primary-container);
-}
-
-/* --- Composer da Busca (BR-053) ----------------------------------------- */
-
-.ask {
+/* Estado vazio. */
+.journal__empty {
   display: flex;
   flex-direction: column;
-  gap: var(--oh-space-1-5);
-}
-
-.ask__field {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--oh-space-1-5);
-  padding: var(--oh-space-1-5);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-md);
-  background: var(--oh-surface-container-lowest);
-}
-
-.ask__input {
-  flex: 1;
-  min-width: 0;
-  resize: vertical;
-  border: none;
-  background: transparent;
-  color: var(--oh-text);
-  font: inherit;
-  font-size: var(--oh-body-size);
-}
-
-.ask__input:focus-visible {
-  outline: none;
-}
-
-.ask__actions {
-  display: flex;
   align-items: center;
   gap: var(--oh-space-1);
+  margin: auto;
+  padding: var(--oh-space-4) var(--oh-space-3);
+  text-align: center;
 }
 
-.ask__icon,
-.ask__send {
+.journal__empty-icon {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-full);
-  background: transparent;
-  color: var(--oh-text-muted);
-  font: inherit;
-  cursor: pointer;
+  color: var(--oh-primary-container);
+  opacity: 0.7;
 }
 
-.ask__icon:hover:not(:disabled) {
-  color: var(--oh-text-strong);
-  border-color: var(--oh-border-strong);
-}
-
-.ask__send {
-  color: var(--oh-on-primary-container);
-  background: var(--oh-primary-container);
-  border-color: transparent;
-}
-
-.ask__icon:disabled,
-.ask__send:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ask__attachment {
-  position: relative;
-  display: inline-flex;
-  align-self: flex-start;
-}
-
-.ask__thumb {
-  max-height: 120px;
-  border-radius: var(--oh-radius-sm);
-  border: 1px solid var(--oh-border);
-}
-
-.ask__remove {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--oh-border-strong);
-  border-radius: var(--oh-radius-full);
-  background: var(--oh-surface-container-high);
-  color: var(--oh-text);
-  cursor: pointer;
-}
-
-.ask__presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--oh-space-1);
-}
-
-.ask__preset {
-  padding: var(--oh-space-1) var(--oh-space-2);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-full);
-  background: transparent;
-  color: var(--oh-text-muted);
-  font: inherit;
-  font-size: var(--oh-label-sm-size);
-  cursor: pointer;
-}
-
-.ask__preset:hover:not(:disabled) {
-  color: var(--oh-text-strong);
-  border-color: var(--oh-primary-container);
-}
-
-.ask__error {
+.journal__empty-title {
   margin: 0;
-  font-size: var(--oh-label-sm-size);
-  color: var(--oh-error);
-}
-
-/* --- Editor das perguntas prontas (BR-054) ------------------------------ */
-
-.presets {
-  display: flex;
-  flex-direction: column;
-  gap: var(--oh-space-1-5);
-  padding: var(--oh-space-2);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-md);
-  background: var(--oh-surface-container-low);
-}
-
-.presets__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.presets__title {
-  font-size: var(--oh-label-md-size);
-  font-weight: 600;
+  font-size: var(--oh-body-size);
   color: var(--oh-text-strong);
 }
 
-.presets__count {
+.journal__empty-hint {
+  margin: 0;
+  font-size: var(--oh-label-md-size);
+  color: var(--oh-text-muted);
+}
+
+.journal__notice {
+  margin: 0;
+  padding: 0 var(--oh-space-3);
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-text-muted);
+}
+
+/* Rodapé: quantas interações + onde os dados ficam + exportar. */
+.journal__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-2);
+  padding: var(--oh-space-2) var(--oh-space-3);
+  border-top: 1px solid var(--oh-border);
   font-family: var(--oh-font-mono);
   font-size: var(--oh-status-size);
   color: var(--oh-text-muted);
 }
 
-.presets__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--oh-space-1);
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.presets__row {
-  display: flex;
+.journal__count {
+  display: inline-flex;
   align-items: center;
   gap: var(--oh-space-1);
 }
 
-.presets__input {
-  flex: 1;
-  min-width: 0;
-  padding: var(--oh-space-1) var(--oh-space-1-5);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-sm);
-  background: var(--oh-surface-container-lowest);
-  color: var(--oh-text);
-  font: inherit;
-  font-size: var(--oh-label-md-size);
+.journal__count-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--oh-primary-container);
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.65);
 }
 
-.presets__remove {
-  width: 24px;
-  height: 24px;
+.journal__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  margin-left: auto;
+  color: var(--oh-outline);
+}
+
+.journal__export {
+  padding: 2px var(--oh-space-1-5);
   border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-full);
+  border-radius: var(--oh-radius-sm);
   background: transparent;
-  color: var(--oh-text-muted);
+  color: var(--oh-text);
   font: inherit;
+  font-size: var(--oh-status-size);
   cursor: pointer;
 }
 
-.presets__error {
-  margin: 0;
-  font-size: var(--oh-label-sm-size);
-  color: var(--oh-error);
+.journal__export:hover:not(:disabled) {
+  border-color: var(--oh-primary-container);
+  color: var(--oh-primary-container);
 }
 
-.presets__actions {
-  display: flex;
-  gap: var(--oh-space-1);
+.journal__export:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* --- Barra "Perguntar": superfície padrão do overlay (BR-052) ------------ */
@@ -4029,6 +3999,35 @@ body,
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius-full);
   background: var(--oh-surface-container-low);
+}
+
+.askbar__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--oh-space-1);
+  padding: 0 var(--oh-space-3) var(--oh-space-1);
+  overflow: hidden;
+  max-height: 34px;
+}
+
+.askbar__preset {
+  max-width: 260px;
+  overflow: hidden;
+  padding: 2px var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-muted);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.askbar__preset:hover {
+  border-color: var(--oh-primary-container);
+  color: var(--oh-text-strong);
 }
 
 .askbar__drag {

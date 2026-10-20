@@ -145,6 +145,7 @@ pub fn entry(id: &str, session_id: &str, question: &str, at: i64) -> JournalEntr
         answer: None,
         asked_at_ms: at,
         answered_at_ms: None,
+        created_at_ms: at,
         status: JournalStatus::Pending,
         request_source: JournalRequestSource::Search,
         provider: None,

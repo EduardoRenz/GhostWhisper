@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { useAssistantModes } from "../../core/application/useAssistantModes";
 import {
+  DEFAULT_SAVED_QUESTIONS,
+  MAX_SAVED_QUESTIONS,
+  MAX_SAVED_QUESTION_CHARS,
   SUGGESTION_INTERVALS,
   SUMMARY_INTERVALS,
+  type SavedQuestion,
   type Settings,
 } from "../../core/domain/settings";
 import {
@@ -44,6 +48,11 @@ export function AssistantSettings({ settings, update }: AssistantSettingsProps) 
 
   const builtins = catalog.filter((mode) => isBuiltinMode(mode.id));
   const custom = settings.custom_assistant_modes;
+  const savedQuestions = settings.saved_questions ?? DEFAULT_SAVED_QUESTIONS;
+
+  /** Substitui a lista de perguntas prontas (o "Salvar" grava as settings). */
+  const setSavedQuestions = (questions: SavedQuestion[]) =>
+    update("saved_questions", questions);
 
   const startNew = () => {
     setError(null);
@@ -174,6 +183,64 @@ export function AssistantSettings({ settings, update }: AssistantSettingsProps) 
           ))}
         </select>
       </label>
+
+      <span className="settings__group-title">Perguntas prontas</span>
+      <ul className="settings__modes">
+        {savedQuestions.length === 0 && (
+          <li className="settings__hint">
+            Nenhuma pergunta pronta. Elas aparecem como chips na barra de
+            pesquisa (Ctrl K).
+          </li>
+        )}
+        {savedQuestions.map((question) => (
+          <li key={question.id} className="settings__mode">
+            <input
+              className="settings__input"
+              type="text"
+              aria-label="Pergunta pronta"
+              maxLength={MAX_SAVED_QUESTION_CHARS}
+              value={question.text}
+              placeholder="Ex.: Como otimizar esta consulta?"
+              onChange={(event) =>
+                setSavedQuestions(
+                  savedQuestions.map((item) =>
+                    item.id === question.id
+                      ? { ...item, text: event.target.value }
+                      : item,
+                  ),
+                )
+              }
+            />
+            <button
+              type="button"
+              className="settings__button settings__button--small"
+              aria-label="Remover pergunta pronta"
+              onClick={() =>
+                setSavedQuestions(
+                  savedQuestions.filter((item) => item.id !== question.id),
+                )
+              }
+            >
+              Excluir
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="settings__actions">
+        <button
+          type="button"
+          className="settings__button"
+          disabled={savedQuestions.length >= MAX_SAVED_QUESTIONS}
+          onClick={() =>
+            setSavedQuestions([
+              ...savedQuestions,
+              { id: `q-${Date.now()}-${savedQuestions.length}`, text: "" },
+            ])
+          }
+        >
+          Nova pergunta pronta
+        </button>
+      </div>
 
       <span className="settings__group-title">Agentes personalizados</span>
       <ul className="settings__modes">

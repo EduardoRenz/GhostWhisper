@@ -1,219 +1,175 @@
-import { useCallback, useEffect, useState } from "react";
-import { saveSettings } from "../../adapters/ipc/settings";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  captureClear,
-  capturePending,
-  capturedDataUrl,
-  screenCapture,
-  type CapturedScreen,
-} from "../../adapters/ipc/screen";
-import { subscribe } from "../../adapters/ipc/events";
+  pickMarkdownPath,
+  saveSessionMarkdown,
+} from "../../adapters/ipc/export";
+import {
+  journalImageBase64,
+  journalImageDataUrl,
+  journalImages,
+} from "../../adapters/ipc/journal";
 import { useJournal } from "../../core/application/useJournal";
 import { useSessionState } from "../../core/application/useSessionState";
-import { useSettings } from "../../core/application/useSettings";
+import { SparkleIcon } from "../../components/icons";
 import type { JournalEntry } from "../../core/domain/journal";
-import {
-  DEFAULT_SAVED_QUESTIONS,
-  MAX_SAVED_QUESTIONS,
-  MAX_SAVED_QUESTION_CHARS,
-  type SavedQuestion,
-} from "../../core/domain/settings";
-import { AskComposer } from "./AskComposer";
-import { JournalEntryCard } from "./JournalEntryCard";
-import { SavedQuestionsEditor } from "./SavedQuestionsEditor";
+import { JournalEntryCard, type JournalAttachment } from "./JournalEntryCard";
+
+/** Nome de arquivo sugerido no "Exportar MD". */
+function exportFileName(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `ghostwhisper-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(
+    now.getDate(),
+  )}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
 
 /**
- * Aba **Sessão**: o diário de perguntas (BR-052) e a feature **Busca**
- * (BR-053) — perguntar, print de tela e perguntas prontas.
+ * Aba **Sessão**: o diário de perguntas da sessão (BR-052) — um registro
+ * rolável com origem, pergunta, print e a resposta da IA em Markdown.
+ *
+ * A interação **mais recente fica no topo**. Perguntar acontece pela lupa do
+ * notch (`Ctrl K`), não por um campo dentro da aba.
  */
 export function JournalView() {
-  const { entries, loading, error, busy, query, setQuery, ask } = useJournal();
-  const { settings, reload } = useSettings();
   const { state } = useSessionState();
-  const [question, setQuestion] = useState("");
-  const [attachment, setAttachment] = useState<CapturedScreen | null>(null);
-  const [captureError, setCaptureError] = useState<string | null>(null);
-  const [editingPresets, setEditingPresets] = useState(false);
+  const { entries, count, loading, error, ask } = useJournal(state.session_id);
+  const [shots, setShots] = useState<Record<string, JournalAttachment | null>>({});
+  const [notice, setNotice] = useState<string | null>(null);
+  const requested = useRef<Set<string>>(new Set());
 
-  const savedQuestions = settings.saved_questions ?? DEFAULT_SAVED_QUESTIONS;
-
-  // Recarrega as settings quando a aba abre (o editor pode ter salvado).
+  // Ao trocar/encerrar a sessão, as miniaturas carregadas não valem mais.
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    requested.current.clear();
+    setShots({});
+  }, [state.session_id]);
 
-  // O anexo é o **print pendente** do core (a prévia no canto é a mesma coisa):
-  // ao abrir a aba e sempre que ele muda, o estado local acompanha.
+  // Miniaturas dos prints — carregadas só para as entradas que têm imagem.
   useEffect(() => {
-    void capturePending().then((pending) => setAttachment(pending ?? null));
-    let cancelled = false;
-    let stop: (() => void) | undefined;
-    void subscribe<null>("capture_changed", () => {
-      void capturePending().then((pending) => {
-        if (!cancelled) {
-          setAttachment(pending ?? null);
+    const missing = entries.filter(
+      (entry) =>
+        entry.request_source === "screenshot" && !requested.current.has(entry.id),
+    );
+    if (missing.length === 0) {
+      return;
+    }
+    missing.forEach((entry) => requested.current.add(entry.id));
+    void Promise.all(
+      missing.map(async (entry) => {
+        const images = await journalImages(entry.id);
+        const first = images?.[0];
+        const attachment: JournalAttachment | null = first
+          ? {
+              url: journalImageDataUrl(first),
+              width: first.width,
+              height: first.height,
+            }
+          : null;
+        return [entry.id, attachment] as const;
+      }),
+    ).then((pairs) => {
+      setShots((previous) => {
+        const next = { ...previous };
+        for (const [id, attachment] of pairs) {
+          next[id] = attachment;
         }
+        return next;
       });
-    }).then((unlisten) => {
-      if (cancelled) {
-        unlisten();
-      } else {
-        stop = unlisten;
-      }
     });
-    return () => {
-      cancelled = true;
-      stop?.();
-    };
-  }, []);
+  }, [entries]);
 
-  const submit = useCallback(
-    async (text: string, source: "search" | "preset" = "search") => {
-      const pending = await capturePending();
-      const images = pending
-        ? [{ mime: pending.mime, data: pending.data }]
-        : [];
-      const outcome = await ask(text, images, source);
-      if (outcome) {
-        setQuestion("");
-        setAttachment(null);
-        if (images.length > 0) {
-          await captureClear();
-        }
-      }
+  const retry = useCallback(
+    async (entry: JournalEntry) => {
+      const source =
+        entry.request_source === "preset"
+          ? "preset"
+          : entry.request_source === "screenshot"
+            ? "screenshot"
+            : "search";
+      const images =
+        entry.request_source === "screenshot"
+          ? ((await journalImages(entry.id)) ?? []).map((image) => ({
+              mime: image.mime,
+              data: journalImageBase64(image),
+            }))
+          : [];
+      await ask(entry.question, images, source);
     },
     [ask],
   );
 
-  // Imagem colada da área de transferência (data URL → base64).
-  const pasteImage = useCallback((dataUrl: string) => {
-    const match = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
-    if (!match) {
+  const exportMarkdown = useCallback(async () => {
+    const id = state.session_id;
+    if (!id) {
       return;
     }
-    const mime = match[1] ?? "";
-    const data = match[2] ?? "";
-    if (mime === "" || data === "") {
+    setNotice(null);
+    const path = await pickMarkdownPath(exportFileName());
+    if (path === null) {
       return;
     }
-    setCaptureError(null);
-    setAttachment({ mime, data, width: 0, height: 0 });
-  }, []);
+    const saved = await saveSessionMarkdown(id, path);
+    setNotice(
+      saved ? `Exportado: ${saved}` : "Exportação indisponível fora do app.",
+    );
+  }, [state.session_id]);
 
-  const capture = useCallback(async () => {
-    setCaptureError(null);
-    try {
-      const captured = await screenCapture();
-      if (!captured) {
-        setCaptureError("Captura de tela indisponível — cole a imagem com Ctrl+V.");
-      }
-    } catch (caught) {
-      setCaptureError(String(caught));
-    }
-  }, []);
-
-  const savePreset = useCallback(async () => {
-    const text = question.trim();
-    if (text === "") {
-      return;
-    }
-    if (text.length > MAX_SAVED_QUESTION_CHARS) {
-      setCaptureError(
-        `A pergunta tem no máximo ${MAX_SAVED_QUESTION_CHARS} caracteres.`,
-      );
-      return;
-    }
-    if (savedQuestions.length >= MAX_SAVED_QUESTIONS) {
-      setCaptureError(`No máximo ${MAX_SAVED_QUESTIONS} perguntas prontas.`);
-      return;
-    }
-    const next: SavedQuestion[] = [
-      ...savedQuestions,
-      { id: `q-${Date.now()}`, text },
-    ];
-    await saveSettings({ ...settings, saved_questions: next });
-    await reload();
-  }, [question, savedQuestions, settings, reload]);
-
-  const persistPresets = useCallback(
-    async (questions: SavedQuestion[]) => {
-      await saveSettings({ ...settings, saved_questions: questions });
-      await reload();
-      setEditingPresets(false);
-    },
-    [settings, reload],
-  );
-
-  const retry = useCallback(
-    (entry: JournalEntry) => {
-      void submit(entry.question, entry.request_source === "preset" ? "preset" : "search");
-    },
-    [submit],
-  );
+  const hasEntries = entries.length > 0;
 
   return (
     <div className="journal" data-interactive>
-      <AskComposer
-        value={question}
-        onChange={setQuestion}
-        savedQuestions={savedQuestions.map((item) => item.text)}
-        onSubmit={(text, source) => {
-          void submit(text, source);
-        }}
-        onCapture={() => void capture()}
-        attachment={attachment ? capturedDataUrl(attachment) : null}
-        onRemoveAttachment={() => {
-          setAttachment(null);
-          void captureClear();
-        }}
-        onPasteImage={pasteImage}
-        onSavePreset={() => void savePreset()}
-        onOpenPresets={() => setEditingPresets((previous) => !previous)}
-        busy={busy}
-        error={captureError}
-      />
-
-      {editingPresets && (
-        <SavedQuestionsEditor
-          questions={savedQuestions}
-          onSave={(questions) => void persistPresets(questions)}
-          onClose={() => setEditingPresets(false)}
-        />
-      )}
-
-      <div className="journal__search">
-        <input
-          className="journal__search-input"
-          value={query}
-          placeholder="Buscar no diário…"
-          aria-label="Buscar no diário"
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </div>
-
-      {error && <p className="overlay__error">{error}</p>}
-
-      <div className="journal__list">
-        {loading && entries.length === 0 && (
+      <div className="journal__list" aria-live="polite">
+        {loading && !hasEntries && (
           <p className="chat__empty">Carregando…</p>
         )}
 
-        {!loading && entries.length === 0 && (
-          <p className="chat__empty">
-            Nenhuma pergunta ainda. Use <strong>Perguntar</strong> para perguntar
-            à IA.
-          </p>
+        {!loading && !hasEntries && (
+          <div className="journal__empty">
+            <span className="journal__empty-icon" aria-hidden="true">
+              <SparkleIcon size={22} />
+            </span>
+            <p className="journal__empty-title">
+              Nenhuma interação nesta sessão ainda
+            </p>
+            <p className="journal__empty-hint">
+              Pergunte pela lupa do notch (<strong>Ctrl K</strong>) ou capture a
+              tela (<strong>Alt C</strong>).
+            </p>
+          </div>
         )}
 
-        {entries.map((entry) => (
+        {entries.map((entry, index) => (
           <JournalEntryCard
             key={entry.id}
             entry={entry}
             sessionStartedAtMs={state.started_at_ms}
-            onRetry={retry}
+            onRetry={(failed) => void retry(failed)}
+            attachment={shots[entry.id] ?? null}
+            newest={index === 0}
           />
         ))}
       </div>
+
+      {error && <p className="overlay__error">{error}</p>}
+      {notice && <p className="journal__notice">{notice}</p>}
+
+      <footer className="journal__footer">
+        <span className="journal__count">
+          <span className="journal__count-dot" aria-hidden="true" />
+          {count === 1
+            ? "1 interação registrada nesta sessão"
+            : `${count} interações registradas nesta sessão`}
+        </span>
+        <span className="journal__sync">Sync local · SQLite</span>
+        <button
+          type="button"
+          className="journal__export"
+          title="Exportar a sessão em Markdown"
+          disabled={!state.session_id}
+          onClick={() => void exportMarkdown()}
+        >
+          ⬇ Exportar MD
+        </button>
+      </footer>
     </div>
   );
 }

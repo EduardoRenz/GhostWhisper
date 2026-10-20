@@ -197,3 +197,61 @@ Chrome (renderiza o notch com a lupa exatamente como o mockup).
   (`RESTORE_SETTLE_MS`), `unminimize` antes do `show`, e o foco é devolvido à
   janela que o tinha; a barra ainda chama `ask_open` depois da captura como
   garantia.
+
+---
+
+## 2026-10-20 — v5: a aba Sessão vira o diário do mockup (Perssua)
+
+- **IDs:** BR-052, BR-053, BR-054 · **Refs:** [`prd.md`](prd.md) US-00/US-01/US-06
+
+### O que mudou
+- **Fim da sessão limpa a aba:** `useJournal` recebe o `session_id` ativo e
+  descarta a lista quando ele muda (encerrou/continou/trocou). Antes a lista
+  ficava em memória e mostrava o diário da sessão anterior.
+- **Mais recente no topo:** a UI inverte a ordem cronológica do core (o
+  repositório e o export seguem em ordem cronológica).
+- **Card do mockup** (`JournalEntryCard`): legenda de origem com ícone
+  (`Pesquisa` / `Screenshot` / `Screenshot + Texto` / `Pergunta pronta`),
+  tempo relativo + hora de parede, selo **Mais Recente** (ou o modelo),
+  pergunta (`Q:`/`Contexto:`), miniatura do print com legenda e a resposta em
+  bloco Markdown. Separador entre entradas = linha.
+- **Diário puro:** o composer e a busca saíram da aba (`AskComposer` e
+  `SavedQuestionsEditor` removidos). As **perguntas prontas** viraram chips na
+  barra de pesquisa e são editadas em **Configurações → Assistente**.
+- **Rodapé:** contagem de interações, `Sync local · SQLite` e **Exportar MD**
+  (reusa o export da sessão, que já inclui as perguntas).
+- **Pergunta do usuário no banco:** com print puro, `journal_entries.question`
+  fica **vazia** (o prompt padrão da imagem vale só para o modelo); assim a UI
+  sabe quando **não** mostrar a pergunta. `created_at_ms` (epoch ms) entrou na
+  entrada para a hora de parede mesmo em sessão aberta pela lupa.
+- **Miniaturas:** carregadas sob demanda por `journal_images` (só entradas com
+  `request_source = screenshot`) e cacheadas por entrada.
+
+---
+
+## 2026-10-20 — v6: sempre existe uma sessão (a pergunta abre uma pausada)
+
+- **IDs:** BR-019, BR-052, BR-053 · **Refs:** [`prd.md`](prd.md) US-00/US-01
+
+### O bug
+Perguntar **sem transcrição** mostrava a resposta em streaming e a **apagava**
+em seguida: o reload do fim da resposta chamava `journal_list`, que resolvia a
+sessão só pela sessão de **gravação** (`state.session.current_session_id()`);
+sem gravação a lista vinha vazia e substituía a tela. O `AskService` criava uma
+sessão paralela que o resto do app não via.
+
+### A decisão
+- **Uma sessão só.** `SessionController::ensure_session` devolve a sessão ativa
+  ou abre uma **pausada** (`ActiveSession { live: [] }`, sem capturar), já
+  publicada em `session_state` (`listening: true, paused: true`) — logo aparece
+  na pílula do notch, no Histórico e no diário.
+- `journal_ask` (IPC) chama `ensure_session()` e passa o id na `AskRequest`
+  (ajuda extraída em `resolve_ask_session`, testada).
+- `start` **continua** na sessão aberta (`set_channels` + `resume`) em vez de
+  encerrar e criar outro id; `set_channels` passa a lembrar a escolha mesmo
+  sem sessão (a sessão automática herda; padrão microfone).
+- **Frontend:** o reload pós-resposta **mescla** (`mergeEntries`) — a resposta
+  na tela nunca é apagada; encerrar a sessão continua limpando a aba (troca de
+  `session_id` zera a lista).
+- `ChannelMenu`: "Nova sessão" → **"Começar a capturar"** (é a mesma sessão).
+

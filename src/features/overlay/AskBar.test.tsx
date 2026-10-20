@@ -57,6 +57,34 @@ describe("AskBar (barra Perguntar)", () => {
     expect(onCapture).toHaveBeenCalledTimes(1);
   });
 
+  it("mostra as perguntas prontas em repouso e envia ao clicar", () => {
+    const onPreset = vi.fn();
+    render(
+      <AskBar
+        {...base}
+        presets={["Listar as ações", "Resumir a reunião"]}
+        onPreset={onPreset}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Listar as ações"));
+
+    expect(onPreset).toHaveBeenCalledWith("Listar as ações");
+  });
+
+  it("esconde as perguntas prontas ao digitar", () => {
+    render(
+      <AskBar
+        {...base}
+        value="digitando"
+        presets={["Listar as ações"]}
+        onPreset={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Listar as ações")).toBeNull();
+  });
+
   it("desabilita o campo e a captura enquanto ocupa", () => {
     render(<AskBar {...base} busy />);
     expect(

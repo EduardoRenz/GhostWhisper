@@ -17,7 +17,7 @@ use super::connection::{lock, SharedConnection};
 use super::fts::escape_query;
 
 const COLUMNS: &str = "id, session_id, question, answer, asked_at_ms, answered_at_ms, \
-                       status, request_source, provider, model, error";
+                       status, request_source, provider, model, error, created_at";
 
 /// Implementa `JournalRepository` em SQLite.
 pub struct LocalJournalRepository {
@@ -190,6 +190,8 @@ fn map_entry(row: &Row<'_>) -> rusqlite::Result<JournalEntry> {
         provider: row.get(8)?,
         model: row.get(9)?,
         error: row.get(10)?,
+        // `created_at` é gravado em **segundos** pelo default do schema.
+        created_at_ms: row.get::<_, Option<i64>>(11)?.unwrap_or(0) * 1_000,
     })
 }
 
@@ -230,6 +232,7 @@ mod tests {
             answer: None,
             asked_at_ms: at,
             answered_at_ms: None,
+            created_at_ms: 0,
             status: JournalStatus::Pending,
             request_source: JournalRequestSource::Search,
             provider: None,

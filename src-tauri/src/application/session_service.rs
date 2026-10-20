@@ -38,6 +38,9 @@ pub struct SessionService {
     transcriptions: Arc<dyn TranscriptionsRepository>,
     clock: Arc<dyn Clock>,
     active: Mutex<Option<ActiveSession>>,
+    /// Ultima escolha de canais da UI: herdada pela sessao aberta
+    /// automaticamente (ex.: pela pergunta) e pela proxima captura.
+    last_channels: Mutex<Vec<AudioChannel>>,
 }
 
 /// Canal sendo captado agora: porta de áudio + pipeline de transcrição.
@@ -100,6 +103,7 @@ impl SessionService {
             transcriptions,
             clock,
             active: Mutex::new(None),
+            last_channels: Mutex::new(Vec::new()),
         }
     }
 
@@ -124,6 +128,31 @@ impl SessionService {
             ));
         }
         Ok(unique)
+    }
+
+    /// Guarda a escolha de canais da UI (vale para a sessao aberta sem
+    /// captura e para a proxima).
+    fn remember_channels(&self, channels: &[AudioChannel]) {
+        if let Ok(mut guard) = self.last_channels.lock() {
+            *guard = channels.to_vec();
+        }
+    }
+
+    /// Ultima escolha conhecida (vazia = nunca escolheu).
+    fn remembered_channels(&self) -> Vec<AudioChannel> {
+        self.last_channels
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
+    }
+
+    /// A sessao aberta esta **pausada** (sem capturar)?
+    fn is_paused(&self) -> bool {
+        self.active
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(ActiveSession::paused))
+            .unwrap_or(false)
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Option<ActiveSession>>> {
@@ -218,6 +247,61 @@ impl SessionService {
         }
     }
 
+    /// Persiste uma sessao nova e a deixa **ativa**.
+    ///
+    /// `capture = false` abre a sessao **pausada** (nenhum canal captando): e a
+    /// sessao que a pergunta garante quando o usuario ainda nao iniciou a
+    /// transcricao (BR-019/BR-052).
+    fn open_session(&self, channels: Vec<AudioChannel>, capture: bool) -> Result<String> {
+        let id = Uuid::new_v4().to_string();
+        let started_at_ms = self.clock.now_ms();
+
+        // Persiste a sessao antes de comecar a capturar.
+        self.sessions.create(&Session {
+            id: id.clone(),
+            started_at_ms,
+            ended_at_ms: None,
+            provider: "local".to_string(),
+            model: None,
+            transcription_model: None,
+            user_id: None,
+            subject: None,
+            overview: None,
+            status: SessionStatus::Active,
+        })?;
+
+        let live: Vec<ActiveChannel> = if capture {
+            let origin_ms = self.origin_ms(started_at_ms);
+            channels
+                .iter()
+                .filter_map(|channel| self.open_channel(&id, origin_ms, *channel))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        if capture && live.is_empty() {
+            // Nao deixe uma sessao orfa aberta.
+            let _ = self.sessions.end(&id, self.clock.now_ms());
+            return Err(GhostWhisperError::Other(
+                "falha ao iniciar audio".to_string(),
+            ));
+        }
+
+        let active = ActiveSession {
+            id: id.clone(),
+            started_at_ms,
+            channels,
+            live,
+        };
+        self.emit_active(&active);
+        {
+            let mut guard = self.lock()?;
+            *guard = Some(active);
+        }
+        Ok(id)
+    }
+
     /// Para a captura de um canal (pipeline + fonte).
     fn close_channel(&self, entry: &ActiveChannel) {
         entry.pipeline.stop();
@@ -236,53 +320,42 @@ impl SessionService {
 
 impl SessionController for SessionService {
     fn start(&self, channels: &[AudioChannel]) -> Result<String> {
-        // Uma nova sessão encerra a anterior (pausada ou não).
-        self.stop()?;
         let channels = Self::normalize_channels(channels)?;
+        self.remember_channels(&channels);
 
-        let id = Uuid::new_v4().to_string();
-        let started_at_ms = self.clock.now_ms();
-
-        // Persiste a sessão antes de começar a capturar.
-        self.sessions.create(&Session {
-            id: id.clone(),
-            started_at_ms,
-            ended_at_ms: None,
-            provider: "local".to_string(),
-            model: None,
-            transcription_model: None,
-            user_id: None,
-            subject: None,
-            overview: None,
-            status: SessionStatus::Active,
-        })?;
-
-        let origin_ms = self.origin_ms(started_at_ms);
-        tracing::info!(session_id = id, origin_ms, channels = ?channels, "sessão iniciada");
-        let live: Vec<ActiveChannel> = channels
-            .iter()
-            .filter_map(|channel| self.open_channel(&id, origin_ms, *channel))
-            .collect();
-
-        if live.is_empty() {
-            // Não deixe uma sessão órfã aberta.
-            let _ = self.sessions.end(&id, self.clock.now_ms());
-            return Err(GhostWhisperError::Other(
-                "falha ao iniciar áudio".to_string(),
-            ));
+        // Já existe uma sessão (aberta pela pergunta, por exemplo): a captura
+        // **continua nela** — o diário e o tempo seguem no mesmo id (BR-019).
+        if let Some(id) = self.current_session_id() {
+            self.set_channels(&channels)?;
+            self.resume()?;
+            if self.is_paused() {
+                return Err(GhostWhisperError::Other(
+                    "falha ao iniciar áudio".to_string(),
+                ));
+            }
+            tracing::info!(session_id = id, channels = ?channels, "captura retomada na sessão aberta");
+            return Ok(id);
         }
 
-        let active = ActiveSession {
-            id: id.clone(),
-            started_at_ms,
-            channels,
-            live,
+        tracing::info!(channels = ?channels, "sessão iniciada");
+        self.open_session(channels, true)
+    }
+
+    fn ensure_session(&self) -> Result<String> {
+        if let Some(id) = self.current_session_id() {
+            return Ok(id);
+        }
+        // Sem sessão: abre uma **pausada**. A pergunta passa a ter sessão
+        // (histórico, diário e tempo); a captura só começa quando o usuário
+        // mandar (BR-019, BR-052).
+        let remembered = self.remembered_channels();
+        let channels = if remembered.is_empty() {
+            vec![AudioChannel::Microphone]
+        } else {
+            remembered
         };
-        self.emit_active(&active);
-        {
-            let mut guard = self.lock()?;
-            *guard = Some(active);
-        }
+        let id = self.open_session(channels, false)?;
+        tracing::info!(session_id = id, "sessão aberta pausada (pergunta sem gravação)");
         Ok(id)
     }
 
@@ -383,6 +456,8 @@ impl SessionController for SessionService {
 
     fn set_channels(&self, channels: &[AudioChannel]) -> Result<()> {
         let channels = Self::normalize_channels(channels)?;
+        // A escolha vale mesmo sem sessão (a próxima herda) — BR-019.
+        self.remember_channels(&channels);
 
         let (id, started_at_ms, paused, live, labels) = {
             let mut guard = self.lock()?;
@@ -473,6 +548,7 @@ impl SessionController for SessionService {
             .get(id)?
             .ok_or_else(|| GhostWhisperError::Config(format!("sessão {id} não encontrada")))?;
         let channels = Self::normalize_channels(channels)?;
+        self.remember_channels(&channels);
 
         if session.status == SessionStatus::Ended {
             self.sessions.resume(id)?;
@@ -855,7 +931,9 @@ mod tests {
     }
 
     #[test]
-    fn new_session_ends_the_paused_one() {
+    fn starting_after_a_pause_resumes_the_same_session() {
+        // A sessão é a unidade de continuidade: começar a capturar de novo
+        // **não** abre outro id (BR-019).
         let f = fixture(false, false);
         let first = f.service.start(&[AudioChannel::Microphone]).expect("start");
         f.service.pause().expect("pause");
@@ -863,21 +941,68 @@ mod tests {
         let second = f
             .service
             .start(&[AudioChannel::Microphone])
-            .expect("nova sessão");
+            .expect("retoma a captura");
 
-        assert_ne!(first, second);
+        assert_eq!(first, second, "mesma sessão");
+        assert!(f.mic.is_running());
         assert_eq!(
             f.sessions
                 .get(&first)
                 .expect("get")
                 .expect("present")
                 .status,
-            SessionStatus::Ended
+            SessionStatus::Active
         );
+    }
+
+    #[test]
+    fn ensure_session_opens_a_paused_session_without_capture() {
+        // Perguntar sem transcrição: a sessão existe (histórico/diário), mas
+        // nada é captado até o usuário mandar (BR-019, BR-052).
+        let f = fixture(false, false);
+        let id = f.service.ensure_session().expect("sessão");
+
+        assert!(!f.mic.is_running(), "pausada não captura");
+        assert!(!f.system.is_running(), "pausada não captura");
+
+        let stored = f.sessions.get(&id).expect("get").expect("present");
+        assert_eq!(stored.status, SessionStatus::Active);
+
+        let state = f.last_state();
+        assert!(state.listening, "há sessão aberta");
+        assert!(state.paused, "a captura está pausada");
+        assert_eq!(state.session_id.as_deref(), Some(id.as_str()));
+        assert_eq!(state.started_at_ms, Some(1_000), "o tempo já conta");
+        assert_eq!(state.channels, vec!["microphone"], "herda o padrão");
+    }
+
+    #[test]
+    fn ensure_session_reuses_the_open_session() {
+        let f = fixture(false, false);
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        assert_eq!(f.service.ensure_session().expect("sessão"), id);
+        assert_eq!(f.states().len(), 1, "não republica estado à toa");
+    }
+
+    #[test]
+    fn ensure_session_inherits_the_last_chosen_channels() {
+        let f = fixture(false, false);
+        // Sem sessão o seletor já guarda a escolha para a próxima.
+        f.service
+            .set_channels(&[AudioChannel::System])
+            .expect("guarda a escolha");
+
+        let id = f.service.ensure_session().expect("sessão");
+        assert!(!f.system.is_running(), "pausada não captura");
+        assert_eq!(f.last_state().channels, vec!["system"]);
+
+        // Começar a capturar usa a escolha e continua na mesma sessão.
         assert_eq!(
-            f.service.current_session_id().as_deref(),
-            Some(second.as_str())
+            f.service.start(&[AudioChannel::System]).expect("start"),
+            id
         );
+        assert!(f.system.is_running());
     }
 
     #[test]

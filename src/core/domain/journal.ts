@@ -20,6 +20,8 @@ export interface JournalEntry {
   /** Milissegundos desde o início da sessão (BR-019). */
   asked_at_ms: number;
   answered_at_ms: number | null;
+  /** Instante absoluto da pergunta (epoch, ms) — a hora de parede. */
+  created_at_ms: number;
   status: JournalStatus;
   request_source: JournalRequestSource;
   /** Provedor que respondeu. */
@@ -39,9 +41,39 @@ export interface JournalUpdate {
   error: string | null;
 }
 
-/** Rótulo curto da origem (mostrado na entrada). */
+/**
+ * Origem da entrada, como o cabeçalho da aba mostra (BR-052): **texto**,
+ * **print** ou os dois.
+ */
+export type JournalOrigin = "text" | "screenshot" | "both" | "preset";
+
+/** Rótulo da origem (a "legenda" do topo da entrada). */
+export const JOURNAL_ORIGIN_LABELS: Record<JournalOrigin, string> = {
+  text: "Pesquisa",
+  screenshot: "Screenshot",
+  both: "Screenshot + Texto",
+  preset: "Pergunta pronta",
+};
+
+/** Rótulo curto da origem (compatibilidade com a lista plana). */
 export const JOURNAL_SOURCE_LABELS: Record<JournalRequestSource, string> = {
   search: "Pesquisa",
   preset: "Pergunta pronta",
-  screenshot: "Print",
+  screenshot: "Screenshot",
 };
+
+/**
+ * A origem de uma entrada: `screenshot` carrega o print; com pergunta junto
+ * vira **os dois**. A pergunta pode ser vazia (print puro — a IA decide).
+ */
+export function journalOrigin(entry: JournalEntry): JournalOrigin {
+  if (entry.request_source === "screenshot") {
+    return entry.question.trim() === "" ? "screenshot" : "both";
+  }
+  return entry.request_source === "preset" ? "preset" : "text";
+}
+
+/** A entrada tem pergunta do usuário? (print puro não tem — não mostra "Q:"). */
+export function hasJournalQuestion(entry: JournalEntry): boolean {
+  return entry.question.trim() !== "";
+}

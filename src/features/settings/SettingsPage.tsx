@@ -167,7 +167,13 @@ export function SettingsPage() {
 
   const onSave = () =>
     run(async () => {
-      const result = await saveSettings(draft);
+      // Perguntas prontas em branco (linha recém-criada) não são persistidas.
+      const result = await saveSettings({
+        ...draft,
+        saved_questions: (draft.saved_questions ?? []).filter(
+          (question) => question.text.trim() !== "",
+        ),
+      });
       setConflicts(result ?? []);
       setHasUnsavedChanges(false);
       setStatus({ kind: "ok", text: "Configurações salvas." });

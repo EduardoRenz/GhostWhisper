@@ -1,57 +1,123 @@
 import { MarkdownView } from "../../components/MarkdownView";
 import {
-  JOURNAL_SOURCE_LABELS,
+  CameraIcon,
+  SearchIcon,
+  SparkleIcon,
+} from "../../components/icons";
+import {
+  JOURNAL_ORIGIN_LABELS,
+  hasJournalQuestion,
+  journalOrigin,
   type JournalEntry,
 } from "../../core/domain/journal";
 
+/** Miniatura do print anexado (data URL + dimensões, quando conhecidas). */
+export interface JournalAttachment {
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
 interface JournalEntryCardProps {
   entry: JournalEntry;
-  /** Início da sessão (ms, relógio de parede) — para a hora de parede. */
+  /** Início da sessão (ms, relógio de parede) — usado quando a entrada não
+   *  tem o instante absoluto. */
   sessionStartedAtMs: number | null;
   /** Reenvia a mesma pergunta (entrada com erro). */
   onRetry?: (entry: JournalEntry) => void;
-  /** Miniatura do print anexado (data URL). */
-  attachment?: string | null;
+  /** Miniatura do print anexado. */
+  attachment?: JournalAttachment | null;
+  /** Entrada mais recente da sessão (selo "Mais Recente"). */
+  newest?: boolean;
 }
 
 /**
- * Uma entrada do diário: a pergunta e a resposta (BR-052).
+ * Uma entrada do diário (BR-052): **origem**, pergunta e resposta.
  *
- * O instante é o **relativo à sessão** (`mm:ss`), como o resto da linha
- * temporal (BR-019); a hora de parede aparece quando o início da sessão é
- * conhecido (BR-040).
+ * O cabeçalho diz de onde veio (texto, print ou os dois) e há quanto tempo;
+ * a pergunta só aparece quando existe (print puro não tem). A resposta é
+ * **Markdown da IA** e vem num bloco próprio, depois de cada pergunta.
  */
 export function JournalEntryCard({
   entry,
   sessionStartedAtMs,
   onRetry,
   attachment,
+  newest = false,
 }: JournalEntryCardProps) {
   const pending = entry.status === "pending";
   const failed = entry.status === "error" || entry.status === "cancelled";
+  const origin = journalOrigin(entry);
+  const withImage = origin === "screenshot" || origin === "both";
+  const askedAtMs =
+    entry.created_at_ms > 0
+      ? entry.created_at_ms
+      : sessionStartedAtMs !== null
+        ? sessionStartedAtMs + entry.asked_at_ms
+        : null;
+  const badge = newest ? "Mais Recente" : entry.model;
 
   return (
-    <article className="journal__entry" data-status={entry.status}>
+    <article className="journal__entry" data-status={entry.status} data-origin={origin}>
       <header className="journal__head">
-        <span className="journal__time">{formatInstant(entry, sessionStartedAtMs)}</span>
-        <span className="journal__source">
-          {JOURNAL_SOURCE_LABELS[entry.request_source]}
+        <span className="journal__origin-icon" aria-hidden="true">
+          {withImage ? <CameraIcon size={14} /> : <SearchIcon size={14} />}
         </span>
-        {entry.model && <span className="journal__model">{entry.model}</span>}
+        <span className="journal__source">{JOURNAL_ORIGIN_LABELS[origin]}</span>
+        <span className="journal__time">
+          · {formatAgo(askedAtMs)}
+          {askedAtMs !== null && (
+            <span className="journal__clock">{formatClock(askedAtMs)}</span>
+          )}
+        </span>
+        {badge && <span className="journal__badge">{badge}</span>}
       </header>
 
-      <p className="journal__question">{entry.question}</p>
+      {hasJournalQuestion(entry) && (
+        <p className="journal__question">
+          <span className="journal__question-label">
+            {withImage ? "Contexto:" : "Q:"}
+          </span>{" "}
+          {entry.question}
+        </p>
+      )}
 
       {attachment && (
-        <img src={attachment} alt="Print da pergunta" className="journal__attachment" />
+        <figure className="journal__shot">
+          <img
+            className="journal__shot-image"
+            src={attachment.url}
+            alt="Print anexado à pergunta"
+            loading="lazy"
+          />
+          <figcaption className="journal__shot-caption">
+            <CameraIcon size={12} />
+            <span>Captura de tela</span>
+            {attachment.width !== null && attachment.height !== null && (
+              <span className="journal__shot-size">
+                {attachment.width}×{attachment.height}
+              </span>
+            )}
+          </figcaption>
+        </figure>
       )}
 
       {pending && <p className="journal__pending">Pensando…</p>}
 
-      {!pending && entry.answer && (
-        <div className="journal__answer">
-          <MarkdownView markdown={entry.answer} />
-        </div>
+      {!pending && entry.answer && entry.answer.trim() !== "" && (
+        <section className="journal__answer">
+          <header className="journal__answer-head">
+            <SparkleIcon className="journal__answer-icon" size={14} />
+            <span className="journal__answer-brand">GhostWhisper IA</span>
+            <span className="journal__answer-sep" aria-hidden="true">
+              ·
+            </span>
+            <span className="journal__answer-mode">Assistente</span>
+          </header>
+          <div className="journal__answer-body">
+            <MarkdownView markdown={entry.answer} />
+          </div>
+        </section>
       )}
 
       {failed && (
@@ -75,22 +141,29 @@ export function JournalEntryCard({
   );
 }
 
-/** Instante da entrada: `mm:ss` relativo à sessão (ou hora de parede). */
-function formatInstant(
-  entry: JournalEntry,
-  sessionStartedAtMs: number | null,
-): string {
-  if (sessionStartedAtMs === null) {
-    return formatRelative(entry.asked_at_ms);
+/** "Há 1 min" — quanto tempo faz que a pergunta foi feita. */
+function formatAgo(askedAtMs: number | null): string {
+  if (askedAtMs === null) {
+    return "agora";
   }
-  const wall = new Date(sessionStartedAtMs + entry.asked_at_ms);
-  return wall.toLocaleTimeString(undefined, { hour12: false });
+  const elapsed = Math.max(0, Date.now() - askedAtMs);
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) {
+    return "Há instantes";
+  }
+  if (minutes < 60) {
+    return `Há ${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `Há ${hours} h`;
+  }
+  return `Há ${Math.floor(hours / 24)} d`;
 }
 
-/** `mm:ss` a partir de milissegundos relativos. */
-function formatRelative(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+/** Hora de parede `(10:44:12)` do instante da pergunta. */
+function formatClock(askedAtMs: number): string {
+  const wall = new Date(askedAtMs);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return ` (${pad(wall.getHours())}:${pad(wall.getMinutes())}:${pad(wall.getSeconds())})`;
 }

@@ -27,7 +27,7 @@ interface ChannelMenuProps {
   busy: boolean;
   /** Troca os canais **sem** encerrar a sessão (BR-019). */
   onChannelsChange: (channels: SessionChannel[]) => void;
-  /** Encerra e começa outra sessão com os canais escolhidos. */
+  /** Começa a capturar nesta sessão com os canais escolhidos (mesmo id). */
   onNewSession: (channels: SessionChannel[]) => void;
 }
 
@@ -118,7 +118,7 @@ export function ChannelMenu({
               setOpen(false);
             }}
           >
-            Nova sessão
+            Começar a capturar
           </button>
         </div>
       )}

@@ -45,12 +45,39 @@ export const journalSearch = (
     limit: limit ?? null,
   });
 
+/** Imagem do diário (bytes crus — a miniatura vira data URL na UI). */
+export interface JournalImageDto {
+  id: string;
+  entry_id: string;
+  mime: string;
+  data: number[];
+  width: number | null;
+  height: number | null;
+}
+
 /** Imagens de uma entrada (miniatura do print). */
 export const journalImages = (
   entryId: string,
-): Promise<
-  { id: string; entry_id: string; mime: string; data: number[] }[] | undefined
-> => invokeSafe("journal_images", { entryId });
+): Promise<JournalImageDto[] | undefined> =>
+  invokeSafe<JournalImageDto[]>("journal_images", { entryId });
+
+/** Bytes → base64 (sem linha quebrada). */
+function bytesToBase64(bytes: number[]): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.slice(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+/** Data URL da imagem (para `<img src>`). */
+export const journalImageDataUrl = (image: JournalImageDto): string =>
+  `data:${image.mime};base64,${bytesToBase64(image.data)}`;
+
+/** Base64 puro da imagem (para reenviar a pergunta do print). */
+export const journalImageBase64 = (image: JournalImageDto): string =>
+  bytesToBase64(image.data);
 
 /** Remove uma entrada do diário. */
 export const journalDelete = (id: string): Promise<void | undefined> =>

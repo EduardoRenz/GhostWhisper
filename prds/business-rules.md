@@ -192,6 +192,12 @@ uma nota de revisão.
   milissegundos relativos ao início da sessão; a UI do painel ao vivo mostra a
   **hora de parede** (`HH:MM:SS`) derivada de `started_at_ms + at_ms`, com
   fallback para `mm:ss` quando o início não é conhecido. Não há migração.
+- **Revisão 2 (2026-10-20):** **sempre existe uma sessão.** Perguntar sem ter
+  iniciado a transcrição abre uma sessão **pausada** (`ensure_session`, sem
+  capturar áudio): ela é o dono do diário, do histórico e do tempo, e a captura
+  só começa quando o usuário manda. Por isso `start` **não** cria outro id com
+  uma sessão aberta — ele continua nela (a escolha de canais é lembrada e
+  herdada pela sessão automática; sem escolha, microfone).
 - **Data:** 2026-10-18 · **Status:** Ativa (task 16)
 
 ## BR-020 — Sugestões da IA entram na linha temporal; export é Markdown
@@ -1078,6 +1084,17 @@ uma nota de revisão.
   do envio e abre o painel na aba Sessão. O print **só anexa** (prévia no
   canto superior direito, com remover); o envio é sempre confirmado pelo
   usuário (BR-055).
+- **Revisão 3 (2026-10-20):** a aba vira o **diário do mockup do Perssua** —
+  **mais recente no topo**, cada entrada com legenda de origem (`Pesquisa` /
+  `Screenshot` / `Screenshot + Texto` / `Pergunta pronta`), tempo relativo +
+  hora de parede, pergunta (`Q:`), miniatura do print e a resposta inteira em
+  Markdown; separador entre entradas é a linha (`---`). **Encerrar a sessão
+  limpa a aba** (o diário é o da sessão ativa). O rodapé mostra a contagem, o
+  `Sync local · SQLite` e o **Exportar MD**.
+- **Revisão 4 (2026-10-20):** a sessão do diário é **sempre a sessão ativa**
+  (a mesma do notch/histórico), inclusive a aberta **pausada** pela pergunta
+  (`ensure_session`) — é o que faz a resposta de um print **sem transcrição**
+  ficar na aba. Encerrar a sessão (a pílula) zera a aba, nos dois casos.
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-053 — "Busca" é a superfície de pergunta: perguntar, print e perguntas prontas
@@ -1104,6 +1121,10 @@ uma nota de revisão.
   [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §5–§7,
   [`session/tasks/03-task.md`](session/tasks/03-task.md),
   [`session/tasks/07-task.md`](session/tasks/07-task.md).
+- **Revisão (2026-10-20):** a Busca **sai da aba** e vive na **barra de
+  pesquisa** (a lupa do notch): pergunta, print (`Alt+C`) e as **perguntas
+  prontas** como chips em repouso. A aba Sessão fica só com o diário — é o
+  mockup do Perssua. A busca FTS continua no core, sem superfície na v1.
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-054 — Perguntas prontas são configuração do usuário (nas settings)
@@ -1125,6 +1146,9 @@ uma nota de revisão.
   *paywall* e aqui não há login (BR-002) — desvio consciente (R12).
 - **Detalhes:** [`session/prd.md`](session/prd.md) US-04,
   [`session/tasks/05-task.md`](session/tasks/05-task.md).
+- **Revisão (2026-10-20):** os chips aparecem **na barra de pesquisa** (em
+  repouso, somem ao digitar) e a edição da lista foi para **Configurações →
+  Assistente** (a aba Sessão ficou só com o diário).
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-055 — Captura de tela no Linux por X11 (`x11rb`), com colar imagem

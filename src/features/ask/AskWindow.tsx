@@ -11,6 +11,7 @@ import {
 import { subscribe } from "../../adapters/ipc/events";
 import { useSettings } from "../../core/application/useSettings";
 import { defaultBindings } from "../../core/domain/shortcuts";
+import { DEFAULT_SAVED_QUESTIONS } from "../../core/domain/settings";
 import { AskBar } from "../overlay/AskBar";
 
 /**
@@ -156,6 +157,10 @@ export function AskWindow() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const presets = (settings.saved_questions ?? DEFAULT_SAVED_QUESTIONS)
+    .map((saved) => saved.text.trim())
+    .filter((text) => text !== "");
+
   const accelerator = (action: "focus_ask" | "capture_screen") =>
     settings.shortcuts.find((binding) => binding.action === action)
       ?.accelerator ??
@@ -173,6 +178,8 @@ export function AskWindow() {
         busy={busy}
         attached={attached}
         onStartDrag={() => void panelStartDrag()}
+        presets={presets}
+        onPreset={(text) => void ask(text)}
         askAccelerator={accelerator("focus_ask")}
         captureAccelerator={accelerator("capture_screen")}
       />

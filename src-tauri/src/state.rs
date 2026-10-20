@@ -288,6 +288,9 @@ mod tests {
         fn start(&self, _channels: &[AudioChannel]) -> Result<String> {
             Ok("s1".into())
         }
+        fn ensure_session(&self) -> Result<String> {
+            Ok("s1".into())
+        }
         fn stop(&self) -> Result<()> {
             Ok(())
         }

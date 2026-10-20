@@ -93,6 +93,10 @@ pub struct JournalEntry {
     pub asked_at_ms: i64,
     /// Milissegundos desde o início da sessão em que a resposta chegou.
     pub answered_at_ms: Option<i64>,
+    /// Instante **absoluto** da pergunta (epoch, ms) — a hora de parede do
+    /// cabeçalho. `0` nas dobras/entradas antigas (a UI cai no início da
+    /// sessão).
+    pub created_at_ms: i64,
     pub status: JournalStatus,
     pub request_source: JournalRequestSource,
     /// Provider que respondeu (ex.: `openai`).
@@ -156,6 +160,7 @@ mod tests {
                 answer: Some("isto".into()),
                 asked_at_ms: 9_000,
                 answered_at_ms: Some(9_500),
+                created_at_ms: 1_700_000_000_000,
                 status: JournalStatus::Answered,
                 request_source: JournalRequestSource::Search,
                 provider: Some("openai".into()),
@@ -172,6 +177,7 @@ mod tests {
         assert_eq!(json["answer"], "isto");
         assert_eq!(json["asked_at_ms"], 9_000);
         assert_eq!(json["answered_at_ms"], 9_500);
+        assert_eq!(json["created_at_ms"], 1_700_000_000_000_i64);
         assert_eq!(json["status"], "answered");
         assert_eq!(json["request_source"], "search");
         assert_eq!(json["provider"], "openai");

@@ -8,6 +8,7 @@ use crate::domain::journal::{JournalEntry, JournalImage, JournalRequestSource};
 use crate::domain::llm::CompletionImage;
 use crate::error::Result;
 use crate::ports::ask_controller::{AskOutcome, AskRequest};
+use crate::ports::session_controller::SessionController;
 use crate::state::AppState;
 
 /// Origem da pergunta (vinda do frontend).
@@ -52,6 +53,18 @@ pub struct AskDto {
     /// Imagens anexadas (no máximo uma — BR-055).
     #[serde(default)]
     pub images: Vec<ImageDto>,
+}
+
+/// Sessão do pedido de pergunta: a informada ou a **sessão ativa** — abrindo
+/// uma **pausada** quando o usuário ainda não iniciou a transcrição (BR-019).
+fn resolve_ask_session(
+    session: &dyn SessionController,
+    requested: Option<String>,
+) -> Result<String> {
+    match requested {
+        Some(id) if !id.trim().is_empty() => Ok(id),
+        _ => session.ensure_session(),
+    }
 }
 
 /// Sessão alvo do diário: a informada ou a ativa (a mais recente).
@@ -112,11 +125,15 @@ pub fn journal_delete(state: State<'_, AppState>, id: String) -> Result<()> {
 }
 
 /// Faz a pergunta e registra no diário.
+///
+/// **Sempre existe uma sessão** (BR-019): sem gravação, a pergunta abre uma
+/// sessão **pausada** — é ela que dá dono ao diário, ao histórico e ao tempo.
 #[tauri::command(async)]
 pub fn journal_ask(state: State<'_, AppState>, request: AskDto) -> Result<AskOutcome> {
     let images = decode_images(request.images)?;
+    let session_id = resolve_ask_session(state.session.as_ref(), request.session_id)?;
     state.ask.ask(AskRequest {
-        session_id: request.session_id,
+        session_id: Some(session_id),
         question: request.question,
         source: request
             .source
@@ -164,6 +181,70 @@ fn decode_base64(value: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::ports::session_controller::AudioChannel;
+
+    /// Sessão de teste: conta os `ensure_session` (e devolve `s1`).
+    struct FakeSession {
+        ensured: AtomicUsize,
+    }
+
+    impl SessionController for FakeSession {
+        fn start(&self, _channels: &[AudioChannel]) -> Result<String> {
+            Ok("s1".into())
+        }
+        fn ensure_session(&self) -> Result<String> {
+            self.ensured.fetch_add(1, Ordering::SeqCst);
+            Ok("s1".into())
+        }
+        fn stop(&self) -> Result<()> {
+            Ok(())
+        }
+        fn pause(&self) -> Result<()> {
+            Ok(())
+        }
+        fn resume(&self) -> Result<()> {
+            Ok(())
+        }
+        fn set_channels(&self, _channels: &[AudioChannel]) -> Result<()> {
+            Ok(())
+        }
+        fn continue_session(&self, id: &str, _channels: &[AudioChannel]) -> Result<String> {
+            Ok(id.to_string())
+        }
+        fn set_language(&self, _language: &str) -> Result<()> {
+            Ok(())
+        }
+        fn current_session_id(&self) -> Option<String> {
+            Some("s1".into())
+        }
+    }
+
+    #[test]
+    fn ask_without_a_session_opens_a_paused_one() {
+        // Perguntar sem transcrição sempre tem sessão (BR-019/BR-052).
+        let session = FakeSession {
+            ensured: AtomicUsize::new(0),
+        };
+        assert_eq!(
+            resolve_ask_session(&session, None).expect("sessão"),
+            "s1"
+        );
+        assert_eq!(session.ensured.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn an_explicit_session_is_used_as_is() {
+        let session = FakeSession {
+            ensured: AtomicUsize::new(0),
+        };
+        assert_eq!(
+            resolve_ask_session(&session, Some("s9".into())).expect("sessão"),
+            "s9"
+        );
+        assert_eq!(session.ensured.load(Ordering::SeqCst), 0);
+    }
 
     #[test]
     fn decodes_base64() {

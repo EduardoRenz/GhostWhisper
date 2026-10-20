@@ -88,6 +88,10 @@ transcrição) que abre uma **barra de pesquisa** discreta no topo.
       aba **Sessão** com a resposta em streaming.
 - [ ] A pergunta **não exige** transcrição: sem sessão de áudio, o contexto é
       vazio e a resposta considera só a pergunta (e o print, se houver).
+- [ ] **Sempre existe uma sessão** (BR-019): sem sessão aberta, a pergunta
+      cria uma **pausada** — ela aparece no Histórico e na pílula do notch (o
+      tempo conta), e a transcrição fica **pausada** até o usuário mandar. A
+      resposta **fica** no diário (o reload do fim da resposta não apaga).
 - [ ] `Esc` fecha a barra sem perguntar.
 - [ ] A barra de pesquisa tem a **alça de arraste** (⋮⋮) à esquerda, como o
       notch.
@@ -108,16 +112,28 @@ que perguntei nesta sessão e o que a IA respondeu.
       `"session"`).
 - [ ] A aba ativa é lembrada em `settings.panel_tab` (como as outras duas) e
       um valor legado/desconhecido cai em `transcription`.
-- [ ] A aba Sessão mostra as **entradas do diário** em ordem cronológica
-      (mais recente no fim), cada uma com: a **pergunta**, a **resposta**, o
-      instante (`mm:ss` desde o início da sessão, como o resto da linha
-      temporal) e a marca de origem (`Pesquisa` / `Pergunta pronta`).
+- [ ] A aba Sessão mostra as **entradas do diário** com a **mais recente no
+      topo** (revisão v5, 2026-10-20), separadas por uma linha — o equivalente
+      ao `---` do Markdown. Cada entrada tem:
+      - a **legenda de origem** no topo (`Pesquisa`, `Screenshot`,
+        `Screenshot + Texto` ou `Pergunta pronta`) com o **tempo** (`Há 1 min`
+        + a hora de parede `(10:44:12)`) e, à direita, o selo **Mais Recente**
+        (na primeira) ou o modelo que respondeu;
+      - a **pergunta** (`Q:`) — que **não aparece** quando o pedido foi só o
+        print (`Contexto:` quando há print + texto);
+      - a **miniatura do print** com a legenda sobre a imagem;
+      - a **resposta** num bloco próprio ("GhostWhisper IA · Assistente"),
+        **toda em Markdown** gerado pela IA.
 - [ ] Uma entrada **sem resposta ainda** aparece com estado "pensando…" e
       recebe o texto **em streaming**, como a sugestão (BR-028).
 - [ ] Uma entrada **com erro** mostra o erro e um botão **"Tentar de novo"**
-      que reenvia a mesma pergunta.
+      que reenvia a mesma pergunta (com o print, quando houver).
 - [ ] Sem sessão ativa e sem diário, a aba mostra um estado vazio explicativo
-      ("Nenhuma pergunta ainda. Use **Perguntar** para perguntar à IA.").
+      ("Nenhuma interação nesta sessão ainda. Pergunte pela lupa do notch").
+- [ ] O rodapé mostra **quantas interações** a sessão tem, que os dados são
+      locais (`Sync local · SQLite`) e o botão **Exportar MD**.
+- [ ] **Encerrar a sessão limpa a aba**: o diário é da sessão ativa — encerrar
+      (ou abrir outra) zera a lista, e a sessão nova começa vazia.
 - [ ] O diário **sobrevive ao fechamento do app** e reaparece ao reabrir a
       sessão no Histórico.
 
@@ -128,8 +144,11 @@ mesma aba.
 
 **Critérios de aceite**
 
-- [ ] A aba Sessão tem um **campo de pergunta** (multilinha, com
-      `Enter` envia e `Shift+Enter` quebra linha) e um botão **Perguntar**.
+- [ ] Perguntar acontece na **barra de pesquisa** (US-00), não num campo
+      dentro da aba (revisão v5, 2026-10-20: o mockup do Perssua mostra a aba
+      como diário puro). Ali: `Enter` envia, `Alt+C` captura a tela, as
+      **perguntas prontas** aparecem como chips em repouso e o texto é
+      opcional quando há print.
 - [ ] A pergunta é respondida pela **fonte de IA da rota da capacidade
       `Search`** (BR-048) — ou, sem rota, pela fonte primária.
 - [ ] A pergunta leva o **contexto da sessão**: as falas finalizadas até
@@ -227,6 +246,10 @@ descobrir onde está a aba.
       demais ícones do notch.
 
 ### US-06 — Pesquisar no diário
+
+> **Revisão v5 (2026-10-20):** o campo de busca **saiu da aba** (o mockup do
+> Perssua não o tem). O FTS (`journal_search`) e o escape (ISS-042) continuam
+> no core, prontos para uma superfície futura; a aba mostra só o diário.
 
 Como usuário, quero **procurar** uma pergunta que fiz.
 

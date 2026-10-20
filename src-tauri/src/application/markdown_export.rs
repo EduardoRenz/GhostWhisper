@@ -102,10 +102,11 @@ pub fn render_markdown_with_questions(
     if !questions.is_empty() {
         out.push_str("## Perguntas\n\n");
         for question in questions {
+            let asked = question.question.trim();
             out.push_str(&format!(
                 "- **[{}] {}**\n",
                 format_clock(question.asked_at_ms),
-                question.question
+                if asked.is_empty() { "(print de tela)" } else { asked }
             ));
             if let Some(answer) = question
                 .answer
@@ -281,6 +282,7 @@ mod tests {
             answer: Some("isto".to_string()),
             asked_at_ms: 4_000,
             answered_at_ms: Some(4_500),
+            created_at_ms: 0,
             status: crate::domain::journal::JournalStatus::Answered,
             request_source: crate::domain::journal::JournalRequestSource::Search,
             provider: None,

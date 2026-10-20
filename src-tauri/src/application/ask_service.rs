@@ -182,16 +182,19 @@ impl AskService {
 
 impl AskController for AskService {
     fn ask(&self, request: AskRequest) -> Result<AskOutcome> {
-        let trimmed = request.question.trim().to_string();
+        let question = request.question.trim().to_string();
         // Print sem texto é permitido: a IA decide o que fazer com a imagem
         // (paridade com o `system_prompt_image` do Perssua).
-        let question = if trimmed.is_empty() {
-            if request.images.is_empty() {
-                return Err(GhostWhisperError::Config("a pergunta está vazia".to_string()));
-            }
+        if question.is_empty() && request.images.is_empty() {
+            return Err(GhostWhisperError::Config("a pergunta está vazia".to_string()));
+        }
+        // O diário guarda a pergunta **do usuário** (vazia quando foi só o
+        // print): é ela que a UI mostra ("se houver pergunta"). O prompt padrão
+        // vale só para o modelo.
+        let prompt = if question.is_empty() {
             DEFAULT_IMAGE_PROMPT.to_string()
         } else {
-            trimmed
+            question.clone()
         };
 
         let session = self.ensure_session(request.session_id.clone())?;
@@ -206,6 +209,7 @@ impl AskController for AskService {
             answer: None,
             asked_at_ms,
             answered_at_ms: None,
+            created_at_ms: 0,
             status: JournalStatus::Pending,
             request_source: request.source,
             provider: None,
@@ -240,7 +244,7 @@ impl AskController for AskService {
             .map_err(|_| GhostWhisperError::Other("lock de perguntas envenenado".to_string()))?;
 
         let context = self.build_context(&session.id, asked_at_ms);
-        let completion_request = self.build_request(&question, &request.images, context);
+        let completion_request = self.build_request(&prompt, &request.images, context);
 
         let mut streamed = String::new();
         let result = self.llm.complete_streaming_for(
@@ -553,13 +557,23 @@ mod tests {
 
         let entries = f.journal.list_by_session("s1").expect("diário");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].question, DEFAULT_IMAGE_PROMPT);
+        // O diário guarda a pergunta **do usuário** (vazia: foi só o print)...
+        assert!(entries[0].question.is_empty());
         assert_eq!(entries[0].request_source, JournalRequestSource::Screenshot);
         assert_eq!(entries[0].status, JournalStatus::Answered);
         assert_eq!(
             f.journal.images_of(&entries[0].id).expect("imagens").len(),
             1
         );
+        // ...e o modelo recebe o prompt padrão da imagem.
+        let sent = f
+            .llm
+            .request
+            .lock()
+            .expect("lock")
+            .clone()
+            .expect("pedido enviado");
+        assert!(sent.prompt.contains(DEFAULT_IMAGE_PROMPT), "{}", sent.prompt);
     }
 
     #[test]
