@@ -255,3 +255,21 @@ sessão paralela que o resto do app não via.
   `session_id` zera a lista).
 - `ChannelMenu`: "Nova sessão" → **"Começar a capturar"** (é a mesma sessão).
 
+---
+
+## 2026-10-20 — v7: preset "Responda a última pergunta identificada"
+
+- **IDs:** BR-054 · **Refs:** [`prd.md`](prd.md) US-04
+
+- **O que é:** um **pedido** (não uma pergunta) como pergunta pronta, no fim
+  da lista: a IA responde à última pergunta que identificou na conversa ou na
+  tela (`domain::settings::REPLY_TO_LAST_QUESTION`).
+- **Migração única** (`application/saved_questions_migration.rs`): quem já
+  tinha a lista persistida recebe o preset **uma vez**
+  (`saved_questions_migrated`), sem duplicar e sem ressuscitar os que apagou;
+  respeita o teto de 20. Roda no boot, depois da migração do agente.
+- **Instalação nova** já nasce com cinco presets (`default_saved_questions`).
+- Testes: `saved_questions_migration` (adiciona uma vez, idempotente, não
+  duplica, respeita o teto, instalação nova, não ressuscita apagado) e o
+  default no frontend.
+

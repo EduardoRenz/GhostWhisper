@@ -233,6 +233,11 @@ pub struct Settings {
     /// Perguntas prontas do usuário (aba "Sessão", BR-054).
     #[serde(default = "default_saved_questions")]
     pub saved_questions: Vec<SavedQuestion>,
+    /// Marca a migração das perguntas prontas (BR-054): o preset **novo**
+    /// entra uma vez em quem já tinha a lista persistida, sem ressuscitar as
+    /// que o usuário apagou.
+    #[serde(default)]
+    pub saved_questions_migrated: bool,
 }
 
 /// Uma pergunta pronta do usuário (aba "Sessão", BR-054).
@@ -251,12 +256,17 @@ pub const MAX_SAVED_QUESTIONS: usize = 20;
 /// Teto de caracteres de uma pergunta pronta.
 pub const MAX_SAVED_QUESTION_CHARS: usize = 200;
 
+/// Pedido acrescentado na v6 (BR-054): responde à última pergunta
+/// identificada na conversa/tela — uma pergunta pronta que é uma **ação**.
+pub const REPLY_TO_LAST_QUESTION: &str = "Responda a última pergunta identificada";
+
 /// Perguntas prontas semeadas (tradução das "Prompt Suggestions" do Perssua).
-pub const DEFAULT_SAVED_QUESTIONS: [&str; 4] = [
+pub const DEFAULT_SAVED_QUESTIONS: [&str; 5] = [
     "Resumir tudo até agora",
     "Listar as ações",
     "Listar as principais ideias",
     "O que posso falar?",
+    REPLY_TO_LAST_QUESTION,
 ];
 
 /// Perguntas prontas padrão (com ids derivados do texto).
@@ -344,6 +354,7 @@ impl Default for Settings {
             dwell_enabled: true,
             dwell_ms: default_dwell_ms(),
             saved_questions: default_saved_questions(),
+            saved_questions_migrated: false,
         }
     }
 }

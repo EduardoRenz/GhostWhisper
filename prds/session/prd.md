@@ -221,9 +221,11 @@ nelas para rodá-las.
       não no banco — são configuração do usuário (BR-054).
 - [ ] Limites: no máximo **20** perguntas, **200 caracteres** cada; o que
       exceder é recusado com aviso, não truncado em silêncio.
-- [ ] Quatro perguntas iniciais semeadas (tradução das do Perssua): *"Resumir
-      tudo até agora"*, *"Listar as ações"*, *"Listar as principais ideias"*,
-      *"O que posso falar?"*.
+- [ ] Cinco perguntas iniciais semeadas (as quatro do Perssua + uma **ação**):
+      *"Resumir tudo até agora"*, *"Listar as ações"*, *"Listar as principais
+      ideias"*, *"O que posso falar?"*, *"Responda a última pergunta
+      identificada"* (um pedido — a IA responde à última pergunta que
+      identificou na conversa/tela).
 - [ ] A pergunta salva registra a **origem** (`Pergunta pronta`) na entrada do
       diário.
 

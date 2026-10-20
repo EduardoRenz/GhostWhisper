@@ -1149,6 +1149,12 @@ uma nota de revisão.
 - **Revisão (2026-10-20):** os chips aparecem **na barra de pesquisa** (em
   repouso, somem ao digitar) e a edição da lista foi para **Configurações →
   Assistente** (a aba Sessão ficou só com o diário).
+- **Revisão 2 (2026-10-20):** um **quinto default** entrou —
+  *"Responda a última pergunta identificada"* (é um **pedido**, não uma
+  pergunta: a IA responde à última pergunta que identificou na conversa ou na
+  tela). Quem já tinha a lista persistida recebe o preset por uma **migração
+  única** (`saved_questions_migrated`), que **não** ressuscita presets
+  apagados — instalação nova já nasce com ele.
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-055 — Captura de tela no Linux por X11 (`x11rb`), com colar imagem

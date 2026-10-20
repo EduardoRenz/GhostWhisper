@@ -159,8 +159,12 @@ export interface Settings {
   dwell_enabled: boolean;
   /** Tempo de permanência do drill-hover, em milissegundos (BR-036). */
   dwell_ms: number;
-  /** Perguntas prontas do usuário (aba "Sessão", BR-054). */
   saved_questions: SavedQuestion[];
+  /**
+   * Marca a migração das perguntas prontas (BR-054): o preset **novo**
+   * entra uma vez em quem já tinha a lista persistida.
+   */
+  saved_questions_migrated: boolean;
 }
 
 /** Abas do painel da sessão (janela `chat`). */
@@ -185,6 +189,8 @@ export const DEFAULT_SAVED_QUESTIONS: SavedQuestion[] = [
   { id: "default-1", text: "Listar as ações" },
   { id: "default-2", text: "Listar as principais ideias" },
   { id: "default-3", text: "O que posso falar?" },
+  // Um pedido: a IA responde à última pergunta identificada (BR-054).
+  { id: "default-4", text: "Responda a última pergunta identificada" },
 ];
 
 /** Providers na ordem de exibição. */
@@ -314,6 +320,7 @@ export const defaultSettings = (): Settings => ({
   dwell_enabled: true,
   dwell_ms: 500,
   saved_questions: DEFAULT_SAVED_QUESTIONS,
+  saved_questions_migrated: false,
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */

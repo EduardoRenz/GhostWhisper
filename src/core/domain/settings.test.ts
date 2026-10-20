@@ -70,6 +70,19 @@ describe("settings (domínio)", () => {
     expect(settings.dwell_ms).toBe(500);
   });
 
+  it("as perguntas prontas terminam com o pedido da última pergunta (BR-054)", () => {
+    const settings = defaultSettings();
+    expect(settings.saved_questions.map((question) => question.text)).toEqual([
+      "Resumir tudo até agora",
+      "Listar as ações",
+      "Listar as principais ideias",
+      "O que posso falar?",
+      "Responda a última pergunta identificada",
+    ]);
+    // A migração do preset ainda não rodou nesta instalação nova.
+    expect(settings.saved_questions_migrated).toBe(false);
+  });
+
   it("o agente Padrão é o selecionado por padrão (BR-059)", () => {
     const settings = defaultSettings();
     expect(settings.assistant_mode_id).toBe("default");

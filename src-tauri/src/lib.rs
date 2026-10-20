@@ -437,6 +437,21 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Err(error) => tracing::warn!("falha ao migrar o agente padrão: {error}"),
     }
 
+    // Preset novo das perguntas prontas (BR-054): entra uma vez em quem já
+    // tinha a lista persistida, sem ressuscitar as que o usuário apagou.
+    match application::saved_questions_migration::SavedQuestionsMigration::new(Arc::clone(
+        &settings,
+    ))
+    .migrate()
+    {
+        Ok(outcome) => {
+            if outcome.question_added {
+                tracing::info!("pergunta pronta nova adicionada");
+            }
+        }
+        Err(error) => tracing::warn!("falha ao migrar as perguntas prontas: {error}"),
+    }
+
     // Registro de saúde + circuit breaker das fontes (BR-045): compartilhado
     // entre o roteador e o serviço de fontes.
     let ai_source_health = Arc::new(application::ai_source_health::AiSourceHealthRegistry::new(
