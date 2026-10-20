@@ -95,6 +95,24 @@ cargo test --manifest-path src-tauri/Cargo.toml   # testes do core
 > (`undefined symbol: __libc_pthread_init, version GLIBC_PRIVATE`). Use
 > `pnpm tauri:dev:clean` (ou rode de um terminal nativo, sem o sandbox do snap).
 
+### Log de debug das chamadas de IA
+
+Com várias fontes e fallback, é preciso saber **qual** modelo respondeu cada
+tarefa. Suba o app com `RUST_LOG=debug` para ver uma linha por chamada:
+
+```
+DEBUG ghostwhisper::application::llm_router: llm: resposta concluída
+  scope=agent:meeting source=DeepSeek provider=deepseek model=deepseek-reasoner
+  is_fallback=false max_tokens=420 temperature=0 latency_ms=1420
+  prompt_tokens=1180 completion_tokens=260 total_tokens=1440
+  reasoning_tokens=96 reasoning="reasoning (tokens reportados)"
+```
+
+O `scope` diz a tarefa (`agent:<id>`, `capability:<resumo|sugestões|tradução>`
+ou `default`), o `model` é o modelo **real** usado e o `reasoning` é o nível de
+raciocínio (quando o provider reporta tokens de raciocínio ou o modelo é de
+raciocínio).
+
 ### Aceleração por GPU (Vulkan)
 
 O Whisper roda no **backend Vulkan** do `whisper.cpp` (flash attention), e o
@@ -158,6 +176,9 @@ A configuração é feita na tela **Settings** do app e persistida localmente:
   modelo e sua **própria chave**. A **ordem da lista é a ordem de prioridade**:
   a primeira é a que responde. Arraste a alça para reordenar ou use
   "Tornar primário".
+- **O modelo é digitado por você:** não há lista de modelos sugerida (envelhece
+  rápido e prende num modelo antigo) — digite o nome (`gpt-6`,
+  `deepseek-chat`, …).
 - **Fallback automático:** se a fonte primária falhar (429, chave expirada,
   timeout), a próxima fonte da lista assume sozinha. Cada fonte tem um
   **circuit breaker**: depois de 3 falhas seguidas ela é pulada por 60 s (não

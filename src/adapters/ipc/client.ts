@@ -20,3 +20,24 @@ export async function invokeSafe<T>(
   }
   return invoke<T>(command, args);
 }
+
+/**
+ * Assina o **foco** da janela atual (usado para recarregar dados frescos
+ * quando o usuário abre uma janela que estava oculta).
+ *
+ * Devolve uma função de cancelamento; fora do Tauri é um no-op.
+ */
+export async function onWindowFocus(
+  handler: (focused: boolean) => void,
+): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return () => {};
+  }
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const unlisten = await getCurrentWindow().onFocusChanged((message) => {
+    handler(message.payload);
+  });
+  return () => {
+    void unlisten();
+  };
+}

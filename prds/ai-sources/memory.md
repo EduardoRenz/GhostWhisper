@@ -89,7 +89,49 @@ personalização por agente/tela fica para depois, mas que a aplicação deve fi
   confirmação) e **não** apaga as chaves no keyring.
 
 ### Verificação
-- `cargo test` (430), `cargo clippy`, `cargo fmt --check`.
-- `pnpm test` (282), `tsc --noEmit`, `pnpm build`.
+- `cargo test` (438), `cargo clippy`, `cargo fmt --check`.
+- `pnpm test` (284), `tsc --noEmit`, `pnpm build`.
 - Tela conferida em navegador headless (5 abas).
+
+---
+
+## 2026-10-19 — Ajustes pedidos pelo usuário após o uso real
+
+- **IDs:** BR-049, BR-050, ISS-039
+- **Refs:** [`prd.md`](prd.md), [`architecture/ai-sources.md`](architecture/ai-sources.md),
+  [`../business-rules.md`](../business-rules.md)
+
+### 1) Sem catálogo de modelos (BR-049)
+O usuário pediu para poder digitar o modelo. `PROVIDER_MODELS` saiu do frontend: o campo
+de modelo é **livre** no formulário de adição e no editor do card, e o botão
+"Adicionar" só habilita com o modelo preenchido. `PROVIDER_DEFAULT_MODELS`
+também saiu (virou apenas `PROVIDER_DEFAULT_BASE_URLS`).
+
+### 2) Chave não aparecia no DeepSeek — bug corrigido
+**Causa:** o serviço de fontes exigia que a fonte **existisse no arquivo de
+settings** para derivar a chave do keyring. Uma fonte recém-adicionada ainda
+está só no **rascunho** da tela ⇒ o comando respondia "fonte de IA
+desconhecida" e a chave nunca era gravada (nem a prévia aparecia).
+
+**Correção:** a chave no keyring é indexada pelo **id** da fonte
+(`ai_source::secret_key_for(id)`), que o frontend gera no rascunho — não há
+mais dependência do arquivo. A **validação** passou a receber a fonte
+inteira (`validate(&AiSource)`) para validar uma fonte ainda não salva.
+
+### 3) Log de debug do modelo em uso (BR-050)
+Cada chamada emite `tracing::debug!` com escopo, fonte, provider, **modelo**,
+`max_tokens`, `temperature`, latência, tokens e o **nível de raciocínio**.
+Para isso: `domain::llm::CompletionUsage` (com `reasoning_tokens`), parse de
+`usage` (OpenAI-compatível) e `usageMetadata`/`thoughtsTokenCount` (Gemini) nos
+adapters, e o helper `reasoning_level`. `RUST_LOG=debug` para ver.
+
+### 4) Badge "Nunca usada" persistia (ISS-040)
+Duas causas: (a) a janela de Configurações **nasce oculta** — o React monta no
+boot e buscava a saúde **uma vez só**, antes de qualquer uso; (b) o caminho de
+**validação** registrava a saúde mas não emitia `llm_source_used`.
+Correção: a tela **rebusca a saúde ao ganhar foco** (`onWindowFocus`) e a
+validação passa a emitir o evento. O log de debug ficou num struct
+(`ModelCallInfo`) para ser testável sem depender do subscriber global do
+`tracing` (que era flaky com testes paralelos).
+
 

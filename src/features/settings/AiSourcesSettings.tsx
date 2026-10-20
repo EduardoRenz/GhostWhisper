@@ -8,6 +8,7 @@ import {
   validateSource,
 } from "../../adapters/ipc/aiSources";
 import { subscribe } from "../../adapters/ipc/events";
+import { onWindowFocus } from "../../adapters/ipc/client";
 import { secretsPersistent } from "../../adapters/ipc/settings";
 import type { AiSource, AiSourceHealth, ProviderKind } from "../../core/domain/settings";
 import { AddProviderForm } from "./AddProviderForm";
@@ -77,6 +78,19 @@ export function AiSourcesSettings({
       setPersistent((await secretsPersistent()) ?? true);
       await refreshHealth();
     })();
+  }, [refreshHealth]);
+
+  // A janela de Configurações **nasce oculta**: o React monta no boot e a
+  // saúde da fonte ficaria congelada no estado inicial ("Nunca usada") mesmo
+  // depois de a fonte responder. Ao ganhar foco, busca de novo (BR-045).
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    void onWindowFocus((focused) => {
+      if (focused) void refreshHealth();
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop?.();
   }, [refreshHealth]);
 
   useEffect(() => {

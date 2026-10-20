@@ -39,6 +39,7 @@ pub trait AiSourceService: Send + Sync {
     /// Testa a conexão com **uma** fonte ("Validar chave").
     ///
     /// Recebe a fonte inteira (não só o id) para que uma fonte ainda no
-    /// rascunho possa ser validada antes de ser salva.
+    /// rascunho possa ser validada antes de ser salva. A validação bem-sucedida
+    /// também **marca a fonte como usada** (a tela mostra "Conectada").
     fn validate(&self, source: &AiSource) -> Result<String>;
 }

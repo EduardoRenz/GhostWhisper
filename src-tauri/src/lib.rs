@@ -406,14 +406,16 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let ai_source_health = Arc::new(application::ai_source_health::AiSourceHealthRegistry::new(
         Arc::clone(&clock),
     ));
-    let ai_sources: Arc<dyn ports::ai_source_service::AiSourceService> =
-        Arc::new(application::ai_source_service::LocalAiSourceService::new(
+    let ai_sources: Arc<dyn ports::ai_source_service::AiSourceService> = Arc::new(
+        application::ai_source_service::LocalAiSourceService::with_publisher(
             Arc::clone(&settings),
             Arc::clone(&secrets),
             Arc::clone(&factory),
             Arc::clone(&ai_source_health),
             Arc::clone(&clock),
-        ));
+            Arc::clone(&publisher),
+        ),
+    );
     let llm: Arc<dyn LlmController> = Arc::new(LlmRouter::with_telemetry(
         factory,
         Arc::clone(&settings),

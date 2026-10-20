@@ -77,12 +77,16 @@ Mesmas personas do MVP ([`../mvp/prd.md`](../mvp/prd.md) §3), com foco em:
 - Cadastro, edição, exclusão e **reordenação** de fontes de IA; a ordem da
   lista é a ordem de prioridade e a **primeira é a primária**.
 - **Chave por fonte** no keyring (`llm.source.{id}`), com versão mascarada,
-  "Validar chave", "Trocar chave" e "Remover chave".
+  "Validar chave", "Trocar chave" e "Remover chave" — **inclusive para uma
+  fonte que ainda está no rascunho** (ISS-039).
+- **O modelo é digitado pelo usuário**, sem catálogo sugerido (BR-049).
 - **Fallback automático** em todas as chamadas de IA (sugestões, resumo
   incremental, tradução ao vivo) com **circuit breaker** por fonte.
 - **DeepSeek** como provedor de primeira classe.
 - Sinal de saúde por fonte na tela (conectada + latência / degradada / em
   fallback / falhou).
+- **Log de debug** com os dados do modelo usado na tarefa atual, com o nível
+  de raciocínio quando existir (BR-050).
 - Tela de Configurações repaginada com salvamento global.
 - Rotas por escopo **no modelo de dados** (fonte vinculada por agente ou por
   capacidade), sem UI de vínculo.
@@ -107,6 +111,8 @@ As regras canônicas vivem em [`../business-rules.md`](../business-rules.md):
 - **BR-046** — DeepSeek como fonte de primeira classe.
 - **BR-047** — Configurações repaginadas com salvamento global.
 - **BR-048** — Rotas de IA por escopo (modelo pronto, UI depois).
+- **BR-049** — O modelo é digitado pelo usuário (sem catálogo).
+- **BR-050** — Log de debug do modelo em uso (com nível de raciocínio).
 
 Regras pré-existentes que continuam valendo: BR-002 (sem backend), BR-003 (BYO
 key no keyring), BR-005 (áudio local), BR-008 (reconstruir comportamento, não

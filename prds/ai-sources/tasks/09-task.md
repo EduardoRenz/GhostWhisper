@@ -27,6 +27,20 @@ escopo (BR-048) e consolidar a documentação.
 - Verificação: `cargo test`, `cargo clippy`, `cargo fmt --check`, `pnpm test`,
   `tsc --noEmit`, `pnpm build`.
 
+## Ajustes pós-entrega (2026-10-19)
+
+- **Sem catálogo de modelos** (BR-049): o campo de modelo virou **livre** no
+  formulário de adição e no editor do card; `PROVIDER_MODELS` e
+  `PROVIDER_DEFAULT_MODELS` saíram do frontend.
+- **Chave de fonte no rascunho** (ISS-039): a chave no keyring passa a ser
+  indexada pelo **id** da fonte (`secret_key_for`), sem depender do arquivo de
+  settings; `validate` recebe a fonte inteira.
+- **Log de debug do modelo** (BR-050): `tracing::debug!` por chamada com
+  escopo, fonte, provider, modelo, parâmetros, latência, tokens e nível de
+  raciocínio (`CompletionUsage` + parse de `usage`/`usageMetadata`).
+- **Badge "Nunca usada" fixo** (ISS-040): a tela rebusca a saúde ao ganhar
+  foco (a janela nasce oculta) e a validação emite `llm_source_used`.
+
 ## Critérios de aceite
 
 - [x] As 4 abas restantes usam o layout de cards e o rodapé salva tudo.

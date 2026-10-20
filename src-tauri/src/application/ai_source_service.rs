@@ -13,6 +13,7 @@ use crate::domain::settings::redact_secret;
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::ai_source_service::AiSourceService;
 use crate::ports::clock::Clock;
+use crate::ports::event_publisher::{EventPublisher, LlmSourceUsage};
 use crate::ports::llm_provider_factory::ChatBotProviderFactory;
 use crate::ports::secret_store::SecretStore;
 use crate::ports::settings_store::SettingsStore;
@@ -29,16 +30,18 @@ pub struct LocalAiSourceService {
     factory: Arc<dyn ChatBotProviderFactory>,
     health: Arc<AiSourceHealthRegistry>,
     clock: Arc<dyn Clock>,
+    publisher: Arc<dyn EventPublisher>,
 }
 
 impl LocalAiSourceService {
-    /// Cria o serviço com as portas resolvidas.
-    pub fn new(
+    /// Cria o serviço com o publicador de eventos (a UI acompanha o uso).
+    pub fn with_publisher(
         settings: Arc<dyn SettingsStore>,
         secrets: Arc<dyn SecretStore>,
         factory: Arc<dyn ChatBotProviderFactory>,
         health: Arc<AiSourceHealthRegistry>,
         clock: Arc<dyn Clock>,
+        publisher: Arc<dyn EventPublisher>,
     ) -> Self {
         Self {
             settings,
@@ -46,6 +49,7 @@ impl LocalAiSourceService {
             factory,
             health,
             clock,
+            publisher,
         }
     }
 
@@ -148,6 +152,7 @@ impl AiSourceService for LocalAiSourceService {
             Ok(completion) => {
                 let latency = (self.clock.now_ms() - started).max(0) as u64;
                 self.health.record_success(&source.id, latency);
+                self.health.mark_fallback(&source.id, false);
                 tracing::debug!(
                     source = %source.display_label(),
                     provider = %source.kind.as_str(),
@@ -158,6 +163,14 @@ impl AiSourceService for LocalAiSourceService {
                     reasoning_tokens = ?completion.usage.and_then(|usage| usage.reasoning_tokens),
                     "llm: validação da fonte concluída"
                 );
+                // A validação também é um uso: a UI passa a mostrar a fonte como
+                // conectada (o evento é o mesmo do roteador — BR-045).
+                self.publisher.emit_llm_source_used(&LlmSourceUsage {
+                    source_id: source.id.clone(),
+                    label: source.display_label(),
+                    is_fallback: false,
+                    latency_ms: latency,
+                });
                 Ok(completion.text)
             }
             Err(error) => {
@@ -207,7 +220,7 @@ mod tests {
     ) {
         let calls = Arc::new(AtomicUsize::new(0));
         let secrets = Arc::new(InMemorySecretStore::new());
-        let service = LocalAiSourceService::new(
+        let service = LocalAiSourceService::with_publisher(
             Arc::new(InMemorySettingsStore::with_settings(Settings::default())),
             secrets.clone(),
             Arc::new(CountingFactory {
@@ -215,6 +228,7 @@ mod tests {
             }),
             Arc::new(AiSourceHealthRegistry::new(Arc::new(MutableClock::new(0)))),
             Arc::new(MutableClock::new(0)),
+            Arc::new(crate::adapters::events::null_event_publisher::NullEventPublisher),
         );
         (service, secrets, calls)
     }

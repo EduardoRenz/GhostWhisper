@@ -17,8 +17,28 @@ const settingsIpc = vi.hoisted(() => ({
   secretsPersistent: vi.fn(async () => true),
 }));
 
+/** Foco da janela: guarda o handler para disparar no teste. */
+const focus = vi.hoisted(() => ({
+  handler: null as null | ((focused: boolean) => void),
+}));
+
+const clientIpc = vi.hoisted(() => ({
+  onWindowFocus: vi.fn(async (handler: (focused: boolean) => void) => {
+    focus.handler = handler;
+    return () => {
+      focus.handler = null;
+    };
+  }),
+}));
+
 vi.mock("../../adapters/ipc/aiSources", () => aiSourcesIpc);
 vi.mock("../../adapters/ipc/settings", () => settingsIpc);
+vi.mock("../../adapters/ipc/client", async () => {
+  const actual = await vi.importActual<typeof import("../../adapters/ipc/client")>(
+    "../../adapters/ipc/client",
+  );
+  return { ...actual, ...clientIpc };
+});
 
 const openai: AiSource = {
   id: "a",
@@ -239,6 +259,38 @@ describe("AiSourcesSettings", () => {
     const next = onChange.mock.calls[0]?.[0] as AiSource[];
     expect(next[0]?.id).toBe("b");
     expect(next[1]?.id).toBe("a");
+  });
+
+  it("recarrega a saúde quando a janela ganha foco", async () => {
+    // A janela de Configurações nasce oculta: o badge "Nunca usada" ficaria
+    // congelado se a saúde não fosse buscada de novo ao abrir a janela.
+    aiSourcesIpc.sourcesHealth.mockResolvedValue([]);
+    renderTab([openai]);
+    await screen.findAllByRole("article");
+
+    const callsBefore = aiSourcesIpc.sourcesHealth.mock.calls.length;
+
+    // Agora a fonte responde (o usuário rodou um teste).
+    aiSourcesIpc.sourcesHealth.mockResolvedValue([
+      {
+        source_id: "a",
+        state: "ready",
+        consecutive_failures: 0,
+        latency_ms: 142,
+        last_error: null,
+        is_fallback: false,
+        open_until_ms: null,
+      },
+    ]);
+
+    await act(async () => {
+      focus.handler?.(true);
+    });
+
+    expect(aiSourcesIpc.sourcesHealth.mock.calls.length).toBeGreaterThan(
+      callsBefore,
+    );
+    expect(await screen.findByText("Conectada · Latência 142 ms")).toBeDefined();
   });
 
   it("não deixa excluir a última fonte", async () => {

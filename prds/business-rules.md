@@ -936,3 +936,32 @@ uma nota de revisão.
 - **Detalhes:** [`ai-sources/architecture/ai-sources.md`](ai-sources/architecture/ai-sources.md)
   §2.4 e §3.2.
 - **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-049 — O modelo é digitado pelo usuário (sem catálogo)
+
+- **Decisão:** a fonte de IA **não sugere** uma lista de modelos: o campo de
+  modelo é **livre** e o usuário digita o nome (`gpt-6`, `deepseek-chat`, …).
+  O formulário de adicionar fonte e o editor do card usam o mesmo campo de
+  texto.
+- **Motivo:** qualquer catálogo de modelos desatualiza em poucas semanas e
+  prende o usuário num modelo antigo — ou, pior, esconde um modelo novo que
+  ele quer usar. O provider é a autoridade sobre o que existe; o app não
+  precisa saber.
+- **Consequência:** `PROVIDER_MODELS` não existe no frontend; o botão
+  "Adicionar" só habilita com o modelo preenchido.
+- **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-050 — Log de debug do modelo em uso (com nível de raciocínio)
+
+- **Decisão:** toda chamada de LLM emite um `tracing::debug!` com os **dados
+  do modelo na tarefa atual**: escopo (agente/capacidade), fonte, provider,
+  **modelo**, `max_tokens`, `temperature`, latência, tokens de
+  entrada/saída/total e o **nível de raciocínio** quando existir (tokens
+  reportados pelo provider ou modelo de raciocínio). Falhas emits o mesmo
+  contexto com o erro.
+- **Motivo:** com várias fontes e fallback, é preciso saber **qual** modelo
+  respondeu a tarefa — e quanto ele raciocinou — sem attaching um proxy.
+- **Consequência:** `domain::llm::CompletionUsage` (com `reasoning_tokens`),
+  parse de `usage`/`usageMetadata` nos adapters, e
+  `RUST_LOG=debug` para ver.
+- **Data:** 2026-10-19 · **Status:** Ativa

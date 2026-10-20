@@ -27,6 +27,63 @@ use super::ai_source_health::AiSourceHealthRegistry;
 /// Prompt trivial usado no teste de conexão.
 const VALIDATION_PROMPT: &str = "Responda apenas com a palavra: ok";
 
+/// Dados do modelo usados na chamada — é o que vai para o log de debug
+/// (BR-050).
+///
+/// Ficam num struct (e não no macro) para serem **testáveis** sem depender do
+/// subscriber global do `tracing`.
+#[derive(Debug, Clone, PartialEq)]
+struct ModelCallInfo {
+    /// Tarefa que chamou (agente, capacidade ou padrão).
+    scope: String,
+    /// Nome de exibição da fonte.
+    source: String,
+    /// Id da fonte.
+    source_id: String,
+    /// Provedor (`openai`, `deepseek`, …).
+    provider: String,
+    /// Modelo realmente usado.
+    model: String,
+    /// A fonte respondeu em fallback?
+    is_fallback: bool,
+    /// Teto de tokens do pedido.
+    max_tokens: Option<u32>,
+    /// Temperatura do pedido.
+    temperature: Option<f32>,
+    /// Latência da chamada (ms).
+    latency_ms: u64,
+    /// Uso de tokens reportado pelo provider.
+    usage: Option<CompletionUsage>,
+    /// Nível de raciocínio (ver [`reasoning_level`]).
+    reasoning: &'static str,
+}
+
+impl ModelCallInfo {
+    /// Monta os dados da chamada.
+    fn new(
+        source: &AiSource,
+        scope: &AiRouteScope,
+        request: &CompletionRequest,
+        latency_ms: u64,
+        is_fallback: bool,
+        usage: Option<CompletionUsage>,
+    ) -> Self {
+        Self {
+            scope: scope.label(),
+            source: source.display_label(),
+            source_id: source.id.clone(),
+            provider: source.kind.as_str().to_string(),
+            model: source.model.clone(),
+            is_fallback,
+            max_tokens: request.max_tokens,
+            temperature: request.temperature,
+            latency_ms,
+            usage,
+            reasoning: reasoning_level(source, usage.as_ref()),
+        }
+    }
+}
+
 /// Nível de raciocínio do modelo, para o log de debug.
 ///
 /// O app **não** manda parâmetro de raciocínio: o nível vem do próprio modelo
@@ -167,21 +224,22 @@ impl LlmRouter {
     ) {
         self.health.record_success(&source.id, latency_ms);
         self.health.mark_fallback(&source.id, is_fallback);
+        let info = ModelCallInfo::new(source, scope, request, latency_ms, is_fallback, usage);
         tracing::debug!(
-            scope = %scope.label(),
-            source = %source.display_label(),
-            source_id = %source.id,
-            provider = %source.kind.as_str(),
-            model = %source.model,
-            is_fallback,
-            max_tokens = ?request.max_tokens,
-            temperature = ?request.temperature,
-            latency_ms,
-            prompt_tokens = ?usage.map(|usage| usage.prompt_tokens),
-            completion_tokens = ?usage.map(|usage| usage.completion_tokens),
-            total_tokens = ?usage.map(|usage| usage.total_tokens),
-            reasoning_tokens = ?usage.and_then(|usage| usage.reasoning_tokens),
-            reasoning = reasoning_level(source, usage.as_ref()),
+            scope = %info.scope,
+            source = %info.source,
+            source_id = %info.source_id,
+            provider = %info.provider,
+            model = %info.model,
+            is_fallback = info.is_fallback,
+            max_tokens = ?info.max_tokens,
+            temperature = ?info.temperature,
+            latency_ms = info.latency_ms,
+            prompt_tokens = ?info.usage.map(|usage| usage.prompt_tokens),
+            completion_tokens = ?info.usage.map(|usage| usage.completion_tokens),
+            total_tokens = ?info.usage.map(|usage| usage.total_tokens),
+            reasoning_tokens = ?info.usage.and_then(|usage| usage.reasoning_tokens),
+            reasoning = info.reasoning,
             "llm: resposta concluída"
         );
         self.publisher.emit_llm_source_used(&LlmSourceUsage {
@@ -526,6 +584,85 @@ mod tests {
             publisher.clone(),
         );
         (router, factory, secrets, publisher, health, clock)
+    }
+
+    #[test]
+    fn the_debug_log_carries_the_model_data_of_the_current_task() {
+        // O log de debug precisa dizer **qual** modelo respondeu a tarefa atual,
+        // com o nível de raciocínio quando existir.
+        let source = source("a", ProviderKind::DeepSeek, "deepseek-reasoner");
+        let request = CompletionRequest::user("oi")
+            .with_max_tokens(420)
+            .with_temperature(0.0);
+        let usage = CompletionUsage {
+            prompt_tokens: 1180,
+            completion_tokens: 260,
+            total_tokens: 1440,
+            reasoning_tokens: Some(96),
+        };
+
+        let info = ModelCallInfo::new(
+            &source,
+            &AiRouteScope::Agent("meeting".into()),
+            &request,
+            1420,
+            true,
+            Some(usage),
+        );
+
+        assert_eq!(info.scope, "agent:meeting");
+        assert_eq!(info.source, "DeepSeek");
+        assert_eq!(info.source_id, "a");
+        assert_eq!(info.provider, "deepseek");
+        assert_eq!(info.model, "deepseek-reasoner");
+        assert!(info.is_fallback);
+        assert_eq!(info.max_tokens, Some(420));
+        assert_eq!(info.temperature, Some(0.0));
+        assert_eq!(info.latency_ms, 1420);
+        assert_eq!(
+            info.usage.and_then(|usage| usage.reasoning_tokens),
+            Some(96)
+        );
+        // Tokens de raciocínio reportados: o nível vem deles.
+        assert_eq!(info.reasoning, "reasoning (tokens reportados)");
+    }
+
+    #[test]
+    fn the_scope_labels_identify_the_current_task() {
+        assert_eq!(AiRouteScope::Default.label(), "default");
+        assert_eq!(
+            AiRouteScope::Capability(crate::domain::ai_route::AiCapability::Summary).label(),
+            "capability:Summary"
+        );
+        assert_eq!(
+            AiRouteScope::Agent("meeting".into()).label(),
+            "agent:meeting"
+        );
+    }
+
+    #[test]
+    fn a_call_marks_the_source_as_used() {
+        // O card da tela mostra "Nunca usada" até a fonte responder de fato:
+        // o roteador precisa marcar a saúde da fonte que respondeu.
+        let settings = Settings {
+            ai_sources: vec![source("a", ProviderKind::DeepSeek, "deepseek-chat")],
+            ..Settings::default()
+        };
+        let (router, _factory, _secrets, _publisher, health, _clock) =
+            router(settings, &[("a", "chave")]);
+
+        let before = health.health_of("a");
+        assert_eq!(
+            before.state,
+            crate::domain::ai_source::AiSourceState::Unknown
+        );
+
+        router.complete(&CompletionRequest::user("oi")).expect("ok");
+
+        let after = health.health_of("a");
+        assert_eq!(after.state, crate::domain::ai_source::AiSourceState::Ready);
+        assert!(after.latency_ms.is_some());
+        assert!(!after.is_fallback);
     }
 
     #[test]
