@@ -7,6 +7,7 @@
 //! Adaptadores só são instanciados no composition root (`lib.rs`).
 
 pub mod ai;
+pub mod ai_sources;
 pub mod audio;
 pub mod dwell;
 pub mod events;

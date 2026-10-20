@@ -2,6 +2,8 @@
 //!
 //! Nesta camada não existe I/O, framework, rede ou acesso a disco.
 
+pub mod ai_route;
+pub mod ai_source;
 pub mod assistant;
 pub mod audio;
 pub mod geometry;

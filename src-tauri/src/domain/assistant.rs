@@ -94,6 +94,12 @@ pub struct AssistantMode {
     /// Cor do agente (token do design system — BR-037).
     #[serde(default = "default_agent_color")]
     pub color: String,
+    /// Fonte de IA vinculada ao agente (BR-048).
+    ///
+    /// `None` = usa a fonte primária. A UI de vínculo é da PRD seguinte; o
+    /// campo existe para o roteador não precisar ser refatorado depois.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
 }
 
 impl AssistantMode {
@@ -227,6 +233,7 @@ mod tests {
             context: String::new(),
             icon: default_agent_icon(),
             color: default_agent_color(),
+            source_id: None,
         }
     }
 

@@ -148,6 +148,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             context: String::new(),
             icon: "users".to_string(),
             color: "cyan".to_string(),
+            source_id: None,
         },
         AssistantMode {
             id: "technical_interview".to_string(),
@@ -158,6 +159,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             context: String::new(),
             icon: "braces".to_string(),
             color: "violet".to_string(),
+            source_id: None,
         },
         AssistantMode {
             id: "leetcode".to_string(),
@@ -168,6 +170,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             context: String::new(),
             icon: "code".to_string(),
             color: "emerald".to_string(),
+            source_id: None,
         },
         AssistantMode {
             id: "system_design".to_string(),
@@ -178,6 +181,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             context: String::new(),
             icon: "layers".to_string(),
             color: "coral".to_string(),
+            source_id: None,
         },
     ]
 }
@@ -372,6 +376,7 @@ mod tests {
             context: String::new(),
             icon: "briefcase".into(),
             color: "coral".into(),
+            source_id: None,
         }];
         assert_eq!(
             resolve_mode("custom-vendas", &custom).map(|m| m.name),
@@ -405,6 +410,7 @@ mod tests {
             context: "Produto: GhostWhisper.".into(),
             icon: "sparkle".into(),
             color: "slate".into(),
+            source_id: None,
         };
         let prompt = suggestion_system_prompt(&mode, None);
         assert!(prompt.contains("live meeting copilot"));

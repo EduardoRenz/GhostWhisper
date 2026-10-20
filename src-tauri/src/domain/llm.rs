@@ -1,5 +1,7 @@
 //! Tipos de domínio para chamadas a LLMs.
 
+use serde::{Deserialize, Serialize};
+
 use super::settings::ProviderKind;
 
 /// Configuração resolvida de um provider (com segredo apenas em memória).
@@ -51,9 +53,35 @@ impl CompletionRequest {
     }
 }
 
+/// Uso de tokens de uma completude (o que o provider reporta).
+///
+/// `reasoning_tokens` só existe em modelos de raciocínio (OpenAI `o*`/`gpt-5`,
+/// DeepSeek `deepseek-reasoner`, Gemini `thoughtsTokenCount`); quando o provider
+/// não informa, fica `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct CompletionUsage {
+    /// Tokens do prompt (entrada).
+    pub prompt_tokens: u32,
+    /// Tokens gerados (saída, **incluindo** o raciocínio).
+    pub completion_tokens: u32,
+    /// Total (entrada + saída).
+    pub total_tokens: u32,
+    /// Tokens usados só para raciocínio (quando o provider informa).
+    pub reasoning_tokens: Option<u32>,
+}
+
+impl CompletionUsage {
+    /// `true` quando o modelo consumiu tokens de raciocínio.
+    pub fn has_reasoning(&self) -> bool {
+        self.reasoning_tokens.unwrap_or(0) > 0
+    }
+}
+
 /// Resultado de uma completude.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Completion {
     pub text: String,
     pub model: String,
+    /// Uso de tokens (quando o provider reporta).
+    pub usage: Option<CompletionUsage>,
 }

@@ -41,6 +41,13 @@ insights (BYO key) → persistência e busca. O MVP está descrito em
 [`prds/mvp/prd.md`](prds/mvp/prd.md); a decisão sobre Wayland está no
 [`wayland-spike.md`](prds/mvp/architecture/wayland-spike.md).
 
+**Fontes de IA múltiplas** (tarefas 01–09 em
+[`prds/ai-sources/tasks/_tasks.md`](prds/ai-sources/tasks/_tasks.md)): várias
+fontes de IA ordenadas (a primeira é a primária), chave por fonte, fallback
+automático com circuit breaker, DeepSeek como provedor de primeira classe e a
+tela de Configurações repaginada com salvamento global. Detalhes em
+[`prds/ai-sources/prd.md`](prds/ai-sources/prd.md).
+
 ## Requisitos
 
 - Rust (stable) + `cargo`
@@ -146,8 +153,18 @@ GhostWhisper/
 
 A configuração é feita na tela **Settings** do app e persistida localmente:
 
-- **Provider de LLM:** OpenAI, Gemini, OpenRouter ou endpoint custom (`base_url`).
-- **API key:** guardada no keyring do sistema (Secret Service), nunca em texto puro.
+- **Fontes de IA:** você pode cadastrar **várias** fontes (OpenAI, Gemini,
+  OpenRouter, DeepSeek ou endpoint custom OpenAI-compatível), cada uma com seu
+  modelo e sua **própria chave**. A **ordem da lista é a ordem de prioridade**:
+  a primeira é a que responde. Arraste a alça para reordenar ou use
+  "Tornar primário".
+- **Fallback automático:** se a fonte primária falhar (429, chave expirada,
+  timeout), a próxima fonte da lista assume sozinha. Cada fonte tem um
+  **circuit breaker**: depois de 3 falhas seguidas ela é pulada por 60 s (não
+  gasta timeout) e volta a ser tentada sozinha — o cartão mostra "Conectada ·
+  Latência N ms", "Fallback ativo" ou "Falhou".
+- **API key:** guardada no keyring do sistema (Secret Service), nunca em texto
+  puro; a tela só mostra a versão mascarada (`••••••••·abcd`).
 - **Transcrição:** modelo whisper.cpp local (tiny/base/small/medium) ou cloud.
   O modelo escolhido é **baixado só na primeira sessão** que o usa (nada é
   baixado de antemão).
@@ -156,6 +173,10 @@ A configuração é feita na tela **Settings** do app e persistida localmente:
   (ou igual à origem) **não traduz**.
 - **Áudio:** microfone e/ou monitor de saída do sistema (sink).
 - **Atalhos globais** para mostrar/ocultar o overlay.
+
+As alterações são feitas num **rascunho** e salvas de uma vez no botão
+**"Salvar Alterações"** (rodapé da tela). "Restaurar Padrões" volta tudo ao
+padrão de fábrica (as chaves no keyring **não** são apagadas).
 
 Nada é enviado para servidores do GhostWhisper — não existe backend próprio.
 

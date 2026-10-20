@@ -396,3 +396,59 @@ export function CollapseIcon({ className, size = 18 }: IconProps) {
     </Icon>
   );
 }
+
+/** Pessoas: a aba "Assistente" (agentes). */
+export function UsersIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="9.2" cy="8.4" r="3.1" />
+        <path d="M3.6 19.4c.5-3 2.8-4.8 5.6-4.8s5.1 1.8 5.6 4.8" />
+        <path d="M16.2 5.9a3 3 0 0 1 0 5.6" />
+        <path d="M17.6 14.9c1.7.6 2.9 2 3.2 4.1" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Teclado: a aba "Atalhos". */
+export function KeyboardIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2.8" y="6" width="18.4" height="12" rx="2.2" />
+        <path d="M6.4 9.6h.01M9.6 9.6h.01M12.8 9.6h.01M16 9.6h.01M8 14.4h8" />
+        <path d="M18.8 12.2h.01M6.4 12.2h.01M9.6 12.2h.01M12.8 12.2h.01M16 12.2h.01" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Raio: a aba "Fontes de IA" (energia da IA). */
+export function BoltIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M13.2 2.8 5.4 13.4h5.2l-.8 7.8 7.8-10.6h-5.2z" />
+      </g>
+    </Icon>
+  );
+}

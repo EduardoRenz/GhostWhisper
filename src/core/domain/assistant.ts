@@ -15,6 +15,12 @@ export interface AssistantMode {
   icon: string;
   /** Cor do agente (token do design system — BR-037). */
   color: string;
+  /**
+   * Fonte de IA vinculada ao agente (BR-048).
+   *
+   * `undefined` = usa a fonte primária. A UI de vínculo é da PRD seguinte.
+   */
+  source_id?: string | null;
 }
 
 /** IDs reservados dos agentes embutidos. */

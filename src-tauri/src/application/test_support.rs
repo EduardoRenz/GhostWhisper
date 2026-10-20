@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::domain::ai_route::AiRouteScope;
 use crate::domain::llm::{Completion, CompletionRequest};
 use crate::domain::transcription::{SpeechQuality, TranscribedSpan};
 use crate::error::{GhostWhisperError, Result};
@@ -107,6 +108,7 @@ pub struct FakeLlmController {
     responses: Mutex<Vec<String>>,
     failure: Mutex<Option<String>>,
     requests: Mutex<Vec<CompletionRequest>>,
+    scopes: Mutex<Vec<AiRouteScope>>,
 }
 
 impl FakeLlmController {
@@ -117,6 +119,7 @@ impl FakeLlmController {
             responses: Mutex::new(Vec::new()),
             failure: Mutex::new(None),
             requests: Mutex::new(Vec::new()),
+            scopes: Mutex::new(Vec::new()),
         }
     }
 
@@ -152,6 +155,11 @@ impl FakeLlmController {
     pub fn call_count(&self) -> usize {
         self.requests.lock().unwrap().len()
     }
+
+    /// Escopos pedidos (BR-048), em ordem.
+    pub fn scopes(&self) -> Vec<AiRouteScope> {
+        self.scopes.lock().unwrap().clone()
+    }
 }
 
 impl Default for FakeLlmController {
@@ -171,6 +179,37 @@ impl LlmController for FakeLlmController {
 
     fn complete(&self, request: &CompletionRequest) -> Result<Completion> {
         self.requests.lock().unwrap().push(request.clone());
+        self.scopes.lock().unwrap().push(AiRouteScope::Default);
+        self.respond()
+    }
+
+    fn complete_for(
+        &self,
+        scope: &AiRouteScope,
+        request: &CompletionRequest,
+    ) -> Result<Completion> {
+        self.requests.lock().unwrap().push(request.clone());
+        self.scopes.lock().unwrap().push(scope.clone());
+        self.respond()
+    }
+
+    fn complete_streaming_for(
+        &self,
+        scope: &AiRouteScope,
+        request: &CompletionRequest,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Completion> {
+        self.requests.lock().unwrap().push(request.clone());
+        self.scopes.lock().unwrap().push(scope.clone());
+        let completion = self.respond()?;
+        on_text(&completion.text);
+        Ok(completion)
+    }
+}
+
+impl FakeLlmController {
+    /// Resposta programada (fila, fixa ou falha).
+    fn respond(&self) -> Result<Completion> {
         if let Some(message) = self.failure.lock().unwrap().clone() {
             return Err(GhostWhisperError::Other(message));
         }
@@ -186,6 +225,7 @@ impl LlmController for FakeLlmController {
         Ok(Completion {
             text,
             model: "fake".into(),
+            usage: None,
         })
     }
 }

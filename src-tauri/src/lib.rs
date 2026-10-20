@@ -75,17 +75,21 @@ pub fn run() {
             ipc::export_commands::session_export_markdown,
             ipc::export_commands::session_save_markdown,
             ipc::settings_commands::settings_open,
+            ipc::settings_commands::settings_close,
             ipc::settings_commands::settings_providers,
             ipc::settings_commands::settings_get,
             ipc::settings_commands::settings_set,
-            ipc::settings_commands::settings_set_provider_key,
-            ipc::settings_commands::settings_has_provider_key,
-            ipc::settings_commands::settings_clear_provider_key,
             ipc::settings_commands::settings_validate_key,
             ipc::settings_commands::settings_provider_label,
-            ipc::settings_commands::settings_key_preview,
             ipc::settings_commands::settings_secrets_persistent,
             ipc::settings_commands::settings_gpu_info,
+            ipc::ai_source_commands::ai_sources_list,
+            ipc::ai_source_commands::ai_sources_health,
+            ipc::ai_source_commands::ai_source_set_key,
+            ipc::ai_source_commands::ai_source_has_key,
+            ipc::ai_source_commands::ai_source_clear_key,
+            ipc::ai_source_commands::ai_source_key_preview,
+            ipc::ai_source_commands::ai_source_validate,
             ipc::llm_commands::llm_translate,
             ipc::suggestion_commands::assistant_modes_list,
             ipc::suggestion_commands::suggestion_generate,
@@ -375,10 +379,48 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         }
     };
     let factory: Arc<dyn ChatBotProviderFactory> = Arc::new(DefaultChatBotProviderFactory);
-    let llm: Arc<dyn LlmController> = Arc::new(LlmRouter::new(
+
+    // Migração das configurações/chaves anteriores às fontes de IA (BR-044):
+    // `provider`/`model`/`base_url` viram uma fonte e a chave legada
+    // (`llm.openai`) é copiada para `llm.source.{id}`. Idempotente.
+    match application::ai_source_migration::AiSourceMigration::new(
+        Arc::clone(&settings),
+        Arc::clone(&secrets),
+    )
+    .migrate()
+    {
+        Ok(outcome) => {
+            if outcome.source_created || outcome.key_copied {
+                tracing::info!(
+                    source_created = outcome.source_created,
+                    key_copied = outcome.key_copied,
+                    "configuração de IA migrada para fontes"
+                );
+            }
+        }
+        Err(error) => tracing::warn!("falha ao migrar as fontes de IA: {error}"),
+    }
+
+    // Registro de saúde + circuit breaker das fontes (BR-045): compartilhado
+    // entre o roteador e o serviço de fontes.
+    let ai_source_health = Arc::new(application::ai_source_health::AiSourceHealthRegistry::new(
+        Arc::clone(&clock),
+    ));
+    let ai_sources: Arc<dyn ports::ai_source_service::AiSourceService> =
+        Arc::new(application::ai_source_service::LocalAiSourceService::new(
+            Arc::clone(&settings),
+            Arc::clone(&secrets),
+            Arc::clone(&factory),
+            Arc::clone(&ai_source_health),
+            Arc::clone(&clock),
+        ));
+    let llm: Arc<dyn LlmController> = Arc::new(LlmRouter::with_telemetry(
         factory,
         Arc::clone(&settings),
         Arc::clone(&secrets),
+        ai_source_health,
+        Arc::clone(&clock),
+        Arc::clone(&publisher),
     ));
 
     // Casos de uso de LLM (tradução, resumo e sugestões).
@@ -485,6 +527,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         secrets,
         gpu,
         llm,
+        ai_sources,
         translator,
         summary,
         suggestions,

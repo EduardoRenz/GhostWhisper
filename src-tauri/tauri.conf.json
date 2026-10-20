@@ -28,8 +28,10 @@
     {
       "label": "settings",
       "title": "GhostWhisper — Configurações",
-      "width": 520,
-      "height": 640,
+      "width": 1020,
+      "height": 720,
+      "minWidth": 760,
+      "minHeight": 560,
       "resizable": true,
       "visible": false,
       "alwaysOnTop": true,

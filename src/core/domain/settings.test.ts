@@ -4,6 +4,7 @@ import {
   ACCELERATION_MODES,
   LANGUAGES,
   PROVIDERS,
+  PROVIDER_DEFAULT_BASE_URLS,
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
   WHISPER_MODELS,
@@ -14,9 +15,25 @@ import {
 describe("settings (domínio)", () => {
   it("defaults são válidos e coerentes", () => {
     const settings = defaultSettings();
-    expect(settings.model).not.toBe("");
-    expect(settings.provider).toBe("openai");
+    const first = settings.ai_sources[0];
+    expect(settings.ai_sources.length).toBe(1);
+    expect(first?.kind).toBe("openai");
+    expect(first?.model).not.toBe("");
     expect(settings.translation_enabled).toBe(false);
+  });
+
+  it("a primeira fonte é a primária e o resto é fallback", () => {
+    const settings = defaultSettings();
+    expect(settings.ai_sources[0]?.enabled).toBe(true);
+    expect(settings.ai_routes).toEqual([]);
+  });
+
+  it("o catálogo de providers inclui o DeepSeek", () => {
+    expect(PROVIDERS).toContain("deepseek");
+    // Não há catálogo de modelos: o usuário digita o nome.
+    expect(PROVIDER_DEFAULT_BASE_URLS.deepseek).toBe(
+      "https://api.deepseek.com/v1",
+    );
   });
 
   it("somente custom exige base_url", () => {

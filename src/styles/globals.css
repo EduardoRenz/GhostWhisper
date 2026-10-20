@@ -868,12 +868,358 @@ body,
 .settings {
   align-items: stretch;
   justify-content: flex-start;
-  gap: 1rem;
-  padding: 1.25rem;
-  overflow-y: auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
   background: var(--oh-surface);
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* Cabeçalho da tela: ícone, título, subtítulo, atalho e fechar. */
+.settings__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem 0.7rem;
+  border-bottom: 1px solid var(--oh-border);
+}
+
+.settings__header-icon {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: var(--oh-radius-full);
+  color: var(--oh-accent);
+  background: rgba(0, 242, 254, 0.1);
+  border: 1px solid rgba(0, 242, 254, 0.28);
+}
+
+.settings__header-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings__header-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--oh-text-strong);
+}
+
+.settings__header-subtitle {
+  margin: 0.1rem 0 0;
+  font-size: 0.72rem;
+  color: var(--oh-text-muted);
+}
+
+.settings__header-hint {
+  font-family: var(--oh-font-mono, monospace);
+  font-size: 0.65rem;
+  color: var(--oh-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius);
+  padding: 0.15rem 0.35rem;
+}
+
+.settings__header-close {
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--oh-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--oh-radius);
+  padding: 0.3rem 0.45rem;
+  cursor: pointer;
+}
+
+.settings__header-close:hover {
+  color: var(--oh-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Barra de abas com ícone (BR-047). */
+.settings__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.55rem 1.1rem;
+  border-bottom: 1px solid var(--oh-border);
+}
+
+.settings__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--oh-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--oh-radius-full);
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+
+.settings__tab:hover {
+  color: var(--oh-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings__tab--active {
+  color: var(--oh-accent);
+  background: rgba(0, 242, 254, 0.12);
+  border-color: rgba(0, 242, 254, 0.5);
+}
+
+/* Corpo rolável: as seções em cards. */
+.settings__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem 1.1rem;
+}
+
+.settings__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  background: var(--oh-surface-container-low);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius);
+}
+
+.settings__card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings__card-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--oh-text-strong);
+}
+
+.settings__card-note {
+  font-size: 0.7rem;
+  color: var(--oh-text-muted);
+}
+
+.settings__card--add {
+  border-style: dashed;
+}
+
+/* Rodapé fixo: salvamento global (BR-047). */
+.settings__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 1.1rem;
+  background: var(--oh-surface-container);
+  border-top: 1px solid var(--oh-border);
+}
+
+.settings__footer-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--oh-text-muted);
+}
+
+.settings__footer-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: var(--oh-radius-full);
+  background: var(--oh-success);
+}
+
+.settings__footer-dot--dirty {
+  background: var(--oh-warning, #fbbf24);
+}
+
+.settings__footer-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.settings__button--primary {
+  color: var(--oh-surface);
+  background: var(--oh-accent);
+  border-color: var(--oh-accent);
+}
+
+.settings__button--primary:hover:not(:disabled) {
+  color: var(--oh-surface);
+  background: rgba(0, 242, 254, 0.85);
+}
+
+.settings__button--danger {
+  color: var(--oh-danger);
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.settings__button--danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.16);
+  box-shadow: none;
+}
+
+/* Fontes de IA (BR-044) -------------------------------------------------- */
+
+.settings__sources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.settings__source {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  background: var(--oh-surface-container);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings__source--primary {
+  border-color: rgba(0, 242, 254, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.12) inset;
+}
+
+.settings__source--disabled {
+  opacity: 0.6;
+}
+
+.settings__source--drop {
+  border-color: var(--oh-accent);
+  box-shadow: var(--oh-glow-focus);
+}
+
+.settings__source-header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.settings__source-grip {
+  display: inline-flex;
+  color: var(--oh-text-muted);
+  cursor: grab;
+}
+
+.settings__source-icon {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: var(--oh-radius-full);
+  color: var(--oh-accent);
+  background: rgba(0, 242, 254, 0.1);
+}
+
+.settings__source-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings__source-title strong {
+  font-size: 0.82rem;
+  color: var(--oh-text-strong);
+}
+
+.settings__source-sub {
+  font-size: 0.7rem;
+  color: var(--oh-text-muted);
+}
+
+.settings__source-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.settings__badge--ready {
+  color: var(--oh-success);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+
+.settings__badge--failed {
+  color: var(--oh-danger);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.settings__badge--degraded {
+  color: var(--oh-warning, #fbbf24);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.settings__source-key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.settings__source-key-label {
+  font-family: var(--oh-font-mono, monospace);
+  letter-spacing: 0.06rem;
+  color: var(--oh-text-muted);
+}
+
+.settings__source-key-store {
+  font-size: 0.68rem;
+  color: var(--oh-text-muted);
+}
+
+.settings__source-key-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings__source-key-edit input {
+  flex: 1 1 auto;
+  font: inherit;
+  color: var(--oh-text);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius);
+  padding: 0.4rem 0.55rem;
+}
+
+.settings__source-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings__source-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.settings__source-add .settings__field {
+  flex: 1 1 12rem;
 }
 
 .settings__group {
@@ -974,12 +1320,6 @@ body,
 }
 
 /* Abas das configurações (estilo Perssua: uma seção por aba). */
-.settings__nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
 .settings__tab {
   font: inherit;
   font-size: 0.75rem;
@@ -1000,20 +1340,6 @@ body,
   color: var(--oh-accent);
   background: rgba(0, 242, 254, 0.12);
   border-color: rgba(0, 242, 254, 0.5);
-}
-
-/* Chave de API mascarada (indica presença sem expor o valor). */
-.settings__key {
-  font: inherit;
-  font-size: 0.8rem;
-  letter-spacing: 0.08rem;
-  color: var(--oh-text-muted);
-  user-select: text;
-  -webkit-user-select: text;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px dashed var(--oh-border-strong);
-  border-radius: var(--oh-radius);
-  padding: 0.4rem 0.55rem;
 }
 
 .settings__shortcut {

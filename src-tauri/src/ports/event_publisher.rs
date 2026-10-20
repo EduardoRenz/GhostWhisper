@@ -43,6 +43,19 @@ pub struct SuggestionCadenceEvent {
     pub window_ms: i64,
 }
 
+/// Fonte de IA que respondeu a uma chamada (BR-045).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LlmSourceUsage {
+    /// Fonte que respondeu (`AiSource.id`).
+    pub source_id: String,
+    /// Nome de exibição da fonte.
+    pub label: String,
+    /// A fonte respondeu em **fallback** (não era a primeira da cadeia).
+    pub is_fallback: bool,
+    /// Latência da chamada (ms).
+    pub latency_ms: u64,
+}
+
 /// Publica eventos do domínio para a interface.
 ///
 /// Adaptador: `TauriEventPublisher`; dobra de teste: `RecordingEventPublisher`.
@@ -62,4 +75,6 @@ pub trait EventPublisher: Send + Sync {
     fn emit_suggestion_cadence(&self, cadence: &SuggestionCadenceEvent);
     /// Emite o status de preparação do motor de transcrição (download/carga).
     fn emit_asr_status(&self, status: &AsrStatus);
+    /// Emite qual fonte de IA respondeu (e se foi fallback) — BR-045.
+    fn emit_llm_source_used(&self, usage: &LlmSourceUsage);
 }

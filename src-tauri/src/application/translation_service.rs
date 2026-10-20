@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::domain::ai_route::{AiCapability, AiRouteScope};
 use crate::domain::llm::CompletionRequest;
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::llm_controller::LlmController;
@@ -45,7 +46,13 @@ impl Translator for TranslationService {
             .with_temperature(0.0)
             .with_max_tokens(1024);
 
-        Ok(self.llm.complete(&request)?.text)
+        Ok(self
+            .llm
+            .complete_for(
+                &AiRouteScope::Capability(AiCapability::Translation),
+                &request,
+            )?
+            .text)
     }
 }
 
@@ -79,6 +86,24 @@ mod tests {
         assert!(request.prompt.contains("bom dia"));
         let system = request.system.expect("system");
         assert!(system.contains("inglês"));
+    }
+
+    #[test]
+    fn asks_the_llm_with_the_translation_capability() {
+        // BR-048: a tradução pede a fonte da **capacidade** Translation.
+        let settings = Settings {
+            target_language: "en".into(),
+            ..Settings::default()
+        };
+        let (service, llm) = service(settings);
+
+        service.translate("bom dia").expect("translate");
+
+        let scopes = llm.scopes();
+        assert_eq!(
+            scopes,
+            vec![AiRouteScope::Capability(AiCapability::Translation)]
+        );
     }
 
     #[test]
@@ -125,22 +150,24 @@ mod tests {
         use crate::adapters::secrets::in_memory_secret_store::InMemorySecretStore;
         use crate::application::llm_router::LlmRouter;
         use crate::application::test_support::spawn_openai_mock;
+        use crate::domain::ai_source::AiSource;
         use crate::domain::settings::ProviderKind;
         use crate::ports::secret_store::SecretStore;
 
         let (base_url, seen) =
             spawn_openai_mock("{\"choices\":[{\"message\":{\"content\":\"hello\"}}]}");
+        let mut source = AiSource::new("fonte-local", ProviderKind::Custom);
+        source.model = "local-model".into();
+        source.base_url = Some(base_url);
         let settings = Settings {
-            provider: ProviderKind::Custom,
-            model: "local-model".into(),
-            base_url: Some(base_url),
+            ai_sources: vec![source.clone()],
             ..Settings::default()
         };
 
         let store = Arc::new(InMemorySettingsStore::with_settings(settings.clone()));
         let secrets = Arc::new(InMemorySecretStore::new());
         secrets
-            .set(&settings.provider.secret_key(), "test-key")
+            .set(&source.secret_key(), "test-key")
             .expect("set key");
         let llm = Arc::new(LlmRouter::new(
             Arc::new(DefaultChatBotProviderFactory),

@@ -849,3 +849,90 @@ uma nota de revisão.
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
   §3.4, [`chat/tasks/16-task.md`](chat/tasks/16-task.md).
 - **Data:** 2026-10-19 · **Status:** Ativa (task 16 implementada)
+
+## BR-044 — Fontes de IA múltiplas e ordenadas; a primeira é a primária
+
+- **Decisão:** o usuário pode cadastrar **várias** fontes de IA (provedor +
+  modelo + chave). A **ordem da lista é a ordem de prioridade** e a **primeira
+  fonte é a primária** (a que responde). Cada fonte tem **id próprio e
+  estável** e **chave própria** no keyring (`llm.source.{id}`) — a chave é por
+  fonte, não por tipo de provedor.
+- **Motivo:** (a) o usuário pode ter duas contas do mesmo provedor (pessoal e
+  empresa) ou dois modelos do mesmo provedor; (b) o id estável permite
+  vincular uma fonte a um agente ou a uma tela (BR-048) sem refatorar;
+  (c) uma chave por tipo obrigaria a compartilhar credencial entre fontes.
+- **Consequência:** `domain/ai_source.rs` (`AiSource`), `Settings.ai_sources`,
+  `AiSource::secret_key()`; o `SecretStore` deixa de ser indexado por tipo.
+- **Detalhes:** [`ai-sources/prd.md`](ai-sources/prd.md),
+  [`ai-sources/architecture/ai-sources.md`](ai-sources/architecture/ai-sources.md)
+  §2.
+- **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-045 — Fallback automático com circuit breaker em todas as chamadas de IA
+
+- **Decisão:** quando a fonte primária falha, a próxima fonte habilitada da
+  lista assume — em **todas** as chamadas de IA (sugestões, resumo incremental,
+  tradução ao vivo). Cada fonte tem um **circuit breaker**: 3 falhas
+  consecutivas abrem o circuito por 60 s (a fonte é pulada, sem gastar
+  timeout); erro de autenticação (401/403) abre na hora; após o cooldown a
+  fonte entra em meio-aberto e um sucesso fecha o circuito. O erro só sobe
+  quando **todas** as candidatas falharam.
+- **Motivo:** o GhostWhisper é usado **durante** a reunião; um 429 ou uma chave
+  expirada não pode derrubar sugestão, resumo e tradução — e o usuário não
+  tem tempo de abrir as configurações no meio da call. O circuit breaker evita
+  gastar timeout de rede com uma fonte que já está sabidamente fora.
+- **Desvio do Perssua:** lá existe **uma** fonte ativa (`current_provider`) e
+  nenhum mecanismo de degradação (R12 — desvio com motivo técnico explícito).
+- **Detalhes:** [`ai-sources/prd.md`](ai-sources/prd.md) §6,
+  [`ai-sources/architecture/ai-sources.md`](ai-sources/architecture/ai-sources.md)
+  §4–§5.
+- **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-046 — DeepSeek como fonte de primeira classe
+
+- **Decisão:** o DeepSeek é um provedor do catálogo (chave própria, `base_url` e
+  modelo padrão `deepseek-chat`), e não uma configuração "custom" digitada à
+  mão. O modelo `deepseek-reasoner` não recebe `temperature` fora do padrão.
+- **Motivo:** a API do DeepSeek é compatível com OpenAI, mas exigir `base_url`
+  e modelo digitados à mão é atrito puro; o usuário pediu suporte direto à
+  chave do DeepSeek.
+- **Desvio do Perssua:** lá o DeepSeek não é provedor de primeira classe (só
+  aparece em `electron/preload.js` como provider de web search) e entraria
+  pelo `custom` (R12).
+- **Detalhes:** [`ai-sources/architecture/ai-sources.md`](ai-sources/architecture/ai-sources.md)
+  §6.
+- **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-047 — Configurações repaginadas com salvamento global
+
+- **Decisão:** a tela de Configurações tem cabeçalho próprio, barra de abas com
+  **ícone** + rótulo (as 5 seções atuais), conteúdo em **cards** e um
+  **rodapé fixo** com **um** "Salvar Alterações" (e "Restaurar Padrões", com
+  confirmação). As seções **não** mudam; a casca é que muda.
+- **Motivo:** coerência visual com o resto do app (Obsidian HUD — BR-035),
+  estado de rascunho único (evita salvar metade das seções) e o conjunto de
+  abas atual continua make sense para o produto.
+- **Consequência:** a janela `settings` cresce (1020×720, redimensionável);
+  os botões "Salvar configurações" por aba saem; a aba de atalhos mantém
+  "Aplicar atalhos", que **registra** no sistema operacional (ação, não dado).
+- **Detalhes:** [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md).
+- **Data:** 2026-10-19 · **Status:** Ativa
+
+## BR-048 — Rotas de IA por escopo (modelo pronto, UI depois)
+
+- **Decisão:** o modelo de dados já suporta vincular uma fonte de IA a um
+  **escopo**: um agente (`mode_id`), uma **capacidade** (resumo, sugestões,
+  tradução) ou o padrão. A resolução é determinística: `Agent` >
+  `Capability` > `Default` (a primária). A **UI de vínculo** não faz parte
+  desta entrega — fica para a PRD seguinte.
+- **Motivo:** deixar a aplicação pronta para o pedido de "priorizar uma IA
+  específica por agente/tela" sem refatorar o roteador depois; o padrão
+  `analysis_model` + `analysis_model_source` do Perssua é transposto aqui
+  (R13).
+- **Consequência:** `domain/ai_route.rs` (`AiRouteScope`, `AiRoute`,
+  `resolve_route`), `Settings.ai_routes`, `AssistantMode.source_id`,
+  `LlmController::complete_for(scope, …)`. Sem rota configurada, o
+  comportamento é idêntico ao de hoje.
+- **Detalhes:** [`ai-sources/architecture/ai-sources.md`](ai-sources/architecture/ai-sources.md)
+  §2.4 e §3.2.
+- **Data:** 2026-10-19 · **Status:** Ativa

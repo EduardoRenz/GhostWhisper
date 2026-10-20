@@ -1,19 +1,32 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 
 const settingsIpc = vi.hoisted(() => ({
-  clearProviderKey: vi.fn(async () => undefined),
-  getProviders: vi.fn(async () => ["openai", "gemini", "openrouter", "custom"]),
+  closeSettings: vi.fn(async () => undefined),
+  getProviders: vi.fn(async () => [
+    "openai",
+    "gemini",
+    "openrouter",
+    "deepseek",
+    "custom",
+  ]),
   getSettings: vi.fn(async () => undefined),
   gpuInfo: vi.fn(async () => undefined),
-  hasProviderKey: vi.fn(async () => false),
-  keyPreview: vi.fn(async () => ""),
-  providerLabel: vi.fn(async () => "OpenAI · gpt-4o-mini"),
-  saveSettings: vi.fn(async () => []),
+  saveSettings: vi.fn(async (_settings: unknown) => [] as unknown[]),
   secretsPersistent: vi.fn(async () => true),
-  setProviderKey: vi.fn(async () => undefined),
   validateKey: vi.fn(async () => "ok"),
+  providerLabel: vi.fn(async () => "OpenAI · gpt-4o-mini"),
+}));
+
+const aiSourcesIpc = vi.hoisted(() => ({
+  clearSourceKey: vi.fn(async () => undefined),
+  hasSourceKey: vi.fn(async () => false),
+  listSources: vi.fn(async () => []),
+  setSourceKey: vi.fn(async () => undefined),
+  sourceKeyPreview: vi.fn(async () => ""),
+  sourcesHealth: vi.fn(async () => []),
+  validateSource: vi.fn(async () => "ok"),
 }));
 
 const shortcutsIpc = vi.hoisted(() => ({
@@ -36,56 +49,111 @@ const audioIpc = vi.hoisted(() => ({
 }));
 
 vi.mock("../../adapters/ipc/settings", () => settingsIpc);
+vi.mock("../../adapters/ipc/aiSources", () => aiSourcesIpc);
 vi.mock("../../adapters/ipc/shortcuts", () => shortcutsIpc);
 vi.mock("../../adapters/ipc/audio", () => audioIpc);
 
 describe("SettingsPage", () => {
   beforeEach(() => {
-    settingsIpc.hasProviderKey.mockResolvedValue(false);
-    settingsIpc.keyPreview.mockResolvedValue("");
+    vi.clearAllMocks();
+    settingsIpc.getSettings.mockResolvedValue(undefined);
+    settingsIpc.saveSettings.mockResolvedValue([]);
+    settingsIpc.getProviders.mockResolvedValue([
+      "openai",
+      "gemini",
+      "openrouter",
+      "deepseek",
+      "custom",
+    ]);
+    settingsIpc.secretsPersistent.mockResolvedValue(true);
     settingsIpc.gpuInfo.mockResolvedValue(undefined);
+    aiSourcesIpc.hasSourceKey.mockResolvedValue(false);
+    aiSourcesIpc.sourceKeyPreview.mockResolvedValue("");
+    aiSourcesIpc.sourcesHealth.mockResolvedValue([]);
   });
 
-  it("renderiza as abas e mostra a seção de IA por padrão", async () => {
+  it("mostra as 5 abas com ícone e rótulo", async () => {
     render(<SettingsPage />);
 
-    expect(await screen.findByRole("tab", { name: "Fontes de IA" })).toBeDefined();
-    expect(screen.getByRole("tablist").children.length).toBe(5);
-    expect(screen.getByRole("tab", { name: "Assistente" })).toBeDefined();
-    expect(await screen.findByText("Provider")).toBeDefined();
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.length).toBe(5);
+    expect(screen.getByRole("tab", { name: /Fontes de IA/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Transcrição & Áudio/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Assistente/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Ajustes/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Atalhos/ })).toBeDefined();
   });
 
-  it("mostra a chave mascarada quando já configurada", async () => {
-    settingsIpc.hasProviderKey.mockResolvedValue(true);
-    settingsIpc.keyPreview.mockResolvedValue("••••••••·1234");
-
+  it("tem cabeçalho e rodapé com salvamento global", async () => {
     render(<SettingsPage />);
 
-    const masked = await screen.findByLabelText("Chave de API (mascarada)");
-    expect((masked as HTMLInputElement).value).toBe("••••••••·1234");
-    // Sem campo de digitação/salvar enquanto a chave existe.
-    expect(screen.queryByPlaceholderText("sk-...")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Salvar chave" })).toBeNull();
-  });
-
-  it("pede uma nova chave quando nenhuma está configurada", async () => {
-    render(<SettingsPage />);
-
-    expect(await screen.findByPlaceholderText("sk-...")).toBeDefined();
+    expect(await screen.findByText("Configurações")).toBeDefined();
     expect(
-      screen.queryByLabelText("Chave de API (mascarada)"),
+      screen.getByText(/Personalize captura de áudio, IA local/),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Salvar Alterações" })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Restaurar Padrões" }),
+    ).toBeDefined();
+    // Não há mais botão de salvar dentro das abas.
+    expect(
+      screen.queryByRole("button", { name: "Salvar configurações" }),
     ).toBeNull();
+  });
+
+  it("fecha a janela pelo botão ✕", async () => {
+    render(<SettingsPage />);
+
+    const close = await screen.findByRole("button", {
+      name: "Fechar configurações",
+    });
+    fireEvent.click(close);
+    await waitFor(() => expect(settingsIpc.closeSettings).toHaveBeenCalled());
+  });
+
+  it("salva o rascunho inteiro uma única vez", async () => {
+    render(<SettingsPage />);
+
+    const save = await screen.findByRole("button", { name: "Salvar Alterações" });
+    await act(async () => {
+      fireEvent.click(save);
+    });
+
+    await waitFor(() => expect(settingsIpc.saveSettings).toHaveBeenCalledTimes(1));
+    const saved = settingsIpc.saveSettings.mock.calls[0]?.[0] as unknown as {
+      ai_sources: unknown[];
+    };
+    expect(Array.isArray(saved.ai_sources)).toBe(true);
+    expect(screen.getByText("Configurações salvas.")).toBeDefined();
+  });
+
+  it("pede confirmação antes de restaurar os padrões", async () => {
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockReturnValue(false);
+    render(<SettingsPage />);
+
+    const restore = await screen.findByRole("button", {
+      name: "Restaurar Padrões",
+    });
+    await act(async () => {
+      fireEvent.click(restore);
+    });
+
+    expect(confirmSpy).toHaveBeenCalled();
+    // Cancelou: nada foi salvo.
+    expect(settingsIpc.saveSettings).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it("troca para a aba de transcrição e mostra o modelo whisper", async () => {
     render(<SettingsPage />);
 
     await act(async () => {
-      screen.getByRole("tab", { name: "Transcrição & Áudio" }).click();
+      screen.getByRole("tab", { name: /Transcrição & Áudio/ }).click();
     });
 
     expect(await screen.findByText("Modelo whisper (local)")).toBeDefined();
-    expect(screen.queryByText("Provider")).toBeNull();
     // Seletor de aceleração presente (padrão "auto").
     expect(
       (screen.getByLabelText("Aceleração") as HTMLSelectElement).value,
@@ -96,7 +164,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await act(async () => {
-      screen.getByRole("tab", { name: "Transcrição & Áudio" }).click();
+      screen.getByRole("tab", { name: /Transcrição & Áudio/ }).click();
     });
 
     const slider = (await screen.findByLabelText(
@@ -124,7 +192,7 @@ describe("SettingsPage", () => {
 
     render(<SettingsPage />);
     await act(async () => {
-      screen.getByRole("tab", { name: "Transcrição & Áudio" }).click();
+      screen.getByRole("tab", { name: /Transcrição & Áudio/ }).click();
     });
 
     const hint = await screen.findByTestId("gpu-hint");
@@ -140,7 +208,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await act(async () => {
-      screen.getByRole("tab", { name: "Ajustes" }).click();
+      screen.getByRole("tab", { name: /Ajustes/ }).click();
     });
 
     const toggle = (await screen.findByRole("checkbox", {
@@ -160,5 +228,20 @@ describe("SettingsPage", () => {
     fireEvent.click(toggle);
     expect(toggle.checked).toBe(false);
     expect(slider.disabled).toBe(true);
+  });
+
+  it("marca as alterações não salvas quando algo muda", async () => {
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: /Ajustes/ }).click();
+    });
+    const toggle = (await screen.findByRole("checkbox", {
+      name: "Ativação por permanência",
+    })) as HTMLInputElement;
+
+    expect(screen.getByText(/sincronizadas localmente/)).toBeDefined();
+    fireEvent.click(toggle);
+    expect(await screen.findByText("Alterações não salvas")).toBeDefined();
   });
 });

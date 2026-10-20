@@ -20,8 +20,17 @@ pub enum GhostWhisperError {
     #[error("configuração inválida: {0}")]
     Config(String),
 
+    /// Erro de banco de dados: [`crate::error::GhostWhisperError::Database`].
     #[error("erro de banco de dados: {0}")]
     Database(String),
+
+    /// O provider respondeu com um **status HTTP de erro**.
+    ///
+    /// O código fica tipado para o circuit breaker classificar a falha
+    /// (401/403 abrem o circuito na hora — BR-045) sem parsear a mensagem.
+    /// O detalhe é truncado e **nunca** contém a chave de API.
+    #[error("provider respondeu {code}: {detail}")]
+    ProviderStatus { code: u16, detail: String },
 
     /// O motor de transcrição ainda está baixando/carregando o modelo.
     #[error("ASR ainda não está pronto (modelo carregando)")]
@@ -60,5 +69,18 @@ mod tests {
         let err = GhostWhisperError::NotImplemented("teste");
         let json = serde_json::to_string(&err).expect("serializa");
         assert_eq!(json, "\"recurso ainda não implementado: teste\"");
+    }
+
+    #[test]
+    fn provider_status_keeps_the_code_typed() {
+        let err = GhostWhisperError::ProviderStatus {
+            code: 401,
+            detail: "chave inválida".into(),
+        };
+        assert!(err.to_string().contains("401"));
+        match err {
+            GhostWhisperError::ProviderStatus { code, .. } => assert_eq!(code, 401),
+            other => panic!("esperado ProviderStatus, veio {other:?}"),
+        }
     }
 }

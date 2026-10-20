@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::domain::llm::{Completion, CompletionRequest, ProviderConfig};
+use crate::domain::llm::{Completion, CompletionRequest, CompletionUsage, ProviderConfig};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::chat_bot_provider::ChatBotProvider;
 
@@ -152,9 +152,43 @@ impl ChatBotProvider for GeminiChatBotProvider {
             return Ok(Completion {
                 text,
                 model: self.config.model.clone(),
+                usage: parse_usage(&value),
             });
         }
     }
+}
+
+/// Lê o `usageMetadata` do Gemini (tokens + raciocínio).
+///
+/// O Gemini conta o raciocínio em `thoughtsTokenCount` (modelos "thinking");
+/// quando não há raciocínio, o campo vem ausente.
+fn parse_usage(value: &Value) -> Option<CompletionUsage> {
+    let usage = value.get("usageMetadata")?;
+    let prompt_tokens = usage
+        .get("promptTokenCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let completion_tokens = usage
+        .get("candidatesTokenCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let total_tokens = usage
+        .get("totalTokenCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let reasoning_tokens = usage
+        .get("thoughtsTokenCount")
+        .and_then(Value::as_u64)
+        .map(|value| value as u32);
+    if prompt_tokens == 0 && completion_tokens == 0 && total_tokens == 0 {
+        return None;
+    }
+    Some(CompletionUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        reasoning_tokens,
+    })
 }
 
 #[cfg(test)]
@@ -173,6 +207,24 @@ mod tests {
         assert_eq!(text, "ab");
         assert_eq!(finish.as_deref(), Some("STOP"));
         assert_eq!(blocked, None);
+    }
+
+    #[test]
+    fn reads_the_gemini_usage_with_thoughts() {
+        let value = json!({
+            "usageMetadata": {
+                "promptTokenCount": 90,
+                "candidatesTokenCount": 30,
+                "totalTokenCount": 120,
+                "thoughtsTokenCount": 18
+            }
+        });
+        let usage = parse_usage(&value).expect("usage");
+        assert_eq!(usage.prompt_tokens, 90);
+        assert_eq!(usage.completion_tokens, 30);
+        assert_eq!(usage.total_tokens, 120);
+        // O Gemini conta o raciocínio em `thoughtsTokenCount`.
+        assert_eq!(usage.reasoning_tokens, Some(18));
     }
 
     #[test]

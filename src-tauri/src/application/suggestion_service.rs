@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
+use crate::domain::ai_route::AiRouteScope;
 use crate::domain::llm::CompletionRequest;
 use crate::domain::message::{ConversationMessage, MessageRole};
 use crate::error::{GhostWhisperError, Result};
@@ -342,7 +343,8 @@ impl SuggestionGenerator for SuggestionService {
         //    Falha aqui não derruba a sugestão (o passe completo segue).
         if request.fast_first {
             let draft_system = assistant_prompts::fast_first_system_prompt(&mode, language);
-            match self.llm.complete(
+            match self.llm.complete_for(
+                &AiRouteScope::Agent(mode.id.clone()),
                 &CompletionRequest::user(user.clone())
                     .with_system(draft_system)
                     .with_temperature(FAST_FIRST_TEMPERATURE)
@@ -410,9 +412,11 @@ impl SuggestionGenerator for SuggestionService {
                 });
             }
         };
-        let completion = self
-            .llm
-            .complete_streaming(&completion_request, &mut emit)?;
+        let completion = self.llm.complete_streaming_for(
+            &AiRouteScope::Agent(mode.id.clone()),
+            &completion_request,
+            &mut emit,
+        )?;
         let (title, text) = prompts::parse_suggestion_response(&completion.text);
         if text.is_empty() {
             return Err(GhostWhisperError::Other(
@@ -514,6 +518,7 @@ mod tests {
     use crate::adapters::settings::memory::InMemorySettingsStore;
     use crate::adapters::system::system_clock::FixedClock;
     use crate::application::test_support::FakeLlmController;
+    use crate::domain::ai_route::AiRouteScope;
     use crate::domain::audio::AudioLevel;
     use crate::domain::session::{Session, SessionStatus};
     use crate::domain::settings::Settings;
@@ -600,6 +605,7 @@ mod tests {
         ) {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
+        fn emit_llm_source_used(&self, _usage: &crate::ports::event_publisher::LlmSourceUsage) {}
     }
 
     struct Fixture {
@@ -894,6 +900,7 @@ mod tests {
                 Ok(Completion {
                     text: "> completo".into(),
                     model: "chunked".into(),
+                    usage: None,
                 })
             }
             fn complete_streaming(
@@ -906,6 +913,7 @@ mod tests {
                 Ok(Completion {
                     text: "> olá, tudo bem?".into(),
                     model: "chunked".into(),
+                    usage: None,
                 })
             }
         }
@@ -937,6 +945,27 @@ mod tests {
             vec!["> olá", "> olá, tudo bem?"],
             "cada delta vira uma atualização da bolha"
         );
+    }
+
+    #[test]
+    fn asks_the_llm_with_the_agent_scope() {
+        // BR-048: a sugestão pede a fonte do **agente** (sem rota, a primária).
+        let fixture = fixture(Settings::default(), "> dito.");
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "o que é QPS?"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()))
+            .expect("generate");
+
+        let scopes = fixture.llm.scopes();
+        assert!(!scopes.is_empty(), "nenhum escopo foi pedido");
+        for scope in scopes {
+            assert_eq!(scope, AiRouteScope::Agent("meeting".to_string()));
+        }
     }
 
     #[test]
@@ -996,6 +1025,7 @@ mod tests {
                 context: "Produto: GhostWhisper.".into(),
                 icon: "briefcase".into(),
                 color: "coral".into(),
+                source_id: None,
             }],
             ..Settings::default()
         };

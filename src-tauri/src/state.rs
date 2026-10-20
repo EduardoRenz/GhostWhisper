@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::ports::ai_source_service::AiSourceService;
 use crate::ports::audio_monitor::AudioMonitor;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
@@ -58,6 +59,8 @@ pub struct AppState {
     pub gpu: Arc<dyn GpuProbe>,
     /// Roteador de LLM (validar chave/completudes).
     pub llm: Arc<dyn LlmController>,
+    /// Gestão das fontes de IA (cadastrar, reordenar, chaves, saúde).
+    pub ai_sources: Arc<dyn AiSourceService>,
     /// Tradução ao vivo.
     pub translator: Arc<dyn Translator>,
     /// Resumo incremental da sessão.
@@ -93,6 +96,7 @@ impl AppState {
         secrets: Arc<dyn SecretStore>,
         gpu: Arc<dyn GpuProbe>,
         llm: Arc<dyn LlmController>,
+        ai_sources: Arc<dyn AiSourceService>,
         translator: Arc<dyn Translator>,
         summary: Arc<dyn SummaryGenerator>,
         suggestions: Arc<dyn SuggestionGenerator>,
@@ -117,6 +121,7 @@ impl AppState {
             secrets,
             gpu,
             llm,
+            ai_sources,
             translator,
             summary,
             suggestions,
@@ -307,6 +312,7 @@ mod tests {
             Ok(crate::domain::llm::Completion {
                 text: "ok".into(),
                 model: "fake".into(),
+                usage: None,
             })
         }
     }
@@ -406,6 +412,7 @@ mod tests {
         ) {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
+        fn emit_llm_source_used(&self, _usage: &crate::ports::event_publisher::LlmSourceUsage) {}
     }
 
     struct FakeShortcutRegistry;
@@ -439,6 +446,7 @@ mod tests {
     }
 
     fn build_state() -> AppState {
+        use crate::adapters::ai_sources::in_memory_ai_source_service::InMemoryAiSourceService;
         use crate::adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
         use crate::adapters::persistence::memory::in_memory_messages_repository::InMemoryMessagesRepository;
         use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
@@ -462,6 +470,7 @@ mod tests {
             Arc::new(InMemorySecretStore::new()),
             Arc::new(FakeGpuProbe),
             Arc::new(FakeLlm),
+            Arc::new(InMemoryAiSourceService::new()),
             Arc::new(FakeTranslator),
             Arc::new(FakeSummary),
             Arc::new(FakeSuggestions),

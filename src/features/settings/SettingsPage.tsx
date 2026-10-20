@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  clearProviderKey,
+  closeSettings,
   getProviders,
   getSettings,
   gpuInfo,
-  hasProviderKey,
-  keyPreview,
-  providerLabel,
   saveSettings,
   secretsPersistent,
-  setProviderKey,
-  validateKey,
   type GpuInfo,
 } from "../../adapters/ipc/settings";
 import {
@@ -26,7 +21,16 @@ import {
 } from "../../core/domain/shortcuts";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
+import { AiSourcesSettings } from "./AiSourcesSettings";
 import { dwellLabel } from "../../core/domain/dwell";
+import {
+  BoltIcon,
+  KeyboardIcon,
+  SlidersIcon,
+  TranscriptIcon,
+  UsersIcon,
+  WaveformIcon,
+} from "../../components/icons";
 import {
   ACCELERATION_LABELS,
   ACCELERATION_MODES,
@@ -38,14 +42,12 @@ import {
   MAX_MIC_GAIN,
   MIN_DWELL_MS,
   MIN_MIC_GAIN,
-  PROVIDERS,
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
   WHISPER_GPU_MODELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
   defaultSettings,
-  providerRequiresBaseUrl,
   type AccelerationMode,
   type Language,
   type ProviderKind,
@@ -54,45 +56,53 @@ import {
 
 type Status = { kind: "info" | "ok" | "error"; text: string } | null;
 
-/** Abas da janela de configurações (Perssua usa `tabs` por seção). */
+/** Abas da janela de configurações (as 5 seções do produto). */
 const TABS = [
-  { id: "sources", label: "Fontes de IA" },
-  { id: "transcription", label: "Transcrição & Áudio" },
-  { id: "assistant", label: "Assistente" },
-  { id: "general", label: "Ajustes" },
-  { id: "shortcuts", label: "Atalhos" },
+  { id: "sources", label: "Fontes de IA", Icon: BoltIcon },
+  { id: "transcription", label: "Transcrição & Áudio", Icon: WaveformIcon },
+  { id: "assistant", label: "Assistente", Icon: UsersIcon },
+  { id: "general", label: "Ajustes", Icon: SlidersIcon },
+  { id: "shortcuts", label: "Atalhos", Icon: KeyboardIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
-/** Página de configurações: provider, modelo e chave de API (BYO key). */
+/** Aba inicial pela URL (`?tab=…`) — atalho de desenvolvimento. */
+function initialTab(): TabId {
+  try {
+    const target = new URLSearchParams(window.location.search).get("tab");
+    const found = TABS.find((entry) => entry.id === target);
+    if (found) return found.id;
+  } catch {
+    // Sem DOM (SSR/testes): começa na primeira aba.
+  }
+  return "sources";
+}
+
+/**
+ * Tela de Configurações (BR-047).
+ *
+ * Casca nova: cabeçalho próprio, barra de abas com ícone, conteúdo em cards e
+ * **um** "Salvar Alterações" no rodapé fixo. As seções são as mesmas de
+ * antes — a lista de fontes de IA é a primeira delas.
+ */
 export function SettingsPage() {
-  const [settings, setSettings] = useState<Settings>(defaultSettings());
-  const [providers, setProviders] = useState<ProviderKind[]>(PROVIDERS);
-  const [tab, setTab] = useState<TabId>("sources");
-  const [keyInput, setKeyInput] = useState("");
-  const [keyEditing, setKeyEditing] = useState(false);
-  const [hasKey, setHasKey] = useState(false);
-  const [keyMasked, setKeyMasked] = useState("");
-  const [persistent, setPersistent] = useState(true);
-  const [label, setLabel] = useState("");
+  const [draft, setDraft] = useState<Settings>(defaultSettings());
+  const [providers, setProviders] = useState<ProviderKind[]>([]);
+  const [tab, setTab] = useState<TabId>(initialTab);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [gpu, setGpu] = useState<GpuInfo | null>(null);
   const [catalog, setCatalog] = useState<ShortcutInfo[]>([]);
   const [conflicts, setConflicts] = useState<ShortcutConflict[]>([]);
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
-
-  const refreshKeyState = useCallback(async () => {
-    setHasKey((await hasProviderKey()) ?? false);
-    setKeyMasked((await keyPreview()) ?? "");
-    setLabel((await providerLabel()) ?? "");
-  }, []);
+  const [persistent, setPersistent] = useState(true);
 
   useEffect(() => {
     void (async () => {
       const loaded = await getSettings();
       if (loaded) {
-        setSettings(
+        setDraft(
           loaded.shortcuts.length === 0
             ? { ...loaded, shortcuts: defaultBindings() }
             : loaded,
@@ -108,15 +118,30 @@ export function SettingsPage() {
       }
       setPersistent((await secretsPersistent()) ?? true);
       setGpu((await gpuInfo()) ?? null);
-      await refreshKeyState();
     })();
-  }, [refreshKeyState]);
+  }, []);
 
-  const update = <K extends keyof Settings>(field: K, value: Settings[K]) =>
-    setSettings((prev) => ({ ...prev, [field]: value }));
+  // `Esc` fecha a janela (mesmo atalho do botão `✕`).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        void closeSettings();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-  const updateAccelerator = (action: ShortcutAction, accelerator: string) =>
-    setSettings((prev) => {
+  const update = useCallback(
+    <K extends keyof Settings>(field: K, value: Settings[K]) => {
+      setDraft((prev) => ({ ...prev, [field]: value }));
+      setHasUnsavedChanges(true);
+    },
+    [],
+  );
+
+  const updateAccelerator = (action: ShortcutAction, accelerator: string) => {
+    setDraft((prev) => {
       const exists = prev.shortcuts.some((binding) => binding.action === action);
       const shortcuts = exists
         ? prev.shortcuts.map((binding) =>
@@ -125,6 +150,8 @@ export function SettingsPage() {
         : [...prev.shortcuts, { action, accelerator }];
       return { ...prev, shortcuts };
     });
+    setHasUnsavedChanges(true);
+  };
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -140,580 +167,470 @@ export function SettingsPage() {
 
   const onSave = () =>
     run(async () => {
-      const result = await saveSettings(settings);
+      const result = await saveSettings(draft);
       setConflicts(result ?? []);
-      await refreshKeyState();
+      setHasUnsavedChanges(false);
       setStatus({ kind: "ok", text: "Configurações salvas." });
     });
 
+  const onRestoreDefaults = () => {
+    const confirmed =
+      typeof window === "undefined" ||
+      typeof window.confirm !== "function" ||
+      window.confirm(
+        "Restaurar os padrões? Isto zera modelos, atalhos, agentes e as fontes de IA (as chaves no keyring não são apagadas).",
+      );
+    if (!confirmed) return;
+    setDraft({ ...defaultSettings(), shortcuts: defaultBindings() });
+    setHasUnsavedChanges(true);
+    setStatus({
+      kind: "info",
+      text: "Padrões restaurados — clique em “Salvar Alterações” para confirmar.",
+    });
+  };
+
   const onSaveShortcuts = () =>
     run(async () => {
-      const result = await setShortcutsIpc(settings.shortcuts);
+      const result = await setShortcutsIpc(draft.shortcuts);
       setConflicts(result ?? []);
       const hasConflict = (result?.length ?? 0) > 0;
       setStatus({
         kind: hasConflict ? "error" : "ok",
         text: hasConflict
           ? "Alguns atalhos não puderam ser registrados."
-          : "Atalhos salvos.",
+          : "Atalhos registrados no sistema.",
       });
     });
-
-  const onSetKey = () =>
-    run(async () => {
-      if (keyInput.trim() === "") {
-        setStatus({ kind: "error", text: "Informe uma chave de API." });
-        return;
-      }
-      await setProviderKey(keyInput);
-      setKeyInput("");
-      setKeyEditing(false);
-      await refreshKeyState();
-      setStatus({
-        kind: "ok",
-        text: persistent
-          ? "Chave salva no keyring."
-          : "Keyring indisponível: chave válida apenas nesta sessão.",
-      });
-    });
-
-  const onClearKey = () =>
-    run(async () => {
-      await clearProviderKey();
-      await refreshKeyState();
-      setKeyEditing(false);
-      setStatus({ kind: "info", text: "Chave removida." });
-    });
-
-  const onValidate = () =>
-    run(async () => {
-      const reply = await validateKey();
-      setStatus({
-        kind: "ok",
-        text: `Conexão validada: ${reply ?? "(sem resposta)"}`,
-      });
-    });
-
-  /** Campo da chave: mostra a versão redactada quando já configurada. */
-  const keyField =
-    hasKey && !keyEditing ? (
-      <>
-        <label className="settings__field">
-          <span>Chave de API</span>
-          <input
-            className="settings__key"
-            type="text"
-            readOnly
-            value={keyMasked || "••••••••"}
-            aria-label="Chave de API (mascarada)"
-            onChange={undefined}
-            onFocus={undefined}
-          />
-        </label>
-        <p className="settings__hint">
-          Chave armazenada{" "}
-          {persistent ? "no keyring do sistema" : "apenas nesta sessão"} —
-          exibição mascarada (últimos 4 caracteres). Use "Trocar chave" para
-          substituí-la.
-        </p>
-        <div className="settings__actions">
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={() => setKeyEditing(true)}
-          >
-            Trocar chave
-          </button>
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onValidate}
-          >
-            Validar chave
-          </button>
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onClearKey}
-          >
-            Remover chave
-          </button>
-        </div>
-      </>
-    ) : (
-      <>
-        <label className="settings__field">
-          <span>{hasKey ? "Trocar chave" : "Nova chave"}</span>
-          <input
-            type="password"
-            autoComplete="off"
-            placeholder="sk-..."
-            value={keyInput}
-            onChange={(event) => setKeyInput(event.target.value)}
-          />
-        </label>
-        <div className="settings__actions">
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onSetKey}
-          >
-            Salvar chave
-          </button>
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onValidate}
-          >
-            Validar chave
-          </button>
-          {hasKey && (
-            <button
-              type="button"
-              className="settings__button"
-              disabled={busy}
-              onClick={() => setKeyEditing(false)}
-            >
-              Cancelar
-            </button>
-          )}
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onClearKey}
-          >
-            Remover chave
-          </button>
-        </div>
-      </>
-    );
 
   return (
     <main className="app settings" data-route="settings">
-      <h1 className="app__title">GhostWhisper — Configurações</h1>
+      <header className="settings__header">
+        <span className="settings__header-icon" aria-hidden="true">
+          <TranscriptIcon size={20} />
+        </span>
+        <div className="settings__header-text">
+          <h1 className="settings__header-title">Configurações</h1>
+          <p className="settings__header-subtitle">
+            Personalize captura de áudio, IA local, privacidade e atalhos do
+            GhostWhisper
+          </p>
+        </div>
+        <kbd className="settings__header-hint">Esc</kbd>
+        <button
+          type="button"
+          className="settings__header-close"
+          aria-label="Fechar configurações"
+          onClick={() => void closeSettings()}
+        >
+          ✕
+        </button>
+      </header>
 
-      <nav className="settings__nav" role="tablist">
-        {TABS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === entry.id}
-            className={
-              tab === entry.id ? "settings__tab settings__tab--active" : "settings__tab"
-            }
-            onClick={() => setTab(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
+      <nav className="settings__tabs" role="tablist" aria-label="Seções">
+        {TABS.map((entry) => {
+          const Icon = entry.Icon;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry.id}
+              className={
+                tab === entry.id
+                  ? "settings__tab settings__tab--active"
+                  : "settings__tab"
+              }
+              onClick={() => setTab(entry.id)}
+            >
+              <Icon size={16} />
+              <span>{entry.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
-      {tab === "sources" && (
-        <section className="settings__group">
-          <label className="settings__field">
-            <span>Provider</span>
-            <select
-              value={settings.provider}
-              onChange={(event) =>
-                update("provider", event.target.value as ProviderKind)
-              }
-            >
-              {providers.map((provider) => (
-                <option key={provider} value={provider}>
-                  {provider}
-                </option>
-              ))}
-            </select>
-          </label>
+      <div className="settings__body">
+        {tab === "sources" && (
+          <AiSourcesSettings
+            sources={draft.ai_sources}
+            providers={providers}
+            onChange={(sources) => update("ai_sources", sources)}
+            onStatus={setStatus}
+          />
+        )}
 
-          <label className="settings__field">
-            <span>Modelo</span>
-            <input
-              type="text"
-              value={settings.model}
-              onChange={(event) => update("model", event.target.value)}
-            />
-          </label>
+        {tab === "transcription" && (
+          <section className="settings__card">
+            <header className="settings__card-header">
+              <h2 className="settings__card-title">Transcrição & Áudio</h2>
+              <span className="settings__card-note">
+                Modelo local, aceleração e níveis de entrada
+              </span>
+            </header>
 
-          {providerRequiresBaseUrl(settings.provider) && (
             <label className="settings__field">
-              <span>Base URL (formato OpenAI)</span>
-              <input
-                type="url"
-                placeholder="http://localhost:11434/v1"
-                value={settings.base_url ?? ""}
+              <span>Modelo whisper (local)</span>
+              <select
+                value={draft.whisper_model}
                 onChange={(event) =>
-                  update("base_url", event.target.value || null)
+                  update("whisper_model", event.target.value)
                 }
-              />
+              >
+                {WHISPER_MODELS.map((model) => (
+                  <option key={model} value={model}>
+                    {model} ({WHISPER_MODEL_SIZES[model] ?? "?"})
+                  </option>
+                ))}
+              </select>
             </label>
-          )}
-
-          {keyField}
-
-          {label && <p className="settings__hint">Provider ativo: {label}</p>}
-
-          <div className="settings__actions">
-            <button
-              type="button"
-              className="settings__button"
-              disabled={busy}
-              onClick={onSave}
-            >
-              Salvar configurações
-            </button>
-          </div>
-        </section>
-      )}
-
-      {tab === "transcription" && (
-        <section className="settings__group">
-          <label className="settings__field">
-            <span>Modelo whisper (local)</span>
-            <select
-              value={settings.whisper_model}
-              onChange={(event) => update("whisper_model", event.target.value)}
-            >
-              {WHISPER_MODELS.map((model) => (
-                <option key={model} value={model}>
-                  {model} ({WHISPER_MODEL_SIZES[model] ?? "?"})
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="settings__hint">
-            O modelo é baixado apenas ao iniciar a primeira sessão com ele.
-          </p>
-
-          {gpu && (
-            <p className="settings__hint" data-testid="gpu-hint">
-              {gpu.available
-                ? `GPU detectada: ${gpu.detail}. ${
-                    gpu.acceleration_enabled
-                      ? `Modelo sugerido: ${gpu.recommended_model}.`
-                      : "Este build ainda transcreve em CPU; a aceleração por GPU chega em uma próxima entrega."
-                  }`
-                : "Nenhuma GPU detectada: a transcrição roda em CPU (use tiny/small)."}
+            <p className="settings__hint">
+              O modelo é baixado apenas ao iniciar a primeira sessão com ele.
             </p>
-          )}
 
-          {gpu &&
-            gpu.available &&
-            gpu.acceleration_enabled &&
-            settings.whisper_model !== gpu.recommended_model && (
-              <div className="settings__actions">
-                <button
-                  type="button"
-                  className="settings__button"
-                  onClick={() =>
-                    update("whisper_model", gpu.recommended_model)
-                  }
-                >
-                  Usar {gpu.recommended_model} (recomendado para a sua GPU)
-                </button>
-              </div>
-            )}
-
-          {gpu &&
-            !gpu.acceleration_enabled &&
-            WHISPER_GPU_MODELS.includes(settings.whisper_model) && (
-              <p className="settings__hint">
-                {settings.whisper_model} exige GPU para acompanhar a fala em tempo
-                real; em CPU a transcrição fica lenta.
+            {gpu && (
+              <p className="settings__hint" data-testid="gpu-hint">
+                {gpu.available
+                  ? `GPU detectada: ${gpu.detail}. ${
+                      gpu.acceleration_enabled
+                        ? `Modelo sugerido: ${gpu.recommended_model}.`
+                        : "Este build ainda transcreve em CPU; a aceleração por GPU chega em uma próxima entrega."
+                    }`
+                  : "Nenhuma GPU detectada: a transcrição roda em CPU (use tiny/small)."}
               </p>
             )}
 
-          <label className="settings__field">
-            <span>Aceleração</span>
-            <select
-              value={settings.acceleration}
-              onChange={(event) =>
-                update("acceleration", event.target.value as AccelerationMode)
-              }
-            >
-              {ACCELERATION_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {ACCELERATION_LABELS[mode]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="settings__hint">
-            {gpu?.acceleration_enabled
-              ? gpu.available
-                ? "Este build acelera por GPU (Vulkan). “Auto” usa a GPU quando ela está disponível."
-                : "Este build acelera por GPU, mas nenhuma GPU foi detectada: a transcrição roda em CPU."
-              : "Este build não inclui aceleração por GPU — a transcrição roda em CPU."}
-          </p>
+            {gpu &&
+              gpu.available &&
+              gpu.acceleration_enabled &&
+              draft.whisper_model !== gpu.recommended_model && (
+                <div className="settings__actions">
+                  <button
+                    type="button"
+                    className="settings__button"
+                    onClick={() => update("whisper_model", gpu.recommended_model)}
+                  >
+                    Usar {gpu.recommended_model} (recomendado para a sua GPU)
+                  </button>
+                </div>
+              )}
 
-          <label className="settings__field">
-            <span>Prompt de decodificação (opcional)</span>
-            <textarea
-              rows={3}
-              placeholder="Only transcribe what is clearly spoken. If uncertain, transcribe nothing."
-              value={settings.whisper_prompt}
-              onChange={(event) =>
-                update("whisper_prompt", event.target.value)
-              }
-            />
-          </label>
-          <p className="settings__hint">
-            Instrui o Whisper a não inventar quando não tem certeza; a regra de
-            idioma é acrescentada automaticamente. Deixar vazio desliga o prompt.
-          </p>
+            {gpu &&
+              !gpu.acceleration_enabled &&
+              WHISPER_GPU_MODELS.includes(draft.whisper_model) && (
+                <p className="settings__hint">
+                  {draft.whisper_model} exige GPU para acompanhar a fala em
+                  tempo real; em CPU a transcrição fica lenta.
+                </p>
+              )}
 
-          <label className="settings__field settings__field--row">
-            <input
-              type="checkbox"
-              checked={settings.aec_enabled}
-              onChange={(event) =>
-                update("aec_enabled", event.target.checked)
-              }
-            />
-            <span>Cancelar eco (AEC)</span>
-          </label>
-          <p className="settings__hint">
-            Subtrai do microfone o áudio que sai pelo alto-falante (o outro lado da
-            chamada), usando o áudio do sistema como referência. Vale a partir da
-            próxima captura; com fones não faz diferença.
-          </p>
-
-          <div className="settings__field">
-            <span>Sensibilidade do microfone</span>
-            <input
-              type="range"
-              aria-label="Sensibilidade do microfone"
-              min={MIN_MIC_GAIN}
-              max={MAX_MIC_GAIN}
-              step={0.5}
-              value={settings.mic_gain}
-              onChange={(event) =>
-                update("mic_gain", Number(event.target.value))
-              }
-            />
-            <span className="settings__value">
-              {settings.mic_gain === DEFAULT_MIC_GAIN
-                ? `${settings.mic_gain.toFixed(1)}× (padrão)`
-                : `${settings.mic_gain.toFixed(1)}×`}
-            </span>
-          </div>
-          <p className="settings__hint">
-            Amplifica o microfone antes da transcrição — o áudio do sistema não é
-            alterado. Se a fala quase não aparece, aumente; se disparar com
-            ruído de fundo, diminua. Vale a partir da próxima captura: use o
-            “Teste de áudio” abaixo para conferir o nível.
-          </p>
-
-          <label className="settings__field">
-            <span>Idioma de origem</span>
-            <select
-              value={settings.source_language}
-              onChange={(event) =>
-                update("source_language", event.target.value as Language)
-              }
-            >
-              {LANGUAGES.map((language) => (
-                <option key={language} value={language}>
-                  {SOURCE_LANGUAGE_LABELS[language]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="settings__field">
-            <span>Idioma de destino</span>
-            <select
-              value={settings.target_language}
-              onChange={(event) =>
-                update("target_language", event.target.value as Language)
-              }
-            >
-              {LANGUAGES.map((language) => (
-                <option key={language} value={language}>
-                  {TARGET_LANGUAGE_LABELS[language]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="settings__hint">
-            Escolher um idioma de origem fixa o reconhecimento; "Auto" deixa o
-            Whisper detectar. Destino "Auto" (ou igual à origem) não traduz.
-          </p>
-
-          <label className="settings__field settings__field--row">
-            <input
-              type="checkbox"
-              checked={settings.translation_enabled}
-              onChange={(event) =>
-                update("translation_enabled", event.target.checked)
-              }
-            />
-            <span>Tradução ao vivo</span>
-          </label>
-
-          <div className="settings__actions">
-            <button
-              type="button"
-              className="settings__button"
-              disabled={busy}
-              onClick={onSave}
-            >
-              Salvar configurações
-            </button>
-          </div>
-
-          <AudioTestPanel micGain={settings.mic_gain} />
-        </section>
-      )}
-
-      {tab === "assistant" && (
-        <section className="settings__group">
-          <AssistantSettings settings={settings} update={update} />
-          <div className="settings__actions">
-            <button
-              type="button"
-              className="settings__button"
-              disabled={busy}
-              onClick={onSave}
-            >
-              Salvar configurações
-            </button>
-          </div>
-        </section>
-      )}
-
-      {tab === "general" && (
-        <section className="settings__group">
-          <label className="settings__field settings__field--row">
-            <input
-              type="checkbox"
-              checked={settings.stealth}
-              onChange={(event) => update("stealth", event.target.checked)}
-            />
-            <span>Modo stealth (fora da barra de tarefas)</span>
-          </label>
-          <p className="settings__hint">
-            O modo stealth esconde o overlay da barra de tarefas e do
-            alt-tab. <strong>Ele não o esconde do compartilhamento de tela</strong>:
-            no Linux não existe API para excluir uma janela de captura (BR-006).
-            Para reuniões, compartilhe <em>uma janela</em> em vez da tela inteira
-            ou deixe o overlay em outro monitor.
-          </p>
-
-          <span className="settings__group-title">Drill-hover (sem clique)</span>
-          <label className="settings__field settings__field--row">
-            <input
-              type="checkbox"
-              checked={settings.dwell_enabled}
-              onChange={(event) =>
-                update("dwell_enabled", event.target.checked)
-              }
-            />
-            <span>Ativação por permanência</span>
-          </label>
-          <p className="settings__hint">
-            Mantenha o cursor sobre <strong>Resumo</strong> ou{" "}
-            <strong>Sugestões</strong> para abrir a confirmação sem clicar. O
-            clique continua funcionando normalmente. Padrão:{" "}
-            {dwellLabel(DEFAULT_DWELL_MS)}. (BR-036)
-          </p>
-
-          <label className="settings__field">
-            <span>
-              Duração da permanência:{" "}
-              <strong>{dwellLabel(settings.dwell_ms)}</strong>
-            </span>
-            <input
-              type="range"
-              min={MIN_DWELL_MS / 1000}
-              max={MAX_DWELL_MS / 1000}
-              step={DWELL_STEP_MS / 1000}
-              value={settings.dwell_ms / 1000}
-              disabled={!settings.dwell_enabled}
-              aria-label="Duração do drill-hover em segundos"
-              onChange={(event) =>
-                update(
-                  "dwell_ms",
-                  Math.round(Number(event.target.value) * 1000),
-                )
-              }
-            />
-          </label>
-
-          <div className="settings__actions">
-            <button
-              type="button"
-              className="settings__button"
-              disabled={busy}
-              onClick={onSave}
-            >
-              Salvar configurações
-            </button>
-          </div>
-        </section>
-      )}
-
-      {tab === "shortcuts" && (
-        <section className="settings__group">
-          <span className="settings__group-title">Atalhos globais</span>
-          {SHORTCUT_ACTIONS.map((action) => {
-            const info = catalog.find((entry) => entry.action === action);
-            const binding = settings.shortcuts.find(
-              (entry) => entry.action === action,
-            );
-            return (
-              <label
-                key={action}
-                className="settings__field settings__field--row settings__shortcut"
+            <label className="settings__field">
+              <span>Aceleração</span>
+              <select
+                value={draft.acceleration}
+                onChange={(event) =>
+                  update("acceleration", event.target.value as AccelerationMode)
+                }
               >
-                <span className="settings__shortcut-label">
-                  {info?.label ?? action}
-                </span>
-                <input
-                  type="text"
-                  value={binding?.accelerator ?? ""}
-                  placeholder={info?.default_accelerator ?? ""}
-                  onChange={(event) =>
-                    updateAccelerator(action, event.target.value)
-                  }
-                />
-              </label>
-            );
-          })}
-          <div className="settings__actions">
-            <button
-              type="button"
-              className="settings__button"
-              disabled={busy}
-              onClick={onSaveShortcuts}
-            >
-              Salvar atalhos
-            </button>
-          </div>
-          {conflicts.length > 0 && (
-            <ul className="settings__conflicts">
-              {conflicts.map((conflict) => (
-                <li key={`${conflict.action}-${conflict.accelerator}`}>
-                  {conflict.accelerator}: {conflict.reason}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
+                {ACCELERATION_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {ACCELERATION_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="settings__hint">
+              {gpu?.acceleration_enabled
+                ? gpu.available
+                  ? "Este build acelera por GPU (Vulkan). “Auto” usa a GPU quando ela está disponível."
+                  : "Este build acelera por GPU, mas nenhuma GPU foi detectada: a transcrição roda em CPU."
+                : "Este build não inclui aceleração por GPU — a transcrição roda em CPU."}
+            </p>
 
-      {status && (
-        <p className={`settings__status settings__status--${status.kind}`}>
-          {status.text}
-        </p>
-      )}
+            <label className="settings__field">
+              <span>Prompt de decodificação (opcional)</span>
+              <textarea
+                rows={3}
+                placeholder="Only transcribe what is clearly spoken. If uncertain, transcribe nothing."
+                value={draft.whisper_prompt}
+                onChange={(event) => update("whisper_prompt", event.target.value)}
+              />
+            </label>
+            <p className="settings__hint">
+              Instrui o Whisper a não inventar quando não tem certeza; a regra de
+              idioma é acrescentada automaticamente. Deixar vazio desliga o prompt.
+            </p>
+
+            <label className="settings__field settings__field--row">
+              <input
+                type="checkbox"
+                checked={draft.aec_enabled}
+                onChange={(event) => update("aec_enabled", event.target.checked)}
+              />
+              <span>Cancelar eco (AEC)</span>
+            </label>
+            <p className="settings__hint">
+              Subtrai do microfone o áudio que sai pelo alto-falante (o outro
+              lado da chamada), usando o áudio do sistema como referência. Vale a
+              partir da próxima captura; com fones não faz diferença.
+            </p>
+
+            <div className="settings__field">
+              <span>Sensibilidade do microfone</span>
+              <input
+                type="range"
+                aria-label="Sensibilidade do microfone"
+                min={MIN_MIC_GAIN}
+                max={MAX_MIC_GAIN}
+                step={0.5}
+                value={draft.mic_gain}
+                onChange={(event) =>
+                  update("mic_gain", Number(event.target.value))
+                }
+              />
+              <span className="settings__value">
+                {draft.mic_gain === DEFAULT_MIC_GAIN
+                  ? `${draft.mic_gain.toFixed(1)}× (padrão)`
+                  : `${draft.mic_gain.toFixed(1)}×`}
+              </span>
+            </div>
+            <p className="settings__hint">
+              Amplifica o microfone antes da transcrição — o áudio do sistema não
+              é alterado. Se a fala quase não aparece, aumente; se disparar com
+              ruído de fundo, diminua. Vale a partir da próxima captura: use o
+              “Teste de áudio” abaixo para conferir o nível.
+            </p>
+
+            <label className="settings__field">
+              <span>Idioma de origem</span>
+              <select
+                value={draft.source_language}
+                onChange={(event) =>
+                  update("source_language", event.target.value as Language)
+                }
+              >
+                {LANGUAGES.map((language) => (
+                  <option key={language} value={language}>
+                    {SOURCE_LANGUAGE_LABELS[language]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="settings__field">
+              <span>Idioma de destino</span>
+              <select
+                value={draft.target_language}
+                onChange={(event) =>
+                  update("target_language", event.target.value as Language)
+                }
+              >
+                {LANGUAGES.map((language) => (
+                  <option key={language} value={language}>
+                    {TARGET_LANGUAGE_LABELS[language]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="settings__hint">
+              Escolher um idioma de origem fixa o reconhecimento; "Auto" deixa o
+              Whisper detectar. Destino "Auto" (ou igual à origem) não traduz.
+            </p>
+
+            <label className="settings__field settings__field--row">
+              <input
+                type="checkbox"
+                checked={draft.translation_enabled}
+                onChange={(event) =>
+                  update("translation_enabled", event.target.checked)
+                }
+              />
+              <span>Tradução ao vivo</span>
+            </label>
+
+            <AudioTestPanel micGain={draft.mic_gain} />
+          </section>
+        )}
+
+        {tab === "assistant" && (
+          <section className="settings__card">
+            <header className="settings__card-header">
+              <h2 className="settings__card-title">Assistente</h2>
+              <span className="settings__card-note">
+                Agentes, cadências e personalização
+              </span>
+            </header>
+            <AssistantSettings settings={draft} update={update} />
+          </section>
+        )}
+
+        {tab === "general" && (
+          <section className="settings__card">
+            <header className="settings__card-header">
+              <h2 className="settings__card-title">Ajustes</h2>
+              <span className="settings__card-note">
+                Visibilidade do overlay e drill-hover
+              </span>
+            </header>
+
+            <label className="settings__field settings__field--row">
+              <input
+                type="checkbox"
+                checked={draft.stealth}
+                onChange={(event) => update("stealth", event.target.checked)}
+              />
+              <span>Modo stealth (fora da barra de tarefas)</span>
+            </label>
+            <p className="settings__hint">
+              O modo stealth esconde o overlay da barra de tarefas e do alt-tab.{" "}
+              <strong>Ele não o esconde do compartilhamento de tela</strong>: no
+              Linux não existe API para excluir uma janela de captura (BR-006).
+              Para reuniões, compartilhe <em>uma janela</em> em vez da tela
+              inteira ou deixe o overlay em outro monitor.
+            </p>
+
+            <span className="settings__group-title">Drill-hover (sem clique)</span>
+            <label className="settings__field settings__field--row">
+              <input
+                type="checkbox"
+                checked={draft.dwell_enabled}
+                onChange={(event) => update("dwell_enabled", event.target.checked)}
+              />
+              <span>Ativação por permanência</span>
+            </label>
+            <p className="settings__hint">
+              Mantenha o cursor sobre <strong>Resumo</strong> ou{" "}
+              <strong>Sugestões</strong> para abrir a confirmação sem clicar. O
+              clique continua funcionando normalmente. Padrão:{" "}
+              {dwellLabel(DEFAULT_DWELL_MS)}. (BR-036)
+            </p>
+
+            <label className="settings__field">
+              <span>
+                Duração da permanência:{" "}
+                <strong>{dwellLabel(draft.dwell_ms)}</strong>
+              </span>
+              <input
+                type="range"
+                min={MIN_DWELL_MS / 1000}
+                max={MAX_DWELL_MS / 1000}
+                step={DWELL_STEP_MS / 1000}
+                value={draft.dwell_ms / 1000}
+                disabled={!draft.dwell_enabled}
+                aria-label="Duração do drill-hover em segundos"
+                onChange={(event) =>
+                  update(
+                    "dwell_ms",
+                    Math.round(Number(event.target.value) * 1000),
+                  )
+                }
+              />
+            </label>
+          </section>
+        )}
+
+        {tab === "shortcuts" && (
+          <section className="settings__card">
+            <header className="settings__card-header">
+              <h2 className="settings__card-title">Atalhos Globais</h2>
+              <span className="settings__card-note">
+                Atalho de teclado do sistema operacional
+              </span>
+            </header>
+            <p className="settings__hint">
+              O botão abaixo <strong>registra</strong> os atalhos no sistema. O
+              valor do atalho é salvo junto com o resto (botão “Salvar
+              Alterações”).
+            </p>
+            {SHORTCUT_ACTIONS.map((action) => {
+              const info = catalog.find((entry) => entry.action === action);
+              const binding = draft.shortcuts.find(
+                (entry) => entry.action === action,
+              );
+              return (
+                <label
+                  key={action}
+                  className="settings__field settings__field--row settings__shortcut"
+                >
+                  <span className="settings__shortcut-label">
+                    {info?.label ?? action}
+                  </span>
+                  <input
+                    type="text"
+                    value={binding?.accelerator ?? ""}
+                    placeholder={info?.default_accelerator ?? ""}
+                    onChange={(event) =>
+                      updateAccelerator(action, event.target.value)
+                    }
+                  />
+                </label>
+              );
+            })}
+            <div className="settings__actions">
+              <button
+                type="button"
+                className="settings__button settings__button--primary"
+                disabled={busy}
+                onClick={onSaveShortcuts}
+              >
+                Aplicar atalhos
+              </button>
+            </div>
+            {conflicts.length > 0 && (
+              <ul className="settings__conflicts">
+                {conflicts.map((conflict) => (
+                  <li key={`${conflict.action}-${conflict.accelerator}`}>
+                    {conflict.accelerator}: {conflict.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {status && (
+          <p className={`settings__status settings__status--${status.kind}`}>
+            {status.text}
+          </p>
+        )}
+      </div>
+
+      <footer className="settings__footer">
+        <span className="settings__footer-note">
+          <span
+            className={`settings__footer-dot${
+              hasUnsavedChanges ? " settings__footer-dot--dirty" : ""
+            }`}
+            aria-hidden="true"
+          />
+          <span>
+            {hasUnsavedChanges
+              ? "Alterações não salvas"
+              : "Todas as alterações são sincronizadas localmente"}
+          </span>
+          {" · "}
+          <span>
+            {persistent ? "Chaves no keyring do sistema" : "Chaves só nesta sessão"}
+          </span>
+        </span>
+        <div className="settings__footer-actions">
+          <button
+            type="button"
+            className="settings__button"
+            disabled={busy}
+            onClick={onRestoreDefaults}
+          >
+            Restaurar Padrões
+          </button>
+          <button
+            type="button"
+            className="settings__button settings__button--primary"
+            disabled={busy}
+            onClick={onSave}
+          >
+            Salvar Alterações
+          </button>
+        </div>
+      </footer>
     </main>
   );
 }

@@ -3,6 +3,9 @@
 //! Orquestra o domínio dependendo apenas de `ports` (traits). Não faz I/O
 //! direto: recebe as portas por injeção de dependência (construtor).
 
+pub mod ai_source_health;
+pub mod ai_source_migration;
+pub mod ai_source_service;
 pub mod context;
 pub mod llm_router;
 pub mod markdown_export;

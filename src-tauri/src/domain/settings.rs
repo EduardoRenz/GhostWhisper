@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::ai_route::{validate_routes, AiRoute};
+use crate::domain::ai_source::{validate_sources, AiSource};
 use crate::domain::assistant::{is_builtin_id, validate_custom_modes, AssistantMode};
 use crate::domain::shortcuts::ShortcutBinding;
 use crate::error::{GhostWhisperError, Result};
@@ -55,6 +57,8 @@ pub enum ProviderKind {
     OpenAi,
     Gemini,
     OpenRouter,
+    /// DeepSeek — API compatível com OpenAI (BR-046).
+    DeepSeek,
     Custom,
 }
 
@@ -65,16 +69,18 @@ impl ProviderKind {
             ProviderKind::OpenAi => "openai",
             ProviderKind::Gemini => "gemini",
             ProviderKind::OpenRouter => "openrouter",
+            ProviderKind::DeepSeek => "deepseek",
             ProviderKind::Custom => "custom",
         }
     }
 
     /// Todos os providers, na ordem de exibição.
-    pub fn all() -> [ProviderKind; 4] {
+    pub fn all() -> [ProviderKind; 5] {
         [
             ProviderKind::OpenAi,
             ProviderKind::Gemini,
             ProviderKind::OpenRouter,
+            ProviderKind::DeepSeek,
             ProviderKind::Custom,
         ]
     }
@@ -85,6 +91,7 @@ impl ProviderKind {
             ProviderKind::OpenAi => "gpt-4o-mini",
             ProviderKind::Gemini => "gemini-2.0-flash",
             ProviderKind::OpenRouter => "openai/gpt-4o-mini",
+            ProviderKind::DeepSeek => "deepseek-chat",
             ProviderKind::Custom => "",
         }
     }
@@ -94,6 +101,7 @@ impl ProviderKind {
         match self {
             ProviderKind::OpenAi => Some("https://api.openai.com/v1"),
             ProviderKind::OpenRouter => Some("https://openrouter.ai/api/v1"),
+            ProviderKind::DeepSeek => Some("https://api.deepseek.com/v1"),
             ProviderKind::Gemini | ProviderKind::Custom => None,
         }
     }
@@ -103,8 +111,11 @@ impl ProviderKind {
         matches!(self, ProviderKind::Custom)
     }
 
-    /// Chave no `SecretStore` associada ao provider.
-    pub fn secret_key(&self) -> String {
+    /// Chave no `SecretStore` legada (uma por *tipo* de provider).
+    ///
+    /// Só existe para a **migração** das configurações antigas (BR-044): as
+    /// fontes novas usam `AiSource::secret_key()` (uma chave por fonte).
+    pub fn legacy_secret_key(&self) -> String {
         format!("llm.{}", self.as_str())
     }
 }
@@ -112,10 +123,24 @@ impl ProviderKind {
 /// Configurações persistidas em disco (nunca contêm segredos).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
-    pub provider: ProviderKind,
-    pub model: String,
-    /// Endpoint custom (formato OpenAI). Obrigatório quando `provider = custom`.
-    pub base_url: Option<String>,
+    /// Fontes de IA cadastradas, **ordenadas** (a primeira é a primária) —
+    /// BR-044.
+    #[serde(default)]
+    pub ai_sources: Vec<AiSource>,
+    /// Vínculos de fonte por escopo (agente/capacidade) — BR-048.
+    #[serde(default)]
+    pub ai_routes: Vec<AiRoute>,
+    /// Provider legado (configurações anteriores às fontes) — só de leitura.
+    ///
+    /// É lido uma vez na migração e **nunca** serializado de novo.
+    #[serde(default, rename = "provider", skip_serializing)]
+    pub legacy_provider: Option<ProviderKind>,
+    /// Modelo legado (configurações anteriores às fontes) — só de leitura.
+    #[serde(default, rename = "model", skip_serializing)]
+    pub legacy_model: Option<String>,
+    /// Endpoint custom legado (configurações anteriores às fontes).
+    #[serde(default, rename = "base_url", skip_serializing)]
+    pub legacy_base_url: Option<String>,
     /// Idioma de origem da transcrição (`auto` para detecção).
     pub source_language: String,
     /// Idioma de destino da tradução.
@@ -225,12 +250,25 @@ pub const MIN_PANEL_WIDTH: u32 = 320;
 /// `tauri.conf.json`).
 pub const MIN_PANEL_HEIGHT: u32 = 240;
 
+/// Id reservado da fonte padrão (instalação nova / migração).
+pub const DEFAULT_SOURCE_ID: &str = "default";
+
+/// Fonte padrão: OpenAI com `gpt-4o-mini` (sem chave — o usuário cadastra a
+/// dele).
+pub fn default_source() -> AiSource {
+    let mut source = AiSource::new(DEFAULT_SOURCE_ID, ProviderKind::OpenAi);
+    source.label = "OpenAI".to_string();
+    source
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            provider: ProviderKind::OpenAi,
-            model: ProviderKind::OpenAi.default_model().to_string(),
-            base_url: None,
+            ai_sources: vec![default_source()],
+            ai_routes: Vec::new(),
+            legacy_provider: None,
+            legacy_model: None,
+            legacy_base_url: None,
             source_language: "auto".to_string(),
             target_language: "pt".to_string(),
             translation_enabled: false,
@@ -319,10 +357,9 @@ fn default_acceleration() -> String {
 impl Settings {
     /// Valida invariantes antes de persistir/usar.
     pub fn validate(&self) -> Result<()> {
-        if self.model.trim().is_empty() {
-            return Err(GhostWhisperError::Config(
-                "modelo não pode ser vazio".into(),
-            ));
+        validate_sources(&self.ai_sources)?;
+        if let Err(message) = validate_routes(&self.ai_routes) {
+            return Err(GhostWhisperError::Config(message));
         }
         if self.whisper_prompt.contains('\0') {
             return Err(GhostWhisperError::Config(
@@ -339,16 +376,6 @@ impl Settings {
                 "aceleração inválida: {} (use auto, cpu ou gpu)",
                 self.acceleration
             )));
-        }
-        if self.provider.requires_base_url() {
-            match self.base_url.as_deref().map(str::trim) {
-                Some(url) if url.starts_with("http://") || url.starts_with("https://") => {}
-                _ => {
-                    return Err(GhostWhisperError::Config(
-                        "provider custom exige base_url http(s)".into(),
-                    ))
-                }
-            }
         }
         if self.target_language.trim().is_empty() {
             return Err(GhostWhisperError::Config(
@@ -406,6 +433,19 @@ impl Settings {
 
     /// Corrige valores fora do contrato (ex.: settings antigas com idioma livre).
     pub fn sanitized(mut self) -> Self {
+        self.ai_sources = sanitize_sources(
+            self.ai_sources,
+            &self.legacy_provider,
+            &self.legacy_model,
+            &self.legacy_base_url,
+        );
+        // Rotas que apontam para uma fonte inexistente são descartadas (a fonte
+        // foi removida pelo usuário): o escopo volta a usar a primária.
+        self.ai_routes.retain(|route| {
+            self.ai_sources
+                .iter()
+                .any(|source| source.id == route.source_id)
+        });
         if !is_supported_acceleration(&self.acceleration) {
             self.acceleration = default_acceleration();
         }
@@ -490,13 +530,56 @@ impl Settings {
         }
     }
 
-    /// `base_url` efetiva para providers OpenAI-compatíveis.
-    pub fn effective_base_url(&self) -> Option<String> {
-        self.base_url
-            .clone()
-            .filter(|url| !url.trim().is_empty())
-            .or_else(|| self.provider.default_base_url().map(str::to_string))
+    /// Fonte de IA pelo id.
+    pub fn source(&self, source_id: &str) -> Option<&AiSource> {
+        self.ai_sources.iter().find(|source| source.id == source_id)
     }
+}
+
+/// Normaliza a lista de fontes (BR-044).
+///
+/// - Lista vazia + campos legados ⇒ migra para **uma** fonte (configurações
+///   anteriores às fontes).
+/// - Lista vazia sem legados ⇒ a fonte padrão (o app sempre tem uma fonte).
+/// - Fontes inválidas são descartadas; ids duplicados são removidos.
+fn sanitize_sources(
+    mut sources: Vec<AiSource>,
+    legacy_provider: &Option<ProviderKind>,
+    legacy_model: &Option<String>,
+    legacy_base_url: &Option<String>,
+) -> Vec<AiSource> {
+    if sources.is_empty() {
+        let mut source = match legacy_provider {
+            Some(kind) => {
+                let mut source = AiSource::new(DEFAULT_SOURCE_ID, *kind);
+                if let Some(model) = legacy_model.as_ref().filter(|m| !m.trim().is_empty()) {
+                    source.model = model.clone();
+                }
+                if let Some(url) = legacy_base_url.as_ref().filter(|u| !u.trim().is_empty()) {
+                    source.base_url = Some(url.clone());
+                }
+                source
+            }
+            None => default_source(),
+        };
+        // Sem modelo (custom sem `base_url`) a fonte é inválida: cai na padrão.
+        if source.model.trim().is_empty() {
+            source = default_source();
+        }
+        sources.push(source);
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    sources.retain(|source| {
+        if source.id.trim().is_empty() || !seen.insert(source.id.clone()) {
+            return false;
+        }
+        crate::domain::ai_source::validate_source(source).is_ok()
+    });
+    if sources.is_empty() {
+        sources.push(default_source());
+    }
+    sources
 }
 
 /// Mascara um segredo para exibição na UI (nunca devolve o valor bruto).
@@ -540,17 +623,18 @@ mod tests {
 
     #[test]
     fn custom_requires_base_url() {
+        let mut custom = crate::domain::ai_source::AiSource::new("custom-1", ProviderKind::Custom);
+        custom.model = "llama-3.1-8b".into();
         let missing_base_url = Settings {
-            provider: ProviderKind::Custom,
-            model: "llama-3.1-8b".into(),
-            base_url: None,
+            ai_sources: vec![custom.clone()],
             ..Settings::default()
         };
         assert!(missing_base_url.validate().is_err());
 
+        custom.base_url = Some("https://ollama.local/v1".into());
         let with_base_url = Settings {
-            base_url: Some("https://ollama.local/v1".into()),
-            ..missing_base_url
+            ai_sources: vec![custom],
+            ..Settings::default()
         };
         assert!(with_base_url.validate().is_ok());
     }
@@ -558,10 +642,56 @@ mod tests {
     #[test]
     fn openai_has_default_base_url() {
         let settings = Settings::default();
+        let source = settings.ai_sources.first().expect("fonte padrão");
+        assert_eq!(source.kind, ProviderKind::OpenAi);
         assert_eq!(
-            settings.effective_base_url().as_deref(),
+            source.effective_base_url().as_deref(),
             Some("https://api.openai.com/v1")
         );
+    }
+
+    #[test]
+    fn legacy_settings_become_one_source() {
+        // Config anterior às fontes (BR-044): o provider/modelo viram uma fonte.
+        let legacy = Settings {
+            ai_sources: vec![],
+            legacy_provider: Some(ProviderKind::OpenRouter),
+            legacy_model: Some("meta-llama/llama-3.1-8b".into()),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(legacy.ai_sources.len(), 1);
+        assert_eq!(legacy.ai_sources[0].kind, ProviderKind::OpenRouter);
+        assert_eq!(legacy.ai_sources[0].model, "meta-llama/llama-3.1-8b");
+        assert_eq!(legacy.ai_sources[0].id, DEFAULT_SOURCE_ID);
+        assert!(legacy.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_fields_are_not_serialized_again() {
+        let json = serde_json::to_string(&Settings::default()).expect("serializa");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+        let object = value.as_object().expect("objeto");
+        // Os campos legados sumiram do arquivo…
+        assert!(!object.contains_key("provider"));
+        assert!(!object.contains_key("model"));
+        assert!(!object.contains_key("base_url"));
+        // …e a lista de fontes está lá (com o modelo de cada fonte).
+        assert!(object.contains_key("ai_sources"));
+        assert!(json.contains("\"model\""));
+    }
+
+    #[test]
+    fn routes_to_unknown_sources_are_dropped() {
+        let settings = Settings {
+            ai_routes: vec![crate::domain::ai_route::AiRoute::new(
+                crate::domain::ai_route::AiRouteScope::Agent("meeting".into()),
+                "nao-existe",
+            )],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert!(settings.ai_routes.is_empty());
     }
 
     #[test]
@@ -912,6 +1042,7 @@ mod tests {
                 context: String::new(),
                 icon: "sparkle".into(),
                 color: "slate".into(),
+                source_id: None,
             }],
             ..Settings::default()
         };
@@ -939,6 +1070,7 @@ mod tests {
                 context: String::new(),
                 icon: "sparkle".into(),
                 color: "slate".into(),
+                source_id: None,
             }],
             ..Settings::default()
         }
@@ -961,6 +1093,7 @@ mod tests {
                 context: String::new(),
                 icon: "rocket".into(),
                 color: "#00f2fe".into(),
+                source_id: None,
             }],
             ..Settings::default()
         }

@@ -9,6 +9,7 @@ use crate::ports::chat_bot_provider::ChatBotProvider;
 use crate::ports::llm_provider_factory::ChatBotProviderFactory;
 
 use super::custom_chat_bot_provider::CustomChatBotProvider;
+use super::deepseek_chat_bot_provider::DeepSeekChatBotProvider;
 use super::gemini_chat_bot_provider::GeminiChatBotProvider;
 use super::openai_chat_bot_provider::OpenAiChatBotProvider;
 use super::openrouter_chat_bot_provider::OpenRouterChatBotProvider;
@@ -33,6 +34,7 @@ impl ChatBotProviderFactory for DefaultChatBotProviderFactory {
             ProviderKind::OpenAi => Arc::new(OpenAiChatBotProvider::new(config.clone())),
             ProviderKind::Gemini => Arc::new(GeminiChatBotProvider::new(config.clone())),
             ProviderKind::OpenRouter => Arc::new(OpenRouterChatBotProvider::new(config.clone())),
+            ProviderKind::DeepSeek => Arc::new(DeepSeekChatBotProvider::new(config.clone())),
             ProviderKind::Custom => Arc::new(CustomChatBotProvider::new(config.clone())),
         };
         Ok(provider)
@@ -58,6 +60,7 @@ mod tests {
         assert!(factory.create(&config(ProviderKind::OpenAi)).is_ok());
         assert!(factory.create(&config(ProviderKind::Gemini)).is_ok());
         assert!(factory.create(&config(ProviderKind::OpenRouter)).is_ok());
+        assert!(factory.create(&config(ProviderKind::DeepSeek)).is_ok());
         assert!(factory.create(&config(ProviderKind::Custom)).is_ok());
     }
 

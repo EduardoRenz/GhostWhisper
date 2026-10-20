@@ -3,7 +3,13 @@
 import { defaultBindings, type ShortcutBinding } from "./shortcuts";
 import type { AssistantMode } from "./assistant";
 
-export type ProviderKind = "openai" | "gemini" | "openrouter" | "custom";
+/** Provedores de LLM suportados (BYO key). */
+export type ProviderKind =
+  | "openai"
+  | "gemini"
+  | "openrouter"
+  | "deepseek"
+  | "custom";
 
 /** Idiomas suportados em origem e destino (`auto` = detectar / não traduzir). */
 export type Language = "auto" | "pt" | "en";
@@ -38,11 +44,60 @@ export const TARGET_LANGUAGE_LABELS: Record<Language, string> = {
   en: "English",
 };
 
-export interface Settings {
-  provider: ProviderKind;
+/**
+ * Fonte de IA cadastrada (BR-044).
+ *
+ * A **ordem** da lista é a ordem de prioridade: a primeira é a primária.
+ */
+export interface AiSource {
+  /** Id estável (uuid). A chave no keyring é `llm.source.{id}`. */
+  id: string;
+  /** Provedor. */
+  kind: ProviderKind;
+  /** Nome de exibição ("OpenAI · Empresa"). */
+  label: string;
+  /** Modelo usado nas chamadas. */
   model: string;
-  /** Endpoint custom (formato OpenAI); obrigatório quando `provider = custom`. */
+  /** Endpoint custom (formato OpenAI); só usado por `custom`. */
   base_url: string | null;
+  /** A fonte participa do roteamento? */
+  enabled: boolean;
+}
+
+/** Estado de saúde de uma fonte (BR-045). */
+export type AiSourceState = "unknown" | "ready" | "degraded" | "failed";
+
+/** Informe de saúde de uma fonte. */
+export interface AiSourceHealth {
+  source_id: string;
+  state: AiSourceState;
+  consecutive_failures: number;
+  latency_ms: number | null;
+  last_error: string | null;
+  is_fallback: boolean;
+  open_until_ms: number | null;
+}
+
+/** Capacidade que pode ter uma fonte própria (BR-048). */
+export type AiCapability = "summary" | "suggestions" | "translation";
+
+/** Escopo de uma rota de IA (BR-048). */
+export type AiRouteScope =
+  | { kind: "default" }
+  | { kind: "capability"; capability: AiCapability }
+  | { kind: "agent"; modeId: string };
+
+/** Vínculo entre um escopo e uma fonte de IA. */
+export interface AiRoute {
+  scope: AiRouteScope;
+  source_id: string;
+}
+
+export interface Settings {
+  /** Fontes de IA, ordenadas (a primeira é a primária) — BR-044. */
+  ai_sources: AiSource[];
+  /** Vínculos de fonte por escopo — BR-048. */
+  ai_routes: AiRoute[];
   source_language: Language;
   target_language: Language;
   translation_enabled: boolean;
@@ -84,10 +139,10 @@ export interface Settings {
   suggestions_size: [number, number] | null;
   /** Posição da janela de chat (painel da sessão). */
   chat_position: [number, number] | null;
-  /** Posição da janela de histórico. */
-  history_position: [number, number] | null;
   /** Tamanho (px físicos) da janela de chat (painel da sessão). */
   chat_size: [number, number] | null;
+  /** Posição da janela de histórico. */
+  history_position: [number, number] | null;
   /** Tamanho (px físicos) da janela de histórico. */
   history_size: [number, number] | null;
   /** Aba ativa do painel da sessão (BR-033). */
@@ -106,8 +161,42 @@ export const PROVIDERS: ProviderKind[] = [
   "openai",
   "gemini",
   "openrouter",
+  "deepseek",
   "custom",
 ];
+
+/** Rótulo de exibição de um provedor. */
+export const PROVIDER_LABELS: Record<ProviderKind, string> = {
+  openai: "OpenAI",
+  gemini: "Google Gemini",
+  openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
+  custom: "Endpoint OpenAI-compatível",
+};
+
+/** Rótulo curto de um provedor (nos cards). */
+export const PROVIDER_SHORT_LABELS: Record<ProviderKind, string> = {
+  openai: "OpenAI",
+  gemini: "Gemini",
+  openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
+  custom: "Custom",
+};
+
+/** `base_url` padrão por provedor (quando existe). */
+export const PROVIDER_DEFAULT_BASE_URLS: Partial<Record<ProviderKind, string>> = {
+  openai: "https://api.openai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  deepseek: "https://api.deepseek.com/v1",
+};
+
+/**
+ * **Não há catálogo de modelos.** O usuário digita o nome do modelo
+ * (`gpt-6`, `deepseek-chat`, …): qualquer lista sugerida fica desatualizada
+ * sooner or later e trava o usuário num modelo que existe mas não está na
+ * lista.
+ */
+export const MODEL_PLACEHOLDER = "nome-do-modelo";
 
 /** Modelos whisper.cpp locais suportados (baixados sob demanda). */
 export const WHISPER_MODELS = [
@@ -149,11 +238,23 @@ export const DEFAULT_MIC_GAIN = 8;
 export const MIN_MIC_GAIN = 1;
 export const MAX_MIC_GAIN = 12;
 
-/** Configurações padrão (espelham `Settings::default`). */
-export const defaultSettings = (): Settings => ({
-  provider: "openai",
+/** Id reservado da fonte padrão (instalação nova / migração). */
+export const DEFAULT_SOURCE_ID = "default";
+
+/** Fonte padrão: OpenAI com `gpt-4o-mini` (sem chave). */
+export const defaultSource = (): AiSource => ({
+  id: DEFAULT_SOURCE_ID,
+  kind: "openai",
+  label: "OpenAI",
   model: "gpt-4o-mini",
   base_url: null,
+  enabled: true,
+});
+
+/** Configurações padrão (espelham `Settings::default`). */
+export const defaultSettings = (): Settings => ({
+  ai_sources: [defaultSource()],
+  ai_routes: [],
   source_language: "auto",
   target_language: "pt",
   translation_enabled: false,
@@ -174,8 +275,8 @@ export const defaultSettings = (): Settings => ({
   suggestions_position: null,
   suggestions_size: null,
   chat_position: null,
-  history_position: null,
   chat_size: null,
+  history_position: null,
   history_size: null,
   panel_tab: "transcription",
   dwell_enabled: true,
@@ -201,3 +302,12 @@ export const SUGGESTION_INTERVALS = [10, 20, 30, 60] as const;
 /** `base_url` é obrigatória apenas para endpoints custom. */
 export const providerRequiresBaseUrl = (provider: ProviderKind): boolean =>
   provider === "custom";
+
+/** Gera um id de fonte (uuid v4) com fallback para ambientes sem crypto. */
+export const newSourceId = (): string => {
+  const globalCrypto = globalThis.crypto as Crypto | undefined;
+  if (globalCrypto && typeof globalCrypto.randomUUID === "function") {
+    return globalCrypto.randomUUID();
+  }
+  return `fonte-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};

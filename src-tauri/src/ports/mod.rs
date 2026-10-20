@@ -6,6 +6,7 @@
 //!
 //! Catálogo completo em `prds/mvp/architecture/engineering-guidelines.md`.
 
+pub mod ai_source_service;
 pub mod audio_consumer;
 pub mod audio_monitor;
 pub mod audio_reference;

@@ -2,6 +2,7 @@
 //!
 //! Apenas traduz transporte ↔ caso de uso. Não contém regra de negócio.
 
+pub mod ai_source_commands;
 pub mod audio_commands;
 pub mod database_commands;
 pub mod dwell;

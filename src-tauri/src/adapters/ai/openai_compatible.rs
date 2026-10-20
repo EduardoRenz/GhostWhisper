@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::domain::llm::{Completion, CompletionRequest, ProviderConfig};
+use crate::domain::llm::{Completion, CompletionRequest, CompletionUsage, ProviderConfig};
 use crate::error::{GhostWhisperError, Result};
 
 /// Tempo limite padrão das chamadas (segundos).
@@ -93,6 +93,7 @@ pub fn chat_completion(
                 return Ok(Completion {
                     text: parsed.text,
                     model: config.model.clone(),
+                    usage: parse_usage(&value),
                 });
             }
             Err(ureq::Error::Status(code, response))
@@ -100,16 +101,10 @@ pub fn chat_completion(
             {
                 let detail = response.into_string().unwrap_or_default();
                 let Some(param) = rejected_param(&detail) else {
-                    return Err(GhostWhisperError::Other(format!(
-                        "provider respondeu {code}: {}",
-                        truncate(&detail, 300)
-                    )));
+                    return Err(provider_status(code, &detail));
                 };
                 if !apply_rejected_param_fallback(&mut body, &param) {
-                    return Err(GhostWhisperError::Other(format!(
-                        "provider respondeu {code}: {}",
-                        truncate(&detail, 300)
-                    )));
+                    return Err(provider_status(code, &detail));
                 }
                 retries += 1;
                 tracing::debug!("provider rejeitou '{param}'; reenviando sem ele");
@@ -190,6 +185,9 @@ fn try_stream(
     let mut accumulated = String::new();
     let mut emitted = String::new();
     let mut saw_data = false;
+    // O `usage` chega no **último** pedaço do SSE (o provider o envia junto
+    // com o `[DONE]`); guardamos o último que trouxe uso.
+    let mut stream_usage: Option<CompletionUsage> = None;
     for line in std::io::BufReader::new(reader).lines() {
         let Ok(line) = line else { break };
         let Some(payload) = line.strip_prefix("data:") else {
@@ -206,6 +204,9 @@ fn try_stream(
         let Ok(value) = serde_json::from_str::<Value>(payload) else {
             continue;
         };
+        if let Some(usage) = parse_usage(&value) {
+            stream_usage = Some(usage);
+        }
         if let Some(delta) = value["choices"]
             .get(0)
             .and_then(|choice| choice["delta"]["content"].as_str())
@@ -225,7 +226,43 @@ fn try_stream(
     Ok(StreamOutcome::Done(Completion {
         text: accumulated.trim().to_string(),
         model: config.model.clone(),
+        usage: stream_usage,
     }))
+}
+
+/// Lê o bloco `usage` da resposta (tokens + raciocínio, quando houver).
+///
+/// O formato é o da API da OpenAI e compatível: `usage.prompt_tokens`,
+/// `usage.completion_tokens`, `usage.total_tokens` e
+/// `usage.completion_tokens_details.reasoning_tokens` (modelos de raciocínio).
+fn parse_usage(value: &Value) -> Option<CompletionUsage> {
+    let usage = value.get("usage")?;
+    let prompt_tokens = usage
+        .get("prompt_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let completion_tokens = usage
+        .get("completion_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let total_tokens = usage
+        .get("total_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+    let reasoning_tokens = usage
+        .get("completion_tokens_details")
+        .and_then(|details| details.get("reasoning_tokens"))
+        .and_then(Value::as_u64)
+        .map(|value| value as u32);
+    if prompt_tokens == 0 && completion_tokens == 0 && total_tokens == 0 {
+        return None;
+    }
+    Some(CompletionUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        reasoning_tokens,
+    })
 }
 
 /// Monta o corpo da requisição a partir do pedido.
@@ -415,9 +452,20 @@ pub(crate) fn map_transport_error(error: ureq::Error) -> GhostWhisperError {
                 .into_string()
                 .map(|body| truncate(&body, 300))
                 .unwrap_or_default();
-            GhostWhisperError::Other(format!("provider respondeu {code}: {detail}"))
+            GhostWhisperError::ProviderStatus { code, detail }
         }
         other => GhostWhisperError::Other(format!("falha de rede ao chamar o provider: {other}")),
+    }
+}
+
+/// Erro de status do provider com o **código tipado** (BR-045).
+///
+/// O detalhe é truncado; a chave de API nunca aparece (o header de
+/// autorização não volta na resposta).
+pub(crate) fn provider_status(code: u16, detail: &str) -> GhostWhisperError {
+    GhostWhisperError::ProviderStatus {
+        code,
+        detail: truncate(detail, 300),
     }
 }
 
@@ -434,12 +482,14 @@ pub(crate) fn truncate(text: &str, max_chars: usize) -> String {
 ///
 /// Modelos de raciocínio (perssua `builtInOmissions` para `codex`/gpt-5) só
 /// suportam o valor padrão (`1`); para eles o parâmetro nem é enviado.
+/// O `deepseek-reasoner` é da mesma família (BR-046).
 fn temperature_supported(model: &str) -> bool {
     let name = model.trim().to_ascii_lowercase();
     !(name.starts_with("gpt-5")
         || name.starts_with("o1")
         || name.starts_with("o3")
-        || name.starts_with("o4"))
+        || name.starts_with("o4")
+        || name.starts_with("deepseek-reasoner"))
 }
 
 #[cfg(test)]
@@ -545,6 +595,42 @@ mod tests {
 
         assert_eq!(completion.text, "resposta única");
         assert_eq!(seen, vec!["resposta única"]);
+    }
+
+    #[test]
+    fn reads_the_usage_with_reasoning_tokens() {
+        let value = json!({
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 40,
+                "total_tokens": 160,
+                "completion_tokens_details": { "reasoning_tokens": 24 }
+            }
+        });
+        let usage = parse_usage(&value).expect("usage");
+        assert_eq!(usage.prompt_tokens, 120);
+        assert_eq!(usage.completion_tokens, 40);
+        assert_eq!(usage.total_tokens, 160);
+        assert_eq!(usage.reasoning_tokens, Some(24));
+        assert!(usage.has_reasoning());
+    }
+
+    #[test]
+    fn reads_the_usage_without_reasoning() {
+        let value = json!({
+            "usage": { "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15 }
+        });
+        let usage = parse_usage(&value).expect("usage");
+        assert_eq!(usage.prompt_tokens, 10);
+        assert_eq!(usage.reasoning_tokens, None);
+        assert!(!usage.has_reasoning());
+    }
+
+    #[test]
+    fn no_usage_block_means_no_usage() {
+        assert!(parse_usage(&json!({ "choices": [] })).is_none());
+        assert!(parse_usage(&json!({ "usage": {} })).is_none());
     }
 
     #[test]

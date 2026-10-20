@@ -609,6 +609,7 @@ mod tests {
         ) {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
+        fn emit_llm_source_used(&self, _usage: &crate::ports::event_publisher::LlmSourceUsage) {}
     }
 
     struct Fixture {

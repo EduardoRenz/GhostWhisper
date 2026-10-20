@@ -61,14 +61,16 @@ mod tests {
 
     #[test]
     fn round_trips_settings() {
+        use crate::domain::ai_source::AiSource;
         use crate::domain::settings::ProviderKind;
 
         let dir = tempfile::tempdir().expect("tempdir");
         let store = FileSettingsStore::new(dir.path().join("settings.json"));
 
+        let mut source = AiSource::new("fonte-1", ProviderKind::OpenRouter);
+        source.model = "meta-llama/llama-3.1-8b".into();
         let settings = Settings {
-            provider: ProviderKind::OpenRouter,
-            model: "meta-llama/llama-3.1-8b".into(),
+            ai_sources: vec![source],
             translation_enabled: true,
             ..Settings::default()
         };
@@ -94,8 +96,13 @@ mod tests {
     fn save_validates() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = FileSettingsStore::new(dir.path().join("settings.json"));
+        let mut source = crate::domain::ai_source::AiSource::new(
+            "fonte-1",
+            crate::domain::settings::ProviderKind::OpenAi,
+        );
+        source.model = "  ".into();
         let settings = Settings {
-            model: "  ".into(),
+            ai_sources: vec![source],
             ..Settings::default()
         };
         assert!(store.save(&settings).is_err());

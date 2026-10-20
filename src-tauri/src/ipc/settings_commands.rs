@@ -28,6 +28,19 @@ pub fn settings_open(app: tauri::AppHandle) -> Result<()> {
     Ok(())
 }
 
+/// Esconde a janela de Configurações (mesmo comportamento do `✕`).
+#[tauri::command]
+pub fn settings_close(app: tauri::AppHandle) -> Result<()> {
+    use tauri::Manager;
+
+    let window = app
+        .get_webview_window("settings")
+        .ok_or_else(|| GhostWhisperError::Other("janela 'settings' não encontrada".to_string()))?;
+    window
+        .hide()
+        .map_err(|error| GhostWhisperError::Other(error.to_string()))
+}
+
 /// Lista os providers suportados (para a UI).
 #[tauri::command]
 pub fn settings_providers() -> Vec<&'static str> {
@@ -61,32 +74,10 @@ pub fn settings_set(
     Ok(conflicts)
 }
 
-/// Grava a chave do provider ativo no armazenamento de segredos.
-#[tauri::command(async)]
-pub fn settings_set_provider_key(state: State<'_, AppState>, key: String) -> Result<()> {
-    let settings = state.settings.load()?;
-    state.secrets.set(&settings.provider.secret_key(), &key)
-}
-
-/// Indica se há chave configurada para o provider ativo.
-#[tauri::command(async)]
-pub fn settings_has_provider_key(state: State<'_, AppState>) -> Result<bool> {
-    let settings = state.settings.load()?;
-    let present = state
-        .secrets
-        .get(&settings.provider.secret_key())?
-        .is_some_and(|value| !value.trim().is_empty());
-    Ok(present)
-}
-
-/// Remove a chave do provider ativo.
-#[tauri::command(async)]
-pub fn settings_clear_provider_key(state: State<'_, AppState>) -> Result<()> {
-    let settings = state.settings.load()?;
-    state.secrets.delete(&settings.provider.secret_key())
-}
-
-/// Testa a conexão com o provider (validar chave).
+/// Testa a conexão com a fonte primária (validar chave).
+///
+/// A validação **por fonte** vive em `ipc::ai_source_commands`; esta é a
+/// atalho para a fonte primária.
 #[tauri::command(async)]
 pub fn settings_validate_key(state: State<'_, AppState>) -> Result<String> {
     state.llm.validate()
@@ -96,21 +87,6 @@ pub fn settings_validate_key(state: State<'_, AppState>) -> Result<String> {
 #[tauri::command(async)]
 pub fn settings_provider_label(state: State<'_, AppState>) -> Result<String> {
     state.llm.provider_label()
-}
-
-/// Versão mascarada da chave ativa (`••••••••·abcd`) para indicar presença.
-///
-/// Nunca devolve o valor bruto: só os últimos 4 caracteres, mesma regra do
-/// OpenAI/OpenRouter quando exibem chaves salvas.
-#[tauri::command(async)]
-pub fn settings_key_preview(state: State<'_, AppState>) -> Result<String> {
-    let settings = state.settings.load()?;
-    let masked = state
-        .secrets
-        .get(&settings.provider.secret_key())?
-        .map(|value| crate::domain::settings::redact_secret(&value))
-        .unwrap_or_default();
-    Ok(masked)
 }
 
 /// Informa se o armazenamento de segredos é persistente (keyring) ou de sessão.

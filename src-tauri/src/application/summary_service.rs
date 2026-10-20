@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use crate::domain::ai_route::{AiCapability, AiRouteScope};
 use crate::domain::llm::CompletionRequest;
 use crate::domain::overview::MeetingSummary;
 use crate::error::{GhostWhisperError, Result};
@@ -116,7 +117,9 @@ impl SummaryService {
             .with_max_tokens(self.limits.max_tokens),
         };
 
-        let completion = self.llm.complete(&request)?;
+        let completion = self
+            .llm
+            .complete_for(&AiRouteScope::Capability(AiCapability::Summary), &request)?;
         let (subject, markdown) = summary_prompts::parse_summary_response(&completion.text);
         if markdown.trim().is_empty() {
             return Err(GhostWhisperError::Other(
@@ -232,6 +235,7 @@ mod tests {
     use crate::adapters::settings::memory::InMemorySettingsStore;
     use crate::adapters::system::system_clock::FixedClock;
     use crate::application::test_support::FakeLlmController;
+    use crate::domain::ai_route::{AiCapability, AiRouteScope};
     use crate::domain::session::{Session, SessionStatus};
     use crate::domain::transcription::{Speaker, TranscriptSegment};
     use crate::ports::meeting_summaries_repository::MeetingSummariesRepository;
@@ -295,6 +299,32 @@ mod tests {
             transcriptions,
             summaries,
             sessions,
+        }
+    }
+
+    #[test]
+    fn asks_the_llm_with_the_summary_capability() {
+        // BR-048: o resumo pede a fonte da **capacidade** Summary.
+        let fixture = fixture(vec![
+            "SUBJECT: Planejamento\nCONTENT: ## Visão geral\n\nTudo certo.",
+        ]);
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "vamos planejar"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SummaryRequest {
+                session_id: None,
+                mode: SummaryMode::Auto,
+            })
+            .expect("summary");
+
+        let scopes = fixture.llm.scopes();
+        assert!(!scopes.is_empty(), "nenhum escopo foi pedido");
+        for scope in scopes {
+            assert_eq!(scope, AiRouteScope::Capability(AiCapability::Summary));
         }
     }
 

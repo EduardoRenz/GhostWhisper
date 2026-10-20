@@ -7,6 +7,10 @@ import type { ProviderKind, Settings } from "../../core/domain/settings";
 export const getProviders = (): Promise<ProviderKind[] | undefined> =>
   invokeSafe<ProviderKind[]>("settings_providers");
 
+/** Esconde a janela de Configurações. */
+export const closeSettings = (): Promise<void | undefined> =>
+  invokeSafe<void>("settings_close");
+
 /** Carrega as configurações atuais. */
 export const getSettings = (): Promise<Settings | undefined> =>
   invokeSafe<Settings>("settings_get");
@@ -17,29 +21,13 @@ export const saveSettings = (
 ): Promise<ShortcutConflict[] | undefined> =>
   invokeSafe<ShortcutConflict[]>("settings_set", { settings });
 
-/** Grava a chave do provider ativo (nunca é devolvida). */
-export const setProviderKey = (key: string): Promise<void | undefined> =>
-  invokeSafe<void>("settings_set_provider_key", { key });
-
-/** Indica se há chave configurada para o provider ativo. */
-export const hasProviderKey = (): Promise<boolean | undefined> =>
-  invokeSafe<boolean>("settings_has_provider_key");
-
-/** Remove a chave do provider ativo. */
-export const clearProviderKey = (): Promise<void | undefined> =>
-  invokeSafe<void>("settings_clear_provider_key");
-
-/** Testa a conexão com o provider ativo. */
+/** Testa a conexão com a fonte primária (validar chave). */
 export const validateKey = (): Promise<string | undefined> =>
   invokeSafe<string>("settings_validate_key");
 
 /** Rótulo do provider/modelo ativo (sem segredos). */
 export const providerLabel = (): Promise<string | undefined> =>
   invokeSafe<string>("settings_provider_label");
-
-/** Versão mascarada da chave ativa (`••••••••·abcd`) ou "" quando ausente. */
-export const keyPreview = (): Promise<string | undefined> =>
-  invokeSafe<string>("settings_key_preview");
 
 /** Indica se as chaves são persistidas no keyring ou só na sessão. */
 export const secretsPersistent = (): Promise<boolean | undefined> =>
