@@ -1,6 +1,6 @@
 # 10 — Histórico, export, documentação e pacotes
 
-- **Status:** PENDING
+- **Status:** IN PROGRESS
 - **Depende de:** 08, 09
 - **Habilita:** —
 - **Issues:** ISS-049 · **BR:** BR-068, BR-071

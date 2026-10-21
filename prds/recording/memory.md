@@ -85,3 +85,101 @@ ISS-053 (resize).
 - **ISS-051**: Wayland nativo sem gravação.
 - **ISS-053**: resize gera dimensões diferentes entre segmentos (reencode no
   fim).
+
+---
+
+## 2026-10-21 — Implementação da v1 (backend + UI)
+
+- **IDs:** BR-065…BR-071, ISS-054 ·
+  **Refs:** [`prd.md`](prd.md),
+  [`architecture/recording.md`](architecture/recording.md),
+  [`tasks/_tasks.md`](tasks/_tasks.md)
+
+### Pedido
+
+O usuário pediu para **começar a trabalhar na feature e fazê-la** depois de
+aprovar a PRD (botão de câmera, modal de fim de sessão e aba de configurações).
+
+### O que foi implementado
+
+| Camada | Arquivos |
+|---|---|
+| `domain` | `domain/recording.rs` (Recording, RecordingSpec, RecordingTarget, estados, normalização) |
+| `application` | `application/recording_service.rs` (ciclo de vida, spec congelada, finalização em thread) |
+| `ports` | `screen_recorder.rs`, `recordings_repository.rs`, `recording.rs`, `screen_targets.rs`, `pending_session_end.rs` |
+| `adapters` | `recording/{ffmpeg_path,ffmpeg_args,ffmpeg_screen_recorder,finalizer,x11_targets}.rs`; `persistence/sqlite/local_recordings_repository.rs`; `persistence/memory/in_memory_recordings_repository.rs`; `pending/in_memory_pending_session_end.rs` |
+| schema | tabela `recordings` + índice; `schema_version` → 3 |
+| `ipc` | `recording_commands.rs`, `session_end_commands.rs`; `session_stop` devolve `SessionEndDto`; `session_delete` descarta a gravação |
+| frontend | `core/domain/recording.ts`, `useRecording`, `useSessionEnd`, `RecordingButton`, `SessionEndWindow`, `RecordingSettings`, aba "Gravação", ícones, CSS |
+| config | janela `session-end` (560×400) + capability; `allow-start-dragging`; `allow-reveal-item-in-dir` |
+
+### Decisões de implementação
+
+- **`parec` como fallback de áudio (ISS-054).** O `ffmpeg` estático do usuário
+  não tem entrada `pulse`; o áudio é capturado em PCM cru e remuxado no fim.
+  Com um `ffmpeg` de distro (com Pulse), o caminho de um processo só é usado.
+- **Alvo = janela ativa; se o overlay tiver o foco, a janela do topo.** Assim o
+  clique no botão não faz a gravação cair para a tela inteira (BR-070).
+- **Finalização assíncrona** com `-c copy` e progresso por `-progress pipe:1`;
+  o modal mostra a barra. Falha preserva os segmentos.
+- **Descarte antes do stop** na exclusão de sessão, para não finalizar um arquivo
+  que será apagado; o finalizador ignora resultado de gravação descartada.
+
+### Verificação
+
+- `cargo test --lib`: **586** ✓ (novos testes de domínio, args, repositório e
+  serviço com fakes).
+- Teste manual `#[ignore]` `records_and_finalizes_a_real_screen`: grava 2 s da
+  tela, captura mic + sistema via `parec` e gera MP4 ✓.
+- Validação em shell do fallback: 3 s → H.264 1888×1006 @ 8 fps + AAC estéreo
+  48 kHz, duração 3,0 s.
+- `cargo clippy --lib --all-targets`: limpo.
+- `pnpm exec tsc --noEmit`: limpo · `pnpm test`: **382** ✓ · `pnpm build` ✓.
+
+### Pendências (tasks 03, 07 e 10)
+
+- Seletor de janelas (clique secundário) — hoje usa a ativa/topo.
+- Observar `ConfigureNotify` para redimensionamento de janela (ISS-053).
+- Atalho **Ctrl+Shift+R** no catálogo de atalhos.
+- Selo de gravação no Histórico (o export já inclui a linha `Gravação:`).
+- Empacotamento do `ffmpeg`/`parec` condicionado à licença (ISS-049).
+- Checagem de espaço em disco antes de iniciar (CA-02.9) e validação de
+  permissão de escrita da pasta (CA-04.6).
+- Recuperação guiada de gravação interrompida (CA-02.5): hoje o boot só marca
+  `interrupted`; não há botão "recuperar". 
+
+---
+
+## 2026-10-21 — Ajustes do teste do usuário (v1.1)
+
+- **IDs:** BR-065, BR-070 · **Refs:** [`prd.md`](prd.md),
+  [`architecture/recording.md`](architecture/recording.md) §9
+
+### Feedback recebido
+
+1. Nas configurações → Gravação, a opção ativa não parecia selecionada.
+2. Continuar uma sessão antiga pelo Histórico não iniciava a gravação.
+3. O ícone da gravação repetia a câmera de **foto** do print de tela.
+
+### Correções
+
+- **Segmentado selecionado:** os 8 grupos da aba Gravação passaram a usar
+  `settings__segment--active` (mesmo padrão do HUD): cor primária, borda e
+  fundo ciano. Teste de regressão em `RecordingSettings.test.tsx`.
+- **Continuar sessão inicia gravação nova:** `SessionService::continue_session`
+  chama `on_session_started(id, canais, true)`; o botão de câmera passa a ter
+  sessão e, com `recording_auto_start`, a gravação começa sozinha. Para não
+  sobrescrever o vídeo anterior, o schema foi para a **v4**: `recordings` perde
+  o `UNIQUE(session_id)`, ganha `idx_recordings_session` e cada execução usa
+  pasta/arquivo próprios (`<sessão>/<início_ms>/` e `<início_ms>.<ext>`). O
+  modal mostra a execução mais recente; "Descartar gravação" apaga todas as
+  execuções da sessão.
+- **Migração:** bancos da v3 são reconstruídos uma vez em `connection.rs`
+  (teste `an_old_recordings_table_loses_the_unique_session_index`).
+- **Ícone:** novo `VideoCameraIcon` (corpo + lente lateral) no botão e na aba
+  Gravação; `CameraIcon` (foto) continua nos fluxos de print de tela.
+
+### Verificação
+
+- `cargo test --lib`: **589** ✓ · `cargo clippy --lib --all-targets`: limpo.
+- `pnpm exec tsc --noEmit`: limpo · `pnpm test`: **382** ✓ · `pnpm build` ✓.

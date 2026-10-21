@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ActionBar } from "./ActionBar";
 import type { SessionChannel } from "../../core/domain/transcript";
+import { IDLE_RECORDING } from "../../core/domain/recording";
 
 const CHANNELS: SessionChannel[] = ["microphone", "system"];
 
@@ -29,6 +30,10 @@ const base = {
   historyOpen: false,
   onToggleHistory: vi.fn(),
   onHide: vi.fn(),
+  recording: IDLE_RECORDING,
+  recordingBusy: false,
+  recordingCapabilities: { available: true, encoder: "x264", reason: null },
+  onToggleRecording: vi.fn(),
 };
 
 const button = (name: string) =>

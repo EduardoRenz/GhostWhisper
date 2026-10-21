@@ -27,6 +27,7 @@ import { WindowHeader } from "../../components/WindowHeader";
 import { applyHudOpacity } from "../../core/application/useHudOpacity";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
+import { RecordingSettings } from "./RecordingSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
 import { HudSettings } from "./HudSettings";
 import {
@@ -35,6 +36,7 @@ import {
   SlidersIcon,
   TranscriptIcon,
   UsersIcon,
+  VideoCameraIcon,
   WaveformIcon,
 } from "../../components/icons";
 import {
@@ -63,6 +65,7 @@ type Status = { kind: "info" | "ok" | "error"; text: string } | null;
 const TABS = [
   { id: "sources", label: "Fontes de IA", Icon: BoltIcon },
   { id: "transcription", label: "Transcrição & Áudio", Icon: WaveformIcon },
+  { id: "recording", label: "Gravação", Icon: VideoCameraIcon },
   { id: "assistant", label: "Assistente", Icon: UsersIcon },
   { id: "general", label: "Geral & HUD", Icon: SlidersIcon },
   { id: "shortcuts", label: "Atalhos", Icon: KeyboardIcon },
@@ -508,6 +511,10 @@ export function SettingsPage() {
 
             <AudioTestPanel micGain={draft.mic_gain} />
           </section>
+        )}
+
+        {tab === "recording" && (
+          <RecordingSettings settings={draft} update={update} />
         )}
 
         {tab === "assistant" && (

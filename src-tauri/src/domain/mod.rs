@@ -12,6 +12,7 @@ pub mod journal;
 pub mod llm;
 pub mod message;
 pub mod overview;
+pub mod recording;
 pub mod session;
 pub mod settings;
 pub mod shortcuts;

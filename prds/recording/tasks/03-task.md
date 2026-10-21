@@ -1,6 +1,6 @@
 # 03 — Alvo da gravação: janela ativa, seletor e eventos de ciclo de vida
 
-- **Status:** PENDING
+- **Status:** IN PROGRESS
 - **Depende de:** 01, 02
 - **Habilita:** 04, 08
 - **Issues:** ISS-052, ISS-053 · **BR:** BR-070

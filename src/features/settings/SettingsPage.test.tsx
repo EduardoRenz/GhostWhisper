@@ -79,13 +79,14 @@ describe("SettingsPage", () => {
     aiSourcesIpc.sourcesHealth.mockResolvedValue([]);
   });
 
-  it("mostra as 5 abas com ícone e rótulo", async () => {
+  it("mostra as 6 abas com ícone e rótulo", async () => {
     render(<SettingsPage />);
 
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.length).toBe(5);
+    expect(tabs.length).toBe(6);
     expect(screen.getByRole("tab", { name: /Fontes de IA/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Transcrição & Áudio/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Gravação/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Assistente/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Geral & HUD/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Atalhos/ })).toBeDefined();

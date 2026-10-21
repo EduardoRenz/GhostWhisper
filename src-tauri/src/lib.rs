@@ -11,6 +11,7 @@ mod ipc;
 mod ports;
 mod state;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -88,6 +89,16 @@ pub fn run() {
             ipc::database_commands::db_search_transcriptions,
             ipc::session_commands::session_rename,
             ipc::session_commands::session_delete,
+            ipc::recording_commands::recording_capabilities,
+            ipc::recording_commands::recording_start,
+            ipc::recording_commands::recording_pause,
+            ipc::recording_commands::recording_resume,
+            ipc::recording_commands::recording_stop,
+            ipc::recording_commands::recording_state,
+            ipc::recording_commands::recording_discard,
+            ipc::session_end_commands::session_end_open,
+            ipc::session_end_commands::session_end_context,
+            ipc::session_end_commands::session_end_close,
             ipc::export_commands::session_export_markdown,
             ipc::export_commands::session_save_markdown,
             ipc::settings_commands::settings_open,
@@ -136,6 +147,17 @@ pub fn run() {
             if let Some(settings_window) = app.get_webview_window("settings") {
                 let window = settings_window.clone();
                 settings_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                });
+            }
+            // Modal de fim de sessão: fechar esconde (nunca destrói), para
+            // poder ser reaberto na próxima sessão (BR-068).
+            if let Some(session_end) = app.get_webview_window("session-end") {
+                let window = session_end.clone();
+                session_end.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = window.hide();
@@ -220,6 +242,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::dwell::tauri_dwell_popover::TauriDwellPopover;
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
     use adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
+    use adapters::pending::in_memory_pending_session_end::InMemoryPendingSessionEnd;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
@@ -227,8 +250,13 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::persistence::sqlite::local_journal_repository::LocalJournalRepository;
     use adapters::persistence::sqlite::local_meeting_summaries_repository::LocalMeetingSummariesRepository;
     use adapters::persistence::sqlite::local_messages_repository::LocalMessagesRepository;
+    use adapters::persistence::sqlite::local_recordings_repository::LocalRecordingsRepository;
     use adapters::persistence::sqlite::local_session_repository::LocalSessionRepository;
     use adapters::persistence::sqlite::local_transcriptions_repository::LocalTranscriptionsRepository;
+    use adapters::recording::ffmpeg_path::resolve_ffmpeg;
+    use adapters::recording::ffmpeg_screen_recorder::FfmpegScreenRecorder;
+    use adapters::recording::finalizer::FfmpegRecordingFinalizer;
+    use adapters::recording::x11_targets::X11ScreenTargets;
     use adapters::screen::x11_screen_capture::X11ScreenCapture;
     use adapters::secrets::in_memory_secret_store::InMemorySecretStore;
     use adapters::secrets::keyring_secret_store::KeyringSecretStore;
@@ -243,6 +271,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::system::x11_pointer_source::{NullPointerSource, X11PointerSource};
     use application::ask_service::AskService;
     use application::llm_router::LlmRouter;
+    use application::recording_service::RecordingService;
     use application::session_service::SessionService;
     use application::suggestion_service::SuggestionService;
     use application::summary_service::SummaryService;
@@ -262,10 +291,15 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::manual_suggestion_context::ManualSuggestionContextStore;
     use ports::meeting_summaries_repository::MeetingSummariesRepository;
     use ports::model_store::ModelStore;
+    use ports::pending_session_end::PendingSessionEnd;
     use ports::overlay_window::OverlayWindowController;
     use ports::pointer_source::PointerSource;
+    use ports::recording::{RecordingController, RecordingLifecycle};
+    use ports::recordings_repository::RecordingsRepository;
     use ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
     use ports::screen_capture::ScreenCapture;
+    use ports::screen_recorder::{RecordingFinalizer, ScreenRecorder};
+    use ports::screen_targets::ScreenTargets;
     use ports::secret_store::SecretStore;
     use ports::session_controller::SessionController;
     use ports::settings_store::SettingsStore;
@@ -603,15 +637,67 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         write_gpu_marker(&data_dir, &current_settings.whisper_model);
     }
 
-    let session: Arc<dyn SessionController> = Arc::new(SessionService::new(
-        Arc::clone(&audio),
-        Arc::clone(&system_audio),
-        engines,
+    // Gravação da sessão (BR-065…BR-071): adaptador `ffmpeg` atrás da porta.
+    let recordings: Arc<dyn RecordingsRepository> =
+        Arc::new(LocalRecordingsRepository::new(Arc::clone(&connection)));
+    // Gravação interrompida por um crash: marca para recuperação no modal
+    // (CA-02.5). Os segmentos em disco são preservados.
+    match recordings.list_unfinished() {
+        Ok(items) => {
+            for item in items {
+                let _ = recordings.update_status(
+                    &item.id,
+                    crate::domain::recording::RecordingStatus::Interrupted,
+                    Some("app encerrado durante a gravação"),
+                );
+            }
+        }
+        Err(error) => tracing::warn!("falha ao recuperar gravações: {error}"),
+    }
+    let ffmpeg_path = match resolve_ffmpeg() {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!("gravação indisponível: {error}");
+            PathBuf::from("ffmpeg")
+        }
+    };
+    let recorder: Arc<dyn ScreenRecorder> =
+        Arc::new(FfmpegScreenRecorder::new(ffmpeg_path.clone()));
+    let finalizer: Arc<dyn RecordingFinalizer> =
+        Arc::new(FfmpegRecordingFinalizer::new(ffmpeg_path));
+    let targets: Arc<dyn ScreenTargets> = Arc::new(X11ScreenTargets::new());
+    let recordings_dir = app
+        .path()
+        .video_dir()
+        .map(|dir| dir.join("GhostWhisper"))
+        .unwrap_or_else(|_| data_dir.join("recordings"));
+    let recording_impl = Arc::new(RecordingService::new(
+        recorder,
+        finalizer,
+        targets,
+        recordings,
         Arc::clone(&publisher),
-        Arc::clone(&sessions),
-        Arc::clone(&transcriptions),
+        Arc::clone(&settings),
         Arc::clone(&clock),
+        recordings_dir,
     ));
+    let recording: Arc<dyn RecordingController> = recording_impl.clone();
+    let recording_lifecycle: Arc<dyn RecordingLifecycle> = recording_impl.clone();
+    let pending_session_end: Arc<dyn PendingSessionEnd> =
+        Arc::new(InMemoryPendingSessionEnd::new());
+
+    let session: Arc<dyn SessionController> = Arc::new(
+        SessionService::new(
+            Arc::clone(&audio),
+            Arc::clone(&system_audio),
+            engines,
+            Arc::clone(&publisher),
+            Arc::clone(&sessions),
+            Arc::clone(&transcriptions),
+            Arc::clone(&clock),
+        )
+        .with_recording(recording_lifecycle),
+    );
 
     Ok(state::AppState::new(
         overlay,
@@ -641,6 +727,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         publisher,
         shortcuts,
         dwell,
+        recording,
+        pending_session_end,
     ))
 }
 

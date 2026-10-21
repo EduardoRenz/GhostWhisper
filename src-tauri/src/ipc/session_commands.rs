@@ -4,6 +4,7 @@ use serde::Deserialize;
 use tauri::State;
 
 use crate::error::Result;
+use crate::ipc::session_end_commands::{build_session_end, SessionEndDto};
 use crate::ports::session_controller::AudioChannel;
 use crate::state::AppState;
 
@@ -34,10 +35,15 @@ pub fn session_start(
     state.session.start(&channels)
 }
 
-/// Encerra a sessão atual.
+/// Encerra a sessão atual e devolve o resumo do modal (BR-068).
 #[tauri::command(async)]
-pub fn session_stop(state: State<'_, AppState>) -> Result<()> {
-    state.session.stop()
+pub fn session_stop(state: State<'_, AppState>) -> Result<Option<SessionEndDto>> {
+    let session_id = state.session.current_session_id();
+    state.session.stop()?;
+    match session_id {
+        Some(session_id) => build_session_end(&state, &session_id),
+        None => Ok(None),
+    }
 }
 
 /// Renomeia a sessão (título exibido no histórico).
@@ -55,7 +61,10 @@ pub fn session_rename(state: State<'_, AppState>, id: String, subject: String) -
 /// Exclui a sessão e, junto, suas falas e sugestões.
 #[tauri::command(async)]
 pub fn session_delete(state: State<'_, AppState>, id: String) -> Result<()> {
-    // Se for a sessão em andamento, encerra a captura antes de apagar.
+    // A gravação é apagada junto com a sessão (BR-071/CA-05.4). O descarte
+    // vem **antes** do stop: assim a finalização não é agendada para um
+    // arquivo que vai deixar de existir.
+    state.recording.discard(&id)?;
     if state.session.current_session_id().as_deref() == Some(id.as_str()) {
         state.session.stop()?;
     }

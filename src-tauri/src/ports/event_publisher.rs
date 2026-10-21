@@ -3,6 +3,7 @@
 use serde::Serialize;
 
 use crate::domain::audio::AudioLevel;
+use crate::domain::recording::RecordingState;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -114,6 +115,25 @@ pub struct TranscriptActivityEvent {
     pub processing: bool,
 }
 
+/// Progresso da finalização da gravação (BR-067).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RecordingProgressEvent {
+    /// Sessão dona da gravação.
+    pub session_id: String,
+    /// `finalizing` | `ready` | `failed`.
+    pub phase: String,
+    /// 0–100 (só faz sentido em `finalizing`).
+    pub percent: u8,
+    /// Caminho do arquivo (em `ready`).
+    pub path: Option<String>,
+    /// Tamanho do arquivo (em `ready`).
+    pub size_bytes: u64,
+    /// Duração do arquivo (em `ready`).
+    pub duration_ms: i64,
+    /// Motivo (em `failed`).
+    pub error: Option<String>,
+}
+
 /// Publica eventos do domínio para a interface.
 ///
 /// Adaptador: `TauriEventPublisher`; dobra de teste: `RecordingEventPublisher`.
@@ -142,4 +162,10 @@ pub trait EventPublisher: Send + Sync {
     fn emit_llm_source_used(&self, usage: &LlmSourceUsage);
     /// Emite o progresso de uma entrada do diário (pergunta/resposta) — BR-052.
     fn emit_journal(&self, update: &JournalUpdate);
+    /// Emite o estado da gravação da sessão (BR-065).
+    ///
+    /// Default no-op: fakes que não observam gravação não precisam implementar.
+    fn emit_recording_state(&self, _state: &RecordingState) {}
+    /// Emite o progresso da finalização da gravação (BR-067).
+    fn emit_recording_progress(&self, _progress: &RecordingProgressEvent) {}
 }

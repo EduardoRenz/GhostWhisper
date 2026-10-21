@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DwellProvider } from "../../components/dwell/DwellProvider";
 import { ActionBar } from "./ActionBar";
 import type { SessionChannel } from "../../core/domain/transcript";
+import { IDLE_RECORDING } from "../../core/domain/recording";
 
 const show = vi.hoisted(() => vi.fn(async () => undefined));
 
@@ -38,6 +39,10 @@ const base = {
   historyOpen: false,
   onToggleHistory: vi.fn(),
   onHide: vi.fn(),
+  recording: IDLE_RECORDING,
+  recordingBusy: false,
+  recordingCapabilities: { available: true, encoder: "x264", reason: null },
+  onToggleRecording: vi.fn(),
 };
 
 const button = (name: string) =>

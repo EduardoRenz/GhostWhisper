@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-21
-- **Status:** Proposto (aguardando aprovação)
+- **Status:** Em implementação (v1 funcional; pendências nas tasks 03, 07 e 10)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/recording.md`](architecture/recording.md),

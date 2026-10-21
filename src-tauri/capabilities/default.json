@@ -10,13 +10,16 @@
     "history",
     "dwell",
     "ask",
-    "capture"
+    "capture",
+    "session-end"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-resize-dragging",
+    "core:window:allow-start-dragging",
     "core:window:allow-cursor-position",
     "opener:default",
+    "opener:allow-reveal-item-in-dir",
     "store:default",
     "global-shortcut:default",
     "dialog:default"

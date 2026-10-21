@@ -179,9 +179,40 @@ DROP INDEX IF EXISTS idx_sessions_user;
 CREATE INDEX IF NOT EXISTS idx_journal_session_time ON journal_entries(session_id, asked_at_ms);
 CREATE INDEX IF NOT EXISTS idx_journal_images_entry ON journal_images(entry_id);
 
+
+-- Gravação da sessão (BR-065/BR-067). Uma linha por sessão; os segmentos
+-- vivem no disco (`segments_dir`) até a finalização.
+CREATE TABLE IF NOT EXISTS recordings (
+  id             TEXT PRIMARY KEY,
+  session_id     TEXT NOT NULL,
+  kind           TEXT NOT NULL CHECK(kind IN ('video', 'audio')),
+  status         TEXT NOT NULL
+    CHECK(status IN ('recording', 'paused', 'finalizing', 'ready', 'failed',
+                     'discarded', 'interrupted')),
+  path           TEXT,
+  segments_dir   TEXT,
+  size_bytes     INTEGER NOT NULL DEFAULT 0,
+  duration_ms    INTEGER NOT NULL DEFAULT 0,
+  width          INTEGER NOT NULL DEFAULT 0,
+  height         INTEGER NOT NULL DEFAULT 0,
+  fps            INTEGER NOT NULL DEFAULT 0,
+  started_at_ms  INTEGER NOT NULL,
+  finished_at_ms INTEGER,
+  error          TEXT,
+  created_at     INTEGER DEFAULT (strftime('%s', 'now')),
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);
+CREATE INDEX IF NOT EXISTS idx_recordings_session
+  ON recordings(session_id, started_at_ms);
+
 CREATE TABLE IF NOT EXISTS schema_version (
   version INTEGER PRIMARY KEY,
   applied_at INTEGER DEFAULT (strftime('%s', 'now'))
 );
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (2);
+INSERT OR IGNORE INTO schema_version (version) VALUES (3);
+-- v4: várias gravações por sessão (continuar uma sessão antiga inicia outra).
+INSERT OR IGNORE INTO schema_version (version) VALUES (4);

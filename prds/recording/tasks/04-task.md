@@ -1,6 +1,6 @@
 # 04 — Finalização: concat, remux MP4 e progresso
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 02, 03
 - **Habilita:** 05, 08
 - **Issues:** ISS-053 · **BR:** BR-067

@@ -12,6 +12,7 @@ import {
   SparkleIcon,
   SummaryIcon,
   TranscriptIcon,
+  VideoCameraIcon,
 } from "./icons";
 import { ShortcutBadges } from "./ShortcutBadges";
 
@@ -27,6 +28,7 @@ const ALL_ICONS = {
   GripIcon,
   LanguageIcon,
   SparkleIcon,
+  VideoCameraIcon,
 };
 
 describe("ícones", () => {

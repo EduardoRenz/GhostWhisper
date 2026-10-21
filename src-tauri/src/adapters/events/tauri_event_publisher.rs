@@ -4,10 +4,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::domain::audio::AudioLevel;
+use crate::domain::recording::RecordingState;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
-    EventPublisher, JournalUpdate, LlmSourceUsage, SessionStateEvent, SuggestionCadenceEvent,
-    TranscriptActivityEvent,
+    EventPublisher, JournalUpdate, LlmSourceUsage, RecordingProgressEvent, SessionStateEvent,
+    SuggestionCadenceEvent, TranscriptActivityEvent,
 };
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -32,6 +33,10 @@ pub const TRANSCRIPT_ACTIVITY_EVENT: &str = "transcript_activity";
 pub const LLM_SOURCE_USED_EVENT: &str = "llm_source_used";
 /// Nome do evento de progresso do diário de perguntas (BR-052).
 pub const JOURNAL_EVENT: &str = "journal";
+/// Nome do evento de estado da gravação da sessão (BR-065).
+pub const RECORDING_STATE_EVENT: &str = "recording_state";
+/// Nome do evento de progresso da finalização (BR-067).
+pub const RECORDING_PROGRESS_EVENT: &str = "recording_progress";
 
 /// Payload do evento `audio_level` (canal + nível).
 #[derive(Debug, Clone, Serialize)]
@@ -99,5 +104,13 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_journal(&self, update: &JournalUpdate) {
         let _ = self.app.emit(JOURNAL_EVENT, update);
+    }
+
+    fn emit_recording_state(&self, state: &RecordingState) {
+        let _ = self.app.emit(RECORDING_STATE_EVENT, state);
+    }
+
+    fn emit_recording_progress(&self, progress: &RecordingProgressEvent) {
+        let _ = self.app.emit(RECORDING_PROGRESS_EVENT, progress);
     }
 }

@@ -87,6 +87,9 @@
   --oh-outline-variant: #3a494b;
   --oh-border: rgba(255, 255, 255, 0.1);
   --oh-border-strong: rgba(255, 255, 255, 0.14);
+  /* Gravação (BR-065): vermelho do REC e realce suave. */
+  --oh-danger: #ff4d5e;
+  --oh-danger-soft: rgba(255, 77, 94, 0.14);
   --oh-divider: rgba(255, 255, 255, 0.06);
 
   /* --- Acentos ---------------------------------------------------------- */

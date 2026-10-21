@@ -95,7 +95,7 @@ impl AudioSource for PulseSystemAudioSource {
 }
 
 /// Nome do monitor do sink padrão (`<sink>.monitor`).
-fn default_monitor_name() -> Result<String> {
+pub(crate) fn default_monitor_name() -> Result<String> {
     let sink = pactl::run_pactl(&["get-default-sink"])?;
     let sink = sink.trim();
     if sink.is_empty() {

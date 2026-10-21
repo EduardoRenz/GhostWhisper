@@ -1,6 +1,6 @@
 # 06 — IPC, eventos e `SessionEndDto`
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 05
 - **Habilita:** 07, 08
 - **Issues:** — · **BR:** BR-065, BR-068

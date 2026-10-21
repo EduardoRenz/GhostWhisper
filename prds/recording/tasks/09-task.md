@@ -1,6 +1,6 @@
 # 09 — Configurações: aba "Gravação"
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01, 05
 - **Habilita:** 10
 - **Issues:** ISS-049 · **BR:** BR-066, BR-070

@@ -1,6 +1,6 @@
 # 01 — Domínio `Recording`, schema e porta `ScreenRecorder`
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** —
 - **Habilita:** 02, 04, 05, 09
 - **Issues:** — · **BR:** BR-065, BR-067, BR-071
@@ -32,6 +32,8 @@ e a **persistência**, com a tabela `recordings` e a máquina de estados.
   `set_artifact`, `get_by_session`, `list_active`, `discard`.
 - `src-tauri/src/adapters/persistence/schema.sql`:
   `recordings` + `idx_recordings_status`; `schema_version` → **3**.
+      *(Revisão v4: várias execuções por sessão — ver
+      [`../architecture/recording.md`](../architecture/recording.md) §9.)*
 - `src-tauri/src/adapters/persistence/sqlite/local_recordings_repository.rs`.
 - `src-tauri/src/adapters/persistence/memory/in_memory_recordings_repository.rs`
   (BR-013).
@@ -45,7 +47,7 @@ e a **persistência**, com a tabela `recordings` e a máquina de estados.
 - [ ] Sessão com gravação `ready` → `get_by_session` devolve o caminho e o
       tamanho; sessão sem gravação → `None`.
 - [ ] Excluir a sessão apaga a linha (`ON DELETE CASCADE`).
-- [ ] `schema_version = 3` aplicado **idempotentemente** num banco já existente.
+- [ ] `schema_version = 4` aplicado **idempotentemente** num banco já existente.
 - [ ] `RecordingStatus::Interrupted` existe e é atribuível no boot (teste da
       task 05).
 

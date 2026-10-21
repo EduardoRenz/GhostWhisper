@@ -171,6 +171,28 @@ export interface Settings {
    * entra uma vez em quem já tinha a lista persistida.
    */
   saved_questions_migrated: boolean;
+  /** O que gravar: vídeo + áudio ou só áudio (BR-066). */
+  recording_mode: RecordingMode;
+  /** Alvo padrão: janela da reunião ou tela inteira (BR-070). */
+  recording_target: RecordingTargetKind;
+  /** Inicia a gravação junto com a sessão. */
+  recording_auto_start: boolean;
+  /** FPS da gravação (degraus de 5 a 30). */
+  recording_fps: number;
+  /** Resolução da captura. */
+  recording_resolution: RecordingResolution;
+  /** Qualidade (CRF 30/27/24). */
+  recording_quality: RecordingQuality;
+  /** Encoder: automático, x264 ou VAAPI. */
+  recording_encoder: RecordingEncoder;
+  /** Bitrate do AAC (kbps). */
+  recording_audio_kbps: number;
+  /** Container final. */
+  recording_container: RecordingContainer;
+  /** Pasta de destino (vazio = padrão do sistema). */
+  recording_dir: string | null;
+  /** Mantém os segmentos MKV após a finalização. */
+  recording_keep_segments: boolean;
 }
 
 /** Abas do painel da sessão (janela `chat`). */
@@ -198,6 +220,70 @@ export const DEFAULT_SAVED_QUESTIONS: SavedQuestion[] = [
   // Um pedido: a IA responde à última pergunta identificada (BR-054).
   { id: "default-4", text: "Responda a última pergunta identificada" },
 ];
+
+/** Gravação da sessão (BR-066/BR-070) ------------------------------------- */
+
+export type RecordingMode = "video" | "audio";
+export type RecordingTargetKind = "window" | "screen";
+export type RecordingResolution = "native" | "1280x720" | "854x480";
+export type RecordingQuality = "compact" | "balanced" | "sharp";
+export type RecordingEncoder = "auto" | "x264" | "vaapi";
+export type RecordingContainer = "mp4" | "mkv";
+
+/** FPS padrão: 8 (BR-066 — o custo é por frame, não por resolução). */
+export const DEFAULT_RECORDING_FPS = 8;
+export const RECORDING_FPS_STEPS = [5, 8, 10, 15, 30];
+
+/** Bitrate de áudio padrão (kbps). */
+export const DEFAULT_RECORDING_AUDIO_KBPS = 96;
+export const RECORDING_AUDIO_KBPS_STEPS = [64, 96, 128, 160];
+
+export const RECORDING_MODES: RecordingMode[] = ["video", "audio"];
+export const RECORDING_MODE_LABELS: Record<RecordingMode, string> = {
+  video: "Vídeo + áudio",
+  audio: "Somente áudio",
+};
+
+export const RECORDING_TARGETS: RecordingTargetKind[] = ["window", "screen"];
+export const RECORDING_TARGET_LABELS: Record<RecordingTargetKind, string> = {
+  window: "Janela da reunião",
+  screen: "Tela inteira",
+};
+
+export const RECORDING_RESOLUTIONS: RecordingResolution[] = [
+  "native",
+  "1280x720",
+  "854x480",
+];
+export const RECORDING_RESOLUTION_LABELS: Record<RecordingResolution, string> = {
+  native: "Nativa",
+  "1280x720": "1280×720",
+  "854x480": "854×480",
+};
+
+export const RECORDING_QUALITIES: RecordingQuality[] = [
+  "compact",
+  "balanced",
+  "sharp",
+];
+export const RECORDING_QUALITY_LABELS: Record<RecordingQuality, string> = {
+  compact: "Compacta",
+  balanced: "Equilibrada",
+  sharp: "Nítida",
+};
+
+export const RECORDING_ENCODERS: RecordingEncoder[] = ["auto", "x264", "vaapi"];
+export const RECORDING_ENCODER_LABELS: Record<RecordingEncoder, string> = {
+  auto: "Automático",
+  x264: "x264 (software)",
+  vaapi: "VAAPI (hardware)",
+};
+
+export const RECORDING_CONTAINERS: RecordingContainer[] = ["mp4", "mkv"];
+export const RECORDING_CONTAINER_LABELS: Record<RecordingContainer, string> = {
+  mp4: "MP4",
+  mkv: "MKV",
+};
 
 /** Providers na ordem de exibição. */
 export const PROVIDERS: ProviderKind[] = [
@@ -330,6 +416,17 @@ export const defaultSettings = (): Settings => ({
   hud_density: "standard",
   saved_questions: DEFAULT_SAVED_QUESTIONS,
   saved_questions_migrated: false,
+  recording_mode: "video",
+  recording_target: "window",
+  recording_auto_start: false,
+  recording_fps: DEFAULT_RECORDING_FPS,
+  recording_resolution: "native",
+  recording_quality: "balanced",
+  recording_encoder: "auto",
+  recording_audio_kbps: DEFAULT_RECORDING_AUDIO_KBPS,
+  recording_container: "mp4",
+  recording_dir: null,
+  recording_keep_segments: false,
 });
 
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */

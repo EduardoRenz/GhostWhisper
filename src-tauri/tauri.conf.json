@@ -135,6 +135,20 @@
         "focus": false,
         "visible": false,
         "center": false
+      },
+      {
+        "label": "session-end",
+        "title": "Sessão Finalizada",
+        "width": 560,
+        "height": 400,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {

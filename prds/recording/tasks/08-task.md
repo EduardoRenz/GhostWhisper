@@ -1,6 +1,6 @@
 # 08 — Modal "Sessão Finalizada"
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 06, 07
 - **Habilita:** 10
 - **Issues:** — · **BR:** BR-068

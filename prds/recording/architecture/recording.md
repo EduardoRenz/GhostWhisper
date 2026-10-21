@@ -348,12 +348,13 @@ Teto de RNF-03: 250 MB/h.
 
 ## 9. Schema
 
-`recordings` (uma linha por sessão):
+`recordings` (**várias execuções por sessão** — continuar uma sessão antiga
+inicia uma gravação nova, sem concatenar com a anterior):
 
 ```sql
 CREATE TABLE IF NOT EXISTS recordings (
   id             TEXT PRIMARY KEY,
-  session_id     TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+  session_id     TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   kind           TEXT NOT NULL,              -- video | audio
   status         TEXT NOT NULL,              -- recording|paused|finalizing|ready|failed|discarded|interrupted
   path           TEXT,
@@ -369,12 +370,21 @@ CREATE TABLE IF NOT EXISTS recordings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_recordings_status ON recordings(status);
+CREATE INDEX IF NOT EXISTS idx_recordings_session
+  ON recordings(session_id, started_at_ms);
 ```
 
-- `schema_version` → **3** (`INSERT OR IGNORE`, idempotente como o resto).
+- `schema_version` → **4** (`INSERT OR IGNORE`, idempotente como o resto).
+- `get_by_session` devolve a execução **mais recente** (o modal mostra a última);
+  `list_by_session` devolve todas (descarte/exclusão).
+- Cada execução tem pasta e arquivo próprios:
+  `<pasta>/<sessão>/<início_ms>/` e `<pasta>/<sessão>/<início_ms>.<ext>` — o
+  arquivo anterior **não** é sobrescrito.
+- Migração da v3: a tabela é reconstruída uma vez (`connection.rs`) para remover
+  o `UNIQUE(session_id)`.
 - `path` é `NULL` enquanto não finaliza; `segments_dir` permite recuperar.
-- `ON DELETE CASCADE`: excluir a sessão apaga a linha (o arquivo é apagado pelo
-  serviço, não pelo banco — CA-05.4).
+- `ON DELETE CASCADE`: excluir a sessão apaga as linhas (os arquivos são apagados
+  pelo serviço, não pelo banco — CA-05.4).
 
 ## 10. Configurações
 

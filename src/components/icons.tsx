@@ -180,6 +180,24 @@ export function CameraIcon({ className, size = 18 }: IconProps) {
   );
 }
 
+/** Câmera de vídeo: gravar a sessão (BR-065), diferente do print de tela. */
+export function VideoCameraIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2.6" y="7" width="12.4" height="10" rx="2.2" />
+        <path d="m15 10.6 6-2.9v8.6l-6-2.9" />
+      </g>
+    </Icon>
+  );
+}
+
 /** X: remover anexo. */
 export function CloseIcon({ className, size = 18 }: IconProps) {
   return (
@@ -539,6 +557,60 @@ export function BoltIcon({ className, size = 18 }: IconProps) {
         strokeLinejoin="round"
       >
         <path d="M13.2 2.8 5.4 13.4h5.2l-.8 7.8 7.8-10.6h-5.2z" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Pasta: abrir o local do arquivo. */
+export function FolderIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <path
+        d="M3.4 6.6h6l1.8 2.2h9.4v9.4a1.4 1.4 0 0 1-1.4 1.4H4.8a1.4 1.4 0 0 1-1.4-1.4Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </Icon>
+  );
+}
+
+/** Seta para baixo: baixar a sessão. */
+export function DownloadIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 4v10.4" />
+        <path d="m7.8 10.6 4.2 4.2 4.2-4.2" />
+        <path d="M4.6 19.4h14.8" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Lixeira: descartar a gravação. */
+export function TrashIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4.6 7.2h14.8" />
+        <path d="M9.2 7.2V5.4h5.6v1.8" />
+        <path d="M6.4 7.2 7.3 20h9.4l.9-12.8" />
+        <path d="M10.2 11v5.4M13.8 11v5.4" />
       </g>
     </Icon>
   );

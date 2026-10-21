@@ -15,6 +15,7 @@ pub mod manual;
 pub mod overlay;
 pub mod pending;
 pub mod persistence;
+pub mod recording;
 pub mod screen;
 pub mod secrets;
 pub mod settings;

@@ -21,6 +21,7 @@ use crate::ports::audio_consumer::AudioConsumer;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::{EventPublisher, SessionStateEvent};
+use crate::ports::recording::RecordingLifecycle;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
 use crate::ports::session_controller::{AudioChannel, SessionController};
 use crate::ports::speech_engine_factory::SpeechEngineFactory;
@@ -41,6 +42,8 @@ pub struct SessionService {
     /// Ultima escolha de canais da UI: herdada pela sessao aberta
     /// automaticamente (ex.: pela pergunta) e pela proxima captura.
     last_channels: Mutex<Vec<AudioChannel>>,
+    /// Gancho opcional da gravação (BR-065). Ausente em testes que não gravam.
+    recording: Option<Arc<dyn RecordingLifecycle>>,
 }
 
 /// Canal sendo captado agora: porta de áudio + pipeline de transcrição.
@@ -104,6 +107,22 @@ impl SessionService {
             clock,
             active: Mutex::new(None),
             last_channels: Mutex::new(Vec::new()),
+            recording: None,
+        }
+    }
+
+    /// Liga o ciclo da gravação ao da sessão (BR-065).
+    pub fn with_recording(mut self, recording: Arc<dyn RecordingLifecycle>) -> Self {
+        self.recording = Some(recording);
+        self
+    }
+
+    /// Executa um gancho de gravação; falha **nunca** derruba a sessão (RNF-07).
+    fn recording_hook(&self, hook: impl FnOnce(&dyn RecordingLifecycle) -> Result<()>) {
+        if let Some(recording) = &self.recording {
+            if let Err(error) = hook(recording.as_ref()) {
+                tracing::warn!("gancho de gravação falhou: {error}");
+            }
         }
     }
 
@@ -288,6 +307,7 @@ impl SessionService {
             ));
         }
 
+        let recording_channels = channels.clone();
         let active = ActiveSession {
             id: id.clone(),
             started_at_ms,
@@ -299,6 +319,9 @@ impl SessionService {
             let mut guard = self.lock()?;
             *guard = Some(active);
         }
+        self.recording_hook(|recording| {
+            recording.on_session_started(&id, &recording_channels, capture)
+        });
         Ok(id)
     }
 
@@ -372,6 +395,7 @@ impl SessionController for SessionService {
             }
             self.sessions.end(&active.id, self.clock.now_ms())?;
             self.emit_idle();
+            self.recording_hook(|recording| recording.on_session_stopped());
         }
         Ok(())
     }
@@ -405,6 +429,7 @@ impl SessionController for SessionService {
             .map(|channel| channel.as_str().to_string())
             .collect();
         self.emit(true, true, Some(id), labels, Some(started_at_ms));
+        self.recording_hook(|recording| recording.on_session_paused());
         Ok(())
     }
 
@@ -453,6 +478,7 @@ impl SessionController for SessionService {
             return Ok(());
         }
         tracing::info!(session_id = id, "sessão retomada");
+        self.recording_hook(|recording| recording.on_session_resumed());
         self.emit(true, false, Some(id), labels, Some(started_at_ms));
         Ok(())
     }
@@ -571,6 +597,7 @@ impl SessionController for SessionService {
             ));
         }
 
+        let recording_channels = channels.clone();
         let active = ActiveSession {
             id: id.to_string(),
             started_at_ms: session.started_at_ms,
@@ -582,6 +609,11 @@ impl SessionController for SessionService {
             let mut guard = self.lock()?;
             *guard = Some(active);
         }
+        // Continuar uma sessão antiga é uma nova captura: a gravação ganha um
+        // arquivo novo (o anterior não é concatenado nem sobrescrito).
+        self.recording_hook(|recording| {
+            recording.on_session_started(id, &recording_channels, true)
+        });
         Ok(id.to_string())
     }
 

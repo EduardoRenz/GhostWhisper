@@ -10,6 +10,7 @@ import {
   sessionStop,
 } from "../../adapters/ipc/session";
 import type { SessionChannel, SessionState } from "../domain/transcript";
+import type { SessionEnd } from "../domain/recording";
 
 const IDLE: SessionState = {
   listening: false,
@@ -27,7 +28,7 @@ export function useSessionState(): {
   start: (channels: SessionChannel[]) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
-  stop: () => Promise<void>;
+  stop: () => Promise<SessionEnd | null>;
   continueSession: (id: string, channels: SessionChannel[]) => Promise<void>;
   setChannels: (channels: SessionChannel[]) => Promise<void>;
 } {
@@ -91,7 +92,19 @@ export function useSessionState(): {
   );
   const pause = useCallback(() => run(() => sessionPause()), [run]);
   const resume = useCallback(() => run(() => sessionResume()), [run]);
-  const stop = useCallback(() => run(() => sessionStop()), [run]);
+  const stop = useCallback(async (): Promise<SessionEnd | null> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const ended = await sessionStop();
+      return ended ?? null;
+    } catch (caught) {
+      setError(String(caught));
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
   const continueSession = useCallback(
     (id: string, channels: SessionChannel[]) =>
       run(() => sessionContinue(id, channels)),

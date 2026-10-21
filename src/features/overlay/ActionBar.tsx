@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import type {
+  RecordingCapabilities,
+  RecordingState,
+} from "../../core/domain/recording";
 import { ALL_CHANNELS, type SessionChannel } from "../../core/domain/transcript";
 import { IconButton } from "../../components/IconButton";
 import {
@@ -52,6 +56,11 @@ interface ActionBarProps {
   onToggleHistory: () => void;
   /** Esconde o overlay. */
   onHide: () => void;
+  /** Gravação da sessão (BR-065). */
+  recording: RecordingState;
+  recordingBusy: boolean;
+  recordingCapabilities: RecordingCapabilities | null;
+  onToggleRecording: () => void;
 }
 
 /**
@@ -93,6 +102,10 @@ export function ActionBar({
   historyOpen,
   onToggleHistory,
   onHide,
+  recording,
+  recordingBusy,
+  recordingCapabilities,
+  onToggleRecording,
 }: ActionBarProps) {
   const [confirming, setConfirming] = useState(false);
 
@@ -164,6 +177,10 @@ export function ActionBar({
             onToggleSuggestions={onToggleSuggestions}
             onPause={onPause}
             onResume={onResume}
+            recording={recording}
+            recordingBusy={recordingBusy}
+            recordingCapabilities={recordingCapabilities}
+            onToggleRecording={onToggleRecording}
           />
 
           <SessionPill

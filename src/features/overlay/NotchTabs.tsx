@@ -5,7 +5,12 @@ import {
 } from "../../components/icons";
 import { DwellButton } from "../../components/dwell/DwellButton";
 import { PauseIcon, PlayIcon } from "../../components/TransportIcons";
+import type {
+  RecordingCapabilities,
+  RecordingState,
+} from "../../core/domain/recording";
 import { NotchWaveform } from "./NotchWaveform";
+import { RecordingButton } from "./RecordingButton";
 
 interface NotchTabsProps {
   /** Sessão captando (a aba viva). */
@@ -24,6 +29,11 @@ interface NotchTabsProps {
   onToggleSuggestions: () => void;
   onPause: () => void;
   onResume: () => void;
+  /** Gravação da sessão (BR-065). */
+  recording: RecordingState;
+  recordingBusy: boolean;
+  recordingCapabilities: RecordingCapabilities | null;
+  onToggleRecording: () => void;
 }
 
 /**
@@ -47,6 +57,10 @@ export function NotchTabs({
   onToggleSuggestions,
   onPause,
   onResume,
+  recording,
+  recordingBusy,
+  recordingCapabilities,
+  onToggleRecording,
 }: NotchTabsProps) {
   return (
     <nav className="notch-tabs" aria-label="Modos do HUD" data-interactive>
@@ -97,6 +111,15 @@ export function NotchTabs({
         <SparkleIcon className="notch-tabs__icon" size={15} />
         <span className="notch-tabs__label">Sugestões</span>
       </DwellButton>
+
+      <span className="notch-tabs__divider" aria-hidden="true" />
+
+      <RecordingButton
+        state={recording}
+        capabilities={recordingCapabilities}
+        busy={recordingBusy}
+        onToggle={onToggleRecording}
+      />
     </nav>
   );
 }

@@ -1,6 +1,6 @@
 # 02 — `FfmpegScreenRecorder`: binário, argumentos e segmentos
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01
 - **Habilita:** 03, 04, 05
 - **Issues:** ISS-049, ISS-050 · **BR:** BR-066, BR-067, BR-069, BR-070

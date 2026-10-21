@@ -12,6 +12,7 @@ livre: **ISS-054**.
 | ISS-051 | Wayland nativo sem gravação (BR-007) | Média | OPEN |
 | ISS-052 | Captura por janela perde popups/diálogos e não acompanha troca de janela | Média | OPEN |
 | ISS-053 | Redimensionar a janela muda as dimensões dos segmentos | Média | OPEN |
+| ISS-054 | `ffmpeg` estático sem entrada Pulse: áudio cai para `parec` em PCM cru | Média | MITIGATED |
 
 ---
 
@@ -88,3 +89,25 @@ livre: **ISS-054**.
   com fase própria na barra (`Otimizando gravação…`). Se a janela fechar ou for
   minimizada, encerrar a gravação com `interrupted` (não apagar nada).
 - **Refs:** BR-067, BR-070 · [`architecture/recording.md`](architecture/recording.md) §5.3.
+
+
+## ISS-054 — `ffmpeg` estático sem entrada Pulse: áudio cai para `parec`
+
+- **Severidade:** Média · **Status:** MITIGATED
+- **Sintoma:** o build estático do `ffmpeg` da máquina de referência (John Van
+  Sickle, 7.0.2) lista **apenas** `lavfi` e `x11grab` em `-devices`: não tem
+  `pulse` nem `alsa`. Com `-f pulse` o processo falha com
+  `Unknown input format: 'pulse'` — a gravação sairia **sem áudio**.
+- **Mitigação:** quando `ffmpeg -devices` não tem `pulse`, o adaptador captura o
+  áudio em **PCM cru S16LE 48 kHz estéreo** com `parec` (dois processos: microfone
+  e monitor) e remuxa na finalização (`fallback_mux_args`). O vídeo continua no
+  `ffmpeg` (`-an`). Validado em 2026-10-21: 3 s → MP4 H.264 1888×1006 + AAC
+  estéreo 48 kHz, duração 3,0 s.
+- **Consequência:** o app exige **`parec`** (de `pipewire-pulse`/`pulseaudio-utils`)
+  quando o `ffmpeg` não tem Pulse. Sem nenhum dos dois, a gravação fica
+  indisponível com motivo explícito (RNF-09). A sincronia A/V passa a depender
+  dos dois inícios (ffmpeg e parec) no mesmo segmento; o desvio medido é de
+  dezenas de ms.
+- **Caminho definitivo:** `ffmpeg` de distro com Pulse (ou sidecar com
+  `--enable-libpulse`) — decide-se junto com a licença (ISS-049).
+- **Refs:** BR-069 · [`../architecture/recording.md`](../architecture/recording.md) §5.2.

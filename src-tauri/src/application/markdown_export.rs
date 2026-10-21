@@ -40,16 +40,57 @@ pub fn format_clock(ms: i64) -> String {
 ///
 /// `now_ms` é usado apenas para a duração de uma sessão ainda em andamento — a
 /// função não lê o relógio para continuar pura.
+/// Tamanho legível para o cabeçalho do export.
+fn format_size(bytes: u64) -> String {
+    let mb = bytes as f64 / (1024.0 * 1024.0);
+    if mb < 1.0 {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{mb:.1} MB")
+    }
+}
+
 /// Renderiza a sessão inteira como Markdown, **com as perguntas do diário**.
 ///
 /// As perguntas são a seção "Perguntas" (BR-052): o que o usuário perguntou e
 /// o que a IA respondeu, com o instante. A seção só aparece quando há
 /// perguntas.
-pub fn render_markdown_with_questions(
+#[cfg(test)]
+fn render_markdown_with_questions(
     session: &Session,
     entries: &[TimelineEntry],
     now_ms: i64,
     questions: &[JournalEntry],
+) -> String {
+    render_markdown(session, entries, now_ms, questions, None)
+}
+
+/// Renderiza a sessão incluindo a **gravação**, quando existir (CA-05.3).
+pub fn render_markdown_with_media(
+    session: &Session,
+    entries: &[TimelineEntry],
+    now_ms: i64,
+    questions: &[JournalEntry],
+    recording: Option<&crate::domain::recording::Recording>,
+) -> String {
+    let line = recording
+        .and_then(|recording| recording.path.as_deref())
+        .map(|path| {
+            format!(
+                "- **Gravação:** `{path}` ({})\n",
+                format_size(recording.map(|r| r.size_bytes).unwrap_or(0))
+            )
+        });
+    render_markdown(session, entries, now_ms, questions, line.as_deref())
+}
+
+/// Corpo do Markdown; `extra` é uma linha opcional no cabeçalho.
+fn render_markdown(
+    session: &Session,
+    entries: &[TimelineEntry],
+    now_ms: i64,
+    questions: &[JournalEntry],
+    extra: Option<&str>,
 ) -> String {
     let title = session
         .subject
@@ -81,6 +122,9 @@ pub fn render_markdown_with_questions(
         }
     ));
     out.push_str(&format!("- **Duração:** {}\n", format_clock(duration_ms)));
+    if let Some(extra) = extra {
+        out.push_str(extra);
+    }
     out.push_str(&format!(
         "- **Linha temporal:** {speeches} fala(s) · {suggestions} sugestão(ões)\n"
     ));

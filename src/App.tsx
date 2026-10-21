@@ -8,6 +8,7 @@ import { HistoryWindow } from "./features/history/HistoryWindow";
 import { DwellPopoverWindow } from "./features/dwell/DwellPopoverWindow";
 import { AskWindow } from "./features/ask/AskWindow";
 import { CapturePreviewWindow } from "./features/ask/CapturePreviewWindow";
+import { SessionEndWindow } from "./features/session-end/SessionEndWindow";
 import { useHudOpacity } from "./core/application/useHudOpacity";
 
 /** Rotas de janela suportadas pelo GhostWhisper. */
@@ -20,6 +21,7 @@ export type Route =
   | "dwell"
   | "ask"
   | "capture"
+  | "session-end"
   | "unknown";
 
 /**
@@ -40,6 +42,7 @@ export function resolveRoute(): Route {
     if (label === "dwell") return "dwell";
     if (label === "ask") return "ask";
     if (label === "capture") return "capture";
+    if (label === "session-end") return "session-end";
     if (label === "overlay") return "overlay";
     return "unknown";
   } catch {
@@ -52,6 +55,7 @@ export function resolveRoute(): Route {
       if (target === "dwell") return "dwell";
     if (target === "ask") return "ask";
     if (target === "capture") return "capture";
+    if (target === "session-end") return "session-end";
     }
     return "overlay";
   }
@@ -100,6 +104,10 @@ export function App() {
 
   if (route === "capture") {
     return <CapturePreviewWindow />;
+  }
+
+  if (route === "session-end") {
+    return <SessionEndWindow />;
   }
 
   return (

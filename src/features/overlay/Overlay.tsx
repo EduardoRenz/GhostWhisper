@@ -16,9 +16,11 @@ import {
 } from "../../adapters/ipc/overlay";
 import { panelHide, panelOpen, panelOpenTab } from "../../adapters/ipc/panels";
 import { askOpen } from "../../adapters/ipc/ask";
+import { sessionEndOpen } from "../../adapters/ipc/sessionEnd";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
 import { useInteractiveRegions } from "../../core/application/useInteractiveRegions";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
+import { useRecording } from "../../core/application/useRecording";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { defaultBindings } from "../../core/domain/shortcuts";
@@ -43,6 +45,12 @@ export function Overlay() {
   const barRef = useRef<HTMLDivElement>(null);
   const { state, busy, error, start, pause, resume, stop, setChannels } =
     useSessionState();
+  const {
+    state: recording,
+    capabilities: recordingCapabilities,
+    busy: recordingBusy,
+    toggle: toggleRecording,
+  } = useRecording();
   const asrStatus = useAsrStatus();
   const { settings } = useSettings();
   const suggestionsOpen = usePanelOpen("suggestions");
@@ -139,6 +147,14 @@ export function Overlay() {
     void setSurfaceIpc("hidden");
   };
 
+  /** Para a sessão e abre o modal de resumo (BR-068). */
+  const stopSession = async () => {
+    const ended = await stop();
+    if (ended) {
+      await sessionEndOpen(ended.session_id);
+    }
+  };
+
   const shownError = error ?? settingsError;
 
   // HUD (BR-062): densidade via `data-density`. A opacidade global agora vive
@@ -160,7 +176,7 @@ export function Overlay() {
             onStart={(channels) => void start(channels)}
             onPause={() => void pause()}
             onResume={() => void resume()}
-            onStop={() => void stop()}
+            onStop={() => void stopSession()}
             onChannelsChange={(channels) => void setChannels(channels)}
             onChannelMenuOpenChange={channelMenuOpenChange}
             onStartDrag={() => void startDragIpc()}
@@ -177,6 +193,10 @@ export function Overlay() {
             historyOpen={historyOpen}
             onToggleHistory={toggleHistory}
             onHide={hideOverlay}
+            recording={recording}
+            recordingBusy={recordingBusy}
+            recordingCapabilities={recordingCapabilities}
+            onToggleRecording={() => void toggleRecording()}
           />
         </DwellProvider>
       </div>

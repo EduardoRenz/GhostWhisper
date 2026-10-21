@@ -19,6 +19,8 @@ use crate::ports::llm_controller::LlmController;
 use crate::ports::manual_suggestion_context::ManualSuggestionContextStore;
 use crate::ports::overlay_window::OverlayWindowController;
 use crate::ports::pending_capture::PendingCapture;
+use crate::ports::pending_session_end::PendingSessionEnd;
+use crate::ports::recording::RecordingController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::screen_capture::ScreenCapture;
 use crate::ports::secret_store::SecretStore;
@@ -87,6 +89,10 @@ pub struct AppState {
     pub shortcuts: Arc<dyn GlobalShortcutRegistry>,
     /// Janela de confirmação do drill-hover (BR-036).
     pub dwell: Arc<dyn DwellPopoverController>,
+    /// Gravação da sessão (BR-065).
+    pub recording: Arc<dyn RecordingController>,
+    /// Sessão encerrada exibida pelo modal "Sessão Finalizada" (BR-068).
+    pub pending_session_end: Arc<dyn PendingSessionEnd>,
 }
 
 impl AppState {
@@ -120,6 +126,8 @@ impl AppState {
         publisher: Arc<dyn EventPublisher>,
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
         dwell: Arc<dyn DwellPopoverController>,
+        recording: Arc<dyn RecordingController>,
+        pending_session_end: Arc<dyn PendingSessionEnd>,
     ) -> Self {
         Self {
             overlay,
@@ -149,6 +157,8 @@ impl AppState {
             publisher,
             shortcuts,
             dwell,
+            recording,
+            pending_session_end,
         }
     }
 }
@@ -510,6 +520,37 @@ mod tests {
         }
     }
 
+    struct FakeRecording;
+    impl crate::ports::recording::RecordingController for FakeRecording {
+        fn capabilities(&self) -> crate::ports::screen_recorder::RecordingCapabilities {
+            crate::ports::screen_recorder::RecordingCapabilities::available("x264")
+        }
+        fn start(&self, _session_id: &str) -> Result<()> {
+            Ok(())
+        }
+        fn pause(&self) -> Result<()> {
+            Ok(())
+        }
+        fn resume(&self) -> Result<()> {
+            Ok(())
+        }
+        fn stop(&self) -> Result<()> {
+            Ok(())
+        }
+        fn discard(&self, _session_id: &str) -> Result<()> {
+            Ok(())
+        }
+        fn state(&self) -> crate::domain::recording::RecordingState {
+            crate::domain::recording::RecordingState::idle()
+        }
+        fn get_by_session(
+            &self,
+            _session_id: &str,
+        ) -> Result<Option<crate::domain::recording::Recording>> {
+            Ok(None)
+        }
+    }
+
     fn build_state() -> AppState {
         use crate::adapters::ai_sources::in_memory_ai_source_service::InMemoryAiSourceService;
         use crate::adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
@@ -552,6 +593,10 @@ mod tests {
             Arc::new(FakeDwell {
                 open: Mutex::new(None),
             }),
+            Arc::new(FakeRecording),
+            Arc::new(
+                crate::adapters::pending::in_memory_pending_session_end::InMemoryPendingSessionEnd::new(),
+            ),
         )
     }
 

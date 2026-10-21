@@ -247,6 +247,39 @@ pub struct Settings {
     /// que o usuário apagou.
     #[serde(default)]
     pub saved_questions_migrated: bool,
+    /// O que gravar (BR-066): `video` | `audio`.
+    #[serde(default = "default_recording_mode")]
+    pub recording_mode: String,
+    /// Alvo padrão (BR-070): `window` | `screen`.
+    #[serde(default = "default_recording_target")]
+    pub recording_target: String,
+    /// Inicia a gravação junto com a sessão.
+    #[serde(default)]
+    pub recording_auto_start: bool,
+    /// FPS da gravação (degraus de 5 a 30 — BR-066).
+    #[serde(default = "default_recording_fps")]
+    pub recording_fps: u32,
+    /// `native` | `1280x720` | `854x480`.
+    #[serde(default = "default_recording_resolution")]
+    pub recording_resolution: String,
+    /// `compact` | `balanced` | `sharp` (CRF 30/27/24).
+    #[serde(default = "default_recording_quality")]
+    pub recording_quality: String,
+    /// `auto` | `x264` | `vaapi`.
+    #[serde(default = "default_recording_encoder")]
+    pub recording_encoder: String,
+    /// Bitrate do AAC em kbps (64–192).
+    #[serde(default = "default_recording_audio_kbps")]
+    pub recording_audio_kbps: u32,
+    /// Container final: `mp4` | `mkv`.
+    #[serde(default = "default_recording_container")]
+    pub recording_container: String,
+    /// Pasta de destino (vazio = `~/Vídeos/GhostWhisper`).
+    #[serde(default)]
+    pub recording_dir: Option<String>,
+    /// Mantém os segmentos MKV após a finalização.
+    #[serde(default)]
+    pub recording_keep_segments: bool,
 }
 
 /// Uma pergunta pronta do usuário (aba "Sessão", BR-054).
@@ -381,8 +414,46 @@ impl Default for Settings {
             hud_density: default_hud_density(),
             saved_questions: default_saved_questions(),
             saved_questions_migrated: false,
+            recording_mode: default_recording_mode(),
+            recording_target: default_recording_target(),
+            recording_auto_start: false,
+            recording_fps: default_recording_fps(),
+            recording_resolution: default_recording_resolution(),
+            recording_quality: default_recording_quality(),
+            recording_encoder: default_recording_encoder(),
+            recording_audio_kbps: default_recording_audio_kbps(),
+            recording_container: default_recording_container(),
+            recording_dir: None,
+            recording_keep_segments: false,
         }
     }
+}
+
+
+/// Configuração de gravação que entra em instalações novas (BR-066).
+fn default_recording_mode() -> String {
+    crate::domain::recording::DEFAULT_RECORDING_MODE.to_string()
+}
+fn default_recording_target() -> String {
+    crate::domain::recording::DEFAULT_RECORDING_TARGET.to_string()
+}
+fn default_recording_fps() -> u32 {
+    crate::domain::recording::DEFAULT_RECORDING_FPS
+}
+fn default_recording_resolution() -> String {
+    crate::domain::recording::DEFAULT_RECORDING_RESOLUTION.to_string()
+}
+fn default_recording_quality() -> String {
+    crate::domain::recording::DEFAULT_RECORDING_QUALITY.to_string()
+}
+fn default_recording_encoder() -> String {
+    crate::domain::recording::DEFAULT_RECORDING_ENCODER.to_string()
+}
+fn default_recording_audio_kbps() -> u32 {
+    crate::domain::recording::DEFAULT_RECORDING_AUDIO_KBPS
+}
+fn default_recording_container() -> String {
+    crate::domain::recording::DEFAULT_RECORDING_CONTAINER.to_string()
 }
 
 /// Aba padrão do painel da sessão (Transcrição).

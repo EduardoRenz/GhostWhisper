@@ -1,6 +1,6 @@
 # 05 — `RecordingService`: ciclo de vida amarrado à sessão
 
-- **Status:** PENDING
+- **Status:** CONCLUDED
 - **Depende de:** 01, 04
 - **Habilita:** 06, 07, 08
 - **Issues:** ISS-050 · **BR:** BR-065, BR-067, BR-071

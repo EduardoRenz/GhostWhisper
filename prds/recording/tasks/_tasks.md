@@ -6,16 +6,16 @@
 
 | # | Resumo | Status |
 |---|--------|--------|
-| 01 | Domínio `Recording`, schema `recordings` e porta `ScreenRecorder` (+ fake) | PENDING |
-| 02 | `FfmpegScreenRecorder`: binário, args puros, segmentos MKV, alvo janela/tela | PENDING |
-| 03 | Seleção de janela (`_NET_ACTIVE_WINDOW` + seletor) e eventos de resize/close | PENDING |
-| 04 | Finalização: concat `-c copy`, remux MP4, progresso, re-encode e órfãos | PENDING |
-| 05 | `RecordingService`: ciclo de vida amarrado à sessão e falha isolada | PENDING |
-| 06 | IPC + eventos `recording_*` + `SessionEndDto` no `session_stop` | PENDING |
-| 07 | Botão de câmera no notch (4 estados, atalho, acessibilidade) | PENDING |
-| 08 | Modal "Sessão Finalizada" (janela, progresso, ações) | PENDING |
-| 09 | Configurações: aba "Gravação" (campos, padrões, normalização, estimativa) | PENDING |
-| 10 | Histórico/export, documentação, verificação e pacotes | PENDING |
+| 01 | Domínio `Recording`, schema `recordings` e porta `ScreenRecorder` (+ fake) | CONCLUDED |
+| 02 | `FfmpegScreenRecorder`: binário, args puros, segmentos MKV, alvo janela/tela | CONCLUDED |
+| 03 | Seleção de janela (`_NET_ACTIVE_WINDOW` + seletor) e eventos de resize/close | IN PROGRESS |
+| 04 | Finalização: concat `-c copy`, remux MP4, progresso, re-encode e órfãos | CONCLUDED |
+| 05 | `RecordingService`: ciclo de vida amarrado à sessão e falha isolada | CONCLUDED |
+| 06 | IPC + eventos `recording_*` + `SessionEndDto` no `session_stop` | CONCLUDED |
+| 07 | Botão de câmera no notch (4 estados, atalho, acessibilidade) | IN PROGRESS |
+| 08 | Modal "Sessão Finalizada" (janela, progresso, ações) | CONCLUDED |
+| 09 | Configurações: aba "Gravação" (campos, padrões, normalização, estimativa) | CONCLUDED |
+| 10 | Histórico/export, documentação, verificação e pacotes | IN PROGRESS |
 
 ## Ordem e dependências
 
