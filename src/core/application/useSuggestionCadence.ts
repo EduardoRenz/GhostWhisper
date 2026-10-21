@@ -18,6 +18,8 @@ export interface SuggestionCadence {
   awaiting_speech: boolean;
   /** Duração total do ciclo (desenha o anel de progresso). */
   window_ms: number;
+  /** A geração automática está em andamento (feedback imediato). */
+  generating: boolean;
 }
 
 /** Estado parado (nenhum evento recebido ainda). */
@@ -27,6 +29,7 @@ const IDLE: SuggestionCadence = {
   remaining_ms: 0,
   awaiting_speech: false,
   window_ms: 1,
+  generating: false,
 };
 
 /**

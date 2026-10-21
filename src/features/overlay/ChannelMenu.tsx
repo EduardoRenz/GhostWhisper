@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MicIcon, MicOffIcon } from "../../components/icons";
 import type { SessionChannel } from "../../core/domain/transcript";
 
@@ -29,6 +29,8 @@ interface ChannelMenuProps {
   onChannelsChange: (channels: SessionChannel[]) => void;
   /** Começa a capturar nesta sessão com os canais escolhidos (mesmo id). */
   onNewSession: (channels: SessionChannel[]) => void;
+  /** Avisa o overlay para reservar/liberar altura abaixo do notch. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -43,11 +45,23 @@ export function ChannelMenu({
   busy,
   onChannelsChange,
   onNewSession,
+  onOpenChange,
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const choice = choiceOf(channels);
   const hasMic = channels.includes("microphone");
+
+  const changeOpen = useCallback(
+    (next: boolean) => {
+      setOpen(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange],
+  );
+
+  // Desmontou com o popover aberto (fim da sessão): devolve a altura.
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
 
   useEffect(() => {
     if (!open) {
@@ -55,12 +69,12 @@ export function ChannelMenu({
     }
     const onPointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+        changeOpen(false);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpen(false);
+        changeOpen(false);
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
@@ -69,11 +83,11 @@ export function ChannelMenu({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [open, changeOpen]);
 
   const select = (next: ChannelChoice) => {
     onChannelsChange(channelsOf(next));
-    setOpen(false);
+    changeOpen(false);
   };
 
   return (
@@ -84,8 +98,7 @@ export function ChannelMenu({
         aria-label="Canais de áudio"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Canais de áudio (Ambos / Microfone / Sistema)"
-        onClick={() => setOpen((previous) => !previous)}
+        onClick={() => changeOpen(!open)}
       >
         {hasMic ? <MicIcon /> : <MicOffIcon />}
       </button>
@@ -115,7 +128,7 @@ export function ChannelMenu({
             disabled={busy}
             onClick={() => {
               onNewSession(channelsOf(choice));
-              setOpen(false);
+              changeOpen(false);
             }}
           >
             Começar a capturar

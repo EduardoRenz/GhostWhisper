@@ -91,18 +91,21 @@ automática vai acontecer.
 - **CA-01.2** O primeiro controle da direita é o **auto-sugerir**: um **círculo**
   com **progress circular regressivo** que esvazia a cada janela automática.
 - **CA-01.3** Com o automático **ligado**, o rótulo mostra a **contagem
-  regressiva** do **timer que já existe** no agendador (ex.: “12s”) e o círculo
-  esvazia; ao zerar, o auto-sugerir dispara (se houver fala nova) e a contagem
-  reinicia.
-- **CA-01.4** Sem fala nova, o círculo fica vazio e o rótulo diz **“aguardando
-  fala”** (a sugestão só nasce com conteúdo novo).
+  regressiva** do timer do agendador (ex.: “12s”) e o círculo esvazia; ao zerar,
+  o auto-sugerir dispara (se houver fala nova) e a contagem reinicia cheia.
+  **Fala nova não reinicia a contagem**: ela só libera a geração no fim do
+  intervalo (tempo mínimo entre sugestões).
+- **CA-01.4** Sem fala nova, o círculo fica vazio e o rótulo diz **“Aguardando”**
+  (a sugestão só nasce com conteúdo novo; ao finalizar a próxima fala, gera sem
+  esperar outro intervalo cheio).
 - **CA-01.5** Com o automático **pausado**, o círculo para e o rótulo diz
-  **“Pausado”**; o controle permite **retomar**.
+  **“Pausado”**; sem sessão, diz **“Sem escuta”**. O controle permite
+  **retomar** quando pausado.
 - **CA-01.6** **“Sugerir agora”** fica ao lado, **sem glow**, desabilitado
   enquanto uma geração está em curso.
-- **CA-01.7** A cadência vem do **core** (única fonte da verdade): o automático
-  continua **igual** — mesmo debounce, mesmo intervalo das settings — e a UI apenas
-  **mostra** o timer que já existe (feedback visual), sem recalcular nada.
+- **CA-01.7** A cadência vem do **core** (única fonte da verdade): a UI apenas
+  **mostra** o timer, sem recalcular nada. Durante a geração automática, o core
+  publica `generating = true` **antes** do LLM responder (feedback imediato).
 
 ### US-02 — Agente com ícone, cor e seletor em largura total
 

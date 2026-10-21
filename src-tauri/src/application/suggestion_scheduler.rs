@@ -1,15 +1,17 @@
 //! Decisão **pura** de quando gerar uma sugestão automática.
 //!
-//! Transposto do Perssua: os insights automáticos não dependem de uma janela
-//! aberta — eles reagem a **fala nova**. O intervalo configurado
-//! (`suggestion_interval_secs`) é o **tempo de silêncio** depois da última fala:
-//! a cada fala nova o contador **reinicia**; quando o silêncio completa o
-//! intervalo, a sugestão é gerada (BR-039). Assim uma sequência de perguntas
-//! próximas vira **uma** sugestão, não uma por balão.
+//! O intervalo das settings (`suggestion_interval_secs`) é o **tempo mínimo
+//! entre sugestões automáticas** (um *cooldown*), contado desde a última
+//! geração ou desde a abertura da janela de Sugestões. A contagem **não**
+//! reinicia a cada fala nova: fala nova é só o **conteúdo** que habilita a
+//! próxima sugestão. Quando o contador zera:
+//!
+//! - com fala nova desde a última sugestão, gera;
+//! - sem fala nova, fica em `awaiting_speech` e gera assim que a próxima fala
+//!   finalizar (sem esperar outro intervalo cheio).
 //!
 //! **Abrir a janela também reinicia o contador** (pedido do usuário): a janela
-//! não gera ao abrir; o auto começa a contar do intervalo. Sem fala nova desde a
-//! última sugestão, o contador para em 0 e espera.
+//! não gera ao abrir; o ciclo começa cheio e o auto tem tempo de ler a conversa.
 //!
 //! A thread que executa vive no composition root; aqui só a decisão (R7: sem
 //! I/O, testável sem threads nem relógio).
@@ -23,36 +25,22 @@ pub struct SchedulerTick {
     pub has_session: bool,
     /// Até onde já foi sugerido (cursor; `None` = nada ainda).
     pub cursor_ms: Option<i64>,
-    /// Início da última fala **finalizada** com texto.
+    /// Fim da última fala **finalizada** com texto.
     pub latest_final_ms: Option<i64>,
-    /// Tempo desde o início da última fala finalizada (ms).
-    pub ms_since_latest_final: i64,
-    /// Tempo desde que a janela de Sugestões abriu (ms).
-    ///
-    /// `i64::MAX` quando a janela está fechada (sem geração).
-    pub ms_since_window_open: i64,
-}
-
-impl SchedulerTick {
-    /// Silêncio efetivo: o mais recente entre a fala e a abertura da janela.
-    ///
-    /// Abrir a janela **reinicia a contagem** (a janela não gera ao abrir).
-    fn silence_elapsed_ms(&self) -> i64 {
-        self.ms_since_latest_final
-            .min(self.ms_since_window_open)
-            .max(0)
-    }
+    /// Tempo desde o início do ciclo atual (última geração ou abertura da
+    /// janela), em ms.
+    pub elapsed_ms: i64,
 }
 
 /// Decide se é hora de gerar uma sugestão automática.
 ///
 /// Regras (todas precisam valer):
 /// - ligado e com sessão aberta;
-/// - existe fala finalizada **depois** do cursor (há conteúdo novo);
-/// - o silêncio (fala **ou** abertura da janela) completou `silence_ms`.
+/// - o intervalo (cooldown) desde a última geração/abertura já passou;
+/// - existe fala finalizada **depois** do cursor (há conteúdo novo).
 ///
-/// Uma fala nova — e a abertura da janela — **reinicia** o silêncio.
-pub fn should_trigger(tick: &SchedulerTick, silence_ms: i64) -> bool {
+/// Fala nova **não** reinicia a contagem; ela só libera a próxima geração.
+pub fn should_trigger(tick: &SchedulerTick, interval_ms: i64) -> bool {
     if !tick.enabled || !tick.has_session {
         return false;
     }
@@ -64,7 +52,7 @@ pub fn should_trigger(tick: &SchedulerTick, silence_ms: i64) -> bool {
             return false;
         }
     }
-    tick.silence_elapsed_ms() >= silence_ms
+    tick.elapsed_ms.max(0) >= interval_ms
 }
 
 /// Cadência do auto-sugerir: o que a janela de sugestões mostra (BR-039).
@@ -77,17 +65,17 @@ pub struct Cadence {
     pub enabled: bool,
     /// O automático está rodando (ligado e com sessão aberta).
     pub running: bool,
-    /// Milissegundos até a próxima sugestão (o silêncio que falta).
+    /// Milissegundos até a próxima sugestão.
     pub remaining_ms: i64,
-    /// O silêncio venceu, mas não há fala nova desde a última sugestão.
+    /// O intervalo venceu, mas não há fala nova para sugerir.
     pub awaiting_speech: bool,
     /// Duração total do ciclo (desenha o anel de progresso).
     pub window_ms: i64,
 }
 
 /// Calcula a cadência a partir de um tick do agendador.
-pub fn cadence(tick: &SchedulerTick, silence_ms: i64) -> Cadence {
-    let window_ms = silence_ms.max(1);
+pub fn cadence(tick: &SchedulerTick, interval_ms: i64) -> Cadence {
+    let window_ms = interval_ms.max(1);
     if !tick.enabled || !tick.has_session {
         return Cadence {
             enabled: tick.enabled,
@@ -98,8 +86,7 @@ pub fn cadence(tick: &SchedulerTick, silence_ms: i64) -> Cadence {
         };
     }
 
-    // Fala nova (ou a janela recém-aberta): o contador corre.
-    let remaining = silence_ms.saturating_sub(tick.silence_elapsed_ms()).max(0);
+    let remaining = interval_ms.saturating_sub(tick.elapsed_ms.max(0)).max(0);
     let has_new_speech = match tick.latest_final_ms {
         Some(latest) => tick.cursor_ms.map(|cursor| latest > cursor).unwrap_or(true),
         None => false,
@@ -125,7 +112,7 @@ pub fn cadence(tick: &SchedulerTick, silence_ms: i64) -> Cadence {
         };
     }
 
-    // Silêncio vencido com fala nova: a geração dispara neste tick.
+    // Intervalo vencido com fala nova: a geração dispara neste tick.
     Cadence {
         enabled: true,
         running: true,
@@ -144,19 +131,17 @@ mod tests {
             enabled: true,
             has_session: true,
             cursor_ms: None,
-            latest_final_ms: Some(10_000),
-            // Silêncio já completo (o timer de 20 s venceu).
-            ms_since_latest_final: 25_000,
-            // Janela aberta há muito tempo.
-            ms_since_window_open: 120_000,
+            latest_final_ms: Some(20_000),
+            // O ciclo já venceu.
+            elapsed_ms: 25_000,
         }
     }
 
-    const SILENCE: i64 = 20_000;
+    const INTERVAL: i64 = 20_000;
 
     #[test]
-    fn triggers_with_new_speech_after_the_silence() {
-        assert!(should_trigger(&tick(), SILENCE));
+    fn triggers_with_new_speech_after_the_interval() {
+        assert!(should_trigger(&tick(), INTERVAL));
     }
 
     #[test]
@@ -166,118 +151,108 @@ mod tests {
                 enabled: false,
                 ..tick()
             },
-            SILENCE
+            INTERVAL
         ));
         assert!(!should_trigger(
             &SchedulerTick {
                 has_session: false,
                 ..tick()
             },
-            SILENCE
+            INTERVAL
         ));
     }
 
     #[test]
     fn does_not_trigger_without_new_speech() {
         let s = SchedulerTick {
-            cursor_ms: Some(10_000),
+            cursor_ms: Some(20_000),
             ..tick()
         };
-        assert!(!should_trigger(&s, SILENCE));
+        assert!(!should_trigger(&s, INTERVAL));
         let s = SchedulerTick {
             latest_final_ms: None,
             ..tick()
         };
-        assert!(!should_trigger(&s, SILENCE));
+        assert!(!should_trigger(&s, INTERVAL));
     }
 
     #[test]
-    fn waits_for_the_silence_to_complete() {
+    fn waits_for_the_interval_to_complete() {
         let s = SchedulerTick {
-            ms_since_latest_final: 300,
+            elapsed_ms: 300,
             ..tick()
         };
-        assert!(!should_trigger(&s, SILENCE));
+        assert!(!should_trigger(&s, INTERVAL));
         let s = SchedulerTick {
-            ms_since_latest_final: SILENCE,
+            elapsed_ms: INTERVAL,
             ..tick()
         };
-        assert!(should_trigger(&s, SILENCE));
+        assert!(should_trigger(&s, INTERVAL));
     }
 
     #[test]
     fn opening_the_window_restarts_the_countdown() {
-        // A janela acabou de abrir: mesmo com fala antiga, a contagem reinicia
-        // e não dispara (a janela não gera ao abrir).
+        // A janela acabou de abrir: mesmo com fala antiga, o ciclo recomeça e
+        // não dispara (a janela não gera ao abrir).
         let s = SchedulerTick {
-            ms_since_latest_final: 60_000,
-            ms_since_window_open: 0,
+            elapsed_ms: 0,
             ..tick()
         };
-        assert!(!should_trigger(&s, SILENCE));
-        let c = cadence(&s, SILENCE);
-        assert_eq!(c.remaining_ms, SILENCE);
+        assert!(!should_trigger(&s, INTERVAL));
+        let c = cadence(&s, INTERVAL);
+        assert_eq!(c.remaining_ms, INTERVAL);
         assert!(!c.awaiting_speech);
 
         // Depois do intervalo, a sugestão vem.
         let s = SchedulerTick {
-            ms_since_window_open: SILENCE,
+            elapsed_ms: INTERVAL,
             ..s
         };
-        assert!(should_trigger(&s, SILENCE));
+        assert!(should_trigger(&s, INTERVAL));
     }
 
     // --- Cadência (BR-039) -------------------------------------------------
 
     #[test]
-    fn cadence_counts_down_the_silence() {
+    fn cadence_counts_down_the_interval() {
         let s = SchedulerTick {
-            ms_since_latest_final: 1_000,
+            elapsed_ms: 1_000,
             ..tick()
         };
-        let c = cadence(&s, SILENCE);
+        let c = cadence(&s, INTERVAL);
         assert!(c.enabled && c.running);
         assert!(!c.awaiting_speech);
         assert_eq!(c.remaining_ms, 19_000);
-        assert_eq!(c.window_ms, SILENCE);
+        assert_eq!(c.window_ms, INTERVAL);
     }
 
     #[test]
-    fn cadence_restarts_on_each_new_speech() {
-        assert_eq!(
-            cadence(
-                &SchedulerTick {
-                    ms_since_latest_final: 2_000,
-                    ..tick()
-                },
-                SILENCE
-            )
-            .remaining_ms,
-            18_000
-        );
-        assert_eq!(
-            cadence(
-                &SchedulerTick {
-                    ms_since_latest_final: 200,
-                    ..tick()
-                },
-                SILENCE
-            )
-            .remaining_ms,
-            19_800
-        );
+    fn cadence_does_not_restart_on_speech() {
+        // Duas falas em instantes diferentes, o mesmo ciclo: o contador segue
+        // o tempo, não a fala (fala nova só libera a geração no fim).
+        let early = SchedulerTick {
+            elapsed_ms: 2_000,
+            latest_final_ms: Some(30_000),
+            ..tick()
+        };
+        let later = SchedulerTick {
+            elapsed_ms: 2_000,
+            latest_final_ms: Some(31_000),
+            ..tick()
+        };
+        assert_eq!(cadence(&early, INTERVAL).remaining_ms, 18_000);
+        assert_eq!(cadence(&later, INTERVAL).remaining_ms, 18_000);
     }
 
     #[test]
     fn cadence_counts_from_the_window_open_without_speech() {
-        // Sem fala (a última é antiga), a janela abriu agora: conta 20 s.
+        // Sem fala, a janela abriu agora: conta o intervalo cheio.
         let s = SchedulerTick {
-            cursor_ms: Some(10_000),
-            ms_since_latest_final: 60_000,
-            ms_since_window_open: 2_000,
+            cursor_ms: Some(20_000),
+            elapsed_ms: 2_000,
             ..tick()
         };
-        let c = cadence(&s, SILENCE);
+        let c = cadence(&s, INTERVAL);
         assert_eq!(c.remaining_ms, 18_000);
         assert!(!c.awaiting_speech);
     }
@@ -285,13 +260,35 @@ mod tests {
     #[test]
     fn cadence_reports_awaiting_speech_without_new_content() {
         let s = SchedulerTick {
-            cursor_ms: Some(10_000),
+            cursor_ms: Some(20_000),
             ..tick()
         };
-        let c = cadence(&s, SILENCE);
+        let c = cadence(&s, INTERVAL);
         assert!(c.awaiting_speech);
         assert_eq!(c.remaining_ms, 0);
         assert!(c.running);
+    }
+
+    #[test]
+    fn cadence_triggers_as_soon_as_new_speech_arrives_after_the_interval() {
+        let awaiting = SchedulerTick {
+            cursor_ms: Some(20_000),
+            ..tick()
+        };
+        assert!(cadence(&awaiting, INTERVAL).awaiting_speech);
+
+        // Fala nova depois do intervalo: gera no próximo tick, sem esperar
+        // outro intervalo cheio.
+        let fresh = SchedulerTick {
+            cursor_ms: Some(20_000),
+            latest_final_ms: Some(21_000),
+            ..tick()
+        };
+        let c = cadence(&fresh, INTERVAL);
+        assert!(c.running);
+        assert!(!c.awaiting_speech);
+        assert_eq!(c.remaining_ms, 0);
+        assert!(should_trigger(&fresh, INTERVAL));
     }
 
     #[test]
@@ -300,7 +297,7 @@ mod tests {
             enabled: false,
             ..tick()
         };
-        let c = cadence(&s, SILENCE);
+        let c = cadence(&s, INTERVAL);
         assert!(!c.enabled);
         assert!(!c.running);
         assert_eq!(c.remaining_ms, 0);
@@ -313,7 +310,7 @@ mod tests {
             has_session: false,
             ..tick()
         };
-        let c = cadence(&s, SILENCE);
+        let c = cadence(&s, INTERVAL);
         assert!(!c.running);
         assert_eq!(c.remaining_ms, 0);
     }

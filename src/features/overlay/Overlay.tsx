@@ -1,11 +1,16 @@
 import {
+  useCallback,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type ComponentProps,
   type CSSProperties,
 } from "react";
 import {
   openSettingsWindow,
+  setActionbarWidth as setActionbarWidthIpc,
+  setPopoverExtraHeight as setPopoverExtraHeightIpc,
   setStealth as setStealthIpc,
   setSurface as setSurfaceIpc,
   startDrag as startDragIpc,
@@ -22,6 +27,9 @@ import { DwellProvider, useDwell } from "../../components/dwell/DwellProvider";
 import { ActionBar } from "./ActionBar";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 
+/** Altura extra (px lógicos) reservada abaixo da barra para o menu de canais. */
+const CHANNEL_MENU_EXTRA_HEIGHT = 180;
+
 /**
  * Casca do overlay: apenas a barra de ações (e o aviso de status do ASR). O
  * painel (Transcrição/Resumo), Sugestões e Histórico vivem em janelas próprias,
@@ -33,6 +41,7 @@ import { AsrStatusBanner } from "./AsrStatusBanner";
 export function Overlay() {
   const [stealth, setStealth] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const { state, busy, error, start, pause, resume, stop, setChannels } =
     useSessionState();
   const asrStatus = useAsrStatus();
@@ -40,6 +49,39 @@ export function Overlay() {
   const suggestionsOpen = usePanelOpen("suggestions");
   const historyOpen = usePanelOpen("history");
   useInteractiveRegions();
+
+  // Notch dinâmico: mede a barra e pede ao core a largura exata. A janela
+  // acompanha os itens (cresce/contrai) sem sobra fixa; o core reancora em
+  // topo-centro/direita e preserva a posição em modo livre.
+  useLayoutEffect(() => {
+    const node = barRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let frame = 0;
+    let lastWidth = 0;
+    const publish = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const width = Math.ceil(node.getBoundingClientRect().width);
+        if (width > 0 && Math.abs(width - lastWidth) >= 1) {
+          lastWidth = width;
+          void setActionbarWidthIpc(width);
+        }
+      });
+    };
+    const observer = new ResizeObserver(publish);
+    observer.observe(node);
+    publish();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  const channelMenuOpenChange = useCallback((open: boolean) => {
+    void setPopoverExtraHeightIpc(open ? CHANNEL_MENU_EXTRA_HEIGHT : 0);
+  }, []);
 
   // Sincroniza o stealth com as settings persistidas.
   useEffect(() => {
@@ -111,38 +153,41 @@ export function Overlay() {
       data-density={settings.hud_density}
       style={hudStyle}
     >
-      <DwellProvider
-        enabled={settings.dwell_enabled}
-        durationMs={settings.dwell_ms}
-        active={state.listening}
-      >
-        <DwellActionBar
-          listening={state.listening}
-          paused={state.paused}
-          channels={state.channels}
-          startedAtMs={state.started_at_ms}
-          busy={busy}
-          onStart={(channels) => void start(channels)}
-          onPause={() => void pause()}
-          onResume={() => void resume()}
-          onStop={() => void stop()}
-          onChannelsChange={(channels) => void setChannels(channels)}
-          onStartDrag={() => void startDragIpc()}
-          startAccelerator={startAccelerator}
-          askAccelerator={askAccelerator}
-          stealth={stealth}
-          onToggleStealth={toggleStealth}
-          onOpenSettings={() => void openSettings()}
-          onOpenTranscription={openTranscription}
-          onOpenSummary={openSummary}
-          onOpenAsk={openAsk}
-          suggestionsOpen={suggestionsOpen}
-          onToggleSuggestions={toggleSuggestions}
-          historyOpen={historyOpen}
-          onToggleHistory={toggleHistory}
-          onHide={hideOverlay}
-        />
-      </DwellProvider>
+      <div className="overlay__bar-wrap" ref={barRef}>
+        <DwellProvider
+          enabled={settings.dwell_enabled}
+          durationMs={settings.dwell_ms}
+          active={state.listening}
+        >
+          <DwellActionBar
+            listening={state.listening}
+            paused={state.paused}
+            channels={state.channels}
+            startedAtMs={state.started_at_ms}
+            busy={busy}
+            onStart={(channels) => void start(channels)}
+            onPause={() => void pause()}
+            onResume={() => void resume()}
+            onStop={() => void stop()}
+            onChannelsChange={(channels) => void setChannels(channels)}
+            onChannelMenuOpenChange={channelMenuOpenChange}
+            onStartDrag={() => void startDragIpc()}
+            startAccelerator={startAccelerator}
+            askAccelerator={askAccelerator}
+            stealth={stealth}
+            onToggleStealth={toggleStealth}
+            onOpenSettings={() => void openSettings()}
+            onOpenTranscription={openTranscription}
+            onOpenSummary={openSummary}
+            onOpenAsk={openAsk}
+            suggestionsOpen={suggestionsOpen}
+            onToggleSuggestions={toggleSuggestions}
+            historyOpen={historyOpen}
+            onToggleHistory={toggleHistory}
+            onHide={hideOverlay}
+          />
+        </DwellProvider>
+      </div>
 
       <AsrStatusBanner status={asrStatus} />
 

@@ -40,6 +40,7 @@ describe("useSuggestionCadence", () => {
         remaining_ms: 12_000,
         awaiting_speech: false,
         window_ms: 20_000,
+        generating: false,
       });
     });
 
@@ -59,10 +60,29 @@ describe("useSuggestionCadence", () => {
         remaining_ms: 0,
         awaiting_speech: true,
         window_ms: 20_000,
+        generating: false,
       });
     });
 
     expect(result.current.awaiting_speech).toBe(true);
     expect(result.current.remaining_ms).toBe(0);
+  });
+
+  it("expõe o estado de geração automática", async () => {
+    const { result } = renderHook(() => useSuggestionCadence());
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!({
+        enabled: true,
+        running: true,
+        remaining_ms: 0,
+        awaiting_speech: false,
+        window_ms: 20_000,
+        generating: true,
+      });
+    });
+
+    expect(result.current.generating).toBe(true);
   });
 });

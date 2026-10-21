@@ -33,14 +33,33 @@ export function AutoSuggestControl({
       : 0;
   const offset = CIRCUMFERENCE * (1 - fraction);
   const seconds = Math.max(0, Math.ceil(cadence.remaining_ms / 1000));
-  const count = paused ? "Pausado" : `${seconds}s`;
-  const waiting = !paused && cadence.awaiting_speech;
+  const generating = !paused && cadence.running && cadence.generating;
+  const noSession = !paused && !cadence.running;
+  const waiting = !paused && cadence.running && cadence.awaiting_speech;
+  const count = paused
+    ? "Pausado"
+    : noSession
+      ? "Sem escuta"
+      : generating
+        ? "Gerando"
+        : waiting
+          ? "Aguardando"
+          : `${seconds}s`;
+  // Enquanto gera, o anel vira um arco girando (progresso indeterminado).
+  const dashArray = generating
+    ? `${CIRCUMFERENCE * 0.28} ${CIRCUMFERENCE}`
+    : CIRCUMFERENCE;
 
+  const intervalSeconds = Math.max(1, Math.round(cadence.window_ms / 1000));
   const title = paused
     ? "Sugestões automáticas pausadas — clique para retomar"
-    : waiting
-      ? "Aguardando nova fala para sugerir"
-      : "Sugestões automáticas a cada fala nova — clique para pausar";
+    : noSession
+      ? "Sem sessão de escuta — inicie uma escuta no notch"
+      : generating
+        ? "Gerando sugestão automática agora"
+        : waiting
+          ? "Aguardando nova fala para sugerir"
+          : `Sugestões automáticas a cada ${intervalSeconds}s — clique para pausar`;
 
   return (
     <button
@@ -49,6 +68,7 @@ export function AutoSuggestControl({
         "auto-control",
         paused ? "auto-control--paused" : "",
         waiting ? "auto-control--waiting" : "",
+        generating ? "auto-control--generating" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -70,15 +90,15 @@ export function AutoSuggestControl({
           cy="12"
           r={RADIUS}
           fill="none"
-          strokeDasharray={CIRCUMFERENCE}
-          strokeDashoffset={offset}
+          strokeDasharray={dashArray}
+          strokeDashoffset={generating ? 0 : offset}
           transform="rotate(-90 12 12)"
         />
       </svg>
       <span className="auto-control__label">Auto-sugerir</span>
       <Pill
         className="auto-control__count"
-        tone={paused || waiting ? "neutral" : "accent"}
+        tone={paused || noSession || waiting || generating ? "neutral" : "accent"}
         mono
       >
         {count}

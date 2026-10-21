@@ -518,3 +518,67 @@ dele”* — depois do ajuste de always-on-top (ISS-043).
 ### Observação
 - O desktop reporta `_NET_WORKAREA` como tela cheia, mas o Tao entrega
   `work_area.y = 32` (abaixo do painel) — foi o que usamos na âncora.
+
+---
+
+## 2026-10-20 — Notch voltava a uma posição antiga ao salvar settings (ISS-045, task 16)
+
+- **IDs:** ISS-045, T16 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/16-task.md`](tasks/16-task.md), BR-062
+
+### Relato
+*“toda vez que troco de aba na Sessão, clico em botão, mudo selects, o Notch se
+move sozinho, fica pulando e resetando na tela”*.
+
+### Diagnóstico
+- `settings_set` recebe um snapshot **completo** de `Settings` de cada janela e
+  reaplicava o HUD em todo save. Em `free`, chamava
+  `set_position(overlay_position)` com a posição **antiga** do snapshot; em
+  âncora fixa, `set_hud_layout` recentralizava.
+- O tracker do core gravava a posição real no disco, mas o save seguinte de
+  qualquer outra janela regravava o snapshot velho — daí o efeito de "pular"
+  entre posições conforme a janela que salvava.
+
+### Correção
+- `Settings::preserve_window_geometry` faz posição/tamanho persistidos (dos
+  trackers) vencerem o payload em todo save.
+- `Settings::hud_layout_changed` só reaplica `set_hud_layout` quando âncora ou
+  densidade mudam de fato; `set_stealth` idem.
+- Nenhuma janela é movida por save de aba/agente/select.
+
+### Verificação
+- `cargo test --lib` **543 ✓** (9 ignorados) · `clippy -D warnings` ✓ ·
+  `rustfmt --check` nos arquivos tocados ✓.
+- Teste manual (abas, selects e arraste) pendente com o binário novo.
+
+---
+
+## 2026-10-20 — Largura dinâmica do notch + menu de canais (ISS-047, task 17)
+
+- **IDs:** ISS-047, T17 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/17-task.md`](tasks/17-task.md), BR-032, BR-062
+
+### Relato
+*“O menu do microfone fica por trás do notch e não dá para selecionar; o notch
+tem largura fixa e sobra espaço.”*
+
+### Diagnóstico
+- O popover abria com `bottom: calc(100% + 10px)` (acima da barra), mas a janela
+  vive no topo e só tem a altura da densidade — ficava fora dos limites.
+- A largura era `ACTIONBAR_WIDTH = 1040`, independente do conteúdo.
+
+### Correção
+- Popover abre **abaixo** (`top: calc(100% + 10px)`); o overlay reserva 180 px
+  extras via `overlay_set_popover_extra_height` enquanto ele está aberto.
+- `Overlay` mede `.overlay__bar-wrap` com `ResizeObserver` e envia
+  `overlay_set_actionbar_width`; o adaptador aplica `set_size` e reancora
+  topo-centro/direita. Modo livre preserva o canto superior.
+- CSS: barra com `width: max-content`; wrapper mede barra + padding; largura
+  inicial de 700 px no `tauri.conf.json`.
+
+### Verificação
+- `cargo test --lib` 544 ✓ · `clippy` ✓ · `rustfmt` ✓ ·
+  `pnpm test` 350 ✓ · `tsc` ✓ · `pnpm build` ✓.
+- No AppImage (X11): idle **675×72**, ativo **758×72**, confirmação de encerrar
+  **1058×72**; menu abriu **758×252** abaixo da barra, opções responderam e a
+  janela voltou a 72 px ao fechar.

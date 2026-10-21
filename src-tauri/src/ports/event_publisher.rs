@@ -41,6 +41,12 @@ pub struct SuggestionCadenceEvent {
     pub awaiting_speech: bool,
     /// Duração total do ciclo (para desenhar o anel de progresso).
     pub window_ms: i64,
+    /// A geração automática está em andamento neste instante.
+    ///
+    /// Publicado **antes** da chamada ao LLM (que pode demorar segundos): é o
+    /// feedback imediato de que a sugestão começou a ser gerada, antes do
+    /// primeiro evento `suggestion`.
+    pub generating: bool,
 }
 
 /// Fonte de IA que respondeu a uma chamada (BR-045).

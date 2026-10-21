@@ -1,6 +1,6 @@
 //! Adaptador da janela overlay sobre `tauri::WebviewWindow`.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use tauri::{LogicalSize, PhysicalPosition, WebviewWindow};
@@ -9,14 +9,28 @@ use crate::domain::geometry::{Point, Rect};
 use crate::domain::hud_layout::{anchor_position, HudDensity, NotchAnchor, HUD_MARGIN};
 use crate::ports::overlay_window::{OverlayWindowController, Surface};
 
-/// Largura lógica da barra (posicionamento inicial — BR-052).
-pub const ACTIONBAR_WIDTH: f64 = 1040.0;
+/// Largura lógica inicial da barra (antes da medição do conteúdo).
+///
+/// A UI mede a barra e envia a largura real; este valor só evita uma janela
+/// enorme no primeiro frame do boot.
+pub const DEFAULT_ACTIONBAR_WIDTH: f64 = 700.0;
+
+/// Limites de segurança da largura dinâmica (px lógicos).
+const MIN_ACTIONBAR_WIDTH: f64 = 280.0;
+const MAX_ACTIONBAR_WIDTH: f64 = 1_800.0;
+
+/// Teto da altura extra reservada para o menu de canais (px lógicos).
+const MAX_POPOVER_EXTRA_HEIGHT: f64 = 320.0;
 
 /// Implementa `OverlayWindowController` sobre a janela Tauri.
 pub struct TauriOverlayWindow {
     window: WebviewWindow,
     click_through: Arc<AtomicBool>,
     anchor_bottom: AtomicBool,
+    /// Largura lógica atual da barra (medida pela UI).
+    width: AtomicU64,
+    /// Altura extra abaixo da barra (menu de canais), em px lógicos.
+    popover_extra: AtomicU32,
     /// Densidade do HUD (BR-062): 0 compacto · 1 padrão · 2 expandido.
     density: AtomicU8,
     /// Ancoragem do notch (BR-062): 0 topo central · 1 canto direito · 2 livre.
@@ -33,10 +47,34 @@ impl TauriOverlayWindow {
             window,
             click_through: Arc::new(AtomicBool::new(false)),
             anchor_bottom: AtomicBool::new(true),
+            width: AtomicU64::new(DEFAULT_ACTIONBAR_WIDTH.to_bits()),
+            popover_extra: AtomicU32::new(0),
             density: AtomicU8::new(1),
             anchor: AtomicU8::new(0),
             stealth: AtomicBool::new(false),
         }
+    }
+
+    /// Largura lógica atual da barra.
+    fn bar_width(&self) -> f64 {
+        f64::from_bits(self.width.load(Ordering::Relaxed))
+    }
+
+    /// Altura extra reservada para um popover aberto (px lógicos).
+    fn popover_extra(&self) -> f64 {
+        self.popover_extra.load(Ordering::Relaxed) as f64
+    }
+
+    /// Altura total da janela: barra (densidade) + popover aberto.
+    fn window_height(&self) -> f64 {
+        self.density().window_height() + self.popover_extra()
+    }
+
+    /// Aplica largura/altura atuais à janela.
+    fn apply_size(&self) {
+        let _ = self
+            .window
+            .set_size(LogicalSize::new(self.bar_width(), self.window_height()));
     }
 
     /// Densidade atual do HUD.
@@ -96,8 +134,8 @@ impl TauriOverlayWindow {
             width: work.size.width as i32,
             height: work.size.height as i32,
         };
-        let width = (ACTIONBAR_WIDTH * scale).round() as i32;
-        let height = (self.density().window_height() * scale).round() as i32;
+        let width = (self.bar_width() * scale).round() as i32;
+        let height = (self.window_height() * scale).round() as i32;
         let margin = (HUD_MARGIN as f64 * scale).round() as i32;
         if let Some((x, y)) = anchor_position(anchor, work_area, (width, height), margin) {
             let _ = self.window.set_position(PhysicalPosition::new(x, y));
@@ -169,15 +207,12 @@ impl OverlayWindowController for TauriOverlayWindow {
     }
 
     fn set_surface(&self, surface: Surface) {
-        let (width, height) = match surface {
-            Surface::ActionBar => (ACTIONBAR_WIDTH, self.density().window_height()),
-            Surface::Hidden => {
-                self.hide();
-                return;
-            }
-        };
+        if matches!(surface, Surface::Hidden) {
+            self.hide();
+            return;
+        }
 
-        let _ = self.window.set_size(LogicalSize::new(width, height));
+        self.apply_size();
 
         // Âncora fixa (BR-062) manda na posição. Em "Flutuante Livre" o
         // redimensionamento mantém o canto superior (a barra vive no topo) —
@@ -194,15 +229,58 @@ impl OverlayWindowController for TauriOverlayWindow {
     fn set_hud_layout(&self, density: HudDensity, anchor: NotchAnchor) {
         self.store_density(density);
         self.store_anchor(anchor);
-        let _ = self
-            .window
-            .set_size(LogicalSize::new(ACTIONBAR_WIDTH, density.window_height()));
+        self.apply_size();
         if anchor.is_anchored() {
             self.apply_anchor();
         } else if self.anchor_bottom.load(Ordering::Relaxed) {
             // "Livre" sem posição do usuário: começa no topo central (BR-062).
             self.place_at(NotchAnchor::TopCenter);
         }
+    }
+
+    fn set_actionbar_width(&self, width: f64) {
+        if !width.is_finite() || width <= 0.0 {
+            return;
+        }
+        // Nunca deixa a barra maior que a área útil do monitor.
+        let max = self
+            .window
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|monitor| {
+                (monitor.work_area().size.width as f64 / monitor.scale_factor())
+                    .clamp(MIN_ACTIONBAR_WIDTH, MAX_ACTIONBAR_WIDTH)
+            })
+            .unwrap_or(MAX_ACTIONBAR_WIDTH);
+        let width = width.clamp(MIN_ACTIONBAR_WIDTH, max);
+        let previous = self.bar_width();
+        if (previous - width).abs() < 0.5 {
+            return;
+        }
+        self.width.store(width.to_bits(), Ordering::Relaxed);
+        self.apply_size();
+        if self.anchor().is_anchored() {
+            self.apply_anchor();
+        }
+        // Resize pode remapear e perder o always-on-top (ISS-043).
+        self.apply_stealth();
+    }
+
+    fn set_popover_extra_height(&self, extra: f64) {
+        if !extra.is_finite() || extra < 0.0 {
+            return;
+        }
+        let extra = extra.clamp(0.0, MAX_POPOVER_EXTRA_HEIGHT).round() as u32;
+        if self.popover_extra.load(Ordering::Relaxed) == extra {
+            return;
+        }
+        self.popover_extra.store(extra, Ordering::Relaxed);
+        self.apply_size();
+        if self.anchor().is_anchored() {
+            self.apply_anchor();
+        }
+        self.apply_stealth();
     }
 
     fn set_anchor_bottom(&self, anchored: bool) {

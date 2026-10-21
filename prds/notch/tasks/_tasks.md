@@ -22,6 +22,8 @@ só começa após a revisão da PRD pelo usuário.
 | 13 | Histórico no trailing e ícone de recolher | CONCLUDED |
 | 14 | Notch sempre à frente (reafirmar always-on-top — ISS-043) | CONCLUDED |
 | 15 | Notch encosta no topo (tamanho real da janela — ISS-044) | CONCLUDED |
+| 16 | Notch não se move ao salvar settings de outras janelas (ISS-045) | CONCLUDED |
+| 17 | Notch com largura dinâmica + menu de canais visível (ISS-047) | CONCLUDED |
 
 ## Dependências
 
@@ -43,6 +45,10 @@ só começa após a revisão da PRD pelo usuário.
   Tokens em [`../architecture/design-tokens.md`](../architecture/design-tokens.md).
 - 14 (ISS-043) é independente: reafirma o empilhamento da janela.
 - 15 (ISS-044) depende de 14: corrige o tamanho/posição da barra dentro da janela.
+- 16 (ISS-045) depende de 11/14/15: estabiliza a geometria do notch e dos
+  painéis contra saves de outras janelas.
+- 17 (ISS-047) depende de 11/15: menu de canais abaixo da barra e largura pelo
+  conteúdo.
 - 08 (notch ativo) depende de 07: aplica a **estrutura** do protótipo (switcher,
   waveform, play/pause contextual) sobre os tokens.
 

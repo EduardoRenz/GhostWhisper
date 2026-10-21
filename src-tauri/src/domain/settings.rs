@@ -669,6 +669,34 @@ impl Settings {
         self
     }
 
+    /// Preserva a geometria de janelas (posição/tamanho) já persistida.
+    ///
+    /// O frontend envia um snapshot completo das settings em cada save. As
+    /// posições/tamanhos são escritos pelos **trackers de janela do core**;
+    /// se um save de outra janela (aba, agente, select) trouxesse um snapshot
+    /// antigo, ele moveria o notch/painéis sem o usuário ter movido nada —
+    /// por isso o valor persistido sempre vence o payload (ISS-045).
+    pub fn preserve_window_geometry(&mut self, persisted: &Settings) {
+        self.overlay_position = persisted.overlay_position;
+        self.suggestions_position = persisted.suggestions_position;
+        self.suggestions_size = persisted.suggestions_size;
+        self.chat_position = persisted.chat_position;
+        self.chat_size = persisted.chat_size;
+        self.history_position = persisted.history_position;
+        self.history_size = persisted.history_size;
+    }
+
+    /// Indica se a âncora ou a densidade do HUD mudou entre dois snapshots.
+    ///
+    /// Só nesse caso o layout é reaplicado: um save qualquer não pode
+    /// reposicionar o notch (ISS-045).
+    pub fn hud_layout_changed(&self, other: &Settings) -> bool {
+        use crate::domain::hud_layout::{HudDensity, NotchAnchor};
+
+        HudDensity::parse(&self.hud_density) != HudDensity::parse(&other.hud_density)
+            || NotchAnchor::parse(&self.notch_anchor) != NotchAnchor::parse(&other.notch_anchor)
+    }
+
     /// Posição persistida de um painel pelo rótulo (`None` se desconhecido).
     pub fn panel_position(&self, label: &str) -> Option<(i32, i32)> {
         match label {
@@ -1178,6 +1206,76 @@ mod tests {
         settings.set_panel_position("desconhecido", Some((1, 1)));
         settings.set_panel_size("desconhecido", Some((1, 1)));
         assert_eq!(settings.panel_position("desconhecido"), None);
+    }
+
+    #[test]
+    fn preserve_window_geometry_ignores_stale_payload_geometry() {
+        let persisted = Settings {
+            overlay_position: Some((570, 312)),
+            suggestions_position: Some((10, 20)),
+            suggestions_size: Some((420, 640)),
+            chat_position: Some((30, 40)),
+            chat_size: Some((760, 680)),
+            history_position: Some((50, 60)),
+            history_size: Some((800, 700)),
+            ..Settings::default()
+        };
+        let mut payload = Settings {
+            overlay_position: Some((0, 0)),
+            suggestions_position: None,
+            suggestions_size: Some((300, 300)),
+            chat_position: Some((1, 1)),
+            chat_size: Some((640, 480)),
+            history_position: None,
+            history_size: None,
+            assistant_mode_id: "leetcode".into(),
+            ..Settings::default()
+        };
+
+        payload.preserve_window_geometry(&persisted);
+
+        assert_eq!(payload.overlay_position, Some((570, 312)));
+        assert_eq!(payload.suggestions_position, Some((10, 20)));
+        assert_eq!(payload.suggestions_size, Some((420, 640)));
+        assert_eq!(payload.chat_position, Some((30, 40)));
+        assert_eq!(payload.chat_size, Some((760, 680)));
+        assert_eq!(payload.history_position, Some((50, 60)));
+        assert_eq!(payload.history_size, Some((800, 700)));
+        // O resto do payload (configuração de fato) é preservado.
+        assert_eq!(payload.assistant_mode_id, "leetcode");
+    }
+
+    #[test]
+    fn hud_layout_changed_only_for_anchor_or_density() {
+        let base = Settings::default();
+        let unrelated = Settings {
+            panel_tab: "summary".into(),
+            assistant_mode_id: "leetcode".into(),
+            ..Settings::default()
+        };
+        assert!(!unrelated.hud_layout_changed(&base));
+
+        let density = Settings {
+            hud_density: "expanded".into(),
+            ..Settings::default()
+        };
+        assert!(density.hud_layout_changed(&base));
+
+        let anchor = Settings {
+            notch_anchor: "free".into(),
+            ..Settings::default()
+        };
+        assert!(anchor.hud_layout_changed(&base));
+
+        // Valores equivalentes (com espaços/caixa) não contam como mudança.
+        let equivalent = Settings {
+            hud_density: " EXPANDED ".into(),
+            ..Settings::default()
+        };
+        assert!(!equivalent.hud_layout_changed(&Settings {
+            hud_density: "expanded".into(),
+            ..Settings::default()
+        }));
     }
 
     #[test]

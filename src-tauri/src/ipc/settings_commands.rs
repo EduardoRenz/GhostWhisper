@@ -58,30 +58,44 @@ pub fn settings_get(state: State<'_, AppState>) -> Result<Settings> {
 
 /// Persiste as configurações (validadas antes de gravar).
 ///
-/// Reaplica atalhos/stealth e devolve os conflitos de atalho encontrados.
+/// Reaplica atalhos e, quando mudam, stealth/layout do HUD; devolve os conflitos
+/// de atalho encontrados.
 #[tauri::command(async)]
 pub fn settings_set(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Vec<ShortcutConflict>> {
+    let previous = state.settings.load()?;
+    // Geometria de janela é propriedade dos trackers do core (ISS-045): um
+    // save de outra janela pode trazer um snapshot antigo e não deve mover o
+    // notch/painéis.
+    let mut settings = settings;
+    settings.preserve_window_geometry(&previous);
+    let layout_changed = settings.hud_layout_changed(&previous);
+
     state.settings.save(&settings)?;
-    state.overlay.set_stealth(settings.stealth);
-    // HUD (BR-062): densidade e ancoragem valem na hora, sem reiniciar.
-    let density = crate::domain::hud_layout::HudDensity::parse(&settings.hud_density);
-    let anchor = crate::domain::hud_layout::NotchAnchor::parse(&settings.notch_anchor);
-    state.overlay.set_hud_layout(density, anchor);
-    if !anchor.is_anchored() {
-        // "Flutuante Livre" volta para onde o usuário deixou o notch.
-        if let Some((x, y)) = settings
-            .overlay_position
-            .filter(|(x, y)| *x >= 0 && *y >= 0)
-        {
-            use tauri::Manager;
-            if let Some(window) = app.get_webview_window("overlay") {
-                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    if settings.stealth != previous.stealth {
+        state.overlay.set_stealth(settings.stealth);
+    }
+    // HUD (BR-062): densidade e ancoragem valem na hora — mas **só** quando
+    // mudaram; salvar outra configuração não reposiciona o notch (ISS-045).
+    if layout_changed {
+        let density = crate::domain::hud_layout::HudDensity::parse(&settings.hud_density);
+        let anchor = crate::domain::hud_layout::NotchAnchor::parse(&settings.notch_anchor);
+        state.overlay.set_hud_layout(density, anchor);
+        if !anchor.is_anchored() {
+            // "Flutuante Livre" volta para onde o usuário deixou o notch.
+            if let Some((x, y)) = settings
+                .overlay_position
+                .filter(|(x, y)| *x >= 0 && *y >= 0)
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("overlay") {
+                    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                }
+                state.overlay.set_anchor_bottom(false);
             }
-            state.overlay.set_anchor_bottom(false);
         }
     }
     let conflicts = state.shortcuts.apply(&settings.shortcuts);

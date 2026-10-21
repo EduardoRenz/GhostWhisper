@@ -117,6 +117,7 @@ const cadence = vi.hoisted(() => ({
     remaining_ms: 12_000,
     awaiting_speech: false,
     window_ms: 20_000,
+    generating: false,
   },
 }));
 
@@ -161,6 +162,7 @@ describe("SuggestionsWindow — feedback da geração", () => {
     manual.value.context = null;
     manual.value.clear = vi.fn();
     manual.value.refresh = vi.fn();
+    cadence.value.generating = false;
   });
 
   it("mostra o pill DENTRO do bloco da sugestão ao gerar uma nova", () => {
@@ -191,6 +193,16 @@ describe("SuggestionsWindow — feedback da geração", () => {
     state.value.current = suggestion();
     render(<SuggestionsWindow />);
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("mostra feedback imediato quando o auto começa a gerar (antes do 1º evento)", () => {
+    // O core publica `generating` antes de chamar o LLM; sem isso, o pill só
+    // aparecia quando a primeira resposta chegava (parecia geração sem aviso).
+    cadence.value.generating = true;
+    render(<SuggestionsWindow />);
+    expect(screen.getByRole("status").textContent).toContain(
+      "Gerando sugestão automática",
+    );
   });
 
   it("mostra a resposta rápida e a completa em blocos separados (BR-038)", () => {

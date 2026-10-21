@@ -4,7 +4,7 @@ Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a de
 [`../mvp/issues.md`](../mvp/issues.md) para o ID ser único no repositório).
-Próximo ID livre: **ISS-032**.
+Próximo ID livre: **ISS-048**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|

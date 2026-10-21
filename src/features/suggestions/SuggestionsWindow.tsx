@@ -97,19 +97,25 @@ export function SuggestionsWindow() {
       ? "Pausado"
       : "Gravando";
 
+  /** Feedback imediato do auto (o LLM pode demorar até o primeiro evento). */
+  const autoGenerating = cadence.running && cadence.generating && auto;
+  const generatingNow = generating || autoGenerating;
+
   /** Rótulo do pill de geração (BR-042). */
   const generatingLabel = (() => {
-    if (!generating) {
+    if (!generatingNow) {
       return null;
+    }
+    if (autoGenerating) {
+      return manual.context
+        ? "Sugestão automática em andamento — vai para o histórico"
+        : "Gerando sugestão automática…";
     }
     if (!current && !quick) {
       return "Gerando sugestão…";
     }
     if (streamingTrigger === "manual") {
       return "Gerando sugestão manual…";
-    }
-    if (streamingTrigger === "auto" && manual.context) {
-      return "Sugestão automática em andamento — vai para o histórico";
     }
     if (manual.context && loading) {
       return "Aguardando a sugestão em andamento…";
@@ -158,12 +164,12 @@ export function SuggestionsWindow() {
       <button
         type="button"
         className="suggest-now"
-        disabled={generating || !state.session_id}
+        disabled={generatingNow || !state.session_id}
         onClick={() => void suggestNow()}
         title="Gerar uma sugestão agora"
       >
         <SparkleIcon size={12} />
-        {generating ? "Aguardando…" : "Sugerir agora"}
+        {generatingNow ? "Aguardando…" : "Sugerir agora"}
       </button>
     </>
   );
@@ -221,7 +227,7 @@ export function SuggestionsWindow() {
           </div>
         ) : current || quick ? (
           <>
-            {generatingLabel && current && (
+            {generatingLabel && (
               <StatusPill
                 label={generatingLabel}
                 title="A sugestão atual continua na tela até a nova ficar pronta; a anterior vai para o histórico"
@@ -242,7 +248,7 @@ export function SuggestionsWindow() {
               <p className="panel__hint">Aguardando nova fala…</p>
             )}
           </>
-        ) : loading ? (
+        ) : loading || autoGenerating ? (
           <>
             <StatusPill label={generatingLabel ?? "Gerando sugestão…"} />
             <p className="panel__empty">Analisando a conversa…</p>

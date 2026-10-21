@@ -380,26 +380,28 @@ uma nota de revisão.
   assim que fica pronto, e o **passe completo** em seguida. O texto chega à UI em
   **streaming** pelo evento `suggestion` (texto acumulado; a janela substitui a
   bolha a cada delta). O contexto inclui **falas em andamento** (prévias), não só
-  as finalizadas. Os **insights automáticos** rodam no core a cada **fala nova**
-  (o intervalo das settings é o **silêncio** depois da última fala; uma fala nova
-  reinicia a contagem) e só com a **janela de Sugestões aberta** — fechada, não
-  há geração (ninguém está vendo e não se gasta chamada); o toggle é
-  `Settings.suggestion_auto_refresh` e a janela exibe/força/fixa. No chat, a
-  bolha da IA começa **colapsada em ~3 linhas** com "mostrar mais".
+  as finalizadas. Os **insights automáticos** rodam no core com a **janela de
+  Sugestões aberta**; o intervalo das settings é o **tempo mínimo entre
+  sugestões** (*cooldown*), contado da última geração/abertura da janela.
+  **Fala nova não reinicia** a contagem: ela é o conteúdo que libera a geração
+  quando o contador zera. Fechada a janela, não há geração (ninguém está vendo e
+  não se gasta chamada); o toggle é `Settings.suggestion_auto_refresh` e a janela
+  exibe/força/fixa. No chat, a bolha da IA começa **colapsada em ~3 linhas** com
+  "mostrar mais".
 - **Motivo:** paridade com o Perssua (`fastFirstInsight`, `streamAutomaticInsights`,
   `questionsRequireFinalizedTranscript: false`, notch compacto) e o pedido do
   usuário ("bolhas menores, mais rápido e mais preciso").
 - **Revisto em 2026-10-19:** o automático voltou a exigir a **janela de
   Sugestões aberta** (pedido do usuário: “não gerar nenhuma sugestão enquanto a
-  janela estiver fechada”). O *debounce* fixo de 700 ms + teto de 3 s foi
-  substituído pelo **silêncio das settings** (BR-039). **Abrir a janela não
-  gera**: a contagem reinicia na abertura (o auto começa do intervalo); com o
-  automático pausado, só o botão “Sugerir agora” gera.
-- **Consequência:** `suggestion_interval_secs` deixa de controlar o ritmo do
-  automático (o critério passa a ser fala nova, com teto de frequência); providers
-  sem SSE caem no passe único sem erro visível; falha do rascunho ou do streaming
-  não derruba a sugestão final; sugestões automáticas continuam **efêmeras** (só
-  **Fixar** entra no export, BR-023).
+  janela estiver fechada”). **Abrir a janela não gera**: a contagem reinicia na
+  abertura (o auto começa do intervalo); com o automático pausado, só o botão
+  “Sugerir agora” gera.
+- **Revisto em 2026-10-20 (ISS-046):** o timer de **silêncio** virou um
+  **cooldown** — fala nova não reinicia a contagem; ver BR-039.
+- **Consequência:** `suggestion_interval_secs` define a **frequência máxima** do
+  automático; providers sem SSE caem no passe único sem erro visível; falha do
+  rascunho ou do streaming não derruba a sugestão final; sugestões automáticas
+  continuam **efêmeras** (só **Fixar** entra no export, BR-023).
 - **Detalhes:** [`precision-and-performance/tasks/02-task.md`](precision-and-performance/tasks/02-task.md),
   [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §3.
 - **Revisão (2026-10-19):** a janela de Sugestões mostra um **pill dentro do bloco
@@ -743,14 +745,19 @@ uma nota de revisão.
   que esvazia). O controle é: anel + rótulo **“Auto-sugerir”** + pill com a
   contagem (“12s”); pausado, a pill vira **“Pausado”**. A cadência vem do
   **agendador** (evento `suggestion_cadence`: `enabled`, `running`,
-  `remaining_ms`, `awaiting_speech`, `window_ms`) — a UI **não** recalcula.
+  `remaining_ms`, `awaiting_speech`, `window_ms`, `generating`) — a UI **não**
+  recalcula.
   O intervalo das **settings** (`suggestion_interval_secs`, 10–120 s) é o
-  **tempo de silêncio** depois da última fala: **cada fala nova reinicia a
-  contagem**; quando o silêncio completa o intervalo, a sugestão é gerada.
-  Uma sequência de perguntas próximas vira **uma** sugestão (não uma por
-  balão). **Trocar de agente não gera** sugestão: o agente escolhido vale para
-  a próxima geração (fala nova + contagem, ou “Sugerir agora”). “Sugerir agora”
-  fica sem glow.
+  **tempo mínimo entre sugestões automáticas** (*cooldown*), contado desde a
+  última geração ou desde a abertura da janela. **Fala nova não reinicia a
+  contagem**: ela é o conteúdo que libera a geração quando o contador zera. Ao
+  zerar com fala nova, gera; sem fala nova, mostra **“aguardando fala”** e gera
+  assim que a próxima fala finalizar. Fechar e reabrir a janela reinicia o ciclo
+  cheio. Durante a geração, o evento publica `generating = true` **antes** da
+  chamada ao LLM, para a UI dar feedback imediato. Uma sequência de perguntas
+  próximas vira **uma** sugestão (não uma por balão). **Trocar de agente não
+  gera** sugestão: o agente escolhido vale para a próxima geração (contagem ou
+  “Sugerir agora”). “Sugerir agora” fica sem glow.
 - **Sem fala nova, não há nova sugestão:** nenhuma chamada ao LLM. O serviço
   guarda a última sugestão da sessão e a devolve; o botão “Sugerir agora” (e o
   atalho/chat “Sugerir”) **forçam** a geração.
@@ -1309,7 +1316,10 @@ uma nota de revisão.
 - **Consequência:** **arrastar** o notch passa a ancoragem para **Flutuante
   Livre** e persiste a posição (antes o arraste apenas desligava a reancoragem
   pela base). Salvar as settings reaplica opacidade/ancoragem/densidade **sem
-  reiniciar**; settings antigas carregam com os padrões (campos ausentes).
+  reiniciar**; um save que não altera âncora/densidade **não move** o notch
+  (ISS-045); settings antigas carregam com os padrões (campos ausentes). A
+  largura do notch é **dinâmica** (medida pelo conteúdo) e o menu de canais abre
+  abaixo da barra com altura reservada enquanto está aberto (ISS-047).
 - **Detalhes:** [`ai-sources/prd.md`](ai-sources/prd.md) §10,
   [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §9,
   [`ai-sources/tasks/12-task.md`](ai-sources/tasks/12-task.md).

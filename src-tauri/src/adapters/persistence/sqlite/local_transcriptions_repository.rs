@@ -73,10 +73,10 @@ impl TranscriptionsRepository for LocalTranscriptionsRepository {
         collect(rows)
     }
 
-    fn latest_final_ms(&self, session_id: &str) -> Result<Option<i64>> {
+    fn latest_final_end_ms(&self, session_id: &str) -> Result<Option<i64>> {
         let conn = lock(&self.conn)?;
         let value = conn.query_row(
-            "SELECT MAX(timestamp) FROM transcriptions \
+            "SELECT MAX(end_ms) FROM transcriptions \
              WHERE session_id = ?1 AND is_final = 1 AND TRIM(text) <> ''",
             params![session_id],
             |row| row.get::<_, Option<i64>>(0),
@@ -158,8 +158,8 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, "3");
 
-        // Cursor barato do agendador.
-        assert_eq!(repo.latest_final_ms("s1").expect("latest"), Some(1_000));
-        assert_eq!(repo.latest_final_ms("s3").expect("latest"), None);
+        // Cursor barato do agendador (fim da última fala final).
+        assert_eq!(repo.latest_final_end_ms("s1").expect("latest"), Some(1_500));
+        assert_eq!(repo.latest_final_end_ms("s3").expect("latest"), None);
     }
 }

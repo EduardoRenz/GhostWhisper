@@ -15,6 +15,7 @@ só começa após a revisão da PRD pelo usuário.
 | 06 | Histórico em accordion: seção, itens, scroll até o bloco e pill do agente | CONCLUDED |
 | 07 | Acabamento, usabilidade, validação visual, docs e pacote | CONCLUDED |
 | 08 | Agente Padrão (contextual), agentes que respondem e código puro | CONCLUDED |
+| 09 | Cadência coerente do auto-sugerir + feedback de geração (ISS-046) | CONCLUDED |
 
 ## Dependências
 
@@ -30,6 +31,7 @@ só começa após a revisão da PRD pelo usuário.
 - 02 (modelo em duas fases) é a base de 03 (evento de cadência usa o mesmo
   contrato de eventos), 05 (blocos) e 06 (histórico com título + snapshot).
 - 07 fecha a PRD (acabamento, validação, docs e pacote).
+- 09 (ISS-046) depende de 03: corrige a cadência e adiciona o feedback imediato.
 
 ## Definição de pronto (geral)
 

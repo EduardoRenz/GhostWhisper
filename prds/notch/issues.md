@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser único
-no repositório). Próximo ID livre: **ISS-045**.
+no repositório). Próximo ID livre: **ISS-048**.
 
 > `ISS-032` segue reservada pelo PRD [`chat`](../chat/issues.md); esta PRD começa em
 > `ISS-033` para não colidir.
@@ -15,6 +15,8 @@ no repositório). Próximo ID livre: **ISS-045**.
 | ISS-035 | Hover do drill-hover atravessa duas janelas e pode fechar sem querer | Média | FIXED |
 | ISS-043 | Notch não fica sempre à frente (`_NET_WM_STATE_ABOVE` se perde no mapeamento) | Alta | FIXED |
 | ISS-044 | Notch não encosta no topo: janela 1040×260 com a barra no rodapé (~200 px invisíveis) | Alta | FIXED |
+| ISS-045 | Notch volta a uma posição antiga ao salvar settings de outra janela (aba/botão/select) | Alta | FIXED |
+| ISS-047 | Menu de canais atrás do notch e largura fixa com sobra | Média | FIXED |
 
 ---
 
@@ -136,6 +138,59 @@ no repositório). Próximo ID livre: **ISS-045**.
 - **Task:** [`tasks/15-task.md`](tasks/15-task.md)
 - **Dano em dados existentes:** nenhum (geometria; a posição salva é preservada
   em "Flutuante Livre").
+
+---
+
+## ISS-045 — Notch volta a uma posição antiga ao salvar settings de outra janela
+
+- **Severidade:** Alta · **Status:** FIXED ([`tasks/16-task.md`](tasks/16-task.md))
+- **Sintoma:** trocar de aba na aba **Sessão**, clicar em botões ou mudar
+  selects em outras janelas fazia o notch **pular/resetar** para uma posição
+  antiga; intercalar janelas o movia para pontos diferentes.
+- **Causa raiz:** `settings_set` recebe das janelas um **snapshot completo** de
+  `Settings` e, a cada save, reaplicava o HUD: em "Flutuante Livre" chamava
+  `set_position(settings.overlay_position)` — uma posição **antiga** do snapshot
+  do frontend — e em âncora fixa chamava `set_hud_layout`, re-centralizando. O
+  tracker de posição do core gravava a posição real no disco, mas o snapshot
+  velho de qualquer outra janela a sobrescrevia no save seguinte.
+- **Correção (task 16):** `Settings::preserve_window_geometry` faz a geometria
+  persistida (dos trackers) vencer o payload; `Settings::hud_layout_changed`
+  reaplica âncora/densidade **só** quando elas realmente mudam; o stealth também
+  só é reaplicado quando muda. Um save de aba/agente/select não move mais
+  nenhuma janela.
+- **Arquivos:** `src-tauri/src/domain/settings.rs`,
+  `src-tauri/src/ipc/settings_commands.rs`.
+- **Task:** [`tasks/16-task.md`](tasks/16-task.md)
+- **Dano em dados existentes:** nenhum (a posição persistida atual é mantida;
+  saves antigos param de sobrescrevê-la).
+
+---
+
+## ISS-047 — Menu de canais atrás do notch e largura fixa com sobra
+
+- **Severidade:** Média · **Status:** FIXED ([`tasks/17-task.md`](tasks/17-task.md))
+- **Sintoma:** ao clicar no ícone de microfone, o menu de canais abria acima da
+  barra e ficava **atrás/clipado** pelo notch, impossível de selecionar; e a
+  janela do notch tinha **1040 px fixos**, com grande sobra transparente à
+  direita.
+- **Causa raiz:** o popover usava `bottom: calc(100% + 10px)` (para cima), mas a
+  janela nasce no topo da tela e só tem a altura da densidade (72–96 px) — o
+  menu ficava fora dos limites da janela. A largura era a constante
+  `ACTIONBAR_WIDTH = 1040`, independente do conteúdo.
+- **Correção (task 17):** o popover abre **abaixo** da barra e o core reserva
+  altura extra (`overlay_set_popover_extra_height`) enquanto ele está aberto. A
+  UI mede `.overlay__bar-wrap` com `ResizeObserver`, envia
+  `overlay_set_actionbar_width` e o core redimensiona a janela; âncoras
+  topo-centro/direita reancoram, e o modo livre preserva a posição do usuário. A
+  largura inicial caiu para 700 px e o CSS passou a usar `width: max-content`.
+- **Arquivos:** `src/features/overlay/{Overlay,ActionBar,ChannelMenu}.tsx`,
+  `src/adapters/ipc/overlay.ts`, `src/styles/globals.css`,
+  `src-tauri/src/adapters/overlay/tauri_overlay_window.rs`,
+  `src-tauri/src/ipc/overlay.rs`, `src-tauri/src/ports/overlay_window.rs`,
+  `src-tauri/tauri.conf.json`.
+- **Task:** [`tasks/17-task.md`](tasks/17-task.md)
+- **Dano em dados existentes:** nenhum (a posição livre salva é preservada; o
+  tamanho passa a acompanhar o conteúdo).
 
 ---
 

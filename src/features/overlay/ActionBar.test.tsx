@@ -14,6 +14,7 @@ const base = {
   onResume: vi.fn(),
   onStop: vi.fn(),
   onChannelsChange: vi.fn(),
+  onChannelMenuOpenChange: vi.fn(),
   onStartDrag: vi.fn(),
   startAccelerator: "CommandOrControl+Shift+S",
   askAccelerator: "CommandOrControl+K",
@@ -197,22 +198,26 @@ describe("ActionBar — notch em dois estados", () => {
     expect(button("Transcrição")).toBeDefined();
   });
 
-  it("menu de canais troca ao vivo e começa a capturar na sessão", () => {
+  it("menu de canais troca ao vivo, começa a capturar na sessão e avisa o overlay", () => {
     const onChannelsChange = vi.fn();
     const onStart = vi.fn();
+    const onChannelMenuOpenChange = vi.fn();
     const { rerender } = render(
       <ActionBar
         {...base}
         onChannelsChange={onChannelsChange}
         onStart={onStart}
+        onChannelMenuOpenChange={onChannelMenuOpenChange}
         listening
         paused={false}
       />,
     );
 
     fireEvent.click(button("Canais de áudio"));
+    expect(onChannelMenuOpenChange).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Sistema" }));
     expect(onChannelsChange).toHaveBeenCalledWith(["system"]);
+    expect(onChannelMenuOpenChange).toHaveBeenLastCalledWith(false);
 
     rerender(
       <ActionBar

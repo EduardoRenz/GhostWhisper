@@ -39,6 +39,10 @@ pub trait OverlayWindowController: Send + Sync {
     /// Âncoras fixas reposicionam a janela na área útil do monitor primário;
     /// `Free` preserva a posição atual.
     fn set_hud_layout(&self, density: HudDensity, anchor: NotchAnchor);
+    /// Ajusta a largura lógica da barra (medida pela UI) e reancora se preciso.
+    fn set_actionbar_width(&self, width: f64);
+    /// Reserva altura extra abaixo da barra enquanto um popover está aberto.
+    fn set_popover_extra_height(&self, extra: f64);
     /// Define se o redimensionamento deve reancorar pela base.
     ///
     /// `false` após o usuário mover a janela (posição passa a ser preservada).

@@ -136,28 +136,33 @@ pub struct SuggestionCadenceEvent {
     pub remaining_ms: i64,      // até a próxima janela automática
     pub awaiting_speech: bool,  // janela vencida, mas sem fala nova
     pub window_ms: i64,         // duração do ciclo (anel de progresso)
+    pub generating: bool,       // geração automática em andamento
 }
 ```
 
 - Publicado pelo **core** (o agendador é a fonte da verdade) ~1/s **sempre**
   (o frontend só assina quando montado); a UI **não** recalcula a cadência.
-- O intervalo é o **silêncio depois da última fala**: `remaining = intervalo −
-  silêncio`. **Toda fala nova reinicia a contagem**; quando o silêncio completa
-  o intervalo, a sugestão é gerada. Sem fala nova desde a última sugestão,
-  `remaining = 0` + `awaiting_speech` (a pill fica neutra).
+- O intervalo é o **tempo mínimo entre sugestões** (*cooldown*), contado desde
+  a última geração ou desde a abertura da janela. **Fala nova não reinicia** a
+  contagem: ela é o conteúdo que libera a geração. Ao zerar com fala nova,
+  gera; sem fala nova, `remaining = 0` + `awaiting_speech` (a pill mostra
+  “Aguardando”) e a geração sai assim que a próxima fala finalizar.
 - A geração automática só roda com a **janela de Sugestões aberta**
   (`suggestions_window_open`): fechada, o agendador só mantém a cadência — sem
   chamada ao LLM (revisa o BR-028 a pedido do usuário).
-- **Abrir a janela não gera**: o contador **reinicia na abertura**
-  (`min(silêncio da fala, desde a abertura)`) e o auto começa do intervalo; com
-  o automático pausado, nada é gerado — só o botão “Sugerir agora”.
-- O **timer** é o intervalo das settings (`suggestion_interval_secs`, 10–120 s)
-  + o *debounce* de 700 ms (o turno precisa fechar). O agendador usa esse
-  intervalo como frequência máxima — antes ele usava uma constante de 3 s e a
-  configuração era morta.
+- **Abrir a janela não gera**: o contador **reinicia na abertura** e o auto
+  começa do intervalo; com o automático pausado, nada é gerado — só o botão
+  “Sugerir agora”.
+- O **timer** é o intervalo das settings (`suggestion_interval_secs`, 10–120 s).
+  O agendador usa esse intervalo como frequência máxima — antes ele usava uma
+  constante de 3 s e a configuração era morta.
+- **Feedback imediato:** antes de chamar o LLM, o agendador publica
+  `generating = true`; a UI mostra “Gerando”/pill e o anel vira um arco
+  indeterminado. A chamada é síncrona na thread do agendador, então esse evento
+  é o único sinal até a primeira resposta chegar.
 - A UI converte `remaining_ms` em **progress circular** (SVG `stroke-dashoffset`)
-  e na pill de contagem (“12s” / “Pausado” / “0s” quando a janela venceu sem
-  fala nova). O rótulo do controle é sempre **“Auto-sugerir”**.
+  e na pill de contagem (“12s” / “Pausado” / “Aguardando” / “Gerando” / “Sem
+  escuta”). O rótulo do controle é sempre **“Auto-sugerir”**.
 
 ### 3.4.1 Sem fala nova, não há nova sugestão
 - O serviço guarda a **última sugestão da sessão** (cursor + texto).
@@ -254,7 +259,7 @@ Reusa os tokens do design system (BR-035):
 
 | Elemento | Token |
 |---|---|
-| Bloco de resposta rápida | fundo `surface-container-high`, borda esquerda **violeta** (`--oh-ai`), texto em itálico |
+| Bloco de resposta rápida | fundo `surface-container-high`, borda esquerda **violeta** (`--oh-ai`), texto **15px** (legível, sem itálico) |
 | Bloco de resposta completa | fundo `surface-container`, borda hairline, título em `label-sm` mono |
 | Chip de metadados | `surface-container-highest` + `status-badge` mono |
 | Circle de cadência | trilho `rgba(255,255,255,.10)`, arco **cyan** (`--oh-accent`) |

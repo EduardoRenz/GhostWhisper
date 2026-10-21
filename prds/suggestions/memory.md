@@ -386,3 +386,59 @@ nova ou ainda a antiga.”
 - TS: `default` é embutido, é o padrão das settings e é o fallback ao excluir
   um agente personalizado.
 - `cargo test` 451 ✓ · clippy/fmt ✓ · `pnpm test` 294 ✓ · `tsc` ✓.
+
+## 2026-10-20 — Resposta rápida com fonte maior e sem itálico
+
+- **IDs:** BR-038 · **Refs:**
+  [`architecture/suggestions-window.md`](architecture/suggestions-window.md) §6
+
+### Pedido
+A resposta rápida (a que a IA escreve primeiro) estava pequena demais para ler
+na janela de Sugestões.
+
+### Implementação
+- `.suggestion-block__text`: 13px/18px em itálico → **15px** com
+  `line-height: 1.55` e **sem itálico**.
+- A classe é usada só no bloco de resposta rápida; a resposta completa
+  (Markdown 13px), o chat e o resumo não mudam.
+- §6 da arquitetura deixou de citar o itálico e passou a registrar o tamanho.
+
+### Testes
+- `pnpm test` — CSS não tem teste próprio; os componentes de `SuggestionCard`
+  continuam cobertos.
+
+## 2026-10-20 — Cadência do auto-sugerir coerente + feedback de geração (ISS-046)
+
+- **IDs:** ISS-046, BR-028, BR-039 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/09-task.md`](tasks/09-task.md),
+  [`architecture/suggestions-window.md`](architecture/suggestions-window.md) §3.4
+
+### Relato
+*“A contagem regressiva não está correta, o anel não funciona direito, a
+contagem não é coerente; precisei abrir a janela da transcrição para começar a
+contar, e às vezes iniciou a geração sem feedback.”*
+
+### Diagnóstico
+- O timer usava `MAX(timestamp)` (início do segmento) e não o **fim** da fala:
+  falas longas encurtavam o intervalo e podiam disparar na hora.
+- Era um timer de **silêncio**: cada fala nova reiniciava a contagem; em
+  conversa contínua o anel quase nunca completava.
+- A geração automática é síncrona no agendador e o primeiro evento
+  `suggestion` só chegava depois do LLM; não havia estado “gerando”.
+
+### Correção
+- Intervalo vira **cooldown**: tempo mínimo entre sugestões, ancorado na última
+  geração/abertura da janela/sessão/reativação do automático. Fala nova não
+  reinicia; libera a geração quando o contador zera. Sem fala nova,
+  “Aguardando”; ao chegar fala nova, gera no próximo tick.
+- `latest_final_end_ms` usa `MAX(end_ms)` (fim da fala).
+- Evento `suggestion_cadence` ganha `generating`, publicado **antes** do LLM;
+  a UI mostra “Gerando” e o anel vira arco indeterminado.
+- Sem sessão a pill mostra **“Sem escuta”** (em vez de “0s”).
+- Depois da geração o ciclo reinicia cheio e a cadência é publicada na hora.
+
+### Testes
+- Rust: scheduler (12) + repositórios; `cargo test --lib` 544 ✓.
+- TS: `AutoSuggestControl` (7), `SuggestionsWindow` (13),
+  `useSuggestionCadence` (3); `pnpm test` ✓ · `tsc` ✓ · `pnpm build` ✓.
+- AppImage/deb recompilados às **22:00** (Vulkan).

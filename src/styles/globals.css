@@ -50,11 +50,19 @@ body,
   height: 100%;
   display: flex;
   flex-direction: column;
+  align-items: center;
   /* O notch é ancorado pelo TOPO (BR-062): a barra encosta no topo da janela.
      O espaço abaixo é para o aviso do ASR/erro e fica invisível/click-through. */
   justify-content: flex-start;
   gap: var(--hud-gap);
-  padding: 0 var(--hud-pad) var(--hud-pad);
+  padding: 0 0 var(--hud-pad);
+}
+
+/* O notch tem largura do conteúdo: a UI mede este bloco e a janela acompanha. */
+.overlay__bar-wrap {
+  display: flex;
+  width: max-content;
+  padding: 0 var(--hud-pad);
 }
 
 /* Densidade do HUD (BR-062): espaçamento e espessura da barra. */
@@ -75,6 +83,7 @@ body,
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
+  width: max-content;
   gap: var(--oh-space-2);
   height: var(--hud-bar-height);
   padding: 0 var(--oh-space-2) 0 var(--oh-space-3);
@@ -675,8 +684,10 @@ body,
 
 .overlay__error {
   margin: 0;
+  max-width: calc(100% - 2 * var(--hud-pad));
   font-size: var(--oh-label-sm-size);
   color: var(--oh-danger);
+  overflow-wrap: anywhere;
 }
 
 /* Tradução sob demanda na bolha (BR-030) -------------------------------- */
@@ -1627,8 +1638,10 @@ body,
   align-items: center;
   gap: 0.4rem;
   margin: 0.25rem 0 0;
+  max-width: calc(100% - 2 * var(--hud-pad));
   font-size: 0.7rem;
   color: var(--ghostwhisper-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .asr-status--failed {
@@ -3021,6 +3034,33 @@ body,
   stroke: var(--oh-text-muted);
 }
 
+.auto-control--waiting .auto-control__progress {
+  stroke: var(--oh-text-muted);
+}
+
+/* Geração automática em andamento: arco indeterminado girando. */
+.auto-control--generating .auto-control__progress {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: auto-control-spin 1.1s linear infinite;
+}
+
+@keyframes auto-control-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+  to {
+    transform: rotate(270deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auto-control--generating .auto-control__progress {
+    animation: none;
+    opacity: 0.65;
+  }
+}
+
 /* Rótulo: o texto do controle fica sempre visível. */
 .auto-control__label {
   white-space: nowrap;
@@ -3253,12 +3293,13 @@ body,
   color: var(--oh-ai);
 }
 
+/* A resposta rápida é o conteúdo principal do cartão: 15px para leitura
+ * confortável, acima dos 13px do Markdown completo (BR-038). */
 .suggestion-block__text {
   margin: 0;
   color: var(--oh-text);
-  font-size: var(--oh-body-md-size);
-  line-height: var(--oh-body-md-line);
-  font-style: italic;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 /* Identidade do agente (BR-037) -------------------------------------------- */
@@ -3535,7 +3576,7 @@ body,
 .channel-menu__popover {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 10px);
+  top: calc(100% + 10px);
   min-width: 170px;
   padding: 6px;
   display: flex;

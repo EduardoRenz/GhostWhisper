@@ -55,7 +55,7 @@ impl TranscriptionsRepository for InMemoryTranscriptionsRepository {
         Ok(found)
     }
 
-    fn latest_final_ms(&self, session_id: &str) -> Result<Option<i64>> {
+    fn latest_final_end_ms(&self, session_id: &str) -> Result<Option<i64>> {
         Ok(self
             .all()
             .into_iter()
@@ -64,7 +64,7 @@ impl TranscriptionsRepository for InMemoryTranscriptionsRepository {
                     && segment.is_final
                     && !segment.text.trim().is_empty()
             })
-            .map(|segment| segment.start_ms)
+            .map(|segment| segment.end_ms)
             .max())
     }
 }
@@ -87,12 +87,12 @@ mod tests {
     }
 
     #[test]
-    fn latest_final_ms_ignores_previews_and_empty_text() {
+    fn latest_final_end_ms_ignores_previews_and_empty_text() {
         let repo = InMemoryTranscriptionsRepository::new();
         repo.insert(&segment("1", 1_000, "final", true)).unwrap();
         repo.insert(&segment("2", 2_000, "prévia", false)).unwrap();
         repo.insert(&segment("3", 3_000, "  ", true)).unwrap();
-        assert_eq!(repo.latest_final_ms("s1").expect("latest"), Some(1_000));
-        assert_eq!(repo.latest_final_ms("s2").expect("latest"), None);
+        assert_eq!(repo.latest_final_end_ms("s1").expect("latest"), Some(1_500));
+        assert_eq!(repo.latest_final_end_ms("s2").expect("latest"), None);
     }
 }

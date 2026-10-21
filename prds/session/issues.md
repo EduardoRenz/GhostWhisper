@@ -3,7 +3,7 @@
 Registry de bugs e pendências observadas. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-045**.
+único no repositório). Próximo ID livre: **ISS-048**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|

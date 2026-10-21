@@ -159,6 +159,8 @@ mod tests {
             _anchor: crate::domain::hud_layout::NotchAnchor,
         ) {
         }
+        fn set_actionbar_width(&self, _width: f64) {}
+        fn set_popover_extra_height(&self, _extra: f64) {}
         fn set_anchor_bottom(&self, _anchored: bool) {}
         fn anchor_bottom(&self) -> bool {
             true

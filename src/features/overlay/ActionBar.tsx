@@ -28,6 +28,8 @@ interface ActionBarProps {
   onResume: () => void;
   onStop: () => void;
   onChannelsChange: (channels: SessionChannel[]) => void;
+  /** Avisa o overlay para reservar/liberar altura do menu de canais. */
+  onChannelMenuOpenChange?: (open: boolean) => void;
   onStartDrag: () => void;
   /** Atalho de iniciar/encerrar sessão (badges do botão verde). */
   startAccelerator: string;
@@ -76,6 +78,7 @@ export function ActionBar({
   onResume,
   onStop,
   onChannelsChange,
+  onChannelMenuOpenChange,
   onStartDrag,
   startAccelerator,
   askAccelerator,
@@ -180,6 +183,7 @@ export function ActionBar({
             busy={busy}
             onChannelsChange={onChannelsChange}
             onNewSession={onStart}
+            onOpenChange={onChannelMenuOpenChange}
           />
 
           <IconButton

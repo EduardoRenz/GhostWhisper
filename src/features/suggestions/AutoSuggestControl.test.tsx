@@ -8,12 +8,14 @@ const cadence = (overrides: Partial<{
   remaining_ms: number;
   awaiting_speech: boolean;
   window_ms: number;
+  generating: boolean;
 }> = {}) => ({
   enabled: true,
   running: true,
   remaining_ms: 12_000,
   awaiting_speech: false,
   window_ms: 20_000,
+  generating: false,
   ...overrides,
 });
 
@@ -57,7 +59,7 @@ describe("AutoSuggestControl", () => {
     );
   });
 
-  it("zera a contagem quando a janela venceu sem fala nova", () => {
+  it("mostra “Aguardando” quando a janela venceu sem fala nova", () => {
     const { container } = render(
       <AutoSuggestControl
         cadence={cadence({ remaining_ms: 0, awaiting_speech: true })}
@@ -66,9 +68,44 @@ describe("AutoSuggestControl", () => {
       />,
     );
     expect(container.querySelector(".auto-control__count")?.textContent).toBe(
-      "0s",
+      "Aguardando",
     );
     expect(container.querySelector(".auto-control--waiting")).not.toBeNull();
+  });
+
+  it("mostra “Sem escuta” quando não há sessão", () => {
+    const { container } = render(
+      <AutoSuggestControl
+        cadence={cadence({ running: false, remaining_ms: 0 })}
+        paused={false}
+        onToggle={() => {}}
+      />,
+    );
+    expect(container.querySelector(".auto-control__count")?.textContent).toBe(
+      "Sem escuta",
+    );
+    expect(container.querySelector(".auto-control")?.getAttribute("title")).toContain(
+      "Sem sessão de escuta",
+    );
+  });
+
+  it("mostra “Gerando” e o arco indeterminado durante a geração", () => {
+    const { container } = render(
+      <AutoSuggestControl
+        cadence={cadence({ remaining_ms: 0, generating: true })}
+        paused={false}
+        onToggle={() => {}}
+      />,
+    );
+    expect(container.querySelector(".auto-control__count")?.textContent).toBe(
+      "Gerando",
+    );
+    expect(container.querySelector(".auto-control--generating")).not.toBeNull();
+    expect(
+      container
+        .querySelector(".auto-control__progress")
+        ?.getAttribute("stroke-dasharray"),
+    ).toContain(" ");
   });
 
   it("esvazia o anel conforme o tempo restante", () => {

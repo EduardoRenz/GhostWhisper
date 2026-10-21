@@ -36,6 +36,8 @@ pub fn run() {
             ipc::overlay::overlay_set_click_through,
             ipc::overlay::overlay_set_interactive_regions,
             ipc::overlay::overlay_set_surface,
+            ipc::overlay::overlay_set_actionbar_width,
+            ipc::overlay::overlay_set_popover_extra_height,
             ipc::overlay::overlay_start_drag,
             ipc::dwell::dwell_show,
             ipc::dwell::dwell_hide,
@@ -750,11 +752,10 @@ fn open_panel_tab(app: &tauri::AppHandle, label: &str, tab: &str) {
 
 /// Intervalo de verificação do agendador de sugestões (ms).
 const SUGGESTION_TICK_MS: u64 = 1_000;
-/// Piso do silêncio depois da fala antes de sugerir (ms).
+/// Piso do intervalo do auto-sugerir (ms).
 ///
-/// O silêncio real vem das settings (`suggestion_interval_secs`, 10–120 s) —
-/// é o "timer" que a janela de Sugestões mostra na contagem regressiva
-/// (BR-039). Uma fala nova reinicia a contagem.
+/// O intervalo real vem das settings (`suggestion_interval_secs`, 10–120 s) —
+/// é o **cooldown** mostrado na contagem regressiva (BR-039).
 const SUGGESTION_MIN_INTERVAL_MS: i64 = 1_000;
 
 /// Gera sugestões automáticas com a janela de Sugestões **aberta** (BR-028).
@@ -770,95 +771,117 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut cursor: Option<i64> = None;
         let mut current_session: Option<String> = None;
-        // Quando a janela de Sugestões abriu (reinicia a contagem do auto).
-        let mut window_opened_at: Option<std::time::Instant> = None;
+        // Início do ciclo atual (cooldown): última geração, abertura da janela,
+        // sessão nova ou reativação do automático.
+        let mut cycle_started = std::time::Instant::now();
+        let mut window_was_open = false;
+        let mut auto_was_enabled = false;
         loop {
             std::thread::sleep(Duration::from_millis(SUGGESTION_TICK_MS));
             let state = app.state::<state::AppState>();
             let Ok(settings) = state.settings.load() else {
                 continue;
             };
-            // A janela fechada não gera; abrir reinicia a contagem.
+            let interval_ms = (settings.suggestion_interval_secs as i64)
+                .saturating_mul(1_000)
+                .max(SUGGESTION_MIN_INTERVAL_MS);
+            // Abrir a janela reinicia o ciclo (a janela não gera ao abrir).
             let window_open = suggestions_window_open(&app);
-            match (window_open, window_opened_at) {
-                (true, None) => window_opened_at = Some(std::time::Instant::now()),
-                (false, _) => window_opened_at = None,
-                _ => {}
+            if window_open && !window_was_open {
+                cycle_started = std::time::Instant::now();
             }
-            let ms_since_window_open = window_opened_at
-                .map(|instant| instant.elapsed().as_millis() as i64)
-                .unwrap_or(i64::MAX);
+            window_was_open = window_open;
+            // Ligar o automático também começa um ciclo cheio.
+            if settings.suggestion_auto_refresh && !auto_was_enabled {
+                cycle_started = std::time::Instant::now();
+            }
+            auto_was_enabled = settings.suggestion_auto_refresh;
+
             let session_id = state.session.current_session_id();
             if session_id != current_session {
                 // Sessao nova: o cursor recomeca (a primeira sugestao nao
-                // compara com a fala da sessao anterior).
+                // compara com a fala da sessao anterior) e o ciclo tambem.
                 current_session = session_id.clone();
                 cursor = None;
+                cycle_started = std::time::Instant::now();
             }
             let Some(session_id) = session_id else {
-                // Sem sessao: publica a cadencia ociosa (a UI mostra "pausado").
+                // Sem sessao: publica a cadencia ociosa (a UI mostra "sem escuta").
                 publish_cadence(
                     &state,
                     None,
-                    SUGGESTION_MIN_INTERVAL_MS,
+                    interval_ms,
                     settings.suggestion_auto_refresh,
+                    false,
                 );
                 continue;
             };
-            let Ok(Some(session)) = state.sessions.get(&session_id) else {
-                continue;
-            };
+            // Fim da última fala final: o conteúdo novo é o que libera a geração.
             let latest_final_ms = state
                 .transcriptions
-                .latest_final_ms(&session_id)
+                .latest_final_end_ms(&session_id)
                 .unwrap_or(None);
-            let now_rel = (state.clock.now_ms() - session.started_at_ms).max(0);
             let tick = SchedulerTick {
                 enabled: settings.suggestion_auto_refresh,
                 has_session: true,
                 cursor_ms: cursor,
                 latest_final_ms,
-                ms_since_latest_final: latest_final_ms
-                    .map(|latest| now_rel - latest)
-                    .unwrap_or(i64::MAX),
-                ms_since_window_open,
+                elapsed_ms: cycle_started.elapsed().as_millis() as i64,
             };
-            // O silêncio das settings é o timer do automático (BR-039): uma
-            // fala nova reinicia a contagem.
-            let silence_ms = (settings.suggestion_interval_secs as i64)
-                .saturating_mul(1_000)
-                .max(SUGGESTION_MIN_INTERVAL_MS);
             // BR-039: o agendador publica o proprio timer; a UI apenas mostra.
+            let due = window_open && should_trigger(&tick, interval_ms);
+            if !due {
+                publish_cadence(
+                    &state,
+                    Some(&tick),
+                    interval_ms,
+                    settings.suggestion_auto_refresh,
+                    false,
+                );
+                continue;
+            }
+
+            // Feedback imediato: o LLM pode demorar; a UI precisa saber que a
+            // geração automática começou antes do primeiro evento `suggestion`.
             publish_cadence(
                 &state,
                 Some(&tick),
-                silence_ms,
+                interval_ms,
                 settings.suggestion_auto_refresh,
+                true,
             );
-            // Só gera com a janela de Sugestões **aberta** (pedido do usuário):
-            // fechada, ninguém está vendo — e o automático não gasta chamada.
-            if !window_open {
-                continue;
-            }
-            if !should_trigger(&tick, silence_ms) {
-                continue;
-            }
             let request =
                 SuggestionRequest::ephemeral(Some(session_id), settings.assistant_mode_id.clone())
                     .with_since_ms(cursor)
                     .with_fast_first(true);
             match state.suggestions.generate(request) {
-                Ok(suggestion) if !suggestion.skipped => {
+                // Sucesso ou `skipped` (nada novo): avança o cursor para o
+                // ponto coberto pela resposta/cache. Sem isso, o `skipped`
+                // repetia a mesma tentativa a cada intervalo.
+                Ok(suggestion) => {
                     cursor = Some(suggestion.context_until_ms);
                 }
-                // `skipped` = nada novo; erro (sem chave, provider fora) não deve
-                // repetir a mesma fala a cada tick: avança o cursor e segue.
-                Ok(_) => {}
                 Err(error) => {
                     tracing::debug!("sugestão automática indisponível: {error}");
                     cursor = latest_final_ms;
                 }
             }
+            // O próximo ciclo começa depois da geração (o usuário tem o
+            // intervalo cheio para ler a sugestão). Publica já, para limpar o
+            // "Gerando" sem esperar o próximo tick e refletir uma pausa feita
+            // durante a geração.
+            cycle_started = std::time::Instant::now();
+            let enabled_now = state
+                .settings
+                .load()
+                .map(|current| current.suggestion_auto_refresh)
+                .unwrap_or(settings.suggestion_auto_refresh);
+            let fresh = SchedulerTick {
+                enabled: enabled_now,
+                elapsed_ms: 0,
+                ..tick
+            };
+            publish_cadence(&state, Some(&fresh), interval_ms, enabled_now, false);
         }
     });
 }
@@ -878,21 +901,23 @@ fn suggestions_window_open(app: &tauri::AppHandle) -> bool {
 fn publish_cadence(
     state: &state::AppState,
     tick: Option<&application::suggestion_scheduler::SchedulerTick>,
-    silence_ms: i64,
+    interval_ms: i64,
     enabled: bool,
+    generating: bool,
 ) {
     use application::suggestion_scheduler::cadence;
     use ports::event_publisher::SuggestionCadenceEvent;
 
     let event = match tick {
         Some(tick) => {
-            let cadence = cadence(tick, silence_ms);
+            let cadence = cadence(tick, interval_ms);
             SuggestionCadenceEvent {
                 enabled: cadence.enabled,
                 running: cadence.running,
                 remaining_ms: cadence.remaining_ms,
                 awaiting_speech: cadence.awaiting_speech,
                 window_ms: cadence.window_ms,
+                generating,
             }
         }
         None => SuggestionCadenceEvent {
@@ -900,7 +925,8 @@ fn publish_cadence(
             running: false,
             remaining_ms: 0,
             awaiting_speech: false,
-            window_ms: silence_ms,
+            window_ms: interval_ms.max(1),
+            generating: false,
         },
     };
     tracing::debug!(
@@ -908,6 +934,7 @@ fn publish_cadence(
         running = event.running,
         remaining_ms = event.remaining_ms,
         awaiting_speech = event.awaiting_speech,
+        generating = event.generating,
         "cadencia do auto-sugerir"
     );
     state.publisher.emit_suggestion_cadence(&event);

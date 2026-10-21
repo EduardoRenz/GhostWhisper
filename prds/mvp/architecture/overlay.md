@@ -93,6 +93,17 @@ janela, mas o **X11** expõe a extensão **SHAPE** (`ShapeRectangles` com
   `start_dragging()`; após o usuário mover, a janela **para de reancorar** pela
   base e a posição é **persistida** (`settings.overlay_position`) e restaurada no
   próximo boot.
+- **Geometria é dos trackers:** posição/tamanho de janela nunca vêm do snapshot
+  de settings que o frontend envia. `settings_set` preserva os valores
+  persistidos e só reaplica âncora/densidade quando elas mudam — salvar uma aba,
+  agente ou select não move o notch (ISS-045).
+- **Largura dinâmica:** a UI mede a barra (`.overlay__bar-wrap`) com
+  `ResizeObserver` e envia `overlay_set_actionbar_width`; a janela acompanha o
+  conteúdo e reancora em topo-centro/direita. Em "Flutuante Livre" o canto
+  superior é preservado (ISS-047).
+- **Popover de canais:** abre **abaixo** da barra; enquanto aberto, o core
+  reserva altura extra (`overlay_set_popover_extra_height`) para o menu caber na
+  janela e receber cliques (ISS-047).
 
 > Ver também: a conversa em bolhas, o transporte por ícones e a pílula de sessão
 > estão especificados em [`../../chat/architecture/chat-ui.md`](../../chat/architecture/chat-ui.md)

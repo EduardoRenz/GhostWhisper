@@ -90,6 +90,31 @@ pub fn overlay_set_surface(
     Ok(())
 }
 
+/// Ajusta a largura lógica da barra (medida pela UI) — a janela acompanha o
+/// conteúdo, sem sobra fixa.
+#[tauri::command]
+pub fn overlay_set_actionbar_width(state: State<'_, AppState>, width: f64) -> Result<()> {
+    if !width.is_finite() || width <= 0.0 {
+        return Err(GhostWhisperError::Config(format!(
+            "largura da barra inválida: {width}"
+        )));
+    }
+    state.overlay.set_actionbar_width(width);
+    Ok(())
+}
+
+/// Reserva/libera altura extra abaixo da barra (menu de canais aberto).
+#[tauri::command]
+pub fn overlay_set_popover_extra_height(state: State<'_, AppState>, height: f64) -> Result<()> {
+    if !height.is_finite() || height < 0.0 {
+        return Err(GhostWhisperError::Config(format!(
+            "altura extra inválida: {height}"
+        )));
+    }
+    state.overlay.set_popover_extra_height(height);
+    Ok(())
+}
+
 /// Inicia o arraste da janela pelo usuário (posição passa a ser preservada).
 #[tauri::command]
 pub fn overlay_start_drag(
