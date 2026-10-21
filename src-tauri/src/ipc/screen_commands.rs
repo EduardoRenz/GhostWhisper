@@ -6,6 +6,7 @@ use base64::Engine;
 use tauri::{Emitter, Manager, State};
 
 use crate::error::Result;
+use crate::ipc::window_visibility::{assert_above, show_above};
 use crate::ports::screen_capture::CapturedImage;
 use crate::state::AppState;
 
@@ -69,8 +70,10 @@ pub fn screen_capture(
     state: State<'_, AppState>,
 ) -> Result<CapturedImageDto> {
     // Guarda a posição da barra antes do hide: ela pode ter sido arrastada
-    // menos de um ciclo antes do tracker periódico.
+    // menos de um ciclo antes do tracker periódico. A intenção de arraste é
+    // encerrada em seguida para não aceitar posições automáticas do WM.
     crate::ipc::ask_commands::persist_ask_position(&app);
+    crate::ipc::ask_commands::end_ask_drag(&app);
     let (hidden, focused) = hide_app_windows(&app);
     wait_for_hidden(&app, &hidden);
     let captured = state.screen.capture();
@@ -101,7 +104,7 @@ pub fn capture_clear(app: tauri::AppHandle, state: State<'_, AppState>) -> Resul
 /// Mostra a janela da prévia (canto superior direito).
 fn show_preview(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("capture") {
-        let _ = window.show();
+        let _ = show_above(&window);
         let _ = app.emit_to("capture", "capture_pending", ());
     }
 }
@@ -179,19 +182,30 @@ fn restore_app_windows(app: &tauri::AppHandle, hidden: Vec<HiddenWindow>, focuse
     for snapshot in &hidden {
         if let Some(window) = app.get_webview_window(&snapshot.label) {
             if let Some(position) = snapshot.position {
-                let _ = window.set_position(position);
+                if window.outer_position().ok() != Some(position) {
+                    let _ = window.set_position(position);
+                }
             }
             if let Some(size) = snapshot.size {
-                let _ = window.set_size(size);
+                if window.inner_size().ok() != Some(size) {
+                    let _ = window.set_size(size);
+                }
             }
             let _ = window.unminimize();
-            let _ = window.show();
+            let _ = show_above(&window);
+            // Reaplica só se o WM tiver mudado a geometria ao mapear; qualquer
+            // resize/move remapeia e pode derrubar o always-on-top.
             if let Some(position) = snapshot.position {
-                let _ = window.set_position(position);
+                if window.outer_position().ok() != Some(position) {
+                    let _ = window.set_position(position);
+                }
             }
             if let Some(size) = snapshot.size {
-                let _ = window.set_size(size);
+                if window.inner_size().ok() != Some(size) {
+                    let _ = window.set_size(size);
+                }
             }
+            assert_above(&window);
         }
     }
     // Devolve o foco a quem o tinha (a barra de pesquisa, normalmente).

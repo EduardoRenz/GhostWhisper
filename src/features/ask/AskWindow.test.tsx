@@ -8,6 +8,7 @@ const capturePending = vi.fn();
 const captureClear = vi.fn();
 const askHide = vi.fn();
 const askOpen = vi.fn();
+const askStartDrag = vi.fn();
 const panelOpenTab = vi.fn();
 const subscribe = vi.fn();
 
@@ -24,6 +25,7 @@ vi.mock("../../adapters/ipc/screen", () => ({
 vi.mock("../../adapters/ipc/ask", () => ({
   askHide: (...args: unknown[]) => askHide(...args),
   askOpen: (...args: unknown[]) => askOpen(...args),
+  askStartDrag: (...args: unknown[]) => askStartDrag(...args),
 }));
 
 vi.mock("../../adapters/ipc/panels", () => ({
@@ -45,6 +47,7 @@ describe("AskWindow (barra de pesquisa)", () => {
     captureClear.mockResolvedValue(undefined);
     askHide.mockResolvedValue(undefined);
     askOpen.mockResolvedValue(undefined);
+    askStartDrag.mockResolvedValue(undefined);
     panelOpenTab.mockResolvedValue(undefined);
     subscribe.mockResolvedValue(() => {});
   });
@@ -68,6 +71,16 @@ describe("AskWindow (barra de pesquisa)", () => {
     });
 
     await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+
+  it("a alça inicia o arraste com intenção explícita (BR-072/ISS-057)", () => {
+    render(<AskWindow />);
+
+    fireEvent.pointerDown(
+      screen.getByLabelText("Mover a barra de pesquisa"),
+    );
+
+    expect(askStartDrag).toHaveBeenCalledTimes(1);
   });
 
   it("capturar apenas anexa — não envia a pergunta", async () => {

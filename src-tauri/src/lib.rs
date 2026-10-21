@@ -69,6 +69,7 @@ pub fn run() {
             ipc::session_commands::session_set_language,
             ipc::ask_commands::ask_open,
             ipc::ask_commands::ask_hide,
+            ipc::ask_commands::ask_start_drag,
             ipc::ask_commands::ask_is_open,
             ipc::ask_commands::ask_focus,
             ipc::screen_commands::screen_capture,
@@ -146,6 +147,7 @@ pub fn run() {
         .setup(|app| {
             let app_state = build_app_state(app)?;
             app.manage(app_state);
+            app.manage(ipc::ask_commands::AskDragState::default());
             // A janela de configurações só é escondida ao fechar (nunca
             // destruída), para poder ser reaberta quantas vezes for preciso.
             if let Some(settings_window) = app.get_webview_window("settings") {
@@ -835,7 +837,7 @@ fn open_settings(app: &tauri::AppHandle) {
         return;
     };
     let _ = window.unminimize();
-    if let Err(error) = window.show() {
+    if let Err(error) = ipc::window_visibility::show_above(&window) {
         tracing::warn!("falha ao mostrar configurações: {error}");
     }
     if let Err(error) = window.set_focus() {
@@ -1106,14 +1108,11 @@ fn spawn_ask_position_tracker(app: tauri::AppHandle) {
             continue;
         };
 
-        let state = app.state::<state::AppState>();
-        let Ok(mut settings) = state.settings.load() else {
-            continue;
-        };
         let current = (position.x, position.y);
-        if settings.ask_position != Some(current) {
-            settings.ask_position = Some(current);
-            let _ = state.settings.save(&settings);
+        if crate::ipc::ask_commands::observe_ask_position(&app, current) {
+            let now = app.state::<state::AppState>().clock.now_ms() as u64;
+            app.state::<crate::ipc::ask_commands::AskDragState>()
+                .touch(now);
         }
     });
 }

@@ -8,6 +8,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::domain::recording::Recording;
 use crate::error::Result;
+use crate::ipc::window_visibility::show_above;
 use crate::state::AppState;
 
 /// Evento avisando a janela `session-end` de que há um novo contexto.
@@ -94,7 +95,7 @@ pub fn session_end_open(
     state.pending_session_end.set(&session_id)?;
     if let Some(window) = app.get_webview_window("session-end") {
         let _ = window.center();
-        let _ = window.show();
+        let _ = show_above(&window);
         let _ = window.set_focus();
         // A janela existe desde o boot (oculta): avisa para reler o contexto.
         let _ = window.emit(SESSION_END_OPEN_EVENT, ());

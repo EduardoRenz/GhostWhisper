@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::domain::recording::{RecordingState, RecordingTarget};
 use crate::error::{GhostWhisperError, Result};
+use crate::ipc::window_visibility::show_above;
 use crate::ports::screen_recorder::RecordingCapabilities;
 use crate::state::AppState;
 
@@ -38,7 +39,7 @@ pub fn recording_targets(state: State<'_, AppState>) -> Vec<RecordingTarget> {
 pub fn recording_picker_open(app: tauri::AppHandle, _state: State<'_, AppState>) -> Result<()> {
     if let Some(window) = app.get_webview_window("recording-picker") {
         let _ = window.center();
-        let _ = window.show();
+        let _ = show_above(&window);
         let _ = window.set_focus();
         // A janela existe desde o boot: avisa para reler a lista de alvos.
         let _ = window.emit("recording_picker_open", ());

@@ -3,13 +3,15 @@
 Registry de bugs e pendências observadas. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-056**.
+único no repositório). Próximo ID livre: **ISS-058**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
 | ISS-041 | FTS ancorado no `rowid` da tabela base — quebra num `VACUUM` | Média | FIXED |
 | ISS-042 | Busca FTS com texto do usuário quebra a consulta (sem escape) | Média | FIXED |
 | ISS-055 | Barra “Perguntar” recentraliza e pula depois da captura de tela | Média | FIXED |
+| ISS-056 | Notch fica atrás das janelas depois da captura de tela | Alta | FIXED |
+| ISS-057 | Tracker salva posição automática do WM e corrompe `ask_position` | Alta | FIXED |
 
 ---
 
@@ -139,3 +141,73 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 - **Task:** [`tasks/12-task.md`](tasks/12-task.md)
 - **Dano em dados existentes:** nenhum; `ask_position` ausente vira `None` e a
   barra centraliza uma única vez no próximo boot.
+
+---
+
+## ISS-056 — Notch fica atrás das janelas depois da captura de tela
+
+- **Severidade:** Alta · **Status:** FIXED
+  ([`tasks/13-task.md`](tasks/13-task.md))
+- **Sintoma:** ao usar o atalho de captura de tela, o notch não voltava a
+  aparecer na frente; parecia ficar atrás da tela/janela ativa. Todas as janelas
+  do GhostWhisper deveriam permanecer sempre à frente.
+- **Causa raiz:** a restauração da captura mostrava as janelas com `show()`
+  genérico e, depois do nosso ajuste de geometria (ISS-055), reaplicava
+  `position`/`size` **depois** do mapeamento. No GTK/Mutter isso derruba o hint
+  `_NET_WM_STATE_ABOVE` (mesma classe da ISS-043). O caminho da captura não
+  passava pelo `show()` do controlador do overlay, que era quem reafirmava o
+  `always_on_top`.
+- **Correção (task 13):** BR-073 e helper
+  `ipc::window_visibility::{show_above, assert_above}`:
+  - `show_above` reafirma `alwaysOnTop` antes e depois de `show()`;
+  - a restauração da captura só muda posição/tamanho quando necessário e
+    finaliza com `assert_above` em **todas** as janelas restauradas;
+  - a prévia da captura, Perguntar, painéis, Configurações, seletor de gravação,
+    modal de fim de sessão e dwell usam a mesma reafirmação;
+  - o overlay mantém a reafirmação do adaptador (`apply_stealth`).
+- **Arquivos:** `src-tauri/src/ipc/window_visibility.rs`,
+  `src-tauri/src/ipc/screen_commands.rs`, `ask_commands.rs`,
+  `panel_commands.rs`, `settings_commands.rs`, `session_end_commands.rs`,
+  `recording_commands.rs`, `src-tauri/src/lib.rs`,
+  `src-tauri/src/adapters/dwell/tauri_dwell_popover.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+- **Dano em dados existentes:** nenhum (empilhamento de janela).
+
+---
+
+## ISS-057 — Tracker salva posição automática do WM e corrompe a barra Perguntar
+
+- **Severidade:** Alta · **Status:** FIXED
+  ([`tasks/14-task.md`](tasks/14-task.md))
+- **Sintoma:** a barra “Perguntar” voltou a aparecer no canto superior
+  esquerdo e perdeu a última posição arrastada. O `settings.json` mostrou
+  `ask_position: [0,32]` — a posição de remapeamento do WM — apesar de a
+  posição anterior salva ser `[567,32]`.
+- **Causa raiz:** o tracker periódico e o `persist_ask_position` antes de
+  esconder/capturar gravavam **qualquer** posição observada. Quando o WM
+  remapeava a janela em `[0,32]`, o valor automático substituía a posição do
+  usuário. A primeira correção (ISS-055) cuidou do `show`/`ask_position`, mas
+  não distinguia a **origem** da posição.
+- **Correção (task 14):**
+  - `AskPositionSource { Automatic, UserDrag, InitialPlacement }` em
+    `domain/settings.rs` e `Settings::apply_ask_position`;
+  - `AskDragState` gerenciado pelo Tauri (sem estado global), alimentado pelo
+    novo comando `ask_start_drag`; expira após 2,5 s sem movimento;
+  - tracker e persistência só aceitam `UserDrag`; `Automatic` é descartado e
+    `InitialPlacement` só preenche posição vazia;
+  - reafirmação tardia da posição salva depois do `show` para vencer o
+    mapeamento do WM;
+  - a alça da barra usa `askStartDrag` (não o arraste genérico de painéis).
+- **Testes anti-regressão (R16/R17):**
+  - `automatic_ask_position_never_overwrites_user_position`;
+  - `initial_ask_position_only_fills_empty`;
+  - `drag_intent_expires_after_idle` / `ending_drag_disables_persistence_immediately`;
+  - frontend: a alça chama `askStartDrag`.
+- **Arquivos:** `src-tauri/src/domain/settings.rs`,
+  `src-tauri/src/ipc/ask_commands.rs`, `src-tauri/src/lib.rs`,
+  `src-tauri/src/ipc/screen_commands.rs`,
+  `src/adapters/ipc/ask.ts`, `src/features/ask/AskWindow.tsx`.
+- **Task:** [`tasks/14-task.md`](tasks/14-task.md)
+- **Dano em dados existentes:** o valor `[0,32]` foi reparado para `[567,32]`
+  (última posição conhecida antes da corrupção); daqui em diante posições
+  automáticas não são mais gravadas.

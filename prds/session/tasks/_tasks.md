@@ -18,6 +18,8 @@
 | 10 | Dívida de índices do schema + ancoragem do FTS por `id` | CONCLUDED |
 | 11 | Sinal de transcrição em andamento na aba Transcrição (BR-063) | CONCLUDED |
 | 12 | Janelas não se movem sozinhas; barra “Perguntar” preserva posição (ISS-055) | CONCLUDED |
+| 13 | Todas as janelas sempre à frente após a captura (ISS-056) | CONCLUDED |
+| 14 | Persistência da barra Perguntar só por arraste explícito (ISS-057) | CONCLUDED |
 
 ## Revisão v2 (2026-10-20)
 
@@ -57,6 +59,10 @@ compositor** tirar as janelas antes do `GetImage`.
 - A **09** fecha: BRs, ISS, `memory.md`, verificação e pacotes.
 - A **12** estabiliza a geometria da barra "Perguntar" (ISS-055) e formaliza a
   regra BR-072; depende da 02/06.
+- A **13** garante o empilhamento de todas as janelas após a captura (ISS-056,
+  BR-073) e depende da 12.
+- A **14** separa arraste explícito de posição automática do WM (ISS-057,
+  BR-072/R16/R17) e depende da 12.
 
 ## Entregáveis por camada
 

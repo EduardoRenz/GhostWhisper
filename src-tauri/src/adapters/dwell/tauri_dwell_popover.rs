@@ -113,6 +113,8 @@ impl DwellPopoverController for TauriDwellPopover {
         self.window
             .show()
             .map_err(|e| GhostWhisperError::Other(format!("mostrar popover: {e}")))?;
+        // Remapear/redimensionar pode perder o `_NET_WM_STATE_ABOVE` (BR-073).
+        let _ = self.window.set_always_on_top(true);
         // Geometria **real** após mostrar: o poll do cursor usa estas coordenadas
         // em vez de consultar o webview (que pode estar defasado na 2ª abertura).
         let position = self

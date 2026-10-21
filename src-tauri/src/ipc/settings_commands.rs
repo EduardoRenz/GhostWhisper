@@ -7,6 +7,7 @@ use tauri::{Emitter, State};
 use crate::domain::settings::{ProviderKind, Settings, MAX_OVERLAY_OPACITY, MIN_OVERLAY_OPACITY};
 use crate::domain::shortcuts::ShortcutConflict;
 use crate::error::{GhostWhisperError, Result};
+use crate::ipc::window_visibility::show_above;
 use crate::state::AppState;
 
 /// Abre (ou traz à frente) a janela de configurações.
@@ -19,9 +20,7 @@ pub fn settings_open(app: tauri::AppHandle) -> Result<()> {
         .ok_or_else(|| GhostWhisperError::Other("janela 'settings' não encontrada".to_string()))?;
     // A janela é apenas escondida ao fechar; basta desminimizar e reexibir.
     let _ = window.unminimize();
-    window
-        .show()
-        .map_err(|error| GhostWhisperError::Other(error.to_string()))?;
+    show_above(&window).map_err(|error| GhostWhisperError::Other(error.to_string()))?;
     window
         .set_focus()
         .map_err(|error| GhostWhisperError::Other(error.to_string()))?;

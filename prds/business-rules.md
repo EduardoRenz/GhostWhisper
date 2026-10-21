@@ -1559,6 +1559,34 @@ uma nota de revisão.
 - **Exceções documentadas:** a primeira colocação de cada janela, a mudança
   explícita de âncora/densidade e os popovers ancorados (dwell) — nenhuma
   delas é disparada por interação em outra janela.
-- **Detalhes:** [`session/issues.md`](session/issues.md) ISS-055,
-  [`session/tasks/12-task.md`](session/tasks/12-task.md).
+- **Revisão (2026-10-21):** posição de janela só é **persistida** quando veio
+  de arraste explícito. Para a barra “Perguntar”, o tracker e o save antes de
+  esconder podem observar o WM, mas `AskPositionSource::Automatic` é descartado;
+  `InitialPlacement` só preenche quando ainda não há posição. O teste
+  `automatic_ask_position_never_overwrites_user_position` (R16/R17) cobre a
+  regressão ISS-057.
+- **Detalhes:** [`session/issues.md`](session/issues.md) ISS-055/ISS-057,
+  [`session/tasks/12-task.md`](session/tasks/12-task.md),
+  [`session/tasks/14-task.md`](session/tasks/14-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (revisada)
+
+## BR-073 — Todas as janelas do GhostWhisper ficam sempre à frente
+
+- **Decisão:** toda janela do app usa `alwaysOnTop` e **reafirma**
+  `set_always_on_top(true)` como último passo de qualquer exibição,
+  restauração, redimensionamento ou mudança de layout. Isso vale para overlay
+  (notch), Perguntar, prévia do print, Configurações, painéis, dwell, seletor de
+  gravação e modal de fim de sessão.
+- **Motivo:** no GTK/Mutter o hint `_NET_WM_STATE_ABOVE` pode se perder quando a
+  janela é desmapeada/remapada (`hide`/`show`) ou tem a geometria reaplicada.
+  Após a captura de tela, o notch voltava atrás das outras janelas. O caminho
+  genérico de restauração da captura chamava `show()` direto, sem passar pelo
+  `show()` do controlador do overlay que reafirmava o empilhamento (ISS-043).
+- **Consequência:** um helper único (`ipc::window_visibility`) faz
+  `show_above`/`assert_above` em todos os caminhos de exibição; a restauração da
+  captura só altera posição/tamanho quando o WM realmente mudou a geometria e
+  termina reafirmando o topo. O adaptador do overlay mantém a reafirmação
+  própria (`apply_stealth`), e o dwell reafirma depois do `show`.
+- **Detalhes:** [`session/issues.md`](session/issues.md) ISS-056,
+  [`session/tasks/13-task.md`](session/tasks/13-task.md).
 - **Data:** 2026-10-21 · **Status:** Ativa

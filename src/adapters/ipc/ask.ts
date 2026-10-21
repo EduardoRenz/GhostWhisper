@@ -12,3 +12,7 @@ export const askHide = (): Promise<void | undefined> =>
 /** A barra está visível? */
 export const askIsOpen = (): Promise<boolean | undefined> =>
   invokeSafe<boolean>("ask_is_open");
+
+/** Inicia o arraste explícito da barra (única fonte de posição — BR-072). */
+export const askStartDrag = (): Promise<void | undefined> =>
+  invokeSafe<void>("ask_start_drag");

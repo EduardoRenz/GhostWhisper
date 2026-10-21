@@ -578,6 +578,17 @@ fn default_acceleration() -> String {
     "auto".to_string()
 }
 
+/// Origem de uma posição observada para a barra "Perguntar" (BR-072).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AskPositionSource {
+    /// Posição transitória imposta pelo WM/mapeamento: nunca persiste.
+    Automatic,
+    /// Arraste explícito da alça pelo usuário: persiste.
+    UserDrag,
+    /// Primeira colocação da janela, quando ainda não há posição salva.
+    InitialPlacement,
+}
+
 impl Settings {
     /// Valida invariantes antes de persistir/usar.
     pub fn validate(&self) -> Result<()> {
@@ -748,6 +759,25 @@ impl Settings {
         self.panel_tab = sanitize_panel_tab(&self.panel_tab);
         self.saved_questions = sanitize_saved_questions(self.saved_questions);
         self
+    }
+
+    /// Aplica uma posição da barra "Perguntar" somente se ela for confiável.
+    ///
+    /// O WM pode remapear a janela em `0,0`/no canto ao mostrar; essa posição
+    /// automática **não** pode sobrescrever o último ponto escolhido pelo
+    /// usuário. Só `UserDrag` substitui uma posição existente; a colocação
+    /// inicial só preenche quando ainda não há nenhuma (BR-072/ISS-057).
+    pub fn apply_ask_position(&mut self, position: (i32, i32), source: AskPositionSource) -> bool {
+        let allowed = match source {
+            AskPositionSource::UserDrag => true,
+            AskPositionSource::InitialPlacement => self.ask_position.is_none(),
+            AskPositionSource::Automatic => false,
+        };
+        if !allowed || self.ask_position == Some(position) {
+            return false;
+        }
+        self.ask_position = Some(position);
+        true
     }
 
     /// Preserva a geometria de janelas (posição/tamanho) já persistida.
@@ -1288,6 +1318,39 @@ mod tests {
         settings.set_panel_position("desconhecido", Some((1, 1)));
         settings.set_panel_size("desconhecido", Some((1, 1)));
         assert_eq!(settings.panel_position("desconhecido"), None);
+    }
+
+    /// Regressão ISS-057: o WM mapeia a janela no canto; a posição
+    /// automática não pode substituir a última posição arrastada.
+    #[test]
+    fn automatic_ask_position_never_overwrites_user_position() {
+        let mut settings = Settings {
+            ask_position: Some((567, 32)),
+            ..Settings::default()
+        };
+
+        // O WM mapeou a janela no canto; isso não pode virar a posição salva.
+        assert!(!settings.apply_ask_position((0, 32), AskPositionSource::Automatic));
+        assert_eq!(settings.ask_position, Some((567, 32)));
+
+        // Arraste explícito é a única fonte que substitui a posição.
+        assert!(settings.apply_ask_position((250, 450), AskPositionSource::UserDrag));
+        assert_eq!(settings.ask_position, Some((250, 450)));
+    }
+
+    /// A centralização inicial só vale quando ainda não há posição salva.
+    #[test]
+    fn initial_ask_position_only_fills_empty() {
+        let mut empty = Settings::default();
+        assert!(empty.apply_ask_position((440, 12), AskPositionSource::InitialPlacement));
+        assert_eq!(empty.ask_position, Some((440, 12)));
+
+        let mut saved = Settings {
+            ask_position: Some((567, 32)),
+            ..Settings::default()
+        };
+        assert!(!saved.apply_ask_position((440, 12), AskPositionSource::InitialPlacement));
+        assert_eq!(saved.ask_position, Some((567, 32)));
     }
 
     #[test]

@@ -492,3 +492,86 @@ que deixei sempre.”*
 - `cargo test --lib` **596 ✓** · clippy `-D warnings` ✓ · rustfmt ✓.
 - Estado do usuário restaurado do backup (`ask_position = [398,343]`) e pacotes
   gerados às 15:04.
+
+## 2026-10-21 — Notch atrás das janelas após o print (ISS-056, task 13)
+
+- **IDs:** ISS-056, T13, BR-073
+- **Refs:** [`issues.md`](issues.md), [`tasks/13-task.md`](tasks/13-task.md)
+
+### Relato
+*“Ao usar o atalho para tirar print, o Notch não volta; me parece que ele fica
+atrás da tela. A ideia é que todas as janelas do GhostWhisper sempre fiquem à
+frente.”*
+
+### Diagnóstico
+- A captura restaura as janelas com `show()` genérico.
+- A correção da ISS-055 passou a reaplicar `position`/`size` **depois** do
+  `show`; no GTK/Mutter esse remapeamento derruba `_NET_WM_STATE_ABOVE`
+  (ISS-043).
+- O overlay só reafirmava o topo dentro do seu próprio controlador
+  (`TauriOverlayWindow::show`/`apply_stealth`), mas a captura chamava
+  `WebviewWindow::show()` direto.
+
+### Correção
+- Novo helper `ipc::window_visibility::{show_above, assert_above}`: reafirma
+  `alwaysOnTop` antes/depois do `show`.
+- A restauração da captura só altera geometria quando o WM realmente mudou e
+  termina com `assert_above` em todas as janelas.
+- Prévia do print, Perguntar, painéis, Configurações, seletor de gravação,
+  modal de fim de sessão, dwell e o tray usam a mesma reafirmação.
+- BR-073 formaliza “todas as janelas sempre à frente”.
+
+### Verificação
+- `cargo test --lib` **596 ✓** · clippy `-D warnings` ✓ · rustfmt ✓.
+- `pnpm test` **387 ✓** · `tsc` ✓ · build do AppImage em andamento.
+
+### Validação
+- O AppImage final foi aberto no Xvfb; o overlay iniciava sem `_NET_WM_STATE`.
+- Após o atalho de print (ciclo hide/captura/show), `xprop` passou a mostrar:
+  - overlay: `_NET_WM_STATE_ABOVE, _NET_WM_STATE_SKIP_TASKBAR,
+    _NET_WM_STATE_SKIP_PAGER`;
+  - Perguntar e prévia do print: os mesmos flags.
+- Geometria preservada: overlay `554,855`, Perguntar `567,32`, prévia
+  `1664,16`. Estado do usuário restaurado do backup; pacotes às 15:36.
+
+## 2026-10-21 — Regressão: tracker voltou a salvar posição automática do WM (ISS-057, task 14)
+
+- **IDs:** ISS-057, T14, BR-072, R16, R17
+- **Refs:** [`issues.md`](issues.md), [`tasks/14-task.md`](tasks/14-task.md),
+  [`../../.agents/rules.md`](../../.agents/rules.md) §4
+
+### Relato
+*“Voltou um problema que havia acabado de resolver: a Search bar perdeu a
+posição que deixei. Como impedir regressões? Talvez testes de regressão.”*
+
+### Diagnóstico
+- O `settings.json` tinha `ask_position: [0,32]` (canto do WM), embora a
+  posição anterior conhecida fosse `[567,32]`.
+- O `show` reaplicava a posição salva, mas o **tracker** e o
+  `persist_ask_position` antes de esconder/capturar gravavam qualquer posição
+  observada. Uma posição automática do WM substituía a escolha do usuário.
+- A correção anterior (ISS-055) tratava o reposicionamento, não a **origem**
+  da posição persistida.
+
+### Correção
+- `AskPositionSource` no domínio e `Settings::apply_ask_position`:
+  `Automatic` nunca persiste, `UserDrag` substitui, `InitialPlacement` só
+  preenche posição vazia.
+- `AskDragState` gerenciado pelo Tauri, iniciado por `ask_start_drag` e expirando
+  em 2,5 s; a alça da barra usa esse comando em vez do arraste genérico.
+- Tracker e persistência classificam a origem; posições automáticas do WM são
+  descartadas.
+- Reafirmação tardia da posição salva depois do `show` vence o mapeamento do WM.
+- Regras R16/R17 adicionadas: teste anti-regressão obrigatório e decisão de
+  ambiente isolada em lógica pura.
+
+### Verificação
+- Testes novos: `automatic_ask_position_never_overwrites_user_position`,
+  `initial_ask_position_only_fills_empty`, `drag_intent_expires_after_idle`,
+  `ending_drag_disables_persistence_immediately` e o teste da alça no frontend.
+- `cargo test --lib` **600 ✓** (10 ignorados) · clippy `-D warnings` ✓ ·
+  rustfmt ✓.
+- `pnpm test` **388 ✓** · `tsc --noEmit` ✓.
+- AppImage 15:52: movimento automático para `[0,32]` foi ignorado
+  (`ask_position` permaneceu `[567,32]`); arraste real para `271,272` foi
+  persistido e sobreviveu a fechar/reabrir/capturar. Estado restaurado.

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { askHide, askOpen } from "../../adapters/ipc/ask";
-import { panelStartDrag } from "../../adapters/ipc/panels";
+import { askHide, askOpen, askStartDrag } from "../../adapters/ipc/ask";
 import { journalAsk } from "../../adapters/ipc/journal";
 import { panelOpenTab } from "../../adapters/ipc/panels";
 import {
@@ -210,7 +209,7 @@ export function AskWindow() {
         focusSignal={focusSignal}
         busy={busy}
         attached={attached}
-        onStartDrag={() => void panelStartDrag()}
+        onStartDrag={() => void askStartDrag()}
         presets={presets}
         onPreset={(text) => void ask(text)}
         askAccelerator={accelerator("focus_ask")}

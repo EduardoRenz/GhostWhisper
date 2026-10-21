@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 
 use crate::domain::settings::PANEL_LABELS;
 use crate::error::{GhostWhisperError, Result};
+use crate::ipc::window_visibility::show_above;
 
 /// Evento emitido quando um painel fica visível.
 pub const PANEL_OPENED_EVENT: &str = "panel_opened";
@@ -38,9 +39,7 @@ pub fn panel_open(app: tauri::AppHandle, label: String, tab: Option<String>) -> 
         .get_webview_window(&label)
         .ok_or_else(|| GhostWhisperError::Other(format!("janela '{label}' não encontrada")))?;
     let _ = window.unminimize();
-    window
-        .show()
-        .map_err(|error| GhostWhisperError::Other(error.to_string()))?;
+    show_above(&window).map_err(|error| GhostWhisperError::Other(error.to_string()))?;
     window
         .set_focus()
         .map_err(|error| GhostWhisperError::Other(error.to_string()))?;

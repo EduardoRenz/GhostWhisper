@@ -63,6 +63,9 @@ pnpm test             # testes do frontend
 - Não instanciar adaptadores fora de `lib.rs`.
 - Nunca logar segredos ou áudio.
 - Toda porta tem uma dobra de teste.
+- **Todo bug corrigido ganha teste anti-regressão** que falharia no código
+  anterior; causas de WM/timing devem ser isoladas em lógica pura testável
+  (R16/R17).
 - **Documentação é fonte única:** cite arquivos e IDs (`BR-015`, `ISS-011`,
   `12-task`) em vez de duplicar conteúdo (R14, BR-016).
 - **Histórico por PRD:** `memory.md` vive em `prds/<prd>/memory.md`; entradas

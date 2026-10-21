@@ -318,10 +318,11 @@ boot e só muda quando o usuário arrasta a alça (BR-072):
 - `Esc` fecha a barra sem perguntar.
 - **Posição estável:** `show_ask_window` reaplica `ask_position` antes e
   depois do `show` (alguns WMs mapeiam a janela oculta em `0,0`), mas nunca
-  centraliza quando há posição salva. O tracker grava `ask_position` enquanto
-  a barra está visível; `ask_hide` e a captura também persistem o último ponto
-  antes de esconder. Abrir/fechar/capturar/salvar settings não muda a barra de
-  lugar (BR-072/ISS-055).
+  centraliza quando há posição salva. **Só arraste explícito persiste:** a alça
+  chama `ask_start_drag`, que ativa `AskDragState`; tracker e persistência
+  classificam a origem (`UserDrag` × `Automatic`) e descartam posições do WM
+  (BR-072/ISS-055/ISS-057). `InitialPlacement` só preenche quando ainda não há
+  posição. Abrir/fechar/capturar/salvar settings não muda a barra de lugar.
 - O notch mantém o switcher (Transcrição | Resumo | Sugestões) + timer quando
   há gravação; a lupa fica disponível nos dois estados.
 
@@ -334,10 +335,13 @@ quadros para tirar a janela do que está desenhado. Por isso o comando
 1. esconde todas as janelas do app;
 2. espera `HIDE_SETTLE_MS` (200 ms) **e** confirma o `unmap` no Tauri (até
    600 ms);
-3. só então `GetImage`; depois restaura as janelas.
+3. só então `GetImage`; depois restaura as janelas;
+4. na volta, reaplica a geometria salva de cada janela e **reafirma o
+   `alwaysOnTop`** por último (BR-073/ISS-056).
 
 Sem essa espera o print sai com o próprio HUD — regressão observada no teste de
-2026-10-19.
+2026-10-19. A reafirmação de empilhamento é necessária porque o remapeamento
+`hide`/`show`/resize pode perder `_NET_WM_STATE_ABOVE` no GTK/Mutter.
 
 O print capturado **não é enviado**: ele entra na porta `PendingCapture`
 (em memória) e a janela `capture` mostra a prévia no canto superior direito.

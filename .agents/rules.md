@@ -73,6 +73,17 @@ Convenções específicas:
   best-effort via testes de integração.
 - **R10.** Sem dependência global mutável; tempo via porta `Clock`, aleatoriedade
   via porta quando necessário.
+- **R16. Teste anti-regressão obrigatório:** todo bug corrigido ganha um teste
+  que reproduz o cenário do relato e **falharia no código anterior**. O teste
+  deve citar a issue/BR no nome ou comentário (ex.: `automatic_ask_position_…`,
+  `ISS-057`). Correções de geometria/empilhamento/persistência de janela não
+  podem ser aceitas apenas com validação manual.
+- **R17. Isole a decisão do ambiente:** quando a causa depende de WM, X11,
+  timing ou integração externa, extraia a decisão para uma função/estado puro
+  testável (ex.: `apply_ask_position(position, source)`) e teste as entradas que
+  representam o ambiente (posição automática do WM vs. arraste). Se o efeito
+  visual não puder ser automatizado, a task registra o teste manual e o limite
+  explicitamente.
 - Ferramentas: Rust `cargo test`/`mockall`; frontend `vitest` +
   `@testing-library/react`; integração de HTTP com `wiremock`; DB com SQLite
   in-memory; áudio com WAVs de fixture.
