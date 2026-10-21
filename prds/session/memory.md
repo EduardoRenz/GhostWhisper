@@ -367,3 +367,23 @@ IA não sabia o que já tinha respondido (as respostas não entravam no prompt).
   "erros de transcrição", não contém a persona fixa de reunião nem a regra ao
   vivo.
 
+---
+
+## 2026-10-20 — v12: composer compacto de volta na aba Sessão
+
+- **IDs:** BR-053 · **Refs:** [`prd.md`](prd.md) US-02
+
+- **Pedido:** voltar o composer da aba (que a v5 tirou para seguir o mockup),
+  agora **compacto**: campo + sugestões e **print sem prompt**.
+- **O que entrou:**
+  - `features/journal/AskComposer.tsx` — uma linha (câmera + input + enviar),
+    chips das perguntas prontas (scroll horizontal) e a miniatura do print com
+    "×". `Enter` envia; com print, o texto é opcional (a IA decide).
+  - `core/application/usePendingCapture.ts` — o print pendente do core
+    (`capture_pending` + `capture_changed`), compartilhado com a prévia do
+    canto; capturar **só anexa**.
+  - `useJournal.ask`: com print a origem vira `screenshot` **sempre** (antes só
+    quando a origem era `search`), para a miniatura da entrada carregar.
+- **O que continua:** a lupa/Ctrl+K, a barra de pesquisa e o trailer de resumo;
+  a aba segue com a lista (mais recente no topo), o rodapé e o export.
+

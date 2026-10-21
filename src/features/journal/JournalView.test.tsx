@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JournalView } from "./JournalView";
 import type { JournalEntry } from "../../core/domain/journal";
@@ -8,6 +8,9 @@ const journalImages = vi.fn();
 const journalAsk = vi.fn();
 const journalSearch = vi.fn();
 const journalCancel = vi.fn();
+const screenCapture = vi.fn();
+const capturePending = vi.fn();
+const captureClear = vi.fn();
 
 /** Sessão ativa vista pela aba (a mesma que o core informa). */
 const session = vi.hoisted(() => ({
@@ -33,6 +36,18 @@ vi.mock("../../core/application/useSessionState", () => ({
     setChannels: vi.fn(),
   }),
 }));
+
+vi.mock("../../adapters/ipc/screen", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../adapters/ipc/screen")
+  >("../../adapters/ipc/screen");
+  return {
+    ...actual,
+    screenCapture: (...args: unknown[]) => screenCapture(...args),
+    capturePending: (...args: unknown[]) => capturePending(...args),
+    captureClear: (...args: unknown[]) => captureClear(...args),
+  };
+});
 
 vi.mock("../../adapters/ipc/journal", () => ({
   journalList: (...args: unknown[]) => journalList(...args),
@@ -73,6 +88,9 @@ describe("JournalView", () => {
     journalAsk.mockResolvedValue({ entry_id: "e2", answer: "resposta" });
     journalSearch.mockResolvedValue([]);
     journalCancel.mockResolvedValue(undefined);
+    screenCapture.mockResolvedValue(undefined);
+    capturePending.mockResolvedValue(null);
+    captureClear.mockResolvedValue(undefined);
   });
 
   it("mostra origem, pergunta e resposta da IA", async () => {
@@ -172,6 +190,96 @@ describe("JournalView", () => {
     expect(
       await screen.findByText("1 interação registrada nesta sessão"),
     ).toBeTruthy();
+  });
+
+  it("envia a pergunta digitada pelo composer", async () => {
+    render(<JournalView />);
+    const input = await screen.findByLabelText("Pergunta para a IA");
+
+    fireEvent.change(input, { target: { value: "qual o prazo?" } });
+    fireEvent.click(screen.getByLabelText("Perguntar"));
+
+    await waitFor(() => expect(journalAsk).toHaveBeenCalledTimes(1));
+    const request = journalAsk.mock.calls[0]?.[0];
+    expect(request?.question).toBe("qual o prazo?");
+    expect(request?.source).toBe("search");
+    expect(request?.images).toEqual([]);
+  });
+
+  it("Enter também envia", async () => {
+    render(<JournalView />);
+    const input = await screen.findByLabelText("Pergunta para a IA");
+
+    fireEvent.change(input, { target: { value: "com enter" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(journalAsk).toHaveBeenCalledTimes(1));
+    expect(journalAsk.mock.calls[0]?.[0]?.question).toBe("com enter");
+  });
+
+  it("print pendente vira anexo e o envio vai sem texto", async () => {
+    capturePending.mockResolvedValue({
+      mime: "image/jpeg",
+      data: "AAA",
+      width: 1280,
+      height: 720,
+    });
+    render(<JournalView />);
+
+    expect(await screen.findByAltText("Print anexado")).toBeTruthy();
+    // Sem texto, o botão continua habilitado por causa do print.
+    fireEvent.click(screen.getByLabelText("Perguntar"));
+
+    await waitFor(() => expect(journalAsk).toHaveBeenCalledTimes(1));
+    const request = journalAsk.mock.calls[0]?.[0];
+    expect(request?.question).toBe("");
+    expect(request?.source).toBe("screenshot");
+    expect(request?.images).toHaveLength(1);
+    // O print foi consumido (sai da prévia).
+    expect(captureClear).toHaveBeenCalled();
+  });
+
+  it("capturar apenas anexa — não envia", async () => {
+    screenCapture.mockResolvedValue({
+      mime: "image/jpeg",
+      data: "AAA",
+      width: 1280,
+      height: 720,
+    });
+    render(<JournalView />);
+
+    fireEvent.click(await screen.findByLabelText("Capturar a tela"));
+
+    await waitFor(() => expect(screenCapture).toHaveBeenCalledTimes(1));
+    expect(journalAsk).not.toHaveBeenCalled();
+  });
+
+  it("remover o print descarta o anexo", async () => {
+    capturePending.mockResolvedValue({
+      mime: "image/jpeg",
+      data: "AAA",
+      width: 1280,
+      height: 720,
+    });
+    render(<JournalView />);
+
+    await screen.findByAltText("Print anexado");
+    fireEvent.click(screen.getByLabelText("Remover print"));
+
+    await waitFor(() => expect(captureClear).toHaveBeenCalledTimes(1));
+    expect(screen.queryByAltText("Print anexado")).toBeNull();
+  });
+
+  it("clicar num chip de pergunta pronta envia como preset", async () => {
+    render(<JournalView />);
+
+    const chip = await screen.findByTitle("Listar as ações");
+    fireEvent.click(chip);
+
+    await waitFor(() => expect(journalAsk).toHaveBeenCalledTimes(1));
+    const request = journalAsk.mock.calls[0]?.[0];
+    expect(request?.question).toBe("Listar as ações");
+    expect(request?.source).toBe("preset");
   });
 
   it("mostra o estado vazio sem interações", async () => {

@@ -4198,6 +4198,157 @@ body,
   cursor: not-allowed;
 }
 
+/* --- Composer compacto da aba Sessão (BR-053) --------------------------- */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1);
+  padding: var(--oh-space-2) var(--oh-space-3);
+  border-bottom: 1px solid var(--oh-border);
+}
+
+.composer__row {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: var(--oh-surface-container-lowest);
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-label-md-size);
+}
+
+.composer__input::placeholder {
+  color: var(--oh-outline);
+}
+
+.composer__input:focus-visible {
+  outline: none;
+  border-color: var(--oh-primary-container);
+}
+
+.composer__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--oh-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--oh-text-muted);
+  cursor: pointer;
+}
+
+.composer__button:hover:not(:disabled) {
+  color: var(--oh-text-strong);
+  border-color: var(--oh-border-strong);
+}
+
+.composer__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer__button--camera {
+  color: var(--oh-success);
+}
+
+.composer__button--send {
+  border-color: transparent;
+  background: var(--oh-primary-container);
+  color: var(--oh-on-primary-container);
+}
+
+.composer__attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  padding-left: 2px;
+}
+
+.composer__thumb {
+  height: 34px;
+  max-width: 120px;
+  object-fit: cover;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm);
+}
+
+.composer__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--oh-border-strong);
+  border-radius: 50%;
+  background: var(--oh-surface-container-high);
+  color: var(--oh-text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.composer__hint {
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+  color: var(--oh-text-muted);
+}
+
+.composer__presets {
+  display: flex;
+  gap: var(--oh-space-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.composer__presets::-webkit-scrollbar {
+  display: none;
+}
+
+.composer__preset {
+  flex: none;
+  max-width: 240px;
+  overflow: hidden;
+  padding: 2px var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-muted);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.composer__preset:hover:not(:disabled) {
+  border-color: var(--oh-primary-container);
+  color: var(--oh-text-strong);
+}
+
+.composer__preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer__error {
+  margin: 0;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-error);
+}
+
 /* --- Barra "Perguntar": superfície padrão do overlay (BR-052) ------------ */
 
 .askbar {

@@ -144,11 +144,12 @@ mesma aba.
 
 **Critérios de aceite**
 
-- [ ] Perguntar acontece na **barra de pesquisa** (US-00), não num campo
-      dentro da aba (revisão v5, 2026-10-20: o mockup do Perssua mostra a aba
-      como diário puro). Ali: `Enter` envia, `Alt+C` captura a tela, as
-      **perguntas prontas** aparecem como chips em repouso e o texto é
-      opcional quando há print.
+- [ ] Perguntar pode ser pela **barra de pesquisa** (US-00) **ou** pelo
+      **composer compacto** no topo da aba Sessão (revisão v12, 2026-10-20):
+      uma linha com câmera + campo + enviar, as **perguntas prontas** em chips
+      abaixo e o **print sem texto** (o texto é opcional quando há print).
+      Nos dois caminhos: `Enter` envia, capturar **só anexa** e o print
+      pendente é o mesmo do core (a prévia no canto mostra o mesmo estado).
 - [ ] A pergunta é respondida pela **fonte de IA da rota da capacidade
       `Search`** (BR-048) — ou, sem rota, pela fonte primária.
 - [ ] A pergunta leva o **contexto da sessão de forma incremental** (BR-053):

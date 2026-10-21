@@ -8,10 +8,15 @@ import {
   journalImageDataUrl,
   journalImages,
 } from "../../adapters/ipc/journal";
+import { capturedDataUrl, capturePending } from "../../adapters/ipc/screen";
 import { useJournal } from "../../core/application/useJournal";
 import { useSessionState } from "../../core/application/useSessionState";
+import { usePendingCapture } from "../../core/application/usePendingCapture";
+import { useSettings } from "../../core/application/useSettings";
+import { DEFAULT_SAVED_QUESTIONS } from "../../core/domain/settings";
 import { SparkleIcon } from "../../components/icons";
 import type { JournalEntry } from "../../core/domain/journal";
+import { AskComposer } from "./AskComposer";
 import { JournalEntryCard, type JournalAttachment } from "./JournalEntryCard";
 
 /** Nome de arquivo sugerido no "Exportar MD". */
@@ -27,12 +32,21 @@ function exportFileName(): string {
  * Aba **Sessão**: o diário de perguntas da sessão (BR-052) — um registro
  * rolável com origem, pergunta, print e a resposta da IA em Markdown.
  *
- * A interação **mais recente fica no topo**. Perguntar acontece pela lupa do
- * notch (`Ctrl K`), não por um campo dentro da aba.
+ * A interação **mais recente fica no topo**. Perguntar pode ser pela lupa do
+ * notch (`Ctrl K`) ou pelo **composer compacto** no topo da aba (campo +
+ * perguntas prontas + print sem texto).
  */
 export function JournalView() {
   const { state } = useSessionState();
-  const { entries, count, loading, error, ask } = useJournal(state.session_id);
+  const { entries, count, loading, error, busy, ask } = useJournal(state.session_id);
+  const { settings } = useSettings();
+  const {
+    attachment: pending,
+    capturing,
+    error: captureError,
+    capture,
+    clear: clearCapture,
+  } = usePendingCapture();
   const [shots, setShots] = useState<Record<string, JournalAttachment | null>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const requested = useRef<Set<string>>(new Set());
@@ -77,6 +91,23 @@ export function JournalView() {
     });
   }, [entries]);
 
+  const presets = (settings.saved_questions ?? DEFAULT_SAVED_QUESTIONS)
+    .map((saved) => saved.text.trim())
+    .filter((text) => text !== "");
+
+  /** Envia a pergunta levando o print pendente (se houver). */
+  const send = useCallback(
+    async (text: string, source: "search" | "preset") => {
+      const shot = await capturePending();
+      const images = shot ? [{ mime: shot.mime, data: shot.data }] : [];
+      const outcome = await ask(text, images, source);
+      if (outcome && images.length > 0) {
+        await clearCapture();
+      }
+    },
+    [ask, clearCapture],
+  );
+
   const retry = useCallback(
     async (entry: JournalEntry) => {
       const source =
@@ -117,6 +148,16 @@ export function JournalView() {
 
   return (
     <div className="journal" data-interactive>
+      <AskComposer
+        presets={presets}
+        attachment={pending ? capturedDataUrl(pending) : null}
+        busy={busy || capturing}
+        error={captureError}
+        onSend={(text, source) => void send(text, source)}
+        onCapture={() => void capture()}
+        onRemoveAttachment={() => void clearCapture()}
+      />
+
       <div className="journal__list" aria-live="polite">
         {loading && !hasEntries && (
           <p className="chat__empty">Carregando…</p>
@@ -131,8 +172,8 @@ export function JournalView() {
               Nenhuma interação nesta sessão ainda
             </p>
             <p className="journal__empty-hint">
-              Pergunte pela lupa do notch (<strong>Ctrl K</strong>) ou capture a
-              tela (<strong>Alt C</strong>).
+              Pergunte no campo acima (ou pela lupa do notch, <strong>Ctrl K</strong>)
+              e capture a tela com <strong>Alt C</strong>.
             </p>
           </div>
         )}

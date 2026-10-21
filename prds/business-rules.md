@@ -1139,6 +1139,12 @@ uma nota de revisão.
   pares pergunta/resposta anteriores (janela deslizante de **5**, teto de
   1 500 chars), em `<previous_questions>`. Entradas `pending`/`error`/
   `cancelled` **não** movem o corte.
+- **Revisão 5 (2026-10-20) — o composer volta, compacto:** a aba Sessão tem de
+  novo um **composer compacto** (uma linha: câmera + campo + enviar) com as
+  **perguntas prontas** em chips e o **print sem texto** (capturar só anexa; o
+  texto é opcional com print). O print pendente é o **mesmo do core**
+  (`capture_pending`), compartilhado com a barra de pesquisa e a prévia do
+  canto, então os dois caminhos não divergem. A lupa/Ctrl+K continua valendo.
 - **Revisão 4 (2026-10-20) — persona e "nunca perguntar de volta":** a Busca usa
   o **agente Padrão** (BR-059) — o que identifica a cena e se adapta — e não
   uma persona fixa de reunião. A pergunta pode vir de **ditado** e chegar com

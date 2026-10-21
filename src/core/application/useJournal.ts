@@ -211,7 +211,9 @@ export function useJournal(activeSessionId: string | null = null): UseJournal {
         const outcome = await journalAsk({
           question,
           images,
-          source: images.length > 0 && source === "search" ? "screenshot" : source,
+          // Com print, a origem é `screenshot` (é ela que carrega a miniatura
+          // e mostra "Screenshot + Texto"); sem print vale a origem pedida.
+          source: images.length > 0 ? "screenshot" : source,
         });
         await load();
         return outcome;
