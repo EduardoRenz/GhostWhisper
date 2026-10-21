@@ -96,6 +96,7 @@ pub fn run() {
             ipc::recording_commands::recording_stop,
             ipc::recording_commands::recording_state,
             ipc::recording_commands::recording_discard,
+            ipc::recording_commands::recording_switch_target,
             ipc::recording_commands::recording_targets,
             ipc::recording_commands::recording_picker_open,
             ipc::recording_commands::recording_picker_close,

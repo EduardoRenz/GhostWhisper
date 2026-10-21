@@ -7,6 +7,7 @@ import {
   recordingPickerClose,
   recordingStartWith,
   recordingState,
+  recordingSwitchTarget,
   recordingTargets,
 } from "../../adapters/ipc/recording";
 import { WindowHeader } from "../../components/WindowHeader";
@@ -16,15 +17,15 @@ import type { RecordingTarget } from "../../core/domain/recording";
 /**
  * Seletor de alvo da gravação (BR-070).
  *
- * Aberto pelo clique secundário no botão de câmera. Lista a tela inteira e as
- * janelas abertas; a escolha inicia a gravação. Como o alvo é congelado na
- * sessão, o seletor fica bloqueado enquanto já existe gravação em andamento.
+ * Aberto pelo clique secundário no botão de câmera. Lista a tela inteira, os
+ * monitores e as janelas. Sem gravação, a escolha inicia; com gravação em
+ * andamento, **troca o alvo** (fecha um segmento e abre outro no mesmo arquivo).
  */
 export function RecordingPickerWindow() {
   const [targets, setTargets] = useState<RecordingTarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState(false);
+  const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const close = useCallback(() => {
@@ -35,7 +36,7 @@ export function RecordingPickerWindow() {
     setLoading(true);
     setError(null);
     const current = await recordingState();
-    setBlocked(
+    setActive(
       current
         ? current.status === "recording" || current.status === "paused"
         : false,
@@ -81,13 +82,17 @@ export function RecordingPickerWindow() {
   };
 
   const pick = async (target: RecordingTarget) => {
-    if (busy || blocked) {
+    if (busy) {
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      await recordingStartWith(target);
+      if (active) {
+        await recordingSwitchTarget(target);
+      } else {
+        await recordingStartWith(target);
+      }
       await recordingPickerClose();
     } catch (caught) {
       setError(String(caught));
@@ -101,7 +106,11 @@ export function RecordingPickerWindow() {
         <WindowHeader
           className="recording-picker__header"
           title="Gravar janela"
-          subtitle="O GhostWhisper não entra na captura da janela"
+          subtitle={
+            active
+              ? "Trocar o alvo da gravação"
+              : "O GhostWhisper não entra na captura da janela"
+          }
           icon={<VideoCameraIcon size={18} />}
           onStartDrag={startDrag}
           onClose={close}
@@ -109,10 +118,10 @@ export function RecordingPickerWindow() {
           dragLabel="Mover seletor"
         />
 
-        {blocked ? (
+        {active ? (
           <p className="recording-picker__notice">
-            Já existe uma gravação em andamento. Pare a atual para escolher
-            outro alvo.
+            A gravação continua no mesmo arquivo; o trecho novo entra com
+            recorte.
           </p>
         ) : null}
 
@@ -132,7 +141,7 @@ export function RecordingPickerWindow() {
                   <button
                     type="button"
                     className="recording-picker__item"
-                    disabled={busy || blocked}
+                    disabled={busy}
                     onClick={() => void pick(target)}
                   >
                     <span className="recording-picker__item-icon">
@@ -160,7 +169,9 @@ export function RecordingPickerWindow() {
         {error ? <p className="recording-picker__error">{error}</p> : null}
 
         <footer className="recording-picker__footer">
-          <span>Clique para iniciar a gravação</span>
+          <span>
+            {active ? "Clique para trocar o alvo" : "Clique para iniciar a gravação"}
+          </span>
           <button type="button" className="recording-picker__cancel" onClick={close}>
             Cancelar
           </button>

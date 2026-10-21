@@ -1500,10 +1500,15 @@ uma nota de revisão.
   (KDE Plasma 6.6+ "Hide from Screencast") é caminho futuro, não v1. Janela
   fechada/minimizada/redimensionada encerra o segmento; se as dimensões mudarem,
   a finalização reencoda com `scale`/`pad` e mostra progresso.
+- **Revisão (2026-10-21):** o alvo pode ser **trocado no meio da gravação**
+  (seletor, clique direito) e há a opção **"Seguir a janela ativa"** (debounce
+  de 1 s). Quando as dimensões mudam entre segmentos, a finalização reencoda
+  com `scale`+`pad` para o tamanho do primeiro — o `-c copy` só vale com
+  geometria constante.
 - **Detalhes:** [`recording/prd.md`](recording/prd.md) US-06;
   [`recording/architecture/recording.md`](recording/architecture/recording.md) §5.3;
   [`mvp/architecture/wayland-spike.md`](mvp/architecture/wayland-spike.md) §2–§3.
-- **Data:** 2026-10-21 · **Status:** Ativa
+- **Data:** 2026-10-21 · **Status:** Ativa (revisada)
 
 ## BR-071 — Gravação é local, silenciosa e com indicador visível
 

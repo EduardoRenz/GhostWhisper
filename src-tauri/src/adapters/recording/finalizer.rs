@@ -130,21 +130,28 @@ impl RecordingFinalizer for FfmpegRecordingFinalizer {
                 request.total_ms,
                 progress,
             )?,
-            (RecordingKind::Video, Some(audio)) => self.run(
-                &fallback_mux_args(&concat, audio, &request.output),
-                request.total_ms,
-                progress,
-            )?,
+            (RecordingKind::Video, Some(audio)) => {
+                let normalize = request
+                    .normalize
+                    .then(|| normalize_size(request));
+                self.run(
+                    &fallback_mux_args(&concat, audio, &request.output, normalize),
+                    request.total_ms,
+                    progress,
+                )?
+            }
             _ => {
-                if let Err(first_error) =
+                if request.normalize {
+                    let (width, height) = normalize_size(request);
+                    self.run(
+                        &normalize_args(&concat, width, height),
+                        request.total_ms,
+                        progress,
+                    )?;
+                } else if let Err(first_error) =
                     self.run(&concat_args(&concat), request.total_ms, progress)
                 {
-                    let (width, height) = request.spec.target.dimensions();
-                    let (width, height) = if width == 0 || height == 0 {
-                        (1920, 1080)
-                    } else {
-                        (width, height)
-                    };
+                    let (width, height) = normalize_size(request);
                     tracing::warn!(
                         "concat direto falhou ({first_error}); reencodando {width}x{height} (ISS-053)"
                     );
@@ -160,7 +167,7 @@ impl RecordingFinalizer for FfmpegRecordingFinalizer {
         let size_bytes = std::fs::metadata(&request.output)
             .map(|meta| meta.len())
             .unwrap_or(0);
-        let (width, height) = request.spec.target.dimensions();
+        let (width, height) = normalize_size(request);
 
         Ok(RecordingArtifact {
             path: request.output.clone(),
@@ -173,6 +180,19 @@ impl RecordingFinalizer for FfmpegRecordingFinalizer {
 
     fn cleanup(&self, parts: &[PathBuf], output: &Path) {
         cleanup_parts(parts, output);
+    }
+}
+
+/// Dimensões-base da finalização (primeiro segmento; 1920×1080 como piso).
+fn normalize_size(request: &FinalizeRequest) -> (u32, u32) {
+    if request.width > 0 && request.height > 0 {
+        return (request.width, request.height);
+    }
+    let (width, height) = request.spec.target.dimensions();
+    if width > 0 && height > 0 {
+        (width, height)
+    } else {
+        (1920, 1080)
     }
 }
 

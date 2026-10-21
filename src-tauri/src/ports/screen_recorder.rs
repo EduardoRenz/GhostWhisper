@@ -73,6 +73,8 @@ pub trait ScreenRecorder: Send + Sync {
     fn resume(&self) -> Result<()>;
     /// Fecha o último segmento.
     fn stop(&self) -> Result<()>;
+    /// Troca o alvo no meio da gravação (fecha um segmento e abre outro).
+    fn switch_target(&self, target: crate::domain::recording::RecordingTarget) -> Result<()>;
     /// Segmentos fechados até agora, na ordem.
     fn segments(&self) -> Vec<PathBuf>;
     /// Duração de cada segmento (ms), medida no fechamento.
@@ -93,6 +95,12 @@ pub struct FinalizeRequest {
     pub spec: RecordingSpec,
     /// Soma das durações dos segmentos (denominador da barra).
     pub total_ms: i64,
+    /// Dimensões do **primeiro** segmento (alvo do `scale`+`pad` quando os
+    /// trechos têm tamanhos diferentes — troca de janela).
+    pub width: u32,
+    pub height: u32,
+    /// Reencodar (dimensões mudaram entre segmentos)? `-c copy` não serve.
+    pub normalize: bool,
     /// Áudio cru do fallback (`parec`), quando usado.
     pub audio: Option<FallbackAudio>,
 }

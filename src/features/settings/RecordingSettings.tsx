@@ -156,6 +156,25 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
               </button>
             ))}
           </div>
+
+          <div className="settings__field settings__field--row">
+            <span>Seguir a janela ativa</span>
+            <label className="settings__toggle">
+              <input
+                type="checkbox"
+                aria-label="Seguir a janela ativa durante a gravação"
+                checked={settings.recording_follow_active}
+                onChange={(event) =>
+                  update("recording_follow_active", event.target.checked)
+                }
+              />
+              <span className="settings__toggle-track" aria-hidden="true" />
+            </label>
+          </div>
+          <p className="settings__card-description">
+            Troca o alvo quando você muda o foco (1 s de espera). O vídeo pode
+            ter recortes entre janelas de tamanhos diferentes.
+          </p>
         </article>
 
         {isVideo ? (

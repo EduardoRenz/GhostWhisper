@@ -195,8 +195,11 @@ RecordingTarget::Screen      →  -f x11grab -video_size <WxH> -i :0.0
 - **Seletor:** `x11_windows::list_windows` — janelas top-level com `WM_CLASS`,
   título e geometria; ignora `override-redirect` e janelas 1×1. A UI mostra
   app + título + **"Tela inteira"** (que avisa incluir o overlay).
-- **Congelado por sessão** (CA-06.4): trocar de alvo no meio quebraria o
-  `-c copy`; é outra sessão.
+- **Troca no meio** (CA-06.4): `switch_target` fecha o segmento e abre outro
+  com a nova geometria. `Active.first_size` guarda o tamanho do primeiro
+  segmento e `normalize = true` força `scale`+`pad` + reencode no fim (inclusive
+  no fallback `parec`). A opção `recording_follow_active` troca sozinha ao mudar
+  o foco: polling de 500 ms, debounce de 1 s e janelas ≥ 320×240.
 - **Ciclo de vida da janela:** `window_watch` assina `ConfigureNotify`
   (redimensionou), `DestroyNotify`/`UnmapNotify` (fechou/minimizou).
   - resize → fecha o segmento e abre outro na nova geometria (ISS-053);
@@ -401,6 +404,7 @@ espelho `src/core/domain/settings.ts`:
 pub recording_mode: String,           // "video" | "audio"          (default video)
 pub recording_target: String,         // "window" | "screen"        (default window)
 pub recording_auto_start: bool,       // default false
+pub recording_follow_active: bool,    // segue a janela ativa (default false)
 pub recording_fps: u32,               // default 8   (5..=30)
 pub recording_resolution: String,     // "native" | "1280x720" | "854x480"
 pub recording_quality: String,        // "compact" | "balanced" | "sharp"

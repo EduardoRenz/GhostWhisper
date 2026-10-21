@@ -177,6 +177,8 @@ export interface Settings {
   recording_target: RecordingTargetKind;
   /** Inicia a gravação junto com a sessão. */
   recording_auto_start: boolean;
+  /** Segue a janela ativa, trocando o alvo quando o foco muda. */
+  recording_follow_active: boolean;
   /** FPS da gravação (degraus de 5 a 30). */
   recording_fps: number;
   /** Resolução da captura. */
@@ -419,6 +421,7 @@ export const defaultSettings = (): Settings => ({
   recording_mode: "video",
   recording_target: "window",
   recording_auto_start: false,
+  recording_follow_active: false,
   recording_fps: DEFAULT_RECORDING_FPS,
   recording_resolution: "native",
   recording_quality: "balanced",

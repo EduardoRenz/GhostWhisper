@@ -9,6 +9,7 @@ import {
   recordingPickerClose,
   recordingStartWith,
   recordingState,
+  recordingSwitchTarget,
   recordingTargets,
 } from "../../adapters/ipc/recording";
 import { RecordingPickerWindow } from "./RecordingPickerWindow";
@@ -17,6 +18,7 @@ vi.mock("../../adapters/ipc/recording", () => ({
   recordingState: vi.fn(),
   recordingTargets: vi.fn(),
   recordingStartWith: vi.fn(async () => undefined),
+  recordingSwitchTarget: vi.fn(async () => undefined),
   recordingPickerClose: vi.fn(async () => undefined),
 }));
 
@@ -52,6 +54,7 @@ describe("RecordingPickerWindow — seletor de janelas", () => {
     vi.mocked(recordingState).mockResolvedValue(IDLE);
     vi.mocked(recordingTargets).mockResolvedValue(TARGETS);
     vi.mocked(recordingStartWith).mockClear();
+    vi.mocked(recordingSwitchTarget).mockClear();
     vi.mocked(recordingPickerClose).mockClear();
   });
 
@@ -73,19 +76,21 @@ describe("RecordingPickerWindow — seletor de janelas", () => {
     expect(recordingPickerClose).toHaveBeenCalled();
   });
 
-  it("bloqueia a troca de alvo com gravação em andamento", async () => {
+  it("com gravação em andamento, escolher troca o alvo", async () => {
     vi.mocked(recordingState).mockResolvedValue({
       ...IDLE,
       status: "recording",
-      target_label: "Tela inteira",
+      target_label: "VS Code",
     });
     render(<RecordingPickerWindow />);
 
     expect(
-      await screen.findByText(/Já existe uma gravação em andamento/),
+      await screen.findByText(/A gravação continua no mesmo arquivo/),
     ).toBeDefined();
-    const target = screen.getByText("Tela inteira");
-    const button = target.closest("button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    fireEvent.click(screen.getByText("Reunião — Chrome"));
+    await waitFor(() => {
+      expect(recordingSwitchTarget).toHaveBeenCalledWith(TARGETS[1]);
+    });
+    expect(recordingStartWith).not.toHaveBeenCalled();
   });
 });

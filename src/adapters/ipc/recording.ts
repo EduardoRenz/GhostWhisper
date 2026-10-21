@@ -21,6 +21,12 @@ export const recordingStartWith = (
 ): Promise<void | undefined> =>
   invokeSafe<void>("recording_start", { target });
 
+/** Troca o alvo no meio da gravação. */
+export const recordingSwitchTarget = (
+  target: RecordingTarget,
+): Promise<void | undefined> =>
+  invokeSafe<void>("recording_switch_target", { target });
+
 /** Alvos do seletor: tela inteira + janelas. */
 export const recordingTargets = (): Promise<RecordingTarget[] | undefined> =>
   invokeSafe<RecordingTarget[]>("recording_targets");

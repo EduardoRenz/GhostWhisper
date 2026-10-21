@@ -5,7 +5,9 @@
 //! Falha de gravação **nunca** interrompe a captura/transcrição (RNF-07).
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use chrono::TimeZone;
 use uuid::Uuid;
@@ -45,6 +47,8 @@ pub struct RecordingService {
     default_dir: PathBuf,
     capabilities: RecordingCapabilities,
     inner: Arc<Mutex<Inner>>,
+    /// Thread que segue a janela ativa (opcional).
+    follow: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 /// Gravação em andamento.
@@ -55,6 +59,10 @@ struct Active {
     spec: RecordingSpec,
     /// Arquivo final desta execução (único por gravação).
     output: PathBuf,
+    /// Dimensões do primeiro segmento (base do `scale`+`pad` na finalização).
+    first_size: (u32, u32),
+    /// Algum segmento mudou de dimensão (troca de janela) ⇒ reencode no fim.
+    normalize: bool,
     /// Tempo acumulado dos trechos já fechados (ms).
     accumulated_ms: i64,
     /// Quando o trecho atual começou (`None` = pausado).
@@ -107,6 +115,7 @@ impl RecordingService {
             default_dir,
             capabilities,
             inner: Arc::new(Mutex::new(Inner::empty())),
+            follow: Mutex::new(None),
         }
     }
 
@@ -226,6 +235,116 @@ impl RecordingService {
     }
 }
 
+impl RecordingService {
+    /// Marca a thread de follow para parar.
+    fn stop_follow(&self) {
+        if let Ok(mut guard) = self.follow.lock() {
+            if let Some(flag) = guard.take() {
+                flag.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// (Re)inicia o follow se a setting está ligada e o alvo atual é janela.
+    fn restart_follow(&self) {
+        self.stop_follow();
+        let enabled = self
+            .settings
+            .load()
+            .map(|settings| settings.recording_follow_active)
+            .unwrap_or(false);
+        if !enabled {
+            return;
+        }
+        let is_window = self
+            .lock()
+            .ok()
+            .and_then(|inner| {
+                inner
+                    .active
+                    .as_ref()
+                    .map(|active| matches!(active.spec.target, RecordingTarget::Window { .. }))
+            })
+            .unwrap_or(false);
+        if !is_window {
+            return;
+        }
+
+        let stop = Arc::new(AtomicBool::new(false));
+        if let Ok(mut guard) = self.follow.lock() {
+            *guard = Some(Arc::clone(&stop));
+        }
+        let targets = Arc::clone(&self.targets);
+        let recorder = Arc::clone(&self.recorder);
+        let publisher = Arc::clone(&self.publisher);
+        let clock = Arc::clone(&self.clock);
+        let inner = Arc::clone(&self.inner);
+
+        std::thread::spawn(move || {
+            // Exige a mesma janela em dois ticks (1 s): alt-tab rápido não corta.
+            let mut candidate: Option<(u32, RecordingTarget, u8)> = None;
+            while !stop.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(500));
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                let Some(target) = targets.active_window() else {
+                    candidate = None;
+                    continue;
+                };
+                let Some(id) = target.window_id() else {
+                    candidate = None;
+                    continue;
+                };
+                let (width, height) = target.dimensions();
+                if width < 320 || height < 240 {
+                    candidate = None;
+                    continue;
+                }
+                let current = inner.lock().ok().and_then(|guard| {
+                    guard
+                        .active
+                        .as_ref()
+                        .and_then(|active| active.spec.target.window_id())
+                });
+                if current == Some(id) {
+                    candidate = None;
+                    continue;
+                }
+                let hits = match &candidate {
+                    Some((candidate_id, _, hits)) if *candidate_id == id => {
+                        hits.saturating_add(1)
+                    }
+                    _ => 1,
+                };
+                candidate = Some((id, target.clone(), hits));
+                if hits < 2 {
+                    continue;
+                }
+                candidate = None;
+
+                let Ok(mut guard) = inner.lock() else {
+                    continue;
+                };
+                let Some(active) = guard.active.as_mut() else {
+                    break;
+                };
+                if active.resumed_at_ms.is_none() {
+                    continue;
+                }
+                if recorder.switch_target(target.clone()).is_err() {
+                    continue;
+                }
+                active.spec.target = target;
+                let state = Self::state_of(active, clock.now_ms(), "recording");
+                guard.last_state = state.clone();
+                drop(guard);
+                publisher.emit_recording_state(&state);
+            }
+        });
+    }
+}
+
 impl RecordingController for RecordingService {
     fn capabilities(&self) -> RecordingCapabilities {
         self.capabilities.clone()
@@ -336,6 +455,8 @@ impl RecordingController for RecordingService {
                 kind: spec.kind,
                 spec,
                 output,
+                first_size: (width, height),
+                normalize: false,
                 accumulated_ms: 0,
                 resumed_at_ms: Some(started_at_ms),
             });
@@ -343,6 +464,7 @@ impl RecordingController for RecordingService {
             inner.current_session_id = Some(session_id.to_string());
         }
         self.publisher.emit_recording_state(&state);
+        self.restart_follow();
         tracing::info!(session_id, "gravação iniciada");
         Ok(())
     }
@@ -363,10 +485,36 @@ impl RecordingController for RecordingService {
         let id = active.id.clone();
         inner.last_state = state.clone();
         drop(inner);
+        self.stop_follow();
 
         let _ = self
             .recordings
             .update_status(&id, RecordingStatus::Paused, None);
+        self.publisher.emit_recording_state(&state);
+        Ok(())
+    }
+
+    fn switch_target(&self, target: RecordingTarget) -> Result<()> {
+        let mut inner = self.lock()?;
+        let Some(active) = inner.active.as_mut() else {
+            return Err(GhostWhisperError::Config(
+                "não há gravação em andamento".to_string(),
+            ));
+        };
+        self.recorder.switch_target(target.clone())?;
+        if target.dimensions() != active.first_size {
+            active.normalize = true;
+        }
+        active.spec.target = target;
+        let now = self.clock.now_ms();
+        let status = if active.resumed_at_ms.is_some() {
+            "recording"
+        } else {
+            "paused"
+        };
+        let state = Self::state_of(active, now, status);
+        inner.last_state = state.clone();
+        drop(inner);
         self.publisher.emit_recording_state(&state);
         Ok(())
     }
@@ -391,10 +539,12 @@ impl RecordingController for RecordingService {
             .recordings
             .update_status(&id, RecordingStatus::Recording, None);
         self.publisher.emit_recording_state(&state);
+        self.restart_follow();
         Ok(())
     }
 
     fn stop(&self) -> Result<()> {
+        self.stop_follow();
         let active = {
             let mut inner = self.lock()?;
             inner.active.take()
@@ -432,6 +582,9 @@ impl RecordingController for RecordingService {
             output,
             spec: active.spec.clone(),
             total_ms,
+            width: active.first_size.0,
+            height: active.first_size.1,
+            normalize: active.normalize,
             audio,
         };
 
@@ -454,6 +607,7 @@ impl RecordingController for RecordingService {
     }
 
     fn discard(&self, session_id: &str) -> Result<()> {
+        self.stop_follow();
         {
             let mut inner = self.lock()?;
             if inner
@@ -771,6 +925,7 @@ mod tests {
         capabilities: RecordingCapabilities,
         capturing: Mutex<bool>,
         segments: Mutex<Vec<PathBuf>>,
+        switches: Mutex<Vec<RecordingTarget>>,
     }
     impl FakeRecorder {
         fn available() -> Self {
@@ -778,6 +933,7 @@ mod tests {
                 capabilities: RecordingCapabilities::available("x264"),
                 capturing: Mutex::new(false),
                 segments: Mutex::new(Vec::new()),
+                switches: Mutex::new(Vec::new()),
             }
         }
     }
@@ -809,6 +965,10 @@ mod tests {
         }
         fn segment_durations_ms(&self) -> Vec<i64> {
             vec![1_000]
+        }
+        fn switch_target(&self, target: RecordingTarget) -> Result<()> {
+            self.switches.lock().unwrap().push(target);
+            Ok(())
         }
         fn fallback_audio(&self) -> Option<crate::ports::screen_recorder::FallbackAudio> {
             None
@@ -966,6 +1126,40 @@ mod tests {
         );
         assert_eq!(slugify("a/b:c*d"), Some("a-b-c-d".to_string()));
         assert_eq!(slugify("   "), None);
+    }
+
+    #[test]
+    fn switch_target_updates_the_state_and_the_recorder() {
+        let dir = tempfile::tempdir().expect("dir");
+        let recorder = Arc::new(FakeRecorder::available());
+        let recorder_port: Arc<dyn ScreenRecorder> = recorder.clone();
+        let service = RecordingService::new(
+            recorder_port,
+            Arc::new(FakeFinalizer),
+            Arc::new(FakeTargets),
+            Arc::new(InMemoryRecordingsRepository::new()),
+            Arc::new(NoopPublisher),
+            Arc::new(FakeSettings(Settings::default())),
+            Arc::new(FakeClock),
+            Arc::new(InMemorySessionRepository::new()),
+            dir.path().to_path_buf(),
+        );
+        service
+            .on_session_started("s1", &[AudioChannel::Microphone], true)
+            .expect("hook");
+        service.start("s1", None).expect("start");
+
+        let target = RecordingTarget::Screen {
+            label: "Monitor 2 — 1920×1080".to_string(),
+            width: 1920,
+            height: 1080,
+            x: 1920,
+            y: 0,
+        };
+        service.switch_target(target.clone()).expect("switch");
+
+        assert_eq!(service.state().target_label.as_deref(), Some("Monitor 2 — 1920×1080"));
+        assert_eq!(recorder.switches.lock().unwrap().as_slice(), &[target]);
     }
 
     #[test]

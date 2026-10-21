@@ -256,6 +256,9 @@ pub struct Settings {
     /// Inicia a gravação junto com a sessão.
     #[serde(default)]
     pub recording_auto_start: bool,
+    /// Segue a janela ativa: troca o alvo quando o foco muda.
+    #[serde(default)]
+    pub recording_follow_active: bool,
     /// FPS da gravação (degraus de 5 a 30 — BR-066).
     #[serde(default = "default_recording_fps")]
     pub recording_fps: u32,
@@ -417,6 +420,7 @@ impl Default for Settings {
             recording_mode: default_recording_mode(),
             recording_target: default_recording_target(),
             recording_auto_start: false,
+            recording_follow_active: false,
             recording_fps: default_recording_fps(),
             recording_resolution: default_recording_resolution(),
             recording_quality: default_recording_quality(),

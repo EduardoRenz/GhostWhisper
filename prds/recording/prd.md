@@ -255,9 +255,12 @@ Como usuário, quero **usar o app normalmente, com o overlay visível**, e que e
       título) com a opção **"Tela inteira"**, e a escolha vale para a sessão.
 - [ ] **CA-06.3** Se a janela ativa for o próprio GhostWhisper ou não houver
       janela, cai para **tela inteira** com aviso no *tooltip* do botão.
-- [ ] **CA-06.4** O alvo é **congelado na sessão** (como as demais opções —
-      CA-02.7): trocar de janela no meio não muda o arquivo; para outro alvo, é
-      outra sessão.
+- [ ] **CA-06.4** O alvo pode ser **trocado no meio da gravação** (clique
+      direito → seletor): o segmento atual fecha e outro abre no mesmo arquivo.
+      Se as dimensões mudarem, a finalização reencoda com `scale`+`pad` para o
+      tamanho do primeiro segmento (CA-06.6). A opção **"Seguir a janela
+      ativa"** faz a troca automaticamente (1 s de espera; ignora janelas
+      menores que 320×240).
 - [ ] **CA-06.5** Janela **fechada ou minimizada** encerra a gravação como
       `interrupted`, preserva os segmentos e mantém "Abrir local" no modal.
 - [ ] **CA-06.6** Janela **redimensionada** entre segmentos não perde a

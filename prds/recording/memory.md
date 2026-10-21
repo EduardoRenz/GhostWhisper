@@ -290,3 +290,38 @@ quebrado. Teste puro `detects_wayland_sessions`.
   podem não abrir. Só `amd64`.
 - **Decisões pendentes:** empacotar `ffmpeg`/`parec`, base de build mais antiga
   e eventual variante CUDA.
+
+---
+
+## 2026-10-21 — Troca de alvo no meio e "seguir a janela ativa" (v1.4)
+
+- **IDs:** BR-065, BR-070 · **Refs:** [`prd.md`](prd.md) CA-06.4,
+  [`architecture/recording.md`](architecture/recording.md) §5.3/§10
+
+### Pedido
+
+O usuário gravou no VS Code, mudou para o navegador e perguntou por que a
+gravação não acompanhava a janela ativa / se não dava para trocar.
+
+### O que entrou
+
+- **Troca manual:** clique direito no botão de câmera abre o seletor; com
+  gravação em andamento, escolher outro alvo chama `recording_switch_target`.
+  O adaptador fecha o segmento atual e abre outro no mesmo arquivo.
+- **Geometria:** `Active.first_size` guarda o tamanho do primeiro segmento;
+  quando o novo alvo tem outra dimensão, `normalize = true` força o reencode
+  (`scale`+`pad`) na finalização — inclusive no caminho `parec`
+  (`fallback_mux_args` com `-vf` em vez de `-c copy`).
+- **Automático (opcional):** setting `recording_follow_active` (padrão
+  desligado). Uma thread faz polling de 500 ms da janela ativa, exige a mesma
+  janela por 2 ticks (1 s) e ignora janelas < 320×240. Pausar/parar encerra a
+  thread; retomar reinicia.
+- **UI:** toggle "Seguir a janela ativa" no card de alvo; o seletor mostra
+  "A gravação continua no mesmo arquivo; o trecho novo entra com recorte".
+
+### Verificação
+
+- `cargo test --lib`: **596** ✓ (inclui `switch_target` no serviço).
+- Teste manual `records_and_finalizes` agora **troca para a janela ativa** no
+  meio e finaliza com `normalize: true` (2 segmentos, reencode) ✓.
+- `cargo clippy --lib --all-targets`: limpo · `pnpm test`: **386** ✓.

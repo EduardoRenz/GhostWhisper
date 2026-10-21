@@ -31,6 +31,9 @@ pub trait RecordingController: Send + Sync {
     /// Retoma a gravação (abre um novo segmento).
     fn resume(&self) -> Result<()>;
 
+    /// Troca o alvo (janela/monitor) sem encerrar a gravação.
+    fn switch_target(&self, target: RecordingTarget) -> Result<()>;
+
     /// Encerra a gravação e agenda a finalização.
     fn stop(&self) -> Result<()>;
 

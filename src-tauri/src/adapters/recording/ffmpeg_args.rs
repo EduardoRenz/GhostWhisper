@@ -282,6 +282,7 @@ pub fn fallback_mux_args(
     request: &super::finalizer::ConcatRequest,
     audio: &FallbackAudio,
     output: &Path,
+    normalize: Option<(u32, u32)>,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
@@ -307,8 +308,26 @@ pub fn fallback_mux_args(
         "0:v".into(),
         "-map".into(),
         "[a]".into(),
-        "-c:v".into(),
-        "copy".into(),
+    ]);
+    match normalize {
+        Some((width, height)) => args.extend([
+            "-vf".into(),
+            format!(
+                "scale={width}:{height}:force_original_aspect_ratio=decrease,\
+                 pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+            ),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "veryfast".into(),
+            "-crf".into(),
+            "27".into(),
+            "-threads".into(),
+            "2".into(),
+        ]),
+        None => args.extend(["-c:v".into(), "copy".into()]),
+    }
+    args.extend([
         "-c:a".into(),
         "aac".into(),
         "-b:a".into(),

@@ -73,6 +73,15 @@ pub fn recording_stop(state: State<'_, AppState>) -> Result<()> {
     state.recording.stop()
 }
 
+/// Troca o alvo no meio da gravação (fecha um segmento e abre outro).
+#[tauri::command(async)]
+pub fn recording_switch_target(
+    state: State<'_, AppState>,
+    target: RecordingTarget,
+) -> Result<()> {
+    state.recording.switch_target(target)
+}
+
 /// Estado atual (o evento `recording_state` é a fonte principal; isto é o seed).
 #[tauri::command]
 pub fn recording_state(state: State<'_, AppState>) -> RecordingState {

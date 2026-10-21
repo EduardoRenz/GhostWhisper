@@ -538,6 +538,12 @@ mod tests {
         fn pause(&self) -> Result<()> {
             Ok(())
         }
+        fn switch_target(
+            &self,
+            _target: crate::domain::recording::RecordingTarget,
+        ) -> Result<()> {
+            Ok(())
+        }
         fn resume(&self) -> Result<()> {
             Ok(())
         }

@@ -16,7 +16,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::domain::recording::{RecordingKind, RecordingSpec};
+use crate::domain::recording::{RecordingKind, RecordingSpec, RecordingTarget};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::screen_recorder::{
     FallbackAudio, RecordingCapabilities, RecordingStart, ScreenRecorder,
@@ -332,6 +332,28 @@ impl ScreenRecorder for FfmpegScreenRecorder {
         self.close_segment(&mut inner)
     }
 
+    fn switch_target(&self, target: RecordingTarget) -> Result<()> {
+        let mut inner = self.lock()?;
+        let Some(mut spec) = inner.spec.clone() else {
+            return Err(GhostWhisperError::Other(
+                "gravação sem configuração".to_string(),
+            ));
+        };
+        if spec.target == target {
+            return Ok(());
+        }
+        let open = inner.child.is_some() || !inner.audio_children.is_empty();
+        if open {
+            self.close_segment(&mut inner)?;
+        }
+        spec.target = target;
+        inner.spec = Some(spec);
+        if open {
+            self.open_segment(&mut inner)?;
+        }
+        Ok(())
+    }
+
     fn segments(&self) -> Vec<PathBuf> {
         self.inner
             .lock()
@@ -508,11 +530,20 @@ mod tests {
                 segments_dir: dir.path().join("parts"),
             })
             .expect("start");
-        std::thread::sleep(Duration::from_secs(2));
+        std::thread::sleep(Duration::from_secs(1));
+
+        // Troca de alvo no meio: fecha um segmento e abre outro (dimensões
+        // diferentes forçam o reencode na finalização).
+        let window = crate::ports::screen_targets::ScreenTargets::active_window(
+            &crate::adapters::recording::x11_targets::X11ScreenTargets::new(),
+        )
+        .expect("janela ativa");
+        recorder.switch_target(window).expect("switch");
+        std::thread::sleep(Duration::from_secs(1));
         recorder.stop().expect("stop");
 
         let parts = recorder.segments();
-        assert!(!parts.is_empty(), "gerou segmento de vídeo");
+        assert!(parts.len() >= 2, "troca de alvo gerou outro segmento");
         let audio = recorder.fallback_audio();
         assert!(audio.is_some(), "capturou áudio");
 
@@ -524,6 +555,9 @@ mod tests {
                     output: dir.path().join("saida.mp4"),
                     spec,
                     total_ms: 2_000,
+                    width: 1920,
+                    height: 1080,
+                    normalize: true,
                     audio,
                 },
                 &|_| {},
