@@ -131,7 +131,7 @@ Regras transpostas (equivalência com o Perssua):
 - **I5.** `stop()`/`flush()` esperam (com teto) o passe final do turno aberto.
 - **I6.** A decisão de fechar cedo por frase só vale quando a **mesma prévia** que
   ancorou a cadência cobre o fim da fala e termina em pontuação forte; a métrica
-  `commit_ms` (espera + decodificação) é logada em `info`.
+  `commit_ms` (espera + fila + ASR) é logada em `info`.
 
 ---
 

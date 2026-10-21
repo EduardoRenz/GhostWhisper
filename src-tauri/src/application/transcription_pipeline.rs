@@ -12,8 +12,8 @@
 //!   fechamento antecipado por pontuação forte (0,7 s) fica desligado por padrão
 //!   e só existe por env (L1/ISS-058) — com um passe **final** autoritativo
 //!   (beam search) no turno;
-//! - depois de **250 ms** de pausa a prévia para de ser pedida: ela entraria na
-//!   frente do passe final na fila global do ASR e atrasaria a frase;
+//! - a prévia continua rolando durante a pausa (o corte em 250 ms é experimento,
+//!   desligado por padrão): ela atrasaria o passe final na fila do ASR;
 //! - **gate de fala sustentada** (RMS) evita decodificar ruído/clique;
 //! - **filtro de alucinação** no texto decodificado;
 //! - **telemetria de RTF** (tempo real) por passe.

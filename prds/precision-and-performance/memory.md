@@ -506,3 +506,98 @@ sem erro praticamente, bolhas sensatas.”*
   `decode_prompt_keeps_only_context_and_drops_instructions`,
   `engine_params_reads_settings`.
 - **Pendente:** abrir Configurações no app e conferir o novo texto (task 05).
+
+## 2026-10-21 — Etapa 3: commit por frase (ISS-058, task 06)
+
+- **IDs:** ISS-058, T06, BR-029, R16, R17
+- **Refs:** [`tasks/06-task.md`](tasks/06-task.md),
+  [`../../mvp/architecture/transcription-streaming.md`](../../mvp/architecture/transcription-streaming.md) §3–§4
+
+### Objetivo
+Quebrar o monólogo (fala contínua sem 1 s de silêncio) em blocos de ~2–5 s, sem
+picar frase: o turno fecha só o prefixo que termina numa **frase completa
+estável entre duas prévias**, e o resto do áudio continua no buffer.
+
+### Decisão
+- **Opt-in** (`GHOSTWHISPER_SENTENCE_COMMIT=1`), default desligado: a etapa 1
+  mostrou que mudar segmentação sem A/B piora a percepção de qualidade.
+- `complete_sentences(spans)` no domínio (spans com pontuação forte, fim no
+  áudio + texto normalizado); o pipeline escolhe a **primeira** que passa do
+  mínimo (blocos curtos) e o `note_sentence` exige a **mesma frase em duas
+  prévias seguidas**.
+- No scheduler, o commit devolve `Finalize { cut_ms = fim + pad }` **somente** se
+  `cut_ms ≥ sentence_min_ms` (1,2 s) e `cut_ms < buffered_ms` (tem resto). O
+  prefixo é decodificado com beam 5; o restante fica no buffer (o
+  `finalize_turn` já drena só o `cut_ms`).
+- Sem sobreposição nem prompt de contexto na v1 (fronteira exata no timestamp do
+  modelo). Pad default 0 para não cortar o início da palavra seguinte.
+- Estado (frase anterior/estável) é limpo ao fechar o turno; loop detectado no
+  `clean` desliga a âncora daquela prévia.
+
+### Verificação
+- `cargo test --lib` **627 ✓** (10 ignorados) · clippy `-D warnings` ✓ · rustfmt ✓.
+- Testes novos: `complete_sentences_lists_the_strong_punctuation_anchors`,
+  `sentence_normalization_ignores_case_and_punctuation`,
+  `sentence_commit_closes_only_the_stable_prefix`,
+  `sentence_commit_is_off_by_default`,
+  `sentence_commit_requires_a_leftover_and_a_minimum`,
+  `sentence_commit_uses_the_pad_after_the_boundary`,
+  `sentence_commit_publishes_the_stable_prefix_and_keeps_the_rest`,
+  `sentence_commit_is_off_by_default_in_the_pipeline`.
+- **Pendente:** teste manual com a flag, comparando qualidade e latência com o
+  default. Só depois cogitar virar default.
+
+## 2026-10-21 — Etapa 3 avaliada e rejeitada no teste manual (ISS-058, task 06)
+
+- **IDs:** ISS-058, T06, BR-029, R16, R17
+- **Refs:** [`tasks/06-task.md`](tasks/06-task.md), BR-029
+
+### Relato
+*“Testei aqui, me parece um pouco melhor sem o SENTENCE COMMIT, erra menos e
+parece um pouco mais rápido.”*
+
+### Diagnóstico
+- Cada commit re-decoda o prefixo e **reinicia a cadência de prévias** do resto
+  do áudio: o texto rolante fica mais tempo parado, o que é percebido como
+  lentidão mesmo com commits mais frequentes.
+- Mais finais competem com prévias na fila global do ASR (dois canais).
+- A pontuação do whisper não é uma fronteira semântica 100% confiável; cortar ali
+  pode custar contexto entre frases e gerar mais erros.
+
+### Decisão
+- **Default permanece desligado** (`sentence_commit = false`); a task 06 passa a
+  **CANCELED** e o código fica atrás da flag (`GHOSTWHISPER_SENTENCE_COMMIT=1`)
+  para experimentos futuros.
+- A meta de latência do monólogo será atacada pela **etapa 2** (commit otimista:
+  publicar a prévia no fechamento e corrigir com o beam em background), que **não
+  muda a segmentação** — exige `update_text` na porta de transcrições e merge por
+  id na UI.
+
+### Verificação
+- `cargo test --lib` **627 ✓** · clippy `-D warnings` ✓.
+- Nenhuma mudança de comportamento no default.
+
+## 2026-10-21 — Etapa 3 removida do código (ISS-058, task 06)
+
+- **IDs:** ISS-058, T06, BR-029, R16
+- **Refs:** [`tasks/06-task.md`](tasks/06-task.md)
+
+### Decisão
+Após o teste manual (sem a flag erra menos e parece mais rápida), o usuário
+escolheu **remover** o experimento em vez de mantê-lo atrás da flag. O default
+não muda em nada.
+
+### Removido
+- `turn_scheduler.rs`: `sentence_commit`, `sentence_min_ms`, `sentence_pad_ms`,
+  o ramo de decisão, `stable_sentence_end_ms` e os 4 testes.
+- `domain/transcription.rs`: `complete_sentences`/`normalize_sentence` e testes
+  (o `ends_with_strong_punctuation` fica — é usado pelo experimento de 0,7 s).
+- `transcription_pipeline.rs`: estado `previous_sentence`/`stable_sentence`,
+  `note_sentence`, `stable_sentence_end_ms`, `sentence_anchors` no
+  `DecodedTurn`, o fake `SentenceAsr` e os 2 testes.
+- Docs: BR-029, doc de streaming (tabela/I7/envs), `_tasks.md`; a task 06 fica
+  como registro `CANCELED`.
+
+### Verificação
+- `cargo test --lib` **619 ✓** · clippy `-D warnings` ✓ · rustfmt ✓.
+- Nenhum símbolo da etapa 3 restante no código (`grep` limpo).

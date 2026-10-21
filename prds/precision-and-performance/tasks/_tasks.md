@@ -12,6 +12,7 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 | 03 | Áudio limpo e engine rápida: GPU + flash attention, modelo por hardware, AEC, reuso do final, commits | E3 | CONCLUDED |
 | 04 | Commit de fala mais rápido (etapa 1): fila com prioridade, prévias na pausa, fechamento por frase, métrica | L1 | IN PROGRESS |
 | 05 | Prompt como contexto: default vazio, migração e aviso na UI | L2 | IN PROGRESS |
+| 06 | Commit por frase (etapa 3): avaliada e rejeitada — código removido | L3 | CANCELED |
 
 ## Dependências
 
@@ -28,6 +29,9 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
   (commit otimista + correção) e a 3 (commit por frase) ainda não estão criadas.
 - 05 é independente (prompt/idioma) e depende só de 01 para o contrato do
   `whisper_prompt`; a UI usa o mesmo campo.
+- 06 depende de 03 (reuso do final/VAD) e 04 (métrica). Foi implementada como
+  experimento, **rejeitada no teste manual** e o código removido; fica só o
+  registro da decisão.
 
 ## Definição de pronto (geral)
 

@@ -15,8 +15,8 @@
 //! - o fechamento antecipado por pontuação forte (`silence_sentence_ms`) existe
 //!   como **experimento desligado por padrão**: o whisper marca ponto em pausa
 //!   interna e picar a frase piora a transcrição (ISS-058, relato de 21/10);
-//! - **para de pedir prévia** após `preview_cutoff_ms` de pausa (a prévia
-//!   atrasaria o passe final na fila do ASR).
+//! - **prévia durante a pausa**: por padrão continua rolando; o corte em 250 ms
+//!   (`preview_cutoff_ms`) é experimento, desligado.
 
 /// Limiares de tempo do turno.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
