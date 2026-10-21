@@ -208,3 +208,38 @@ e o comportamento do HUD ganha uma aba própria ("Geral & HUD") no lugar de
   (`--oh-window-radius`) e `ResizeHandles`; o fechar continua chamando
   `settings_close` e o drag chama `panel_start_drag`.
 - Sem mudança no rodapé, nas abas ou no rascunho global.
+
+## 2026-10-21 — Opacidade global das janelas e autosave (task 15)
+
+- **IDs:** BR-062, T15
+- **Refs:** [`prd.md`](prd.md) §10,
+  [`architecture/settings-redesign.md`](architecture/settings-redesign.md) §9,
+  [`tasks/15-task.md`](tasks/15-task.md),
+  [`../notch/architecture/design-tokens.md`](../notch/architecture/design-tokens.md)
+
+### Pedido
+- A opacidade da aba "Geral & HUD" deixar de valer só no notch e refletir em
+  **todas as telas**.
+- Aplicar em tempo real, sem esperar o "Salvar Alterações"; autosave permitido.
+
+### Decisão/entrega
+- `useHudOpacity` no `App` de cada webview aplica `--hud-alpha` no `<html>`;
+  o valor vem do campo legado `overlay_opacity` (sem migration).
+- Superfícies de notch, painéis, Configurações (shell/cards/rodapé), Perguntar,
+  dwell e prévia do print usam canais RGB + `--hud-alpha`; texto/controles
+  continuam opacos.
+- O slider publica `settings_preview_overlay_opacity` (evento
+  `hud_opacity_preview`) e agenda `settings_set_overlay_opacity` com debounce
+  de 200 ms. O save global continua para os demais campos; um save completo
+  também publica o preview.
+- `settings_set_overlay_opacity` grava **somente** a opacidade, sem reaplicar
+  atalhos/geometria, e emite preview + `settings_changed`.
+
+### Verificação
+- `pnpm test` **363 ✓** · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- `cargo test --lib` **545 ✓** · `cargo clippy --lib -D warnings` ✓; rustfmt do
+  arquivo Rust tocado.
+- Validação visual no navegador em 20/75/100 % sobre fundo magenta, em
+  Configurações e Chat.
+- AppImage no Xvfb: Configurações sem moldura nativa, slider 40→85→50→40 %
+  persistido sem "Salvar" (overlay/Histórico abertos); pacotes às 11:13.

@@ -65,8 +65,12 @@
   --oh-surface-container-low: #181c24;
   --oh-surface-container: #1c2028;
   /* Canais RGB para compor opacidade sem `color-mix` (BR-062). */
+  --oh-surface-rgb: 15, 19, 28;
+  --oh-read-surface-rgb: 15, 19, 28;
+  --oh-surface-container-lowest-rgb: 10, 14, 22;
   --oh-surface-container-low-rgb: 24, 28, 36;
   --oh-surface-container-rgb: 28, 32, 40;
+  --oh-glass-card-rgb: 19, 27, 46;
   --oh-surface-container-high: #262a33;
   --oh-surface-container-highest: #31353e;
   --oh-surface-variant: #31353e;
@@ -128,6 +132,9 @@
   --oh-glass-bar: rgba(11, 15, 23, 0.78);
   --oh-glass-card: rgba(19, 27, 46, 0.85);
   --oh-read-surface: rgba(15, 19, 28, 0.94);
+  /* Opacidade global das superfícies das janelas (BR-062/BR-065). O valor é
+     sobrescrito no `<html>` pela janela de Configurações em tempo real. */
+  --hud-alpha: 0.75;
   --oh-blur-bar: 28px;
   --oh-blur-card: 36px;
   --oh-shadow-rest: 0 12px 40px -10px rgba(0, 0, 0, 0.7);

@@ -159,7 +159,7 @@ export interface Settings {
   dwell_enabled: boolean;
   /** Tempo de permanência do drill-hover, em milissegundos (BR-036). */
   dwell_ms: number;
-  /** Opacidade da superfície do notch (0,2–1,0) — BR-062. */
+  /** Opacidade das superfícies de todas as janelas (0,2–1,0) — BR-062. */
   overlay_opacity: number;
   /** Ancoragem do notch na área útil do monitor primário — BR-062. */
   notch_anchor: NotchAnchor;
@@ -371,7 +371,7 @@ export const HUD_DENSITY_LABELS: Record<HudDensity, string> = {
   expanded: "Expandido",
 };
 
-/** Opacidade do overlay (20 %–100 %, padrão 75 %). */
+/** Opacidade das superfícies de todas as janelas (20 %–100 %, padrão 75 %). */
 export const DEFAULT_OVERLAY_OPACITY = 0.75;
 export const MIN_OVERLAY_OPACITY = 0.2;
 export const MAX_OVERLAY_OPACITY = 1;

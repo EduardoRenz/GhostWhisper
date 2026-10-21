@@ -4,7 +4,7 @@
 
 use tauri::{Emitter, State};
 
-use crate::domain::settings::{ProviderKind, Settings};
+use crate::domain::settings::{ProviderKind, Settings, MAX_OVERLAY_OPACITY, MIN_OVERLAY_OPACITY};
 use crate::domain::shortcuts::ShortcutConflict;
 use crate::error::{GhostWhisperError, Result};
 use crate::state::AppState;
@@ -100,9 +100,52 @@ pub fn settings_set(
     }
     let conflicts = state.shortcuts.apply(&settings.shortcuts);
     // Avisa as janelas abertas (overlay/painel) para recarregarem as settings,
-    // inclusive o drill-hover (BR-036).
+    // inclusive o drill-hover (BR-036). O preview garante que um save completo
+    // (ex.: restaurar padrões) também atualize a opacidade global na hora.
+    let _ = app.emit("hud_opacity_preview", settings.overlay_opacity);
     let _ = app.emit("settings_changed", ());
     Ok(conflicts)
+}
+
+/// Valida a faixa da opacidade global (20 %–100 %).
+fn validate_overlay_opacity(opacity: f32) -> Result<()> {
+    if !opacity.is_finite() || !(MIN_OVERLAY_OPACITY..=MAX_OVERLAY_OPACITY).contains(&opacity) {
+        return Err(GhostWhisperError::Config(format!(
+            "opacidade das janelas deve ficar entre {MIN_OVERLAY_OPACITY} e {MAX_OVERLAY_OPACITY}"
+        )));
+    }
+    Ok(())
+}
+
+/// Publica o preview da opacidade global sem gravar em disco.
+///
+/// O slider de Configurações chama a cada movimento; o valor é aplicado em
+/// todas as janelas abertas via `hud_opacity_preview` (BR-062).
+#[tauri::command]
+pub fn settings_preview_overlay_opacity(app: tauri::AppHandle, opacity: f32) -> Result<()> {
+    validate_overlay_opacity(opacity)?;
+    let _ = app.emit("hud_opacity_preview", opacity);
+    Ok(())
+}
+
+/// Autosave da opacidade global (debounced pela UI).
+///
+/// Grava apenas esse campo — não reaplica atalhos nem geometria — e avisa as
+/// janelas. Os demais ajustes continuam no "Salvar Alterações" global.
+#[tauri::command(async)]
+pub fn settings_set_overlay_opacity(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    opacity: f32,
+) -> Result<()> {
+    validate_overlay_opacity(opacity)?;
+    let mut settings = state.settings.load()?;
+    settings.overlay_opacity = opacity;
+    settings.validate()?;
+    state.settings.save(&settings)?;
+    let _ = app.emit("hud_opacity_preview", settings.overlay_opacity);
+    let _ = app.emit("settings_changed", ());
+    Ok(())
 }
 
 /// Testa a conexão com a fonte primária (validar chave).

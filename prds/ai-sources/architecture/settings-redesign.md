@@ -161,8 +161,9 @@ reúne o **comportamento do HUD** num cabeçalho de seção + grade de 2 colunas
 ```
 Comportamento do HUD & Janela                         HUD Anchor: Topo Central
 ┌──────────────────────────────┐ ┌──────────────────────────────┐
-│ Opacidade do Overlay   [75%] │ │ Posição de Ancoragem do Notch│
-│ transparência da superfície  │ │ ponto de fixação na área útil│
+│ Opacidade das Janelas  [75%] │ │ Posição de Ancoragem do Notch│
+│ transparência de todas       │ │ ponto de fixação na área útil│
+│ as superfícies (tempo real)  │ │                              │
 │ ──────●─────────────         │ │ [Topo Central][Canto][Livre] │
 │ Discreto  Equilibrado  Opaco │ │                              │
 └──────────────────────────────┘ └──────────────────────────────┘
@@ -187,20 +188,26 @@ Comportamento do HUD & Janela                         HUD Anchor: Topo Central
   legendas (`Discreto 20%` · `Equilibrado 75%` · `Opaco 100%`). O slider aceita
   qualquer passo de 5 %.
 - O card de **Privacidade** (stealth) atravessa as duas colunas.
+- A opacidade não é mais exclusiva do notch: o valor vira `--hud-alpha` no
+  `document.documentElement` de cada webview e as superfícies de todas as
+  janelas usam canais RGB + essa variável. O slider aplica um preview imediato
+  (`hud_opacity_preview`) e o autosave grava só a opacidade com debounce; os
+  demais campos seguem o "Salvar Alterações" global.
 
 ### 9.1 Componentes
 
 | Componente | Papel |
 |---|---|
 | `src/features/settings/HudSettings.tsx` | conteúdo da aba: cabeçalho da seção + grade + cards |
-| `SettingsPage.tsx` | troca o bloco inline de "Ajustes" por `<HudSettings …/>` |
-| `src/styles/globals.css` | `.settings__grid`, `.settings__section-header`, `.settings__segmented`, `.settings__toggle`, `.settings__badge`, `.settings__range-labels` e o novo estado visual das abas |
+| `SettingsPage.tsx` | troca o bloco inline de "Ajustes" por `<HudSettings …/>`; agenda o preview/autosave da opacidade |
+| `src/core/application/useHudOpacity.ts` | aplica `--hud-alpha` no root da webview, escuta `hud_opacity_preview` e recarrega em `settings_changed` |
+| `src/styles/globals.css` | `.settings__grid`, `.settings__section-header`, `.settings__segmented`, `.settings__toggle`, `.settings__badge`, `.settings__range-labels` e as superfícies com opacidade global |
 
 ### 9.2 Dados e validação
 
 | Campo | Tipo | Padrão | Faixa/valores |
 |---|---|---|---|
-| `overlay_opacity` | `f32` | `0.75` | `0.2..=1.0` (clamp no load, erro no save) |
+| `overlay_opacity` | `f32` | `0.75` | `0.2..=1.0` (clamp no load, erro no save) — nome legado; opacidade global das janelas |
 | `notch_anchor` | `String` | `top_center` | `top_center` · `top_right` · `free` |
 | `hud_density` | `String` | `standard` | `compact` · `standard` · `expanded` |
 | `dwell_ms` | `u32` | `500` | `100..=1500` (era 300–2000) |

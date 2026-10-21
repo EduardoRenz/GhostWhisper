@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   closeSettings,
   getProviders,
   getSettings,
   gpuInfo,
+  previewOverlayOpacity,
   saveSettings,
   secretsPersistent,
+  setOverlayOpacity,
   type GpuInfo,
 } from "../../adapters/ipc/settings";
 import {
@@ -22,6 +24,7 @@ import {
 } from "../../core/domain/shortcuts";
 import { ResizeHandles } from "../panels/ResizeHandles";
 import { WindowHeader } from "../../components/WindowHeader";
+import { applyHudOpacity } from "../../core/application/useHudOpacity";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
@@ -46,6 +49,7 @@ import {
   WHISPER_GPU_MODELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
+  DEFAULT_OVERLAY_OPACITY,
   defaultSettings,
   type AccelerationMode,
   type Language,
@@ -96,11 +100,15 @@ export function SettingsPage() {
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
   const [persistent, setPersistent] = useState(true);
+  /** Debounce do autosave da opacidade (BR-062). */
+  const opacityTimer = useRef<number | null>(null);
+  const latestOpacity = useRef(DEFAULT_OVERLAY_OPACITY);
 
   useEffect(() => {
     void (async () => {
       const loaded = await getSettings();
       if (loaded) {
+        latestOpacity.current = loaded.overlay_opacity;
         setDraft(
           loaded.shortcuts.length === 0
             ? { ...loaded, shortcuts: defaultBindings() }
@@ -131,10 +139,52 @@ export function SettingsPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /** Persiste só a opacidade, sem reaplicar atalhos/geometria. */
+  const persistOpacity = useCallback(async (value: number) => {
+    try {
+      await setOverlayOpacity(value);
+    } catch (error) {
+      setStatus({
+        kind: "error",
+        text: `Falha ao salvar a opacidade: ${String(error)}`,
+      });
+    }
+  }, []);
+
   const update = useCallback(
     <K extends keyof Settings>(field: K, value: Settings[K]) => {
       setDraft((prev) => ({ ...prev, [field]: value }));
+
+      // A opacidade é global e precisa refletir em todas as janelas abertas
+      // antes do save (BR-062). O autosave coalesce o arraste do slider.
+      if (field === "overlay_opacity") {
+        const next = Number(value);
+        latestOpacity.current = next;
+        applyHudOpacity(next);
+        void previewOverlayOpacity(next).catch(() => undefined);
+        if (opacityTimer.current !== null) {
+          window.clearTimeout(opacityTimer.current);
+        }
+        opacityTimer.current = window.setTimeout(() => {
+          opacityTimer.current = null;
+          void persistOpacity(latestOpacity.current);
+        }, 200);
+        return;
+      }
+
       setHasUnsavedChanges(true);
+    },
+    [persistOpacity],
+  );
+
+  // Se a janela for fechada/desmontada antes do debounce, grava o último valor.
+  useEffect(
+    () => () => {
+      if (opacityTimer.current !== null) {
+        window.clearTimeout(opacityTimer.current);
+        opacityTimer.current = null;
+        void setOverlayOpacity(latestOpacity.current).catch(() => undefined);
+      }
     },
     [],
   );
@@ -166,16 +216,27 @@ export function SettingsPage() {
 
   const onSave = () =>
     run(async () => {
-      // Perguntas prontas em branco (linha recém-criada) não são persistidas.
-      const result = await saveSettings({
-        ...draft,
-        saved_questions: (draft.saved_questions ?? []).filter(
-          (question) => question.text.trim() !== "",
-        ),
-      });
-      setConflicts(result ?? []);
-      setHasUnsavedChanges(false);
-      setStatus({ kind: "ok", text: "Configurações salvas." });
+      if (opacityTimer.current !== null) {
+        window.clearTimeout(opacityTimer.current);
+        opacityTimer.current = null;
+      }
+      try {
+        // Perguntas prontas em branco (linha recém-criada) não são persistidas.
+        const result = await saveSettings({
+          ...draft,
+          saved_questions: (draft.saved_questions ?? []).filter(
+            (question) => question.text.trim() !== "",
+          ),
+        });
+        setConflicts(result ?? []);
+        setHasUnsavedChanges(false);
+        setStatus({ kind: "ok", text: "Configurações salvas." });
+      } catch (error) {
+        // Se o save completo falhar, a opacidade (autosave) ainda é gravada
+        // pelo seu próprio comando.
+        await persistOpacity(latestOpacity.current);
+        throw error;
+      }
     });
 
   const onRestoreDefaults = () => {

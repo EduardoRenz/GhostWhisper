@@ -19,15 +19,16 @@ interface HudSettingsProps {
   update: <K extends keyof Settings>(field: K, value: Settings[K]) => void;
 }
 
-/** Opacidade da superfície do notch (BR-062). */
+/** Opacidade das superfícies de todas as janelas (BR-062). */
 const OPACITY_STEP = 5;
 
 /**
  * Aba "Geral & HUD" (BR-062).
  *
- * Reúne o comportamento do HUD: opacidade do overlay, ancoragem, dwell-hover e
- * densidade do notch — na forma do mockup (cards em grade, segmentados, toggle e
- * slider com badge). O modo stealth fica no card de privacidade.
+ * Reúne o comportamento do HUD: opacidade global das janelas, ancoragem,
+ * dwell-hover e densidade do notch — na forma do mockup (cards em grade,
+ * segmentados, toggle e slider com badge). O modo stealth fica no card de
+ * privacidade.
  */
 export function HudSettings({ settings, update }: HudSettingsProps) {
   const opacityPercent = Math.round(settings.overlay_opacity * 100);
@@ -43,15 +44,16 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
       <div className="settings__grid">
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Opacidade do Overlay</h3>
+            <h3 className="settings__card-title">Opacidade das Janelas</h3>
             <span className="settings__badge">{opacityPercent}%</span>
           </header>
           <p className="settings__card-description">
-            Transparência da camada de fundo do notch.
+            Transparência das superfícies de todas as janelas. Aplicada em tempo
+            real e salva automaticamente.
           </p>
           <input
             type="range"
-            aria-label="Opacidade do overlay"
+            aria-label="Opacidade das janelas"
             min={MIN_OVERLAY_OPACITY * 100}
             max={MAX_OVERLAY_OPACITY * 100}
             step={OPACITY_STEP}

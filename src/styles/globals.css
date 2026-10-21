@@ -43,7 +43,6 @@ body,
 /* Overlay --------------------------------------------------------------- */
 
 .overlay {
-  --hud-alpha: 0.75;
   --hud-bar-height: 52px;
   --hud-pad: 8px;
   --hud-gap: 6px;
@@ -918,7 +917,7 @@ body,
   height: 100%;
   padding: 0;
   overflow: hidden;
-  background: var(--oh-surface);
+  background: rgba(var(--oh-surface-rgb), var(--hud-alpha, 0.75));
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-window-radius);
   box-shadow: var(--oh-shadow-float);
@@ -982,7 +981,10 @@ body,
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.9rem 1rem;
-  background: var(--oh-surface-container-low);
+  background: rgba(
+    var(--oh-surface-container-low-rgb),
+    var(--hud-alpha, 0.75)
+  );
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius);
 }
@@ -1199,7 +1201,10 @@ body,
   justify-content: space-between;
   gap: 1rem;
   padding: 0.7rem 1.1rem;
-  background: var(--oh-surface-container);
+  background: rgba(
+    var(--oh-surface-container-rgb),
+    var(--hud-alpha, 0.75)
+  );
   border-top: 1px solid var(--oh-border);
 }
 
@@ -1807,7 +1812,7 @@ body,
   margin: 0;
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-window-radius);
-  background: var(--oh-read-surface);
+  background: rgba(var(--oh-read-surface-rgb), var(--hud-alpha, 0.75));
   color: var(--oh-text);
   box-shadow: var(--oh-shadow-float);
   overflow: hidden;
@@ -1914,7 +1919,10 @@ body,
   min-height: 56px;
   padding: var(--oh-space-2) var(--oh-space-4);
   border-bottom: 1px solid var(--oh-divider);
-  background: var(--oh-surface-container-low);
+  background: rgba(
+    var(--oh-surface-container-low-rgb),
+    var(--hud-alpha, 0.75)
+  );
 }
 
 /* O grip vive no canto superior esquerdo em todas as janelas. */
@@ -2536,7 +2544,10 @@ body,
   gap: 2px;
   padding: 2px;
   border-radius: var(--oh-radius-full);
-  background: var(--oh-surface-container-lowest);
+  background: rgba(
+    var(--oh-surface-container-lowest-rgb),
+    var(--hud-alpha, 0.75)
+  );
   border: 1px solid var(--oh-border);
 }
 
@@ -3810,7 +3821,7 @@ body,
   gap: 8px;
   padding: 6px 8px 6px 12px;
   border-radius: var(--oh-radius-full);
-  background: var(--oh-glass-card);
+  background: rgba(var(--oh-glass-card-rgb), var(--hud-alpha, 0.75));
   -webkit-backdrop-filter: blur(var(--oh-blur-card));
   backdrop-filter: blur(var(--oh-blur-card));
   border: 1px solid rgba(0, 242, 254, 0.4);
@@ -4495,7 +4506,10 @@ body,
   padding: 0 var(--oh-space-2) 0 var(--oh-space-3);
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius-full);
-  background: var(--oh-surface-container-low);
+  background: rgba(
+    var(--oh-surface-container-low-rgb),
+    var(--hud-alpha, 0.75)
+  );
 }
 
 .askbar__presets {
@@ -4734,7 +4748,10 @@ body,
   border: 1px solid var(--oh-border-strong);
   border-radius: var(--oh-radius-md);
   overflow: hidden;
-  background: var(--oh-surface-container);
+  background: rgba(
+    var(--oh-surface-container-rgb),
+    var(--hud-alpha, 0.75)
+  );
   box-shadow: var(--oh-shadow-rest);
 }
 

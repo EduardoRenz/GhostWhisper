@@ -8,6 +8,7 @@ import { HistoryWindow } from "./features/history/HistoryWindow";
 import { DwellPopoverWindow } from "./features/dwell/DwellPopoverWindow";
 import { AskWindow } from "./features/ask/AskWindow";
 import { CapturePreviewWindow } from "./features/ask/CapturePreviewWindow";
+import { useHudOpacity } from "./core/application/useHudOpacity";
 
 /** Rotas de janela suportadas pelo GhostWhisper. */
 export type Route =
@@ -57,6 +58,10 @@ export function resolveRoute(): Route {
 }
 
 export function App() {
+  // Opacidade global (BR-062): vale para todas as janelas, inclusive as
+  // ocultas, e recebe preview em tempo real do slider de Configurações.
+  useHudOpacity();
+
   // Resolve já na primeira renderização: janelas ocultas não montam o overlay
   // (e não publicam regiões interativas) antes de trocar de rota.
   const [route, setRoute] = useState<Route>(() => resolveRoute());

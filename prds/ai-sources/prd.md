@@ -119,7 +119,7 @@ As regras canônicas vivem em [`../business-rules.md`](../business-rules.md):
 - **BR-049** — O modelo é digitado pelo usuário (sem catálogo).
 - **BR-050** — Log de debug do modelo em uso (com nível de raciocínio).
 - **BR-051** — O modelo que respondeu é visível na interface.
-- **BR-062** — Aba "Geral & HUD": opacidade, ancoragem e densidade do notch (§10).
+- **BR-062** — Aba "Geral & HUD": opacidade global das janelas, ancoragem e densidade do notch (§10).
 
 A revisão 0.3 (§11) é visual e reusa **BR-044, BR-045, BR-047 e BR-049**; não
 cria regra de produto nova.
@@ -260,12 +260,16 @@ pub hud_density: String,    // compact | standard | expanded  (padrão standard)
   posição (antes o arraste só desligava a reancoragem pela base).
 - **Densidade:** define a **altura da janela** (62/72/84 px lógicos) e as
   variáveis CSS da barra (altura, padding e gap).
-- **Opacidade:** vira `--hud-alpha` e compõe o fundo da barra
-  (`rgba(<rgb do token>, var(--hud-alpha))`); 100 % = superfície sólida.
+- **Opacidade:** vira `--hud-alpha` no root de cada webview e compõe o fundo de
+  **todas** as superfícies de janela (notch, Chat, Sugestões, Histórico,
+  Configurações, Perguntar, dwell e prévia do print), sempre sem `color-mix`;
+  100 % = superfície sólida. O slider publica `hud_opacity_preview` e faz
+  autosave debounced da opacidade, sem esperar o "Salvar Alterações" global.
 
 ### 10.5 Critérios de sucesso
 
-- Salvar a aba nova aplica opacidade/ancoragem/densidade **sem reiniciar** o app.
+- O slider de opacidade atualiza **todas as janelas em tempo real** e é salvo
+  automaticamente; ancoragem/densidade continuam no save global, sem reiniciar.
 - Trocar a ancoragem move o notch imediatamente para o canto escolhido.
 - Arrastar o notch em "Topo Central" o torna "Flutuante Livre".
 - Settings antigas (sem os três campos) carregam com os padrões.

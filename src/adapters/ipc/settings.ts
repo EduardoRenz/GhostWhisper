@@ -3,6 +3,9 @@ import { invokeSafe } from "./client";
 import type { ShortcutConflict } from "../../core/domain/shortcuts";
 import type { ProviderKind, Settings } from "../../core/domain/settings";
 
+/** Evento de preview da opacidade global (BR-062). */
+export const HUD_OPACITY_PREVIEW_EVENT = "hud_opacity_preview";
+
 /** Lista os providers suportados. */
 export const getProviders = (): Promise<ProviderKind[] | undefined> =>
   invokeSafe<ProviderKind[]>("settings_providers");
@@ -20,6 +23,14 @@ export const saveSettings = (
   settings: Settings,
 ): Promise<ShortcutConflict[] | undefined> =>
   invokeSafe<ShortcutConflict[]>("settings_set", { settings });
+
+/** Publica o preview da opacidade global antes do autosave. */
+export const previewOverlayOpacity = (opacity: number): Promise<void | undefined> =>
+  invokeSafe<void>("settings_preview_overlay_opacity", { opacity });
+
+/** Autosave da opacidade global (não mexe nos demais campos). */
+export const setOverlayOpacity = (opacity: number): Promise<void | undefined> =>
+  invokeSafe<void>("settings_set_overlay_opacity", { opacity });
 
 /** Testa a conexão com a fonte primária (validar chave). */
 export const validateKey = (): Promise<string | undefined> =>

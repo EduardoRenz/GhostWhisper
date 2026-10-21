@@ -112,6 +112,7 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | `--oh-radius` | `1rem` |
 | `--oh-radius-md` | `1.5rem` |
 | `--oh-window-radius` | `var(--oh-radius-sm)` (8 px) — raio externo de painéis e Configurações (BR-064) |
+| `--hud-alpha` | `0.75` (20–100 %) — opacidade global das superfícies; sobrescrita no root de cada webview (BR-062) |
 | `--oh-radius-lg` | `2rem` |
 | `--oh-radius-xl` | `3rem` |
 | `--oh-radius-full` | `9999px` |
@@ -197,6 +198,17 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 - **`prefers-contrast: more` / `forced-colors`:** remover vidro e usar contornos.
 - **Blur:** apenas nas cascas; medir que o custo de composição não reintroduz a
   ISS-020 (re-render por evento de nível).
+
+### Opacidade global das janelas
+
+- `--hud-alpha` é definido em `:root` e sobrescrito no `document.documentElement`
+  pelo `useHudOpacity` de cada webview. O valor vem de `overlay_opacity`
+  (nome legado) e vale para **todas** as janelas.
+- Superfícies usam canais RGB + a variável (ex.:
+  `rgba(var(--oh-surface-container-low-rgb), var(--hud-alpha, .75))`), sem
+  `color-mix`; o texto e os controles ficam opacos.
+- O slider de Configurações publica `hud_opacity_preview` e o autosave persiste
+  só a opacidade; 100 % = superfície sólida.
 
 ## 8. Divergências do design (resolvidas aqui)
 

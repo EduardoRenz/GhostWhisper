@@ -20,6 +20,7 @@
 | 12 | UI: aba "Geral & HUD" e acabamento visual | CONCLUDED |
 | 13 | Overlay consome opacidade/densidade, docs e verificação | CONCLUDED |
 | 14 | Redesign da aba "Fontes de IA" | PENDING |
+| 15 | Opacidade global das janelas em tempo real + autosave | CONCLUDED |
 
 ## Revisão v0.2 (2026-10-20)
 
@@ -53,6 +54,8 @@ fallback (PRD §11).
 - A **13** fecha: overlay, BR-062, docs e verificação.
 - A **14** é independente do HUD no backend: só consome o padrão visual da 13
   e pode ser feita em uma única entrega de frontend/CSS.
+- A **15** estende a opacidade da 13 para todas as janelas, com preview e
+  autosave; depende da casca visual da 13/BR-064.
 
 > 10–13 implementadas em 2026-10-20; a **validação visual/manual** do usuário
 > (mockup e notch real) é o último passo antes de considerar a v0.2 encerrada.

@@ -230,7 +230,7 @@ pub struct Settings {
     /// Tempo de permanência do drill-hover, em milissegundos (BR-036).
     #[serde(default = "default_dwell_ms")]
     pub dwell_ms: u32,
-    /// Opacidade da superfície do notch (0,2–1,0) — BR-062.
+    /// Opacidade das superfícies de todas as janelas (0,2–1,0) — BR-062.
     #[serde(default = "default_overlay_opacity")]
     pub overlay_opacity: f32,
     /// Ancoragem do notch: `top_center` | `top_right` | `free` (BR-062).
@@ -566,7 +566,7 @@ impl Settings {
             || !(MIN_OVERLAY_OPACITY..=MAX_OVERLAY_OPACITY).contains(&self.overlay_opacity)
         {
             return Err(GhostWhisperError::Config(format!(
-                "opacidade do overlay deve ficar entre {MIN_OVERLAY_OPACITY} e {MAX_OVERLAY_OPACITY}"
+                "opacidade das janelas deve ficar entre {MIN_OVERLAY_OPACITY} e {MAX_OVERLAY_OPACITY}"
             )));
         }
         if !is_supported_anchor(&self.notch_anchor) {

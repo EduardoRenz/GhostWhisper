@@ -19,16 +19,16 @@ describe("HudSettings (aba Geral & HUD)", () => {
 
   it("mostra os quatro cards do mockup + privacidade", () => {
     setup();
-    expect(screen.getByText("Opacidade do Overlay")).toBeDefined();
+    expect(screen.getByText("Opacidade das Janelas")).toBeDefined();
     expect(screen.getByText("Posição de Ancoragem do Notch")).toBeDefined();
     expect(screen.getByText("Expandir Notch por Dwell (Hover)")).toBeDefined();
     expect(screen.getByText("Tamanho / Densidade do Notch")).toBeDefined();
     expect(screen.getByText("Privacidade")).toBeDefined();
   });
 
-  it("muda a opacidade do overlay e atualiza o badge", () => {
+  it("muda a opacidade das janelas e atualiza o badge", () => {
     const { update } = setup({ overlay_opacity: 0.75 });
-    const slider = screen.getByLabelText("Opacidade do overlay") as HTMLInputElement;
+    const slider = screen.getByLabelText("Opacidade das janelas") as HTMLInputElement;
     expect(slider.value).toBe("75");
     expect(slider.min).toBe("20");
     expect(slider.max).toBe("100");

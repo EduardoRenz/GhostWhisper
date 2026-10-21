@@ -1294,12 +1294,17 @@ uma nota de revisão.
   [`session/tasks/10-task.md`](session/tasks/10-task.md).
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
-## BR-062 — Aba "Geral & HUD": opacidade, ancoragem e densidade do notch
+## BR-062 — Aba "Geral & HUD": opacidade global, ancoragem e densidade
 
 - **Decisão:** o comportamento do HUD deixa de ficar disperso e passa a uma aba
   própria — **"Geral & HUD"** (substitui "Ajustes") — com quatro controles:
-  1. **Opacidade do overlay** (`overlay_opacity`, 20 %–100 %, padrão 75 %): a
-     transparência da superfície do notch.
+  1. **Opacidade das janelas** (`overlay_opacity`, 20 %–100 %, padrão 75 %): a
+     transparência das superfícies de **todas** as janelas (notch, Chat,
+     Sugestões, Histórico, Configurações, Perguntar, dwell e prévia do print) —
+     já não é exclusiva do notch. O nome legado do campo é mantido para não
+     exigir migração. A mudança é **aplicada em tempo real** (preview) e
+     **salva automaticamente** com debounce; os demais campos continuam no
+     "Salvar Alterações" global.
   2. **Posição de ancoragem** (`notch_anchor`): **Topo Central** (padrão),
      **Canto Superior Direito** ou **Flutuante Livre**. As duas primeiras
      posicionam o notch na **área útil do monitor primário**; a terceira usa a
@@ -1315,15 +1320,21 @@ uma nota de revisão.
   drill-hover. Paridade com o mockup do usuário (BR-015).
 - **Consequência:** **arrastar** o notch passa a ancoragem para **Flutuante
   Livre** e persiste a posição (antes o arraste apenas desligava a reancoragem
-  pela base). Salvar as settings reaplica opacidade/ancoragem/densidade **sem
-  reiniciar**; um save que não altera âncora/densidade **não move** o notch
-  (ISS-045); settings antigas carregam com os padrões (campos ausentes). A
-  largura do notch é **dinâmica** (medida pelo conteúdo) e o menu de canais abre
-  abaixo da barra com altura reservada enquanto está aberto (ISS-047).
+  pela base). A opacidade global é aplicada pelo root de cada webview
+  (`--hud-alpha`), então o slider atualiza todas as janelas abertas antes do
+  save; o autosave usa um comando dedicado (`settings_set_overlay_opacity`) sem
+  reaplicar atalhos/geometria. Salvar as settings reaplica
+  opacidade/ancoragem/densidade **sem reiniciar**; um save que não altera
+  âncora/densidade **não move** o notch (ISS-045); settings antigas carregam
+  com os padrões (campos ausentes). A largura do notch é **dinâmica** (medida
+  pelo conteúdo) e o menu de canais abre abaixo da barra com altura reservada
+  enquanto está aberto (ISS-047).
 - **Detalhes:** [`ai-sources/prd.md`](ai-sources/prd.md) §10,
   [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §9,
-  [`ai-sources/tasks/12-task.md`](ai-sources/tasks/12-task.md).
-- **Data:** 2026-10-20 · **Status:** Ativa
+  [`ai-sources/tasks/15-task.md`](ai-sources/tasks/15-task.md),
+  [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md) §3.
+- **Data:** 2026-10-20 · **Atualizada em:** 2026-10-21 (opacidade global e
+  autosave — task 15) · **Status:** Ativa
 
 ## BR-063 — Sinal de transcrição em andamento na aba Transcrição
 

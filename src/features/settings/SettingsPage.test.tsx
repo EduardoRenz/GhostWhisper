@@ -13,7 +13,9 @@ const settingsIpc = vi.hoisted(() => ({
   ]),
   getSettings: vi.fn(async () => undefined),
   gpuInfo: vi.fn(async () => undefined),
+  previewOverlayOpacity: vi.fn(async () => undefined),
   saveSettings: vi.fn(async (_settings: unknown) => [] as unknown[]),
+  setOverlayOpacity: vi.fn(async () => undefined),
   secretsPersistent: vi.fn(async () => true),
   validateKey: vi.fn(async () => "ok"),
   providerLabel: vi.fn(async () => "OpenAI · gpt-4o-mini"),
@@ -157,6 +159,30 @@ describe("SettingsPage", () => {
     // Cancelou: nada foi salvo.
     expect(settingsIpc.saveSettings).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it("aplica a opacidade em tempo real e salva automaticamente", async () => {
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: /Geral & HUD/ }).click();
+    });
+
+    const slider = await screen.findByLabelText("Opacidade das janelas");
+    await act(async () => {
+      fireEvent.change(slider, { target: { value: "40" } });
+    });
+
+    expect(settingsIpc.previewOverlayOpacity).toHaveBeenCalledWith(0.4);
+    expect(
+      document.documentElement.style.getPropertyValue("--hud-alpha"),
+    ).toBe("0.4");
+    await waitFor(
+      () => expect(settingsIpc.setOverlayOpacity).toHaveBeenCalledWith(0.4),
+      { timeout: 1000 },
+    );
+    // Não usa o save global: o autosave é só da opacidade.
+    expect(settingsIpc.saveSettings).not.toHaveBeenCalled();
   });
 
   it("troca para a aba de transcrição e mostra o modelo whisper", async () => {
