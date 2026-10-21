@@ -17,6 +17,7 @@
 | 09 | Documentação (BRs/ISS/memory), verificação e pacotes | CONCLUDED |
 | 10 | Dívida de índices do schema + ancoragem do FTS por `id` | CONCLUDED |
 | 11 | Sinal de transcrição em andamento na aba Transcrição (BR-063) | CONCLUDED |
+| 12 | Janelas não se movem sozinhas; barra “Perguntar” preserva posição (ISS-055) | CONCLUDED |
 
 ## Revisão v2 (2026-10-20)
 
@@ -54,6 +55,8 @@ compositor** tirar as janelas antes do `GetImage`.
   toca `schema.sql`, então vai **antes** da 09 (que fecha a documentação) e
   pode ser feita a qualquer momento depois da 01.
 - A **09** fecha: BRs, ISS, `memory.md`, verificação e pacotes.
+- A **12** estabiliza a geometria da barra "Perguntar" (ISS-055) e formaliza a
+  regra BR-072; depende da 02/06.
 
 ## Entregáveis por camada
 

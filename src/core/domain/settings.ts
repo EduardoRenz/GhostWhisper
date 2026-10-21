@@ -121,6 +121,8 @@ export interface Settings {
   shortcuts: ShortcutBinding[];
   /** Posição do overlay na tela (lembrada após o usuário mover). */
   overlay_position: [number, number] | null;
+  /** Posição da barra "Perguntar" (só muda por arraste; BR-072). */
+  ask_position: [number, number] | null;
   /** Agente/modo selecionado para sugestões (`default` — o agente Padrão). */
   assistant_mode_id: string;
   /**
@@ -397,6 +399,7 @@ export const defaultSettings = (): Settings => ({
   stealth: false,
   shortcuts: defaultBindings(),
   overlay_position: null,
+  ask_position: null,
   assistant_mode_id: "default",
   assistant_mode_migrated: false,
   custom_assistant_modes: [],

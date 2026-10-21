@@ -197,6 +197,7 @@ pub fn run() {
                 tracing::warn!("bandeja indisponível: {error}");
             }
             spawn_overlay_position_tracker(app.handle().clone());
+            spawn_ask_position_tracker(app.handle().clone());
             // ISS-043: o GTK/Mutter pode mapear o overlay **sem** o
             // `_NET_WM_STATE_ABOVE`; reafirma logo após o boot.
             spawn_overlay_stacking_reassertion(app.handle().clone());
@@ -606,9 +607,12 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             overlay.set_anchor_bottom(false);
         }
     }
-    // Barra "Perguntar": sempre no topo, centralizada (BR-052). A posição é
-    // recalculada a cada abertura (ver `show_ask_window`).
-    crate::ipc::ask_commands::center_ask_window(app.handle());
+    // Barra "Perguntar": restaura a posição arrastada; só centraliza na
+    // primeira execução. Abrir/fechar/capturar não a move (BR-072).
+    crate::ipc::ask_commands::restore_ask_window_position(
+        app.handle(),
+        current_settings.ask_position,
+    );
 
     // Prévia do print: canto **superior direito** (BR-055).
     if let Some(window) = app.get_webview_window("capture") {
@@ -1079,6 +1083,36 @@ fn spawn_panel_position_tracker(app: tauri::AppHandle, label: &'static str) {
             changed = true;
         }
         if changed {
+            let _ = state.settings.save(&settings);
+        }
+    });
+}
+
+/// Persiste a posição da barra "Perguntar" enquanto visível.
+///
+/// A barra só muda de posição por arraste explícito (BR-072); este tracker
+/// apenas lembra o ponto em que o usuário a deixou, sem reposicioná-la.
+fn spawn_ask_position_tracker(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(700));
+
+        let Some(window) = app.get_webview_window(crate::ipc::ask_commands::ASK_WINDOW) else {
+            continue;
+        };
+        if !window.is_visible().unwrap_or(false) {
+            continue;
+        }
+        let Ok(position) = window.outer_position() else {
+            continue;
+        };
+
+        let state = app.state::<state::AppState>();
+        let Ok(mut settings) = state.settings.load() else {
+            continue;
+        };
+        let current = (position.x, position.y);
+        if settings.ask_position != Some(current) {
+            settings.ask_position = Some(current);
             let _ = state.settings.save(&settings);
         }
     });

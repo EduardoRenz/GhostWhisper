@@ -1104,7 +1104,15 @@ uma nota de revisão.
   ao mapeá-la). Arrastar vale só **enquanto ela está aberta**; ela nunca mais
   nasce fora da tela escondendo a alça. O foco do campo é garantido pelo
   evento `ask_focus` **e** pelo foco da janela (`onFocusChanged`), porque o
-  foco do WM chega depois do evento.
+  foco do WM chega depois do evento. *(Substituída pela revisão 6.)*
+- **Revisão 6 (2026-10-21):** a barra **não recentraliza mais** ao reabrir.
+  A posição é persistida em `ask_position` e restaurada no boot; ao mostrar uma
+  janela oculta, a **mesma posição salva** é reaplicada antes e depois do
+  `show` (alguns WMs mapeiam a janela em `0,0`). Abrir, fechar, capturar a
+  tela, trocar de foco ou salvar settings não muda a posição para outro lugar
+  (BR-072). A centralização no topo acontece só na **primeira execução**,
+  quando ainda não há posição salva. Arrastar pela alça continua valendo e é
+  persistido; a captura de tela restaura a geometria exata de cada janela.
 - **Revisão 4 (2026-10-20):** a sessão do diário é **sempre a sessão ativa**
   (a mesma do notch/histórico), inclusive a aberta **pausada** pela pergunta
   (`ensure_session`) — é o que faz a resposta de um print **sem transcrição**
@@ -1522,4 +1530,35 @@ uma nota de revisão.
   apenas localmente.
 - **Detalhes:** [`recording/prd.md`](recording/prd.md) RNF-08;
   [`recording/architecture/recording.md`](recording/architecture/recording.md) §11.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-072 — Janelas só se movem por arraste explícito
+
+- **Decisão:** nenhuma janela do GhostWhisper se reposiciona sozinha para
+  **outro** lugar. Abrir, fechar, focar, capturar a tela, receber eventos ou
+  salvar settings não muda a posição; ao mostrar uma janela oculta, o core pode
+  reaplicar **a mesma posição salva** (nunca centraliza nem aceita o `0,0` do
+  WM). A posição só muda quando:
+  1. o usuário **arrasta** a alça da janela (e o core persiste o resultado);
+  2. a janela é **colocada pela primeira vez** no boot, por não haver posição
+     salva (fallback centralizado/topo/canto);
+  3. o usuário muda explicitamente a **âncora/densidade do notch** (BR-062);
+  4. um **popover transitório** (dwell) é posicionado relativo ao notch.
+- **Motivo:** relato do usuário — a barra “Perguntar” pulava depois que a
+  captura de tela a escondia e mostrava de novo. A causa era o
+  `center_ask_window` chamado em toda abertura escondida; a captura chama
+  `askOpen()` ao voltar, então a barra recentralizava. É a mesma classe da
+  ISS-045 (notch reposicionado por save de outra janela), agora na barra.
+- **Consequência:** a barra “Perguntar” ganha `ask_position` persistido
+  (`preserve_window_geometry` impede que um snapshot velho de settings o
+  sobrescreva). `show_ask_window` reaplica a última posição antes/depois do
+  `show`; a captura guarda a geometria de cada janela antes do `hide` e a
+  restaura antes/depois do `show`. A posição de painéis/notch/Configurações
+  também não é alterada pelo ciclo da captura; o único movimento automático é
+  a colocação inicial.
+- **Exceções documentadas:** a primeira colocação de cada janela, a mudança
+  explícita de âncora/densidade e os popovers ancorados (dwell) — nenhuma
+  delas é disparada por interação em outra janela.
+- **Detalhes:** [`session/issues.md`](session/issues.md) ISS-055,
+  [`session/tasks/12-task.md`](session/tasks/12-task.md).
 - **Data:** 2026-10-21 · **Status:** Ativa

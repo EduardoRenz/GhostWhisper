@@ -413,3 +413,82 @@ ciano L→R para microfone, cor de Outros R→L, ambos simultâneos.
 - Validado no AppImage: ponto + mic na aba existente; áudio do sistema acendeu
   o ponto na cor de Outros e o sweep na aba.
 
+
+## 2026-10-21 — Barra “Perguntar” não se move sozinha (ISS-055, task 12)
+
+- **IDs:** ISS-055, T12, BR-052 (rev. 6), BR-072
+- **Refs:** [`issues.md`](issues.md), [`tasks/12-task.md`](tasks/12-task.md),
+  [`prd.md`](prd.md) US-00,
+  [`architecture/session-journal.md`](architecture/session-journal.md) §8
+
+### Relato
+*“A barra de pesquisa está com comportamento semelhante [ao notch]; em especial
+testei quando há captura de tela. Após ela retornar a visibilidade, ela pula
+para outro lugar. Qualquer janela não pode se mover sozinha a não ser que eu
+arraste explicitamente.”*
+
+### Diagnóstico
+- `show_ask_window` chamava `center_ask_window` antes e depois do `show` quando
+  a janela estava escondida (revisão 5 da BR-052).
+- A captura esconde todas as janelas por ~260 ms e o `AskWindow` chama
+  `askOpen()` ao voltar; isso recentralizava a barra.
+- A barra não tinha `ask_position` nem tracker: a posição real não era
+  persistida nem protegida de snapshots antigos de settings.
+
+### Correção
+- `show_ask_window` só mostra e foca; nenhum `set_position` em abertura/foco.
+- `ask_position` novo em `Settings` (Rust + TS), com `serde(default)` e default
+  `None`; restaurado apenas no boot; primeira execução ainda centraliza.
+- `spawn_ask_position_tracker` persiste a posição visível.
+- `preserve_window_geometry` inclui `ask_position`: save de outra janela não
+  sobrescreve a geometria real.
+- BR-072 formaliza a regra geral: só arraste explícito move uma janela, com
+  exceções de colocação inicial, âncora/densidade do notch e popovers ancorados.
+
+### Verificação
+- `cargo test --lib` **596 ✓** (10 ignorados) · clippy `-D warnings` ✓ ·
+  rustfmt dos arquivos tocados ✓.
+- `pnpm test` **387 ✓** · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- AppImage no Xvfb: `440,12` → movida para `300,200` → captura de tela →
+  permaneceu `300,200`; reinício → reabriu `300,200`. Settings do usuário
+  restaurados do backup. Pacotes às 14:22.
+
+## 2026-10-21 — Follow-up: WM remapeava a barra em 0,0 (ISS-055, task 12)
+
+- **IDs:** ISS-055, T12, BR-052 (rev. 6), BR-072
+- **Refs:** [`issues.md`](issues.md), [`tasks/12-task.md`](tasks/12-task.md)
+
+### Relato do teste do usuário
+*“A barra de pesquisa continua mudando de lugar, ela quase sempre reseta no
+canto superior esquerdo. Justamente ela eu queria que ficasse na última posição
+que deixei sempre.”*
+
+### Diagnóstico
+- O `ask_position` persistido estava correto (`398,343`), então o autosave não
+  era o problema.
+- No WM real, uma janela oculta (`hide`) é remapeada em `0,0` ao chamar `show`;
+  a primeira correção não reaplicava a posição no show e o WM vencia.
+- O fluxo de captura também mostrava a janela pelo `restore_app_windows`
+  genérico antes do `askOpen`; quando o `askOpen` via a janela já visível, não
+  corrigia a posição.
+
+### Correção complementar
+- `show_ask_window` reaplica a **mesma `ask_position` salva** antes e depois do
+  `show`; nunca centraliza quando há posição salva.
+- `persist_ask_position` grava a posição real antes de `ask_hide` e antes da
+  captura (arraste seguido de fechamento imediato não se perde).
+- `screen_capture` agora guarda `(posição, tamanho)` de **todas** as janelas
+  visíveis antes do `hide` e reaplica antes/depois do `show` no retorno.
+- O tracker periódico continua como fallback, mas não é mais necessário para o
+  ciclo de captura/fechamento.
+
+### Verificação
+- AppImage novo no Xvfb:
+  - abriu em `398,343`; escondida e movida para `0,0` enquanto oculta; reabriu
+    em `398,343`;
+  - captura de tela manteve `398,343` e a prévia apareceu;
+  - arraste para `250,450` + `Esc` imediato → `ask_position = [250,450]`;
+    reabriu em `250,450`.
+- `cargo test --lib` **596 ✓** · clippy `-D warnings` ✓ · rustfmt ✓.
+- Estado do usuário restaurado do backup (`ask_position = [398,343]`) e pacotes
+  gerados às 15:04.

@@ -299,7 +299,9 @@ a cada delta.
 O **notch** continua sendo a superfície principal (arrastável, ancorado pela
 base) e ganha, ao lado da marca, um botão de **lupa** (cor primária + badge
 `Ctrl K`). A lupa — **disponível com ou sem transcrição** — abre a barra numa
-**janela própria** (`ask`, 1 040 px, no topo, centralizada):
+**janela própria** (`ask`, 1 040 px). A primeira execução a coloca centralizada
+no topo; depois disso, a posição persistida (`ask_position`) é restaurada no
+boot e só muda quando o usuário arrasta a alça (BR-072):
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -314,6 +316,12 @@ base) e ganha, ao lado da marca, um botão de **lupa** (cor primária + badge
   (janela `capture`), com o botão de remover. Nada é enviado ainda.
 - **Ctrl+K** (`focus_ask`) → abre a barra e foca o campo.
 - `Esc` fecha a barra sem perguntar.
+- **Posição estável:** `show_ask_window` reaplica `ask_position` antes e
+  depois do `show` (alguns WMs mapeiam a janela oculta em `0,0`), mas nunca
+  centraliza quando há posição salva. O tracker grava `ask_position` enquanto
+  a barra está visível; `ask_hide` e a captura também persistem o último ponto
+  antes de esconder. Abrir/fechar/capturar/salvar settings não muda a barra de
+  lugar (BR-072/ISS-055).
 - O notch mantém o switcher (Transcrição | Resumo | Sugestões) + timer quando
   há gravação; a lupa fica disponível nos dois estados.
 

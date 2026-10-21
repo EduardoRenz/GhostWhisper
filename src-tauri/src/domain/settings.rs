@@ -177,6 +177,12 @@ pub struct Settings {
     /// Posição do overlay na tela (lembrada após o usuário mover).
     #[serde(default)]
     pub overlay_position: Option<(i32, i32)>,
+    /// Posição da barra "Perguntar" (lembrada após o usuário mover).
+    ///
+    /// Só é reaplicada no boot; abrir, fechar, capturar a tela ou salvar
+    /// settings **não** move a barra (BR-072).
+    #[serde(default)]
+    pub ask_position: Option<(i32, i32)>,
     /// Agente/modo selecionado para sugestões (`default` — o agente Padrão).
     #[serde(default = "default_assistant_mode")]
     pub assistant_mode_id: String,
@@ -396,6 +402,7 @@ impl Default for Settings {
             stealth: false,
             shortcuts: crate::domain::shortcuts::default_bindings(),
             overlay_position: None,
+            ask_position: None,
             assistant_mode_id: default_assistant_mode(),
             assistant_mode_migrated: false,
             custom_assistant_modes: Vec::new(),
@@ -432,7 +439,6 @@ impl Default for Settings {
         }
     }
 }
-
 
 /// Configuração de gravação que entra em instalações novas (BR-066).
 fn default_recording_mode() -> String {
@@ -753,6 +759,7 @@ impl Settings {
     /// por isso o valor persistido sempre vence o payload (ISS-045).
     pub fn preserve_window_geometry(&mut self, persisted: &Settings) {
         self.overlay_position = persisted.overlay_position;
+        self.ask_position = persisted.ask_position;
         self.suggestions_position = persisted.suggestions_position;
         self.suggestions_size = persisted.suggestions_size;
         self.chat_position = persisted.chat_position;
@@ -1287,6 +1294,7 @@ mod tests {
     fn preserve_window_geometry_ignores_stale_payload_geometry() {
         let persisted = Settings {
             overlay_position: Some((570, 312)),
+            ask_position: Some((400, 80)),
             suggestions_position: Some((10, 20)),
             suggestions_size: Some((420, 640)),
             chat_position: Some((30, 40)),
@@ -1297,6 +1305,7 @@ mod tests {
         };
         let mut payload = Settings {
             overlay_position: Some((0, 0)),
+            ask_position: Some((1, 2)),
             suggestions_position: None,
             suggestions_size: Some((300, 300)),
             chat_position: Some((1, 1)),
@@ -1310,6 +1319,7 @@ mod tests {
         payload.preserve_window_geometry(&persisted);
 
         assert_eq!(payload.overlay_position, Some((570, 312)));
+        assert_eq!(payload.ask_position, Some((400, 80)));
         assert_eq!(payload.suggestions_position, Some((10, 20)));
         assert_eq!(payload.suggestions_size, Some((420, 640)));
         assert_eq!(payload.chat_position, Some((30, 40)));

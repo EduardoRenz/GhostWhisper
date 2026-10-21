@@ -83,6 +83,10 @@ describe("settings (domínio)", () => {
     expect(MAX_DWELL_MS).toBe(1500);
   });
 
+  it("a barra Perguntar nasce sem posição salva (BR-072)", () => {
+    expect(defaultSettings().ask_position).toBeNull();
+  });
+
   it("HUD começa equilibrado, no topo central e no padrão (BR-062)", () => {
     const settings = defaultSettings();
     expect(settings.overlay_opacity).toBe(0.75);

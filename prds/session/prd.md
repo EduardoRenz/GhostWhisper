@@ -82,8 +82,9 @@ transcrição) que abre uma **barra de pesquisa** discreta no topo.
 - [ ] A lupa existe **nos dois estados** — em repouso (sem sessão) e com
       transcrição gravando. **Não** depende de haver transcrição.
 - [ ] Clicar na lupa (ou **Ctrl+K**) abre a **barra de pesquisa** (janela
-      própria, no **topo**, centralizada): lupa + campo + `Ctrl K` + divisor +
-      **Capturar Tela** (`Alt C`) — o layout da referência do Perssua.
+      própria, centralizada no topo **na primeira execução**): lupa + campo +
+      `Ctrl K` + divisor + **Capturar Tela** (`Alt C`) — o layout da
+      referência do Perssua.
 - [ ] A barra de pesquisa **desaparece** depois do envio, e o painel abre na
       aba **Sessão** com a resposta em streaming.
 - [ ] A pergunta **não exige** transcrição: sem sessão de áudio, o contexto é
@@ -94,7 +95,9 @@ transcrição) que abre uma **barra de pesquisa** discreta no topo.
       resposta **fica** no diário (o reload do fim da resposta não apaga).
 - [ ] `Esc` fecha a barra sem perguntar.
 - [ ] A barra de pesquisa tem a **alça de arraste** (⋮⋮) à esquerda, como o
-      notch.
+      notch. A posição arrastada é persistida e **só muda por arraste**:
+      abrir/fechar, capturar a tela ou salvar settings não move a barra
+      (BR-072).
 - [ ] O notch mantém o **fundo** (pill opaca); o estado de repouso não perde a
       superfície.
 - [ ] O notch mantém o comportamento e a posição de antes (arrastável,

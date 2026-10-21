@@ -20,6 +20,17 @@ const HIDE_SETTLE_MAX_MS: u64 = 600;
 /// Respiro antes de restaurar (o `show` logo após o `hide` pode ser ignorado).
 const RESTORE_SETTLE_MS: u64 = 60;
 
+/// Geometria de uma janela escondida durante a captura.
+///
+/// O `show()` de uma janela oculta pode fazer o GTK/Mutter mapeá-la em `0,0`
+/// ou no centro; guardar e reaplicar a geometria mantém todas as janelas no
+/// lugar em que o usuário as deixou (BR-072).
+struct HiddenWindow {
+    label: String,
+    position: Option<tauri::PhysicalPosition<i32>>,
+    size: Option<tauri::PhysicalSize<u32>>,
+}
+
 /// Imagem capturada (em base64, para o frontend montar a data URL).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CapturedImageDto {
@@ -57,6 +68,9 @@ pub fn screen_capture(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CapturedImageDto> {
+    // Guarda a posição da barra antes do hide: ela pode ter sido arrastada
+    // menos de um ciclo antes do tracker periódico.
+    crate::ipc::ask_commands::persist_ask_position(&app);
     let (hidden, focused) = hide_app_windows(&app);
     wait_for_hidden(&app, &hidden);
     let captured = state.screen.capture();
@@ -106,9 +120,9 @@ fn notify_capture_changed(app: &tauri::AppHandle) {
 
 /// Esconde as janelas visíveis do app.
 ///
-/// Devolve os labels escondidos e — para a captura não roubar o foco — qual
-/// delas estava em foco (é ela que volta com o foco depois).
-fn hide_app_windows(app: &tauri::AppHandle) -> (Vec<String>, Option<String>) {
+/// Devolve a geometria das janelas escondidas e — para a captura não roubar o
+/// foco — qual delas estava em foco (é ela que volta com o foco depois).
+fn hide_app_windows(app: &tauri::AppHandle) -> (Vec<HiddenWindow>, Option<String>) {
     let mut hidden = Vec::new();
     let mut focused = None;
     for (label, window) in app.webview_windows() {
@@ -116,8 +130,13 @@ fn hide_app_windows(app: &tauri::AppHandle) -> (Vec<String>, Option<String>) {
             if window.is_focused().unwrap_or(false) {
                 focused = Some(label.to_string());
             }
+            let snapshot = HiddenWindow {
+                label: label.to_string(),
+                position: window.outer_position().ok(),
+                size: window.inner_size().ok(),
+            };
             let _ = window.hide();
-            hidden.push(label.to_string());
+            hidden.push(snapshot);
         }
     }
     (hidden, focused)
@@ -128,12 +147,12 @@ fn hide_app_windows(app: &tauri::AppHandle) -> (Vec<String>, Option<String>) {
 /// O pedido de `hide` é assíncrono (GTK → X11 → compositor): primeiro um
 /// settle fixo de [`HIDE_SETTLE_MS`] e, depois, confirma o estado do Tauri
 /// (limitado por [`HIDE_SETTLE_MAX_MS`]) para não capturar cedo demais.
-fn wait_for_hidden(app: &tauri::AppHandle, labels: &[String]) {
+fn wait_for_hidden(app: &tauri::AppHandle, hidden: &[HiddenWindow]) {
     std::thread::sleep(Duration::from_millis(HIDE_SETTLE_MS));
     let started = Instant::now();
     while started.elapsed() < Duration::from_millis(HIDE_SETTLE_MAX_MS) {
-        let all_hidden = labels.iter().all(|label| {
-            app.get_webview_window(label)
+        let all_hidden = hidden.iter().all(|snapshot| {
+            app.get_webview_window(&snapshot.label)
                 .and_then(|window| window.is_visible().ok())
                 .map(|visible| !visible)
                 .unwrap_or(true)
@@ -149,16 +168,30 @@ fn wait_for_hidden(app: &tauri::AppHandle, labels: &[String]) {
 ///
 /// `unminimize` antes do `show` cobre o caso de o WM ter minimizado a janela
 /// ao escondê-la; um respiro curto entre esconder/mostrar evita o `show` ser
-/// ignorado logo depois do `hide` (a janela "não voltava").
-fn restore_app_windows(app: &tauri::AppHandle, hidden: Vec<String>, focused: Option<String>) {
+/// ignorado logo depois do `hide` (a janela "não voltava"). A geometria é
+/// reaplicada antes **e** depois do mapeamento: alguns WMs ignoram a posição
+/// de uma janela oculta e a colocam em `0,0` ao mostrá-la (BR-072).
+fn restore_app_windows(app: &tauri::AppHandle, hidden: Vec<HiddenWindow>, focused: Option<String>) {
     if hidden.is_empty() {
         return;
     }
     std::thread::sleep(Duration::from_millis(RESTORE_SETTLE_MS));
-    for label in &hidden {
-        if let Some(window) = app.get_webview_window(label) {
+    for snapshot in &hidden {
+        if let Some(window) = app.get_webview_window(&snapshot.label) {
+            if let Some(position) = snapshot.position {
+                let _ = window.set_position(position);
+            }
+            if let Some(size) = snapshot.size {
+                let _ = window.set_size(size);
+            }
             let _ = window.unminimize();
             let _ = window.show();
+            if let Some(position) = snapshot.position {
+                let _ = window.set_position(position);
+            }
+            if let Some(size) = snapshot.size {
+                let _ = window.set_size(size);
+            }
         }
     }
     // Devolve o foco a quem o tinha (a barra de pesquisa, normalmente).
