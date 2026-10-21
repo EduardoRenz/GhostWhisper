@@ -307,3 +307,39 @@ A implementação foi alinhada a isso (não reintroduziu geração ao abrir).
 ### Verificação
 - `pnpm test` **265 ✓** · `cargo test --lib` **378 ✓** · `tsc`/`build` ✓.
 - AppImage/deb reconstruídos (19:47) e app aberto com o novo build.
+
+## 2026-10-21 — Header padrão e janelas menos arredondadas (task 17)
+
+- **IDs:** BR-064, T17
+- **Refs:** [`prd.md`](prd.md) (CA-14.5),
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md) §2,
+  [`../notch/architecture/design-tokens.md`](../notch/architecture/design-tokens.md) §4/§6,
+  [`tasks/17-task.md`](tasks/17-task.md)
+
+### Pedido (mockup do usuário)
+- Grip no canto esquerdo em todas as janelas; hoje algumas não tinham.
+- Título com margem; alguns headers colavam o texto na borda.
+- Cantos menos arredondados, usando os balões de conversa como referência.
+- Remover a moldura nativa do SO na janela de Configurações.
+
+### Entregue
+- `WindowHeader` comum: grip à esquerda, selo 32 px, título/subtítulo, ações e
+  `×` à direita; padding 16/8 px e altura mínima 56 px.
+- `PanelFrame` passou a usar o header comum (`icon`/`titleExtra`); Chat troca o
+  ícone por aba, Sugestões usa a faísca + LIVE e Histórico usa o ícone próprio.
+- `--oh-window-radius` (= `--oh-radius-sm`, 8 px) aplicado ao `.panel` e ao
+  `.settings` (e ao `.app`), no lugar de 24/12 px.
+- Configurações sem moldura: `decorations: false`, `transparent: true`,
+  `shadow: false`, shell de 8 px, `ResizeHandles` e o mesmo header; o fechar
+  continua em `settings_close`.
+- Em painéis estreitos as ações quebram e o rótulo “Auto-sugerir” some (o anel
+  e a contagem permanecem), para o título não ser truncado.
+
+### Verificação
+- `pnpm test` **359 ✓** · `tsc --noEmit` ✓ · `pnpm build` ✓.
+- `cargo test --lib` **545 ✓** · `clippy`/`rustfmt` ✓.
+- Validação visual no navegador (Chat, Sugestões, Histórico e Configurações)
+  em 1020/560/540/520/360 px; AppImage/deb gerados (09:53).
+- Nesta sessão o WebKitGTK parou de pintar o conteúdo do AppImage (afeta também
+  o build anterior e o MiniBrowser); DOM/bundle foram validados no WebKit e no
+  Chrome, e a janela sem moldura está configurada no `tauri.conf.json`.

@@ -194,3 +194,17 @@ e o comportamento do HUD ganha uma aba própria ("Geral & HUD") no lugar de
   em arquivos não tocados).
 - `pnpm test` **339 ✓** (55 arquivos) · `tsc --noEmit` ✓ · `pnpm build` ✓.
 - **Pendente**: validação visual do usuário (mockup + notch real).
+
+## 2026-10-21 — Configurações sem moldura nativa (BR-064/T17)
+
+- **IDs:** BR-064, T17 (chat)
+- **Refs:** [`architecture/settings-redesign.md`](architecture/settings-redesign.md)
+  §1, [`../chat/tasks/17-task.md`](../chat/tasks/17-task.md)
+
+- A janela `settings` agora é `decorations: false`, `transparent: true` e
+  `shadow: false`; o header próprio é a única barra de título, usando o
+  `WindowHeader` comum (grip à esquerda, selo + título/subtítulo, `Esc` e `×`).
+- O conteúdo vive em um shell transparente de 8 px, com borda/raio
+  (`--oh-window-radius`) e `ResizeHandles`; o fechar continua chamando
+  `settings_close` e o drag chama `panel_start_drag`.
+- Sem mudança no rodapé, nas abas ou no rascunho global.

@@ -2,6 +2,7 @@ import { panelOpen } from "../../adapters/ipc/panels";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { ALL_CHANNELS } from "../../core/domain/transcript";
+import { HistoryIcon } from "../../components/icons";
 import { PanelFrame } from "../panels/PanelFrame";
 import { HistoryPanel } from "./HistoryPanel";
 
@@ -25,6 +26,7 @@ export function HistoryWindow() {
       label="history"
       title="Histórico"
       subtitle={state.session_id ? "Sessão em andamento" : "Sessões anteriores"}
+      icon={<HistoryIcon size={16} />}
     >
       <HistoryPanel activeSessionId={state.session_id} onContinue={onContinue} />
     </PanelFrame>

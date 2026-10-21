@@ -171,6 +171,9 @@
   --oh-radius-sm: 0.5rem;
   --oh-radius: 1rem;
   --oh-radius-md: 1.5rem;
+  /* Raio externo das janelas: mesma geometria dos balões de conversa
+     (`--oh-radius-sm`), agora padrão para painéis e Configurações. */
+  --oh-window-radius: var(--oh-radius-sm);
   --oh-radius-lg: 2rem;
   --oh-radius-xl: 3rem;
   --oh-radius-full: 9999px;

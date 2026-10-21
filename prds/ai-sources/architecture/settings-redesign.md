@@ -17,24 +17,24 @@ aba "Geral & HUD" (§9); a v0.3 cobre o redesign da aba "Fontes de IA" (§10).
 | cada aba carrega e salva as settings | **rascunho único** carregado uma vez e salvo pelo botão global |
 | janela 520×640 | janela **1020×720** (mín. 760×560), redimensionável |
 
-A janela continua com a moldura do sistema (`decorations: true`): o cabeçalho
-novo é **dentro** do conteúdo, como no resto do app (Obsidian HUD — BR-035).
+A janela é **sem moldura nativa** (`decorations: false`, `transparent: true`):
+o cabeçalho é a única barra de título, como no resto do app (Obsidian HUD —
+BR-035). O shell transparente de 8 px e `--oh-window-radius` mantêm o raio
+padrão; `ResizeHandles` preserva o redimensionamento sem a moldura do SO
+(BR-064).
 
 ## 2. Estrutura da tela
 
 ```
-<main class="app settings" data-route="settings">
-  <header class="settings__header">
-    <span class="settings__header-icon">…</span>
-    <div>
-      <h1 class="settings__header-title">Configurações</h1>
-      <p class="settings__header-subtitle">Personalize captura de áudio, IA local, privacidade e atalhos</p>
-    </div>
-    <kbd class="settings__header-hint">Esc</kbd>
-    <button class="settings__header-close" aria-label="Fechar">✕</button>
-  </header>
+<main class="app panel-shell settings-shell" data-route="settings">
+  <ResizeHandles />
+  <div class="settings">
+    <WindowHeader class="settings__header"
+      title="Configurações"
+      subtitle="Personalize captura de áudio, IA local, privacidade e atalhos"
+      icon="TranscriptIcon" hint="Esc" onDrag="panel_start_drag" onClose="settings_close" />
 
-  <nav class="settings__tabs" role="tablist">…</nav>   <!-- 5 abas com ícone -->
+    <nav class="settings__tabs" role="tablist">…</nav>   <!-- 5 abas com ícone -->
 
   <div class="settings__body">
     {tab === "sources" && <AiSourcesSettings …/>}
@@ -124,8 +124,9 @@ A tela assina o evento `llm_source_used` e atualiza o card ao vivo.
 Tudo em `src/styles/globals.css`, consumindo os tokens `var(--oh-*)`
 (BR-035 — não repetir hex/tamanho):
 
-- `.settings__header`, `.settings__header-icon`, `.settings__header-title`,
-  `.settings__header-subtitle`, `.settings__header-hint`, `.settings__header-close`
+- `.settings__header` (modificador do `WindowHeader`), `.window-header`,
+  `.window-header__icon`, `.window-header__title`, `.window-header__subtitle`,
+  `.window-header__hint`, `.window-header__close`
 - `.settings__tabs`, `.settings__tab`, `.settings__tab--active`,
   `.settings__tab-icon`
 - `.settings__body`

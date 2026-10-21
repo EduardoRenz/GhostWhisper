@@ -111,6 +111,7 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | `--oh-radius-sm` | `0.5rem` |
 | `--oh-radius` | `1rem` |
 | `--oh-radius-md` | `1.5rem` |
+| `--oh-window-radius` | `var(--oh-radius-sm)` (8 px) — raio externo de painéis e Configurações (BR-064) |
 | `--oh-radius-lg` | `2rem` |
 | `--oh-radius-xl` | `3rem` |
 | `--oh-radius-full` | `9999px` |
@@ -172,7 +173,8 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | **Switcher do notch** | segmented pill; item ativo em `surface-container-highest` + texto **cyan** + hairline; play/pause circular 28px ao lado do item ativo |
 | **Drill-hover (dwell)** | fill da esquerda para a direita em cyan suave (`--oh-dwell-fill`) + linha inferior 2px (`--oh-dwell-line`); confirmação em pill de vidro com borda cyan; `popoverIn`; sem som |
 | **Waveform** | 4 barras de 2px (raio full, gap 2px) cyan; altura 4–14px pelo nível de áudio; pausado estático/esmaecido |
-| **Painel / `PanelFrame`** | `--oh-glass-card` na casca; corpo em `--oh-read-surface`; `--oh-radius-md` |
+| **Painel / `PanelFrame`** | `--oh-glass-card` na casca; corpo em `--oh-read-surface`; `--oh-window-radius` |
+| **Header de janela (`WindowHeader`)** | grip à esquerda, selo 32 px, título/subtítulo, ações e fechar à direita; padding 16/8 px; min-height 56 px (BR-064) |
 | **Botões** | primário (cyan hairline + hover gradiente cyan→violeta), ghost, toggle "ligado" em cyan |
 | **Status** | gravação: ponto esmeralda 4px + glow 10px; pausado: `--oh-outline` (sem âmbar); erro/parar: coral |
 | **Pill de resumo** | fundo violeta suave (`--oh-ai` 14%), borda 40%, spinner; título em `headline-md` |
@@ -181,7 +183,7 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | **Markdown/código** | `code-sm` (JetBrains Mono); tabelas/código em `--oh-surface-container-low`; links cyan |
 | **Inputs/selects** | pill/inset `rgba(0,0,0,.35)`; foco `#00f2fe` 30% + glow |
 | **Configurações/Histórico/Sugestões** | mesmos tokens; grupos em `--oh-surface-container-low` + borda hairline |
-| **Alça de arraste** (`DragHandle`) | **um componente** (grip de 6 pontos, `GripIcon` 16px) usado pelo notch e por todos os painéis; alvo 18×24 + hover `rgba(255,255,255,.07)` |
+| **Alça de arraste** (`DragHandle`) | **um componente** (grip de 6 pontos, `GripIcon` 16px) usado pelo notch e por todos os painéis; alvo 18×24 + hover `rgba(255,255,255,.07)`; sempre no canto superior esquerdo das janelas |
 | **Pill** (`Pill`) | **um componente** para LIVE, ATIVO, contagem, chip e contador: base `.pill` (borda hairline, `--oh-radius-full`, `space-0-5`/`space-1-5`) + `tone` (`neutral`/`accent`) + `mono` (status/contagem); casos de uso só acrescentam largura/alinhamento |
 | **Agente** (`AgentIcon`/`AgentBadge`) | catálogo de 8 ícones SVG do projeto + cor por token (`--oh-agent-*`); a pill do agente usa a cor do snapshot |
 

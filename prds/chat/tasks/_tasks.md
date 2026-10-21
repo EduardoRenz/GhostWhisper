@@ -22,6 +22,7 @@
 | 14 | Documentação, verificação e pacotes (v0.2) | CONCLUDED |
 | 15 | Concorrência e ciclo de vida das sugestões (single-flight e janela) | CONCLUDED |
 | 16 | Intercalação por sobreposição e grip padrão | CONCLUDED |
+| 17 | Casco padrão das janelas: header, drag à esquerda e raio (BR-064) | CONCLUDED |
 
 > A **14** é a última na ordem de execução, embora apareça antes da **15** na
 > tabela (mantém o fechamento junto das demais tasks). A ordem válida é a do
@@ -56,3 +57,6 @@
   (BR-042).
 - A **14** fecha: documentação, regras, verificação e pacotes. Só começa com
   10–13 e 15 concluídas.
+- A **17** revisa o casco visual das janelas (header, grip à esquerda e raio),
+  incluindo Configurações sem moldura nativa. Depende da 10/16 e do redesign de
+  Configurações (ai-sources T07/T12).

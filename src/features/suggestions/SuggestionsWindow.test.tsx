@@ -89,17 +89,21 @@ vi.mock("../../components/MarkdownView", () => ({
 vi.mock("../panels/PanelFrame", () => ({
   PanelFrame: ({
     title,
-    heading,
+    icon,
+    titleExtra,
     actions,
     children,
   }: {
-    title?: string;
-    heading?: ReactNode;
+    title?: ReactNode;
+    icon?: ReactNode;
+    titleExtra?: ReactNode;
     actions?: ReactNode;
     children: ReactNode;
   }) => (
     <div>
-      <h1>{heading ?? title}</h1>
+      <h1>{title}</h1>
+      <div className="window-header__icon">{icon}</div>
+      <div>{titleExtra}</div>
       <div>{actions}</div>
       <div className="panel__scroll">{children}</div>
     </div>
@@ -229,7 +233,7 @@ describe("SuggestionsWindow — feedback da geração", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
       "Sugestões",
     );
-    expect(container.querySelector(".suggestions-title__spark")).not.toBeNull();
+    expect(container.querySelector(".window-header__icon")).not.toBeNull();
     expect(container.querySelector(".live-badge")?.textContent).toContain("LIVE");
     expect(
       container.querySelector(".suggest-now")?.textContent,

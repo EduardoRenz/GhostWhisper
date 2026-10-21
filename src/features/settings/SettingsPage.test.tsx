@@ -34,6 +34,10 @@ const shortcutsIpc = vi.hoisted(() => ({
   setShortcuts: vi.fn(async () => []),
 }));
 
+const panelsIpc = vi.hoisted(() => ({
+  panelStartDrag: vi.fn(),
+}));
+
 const audioIpc = vi.hoisted(() => ({
   AudioDevice: {},
   listMicrophones: vi.fn(async () => []),
@@ -52,6 +56,7 @@ vi.mock("../../adapters/ipc/settings", () => settingsIpc);
 vi.mock("../../adapters/ipc/aiSources", () => aiSourcesIpc);
 vi.mock("../../adapters/ipc/shortcuts", () => shortcutsIpc);
 vi.mock("../../adapters/ipc/audio", () => audioIpc);
+vi.mock("../../adapters/ipc/panels", () => panelsIpc);
 
 describe("SettingsPage", () => {
   beforeEach(() => {
@@ -109,6 +114,14 @@ describe("SettingsPage", () => {
     });
     fireEvent.click(close);
     await waitFor(() => expect(settingsIpc.closeSettings).toHaveBeenCalled());
+  });
+
+  it("arrasta pelo grip no canto superior esquerdo", async () => {
+    render(<SettingsPage />);
+
+    const drag = await screen.findByLabelText("Mover configurações");
+    fireEvent.pointerDown(drag);
+    expect(panelsIpc.panelStartDrag).toHaveBeenCalled();
   });
 
   it("salva o rascunho inteiro uma única vez", async () => {

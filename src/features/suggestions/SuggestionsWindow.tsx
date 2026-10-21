@@ -124,25 +124,17 @@ export function SuggestionsWindow() {
   })();
 
   // Cabeçalho: faísca + título + badge de estado (BR-039).
-  const heading = (
-    <div className="suggestions-title">
-      <span className="suggestions-title__spark" aria-hidden="true">
-        <SparkleIcon size={14} />
-      </span>
-      <span className="panel__title">Sugestões</span>
-      {state.listening ? (
-        <Pill
-          className="live-badge"
-          tone={state.paused ? "neutral" : "accent"}
-          mono
-          title={status}
-        >
-          <span className="live-badge__dot" />
-          {state.paused ? "PAUSADO" : "LIVE"}
-        </Pill>
-      ) : null}
-    </div>
-  );
+  const liveBadge = state.listening ? (
+    <Pill
+      className="live-badge"
+      tone={state.paused ? "neutral" : "accent"}
+      mono
+      title={status}
+    >
+      <span className="live-badge__dot" />
+      {state.paused ? "PAUSADO" : "LIVE"}
+    </Pill>
+  ) : null;
 
   const actions = (
     <>
@@ -175,7 +167,13 @@ export function SuggestionsWindow() {
   );
 
   return (
-    <PanelFrame label="suggestions" heading={heading} actions={actions}>
+    <PanelFrame
+      label="suggestions"
+      title="Sugestões"
+      icon={<SparkleIcon size={16} />}
+      titleExtra={liveBadge}
+      actions={actions}
+    >
       <AgentSelector modes={modes} modeId={modeId} onSelect={selectMode} />
       {extraOpen && (
         <label className="panel__extra">

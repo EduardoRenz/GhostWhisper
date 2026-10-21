@@ -249,9 +249,8 @@ Como usuário, quero que o painel da sessão siga o layout do print.
 - **CA-09.4** O layout se mantém em 360×320, sem overflow; só tokens `--oh-*`.
 - **CA-09.5** A aba Transcrição **não** mostra a linha de medidores de nível nem
   o botão de texto "Sugestões": o waveform e o atalho para Sugestões ficam no
-  notch (BR-032/BR-033). O **grip de arraste** fica no canto superior direito
-  de **todas** as janelas de painel, como padrão; o header também arrasta pelo
-  título/ícone.
+  notch (BR-032/BR-033). O **grip de arraste** fica no canto superior esquerdo
+  de **todas** as janelas de painel, como padrão (BR-064).
 
 #### US-10 — Bolhas em largura total, com identidade e hora
 
@@ -352,8 +351,9 @@ em vez de aparecer depois dela.
   hora (não como continuação silenciosa).
 - **CA-14.4** Vale nos dois sentidos (Microfone/Outros) e no **histórico**, que
   passa a carregar o `end_ms` da fala.
-- **CA-14.5** O grip de arraste fica visível no **canto superior direito** de
-  todas as janelas de painel (Chat, Sugestões, Histórico).
+- **CA-14.5** O grip de arraste fica visível no **canto superior esquerdo** de
+  todas as janelas de painel (Chat, Sugestões, Histórico), com o header padrão
+  da BR-064.
 
 ### 9.5 Requisitos
 

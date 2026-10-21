@@ -22,7 +22,7 @@ body,
   gap: 0.25rem;
   color: var(--ghostwhisper-text);
   background: var(--ghostwhisper-bg-transparent);
-  border-radius: 12px;
+  border-radius: var(--oh-window-radius);
   /* Mantém o conteúdo fora de seleção (overlay discreto). */
   user-select: none;
   -webkit-user-select: none;
@@ -902,80 +902,29 @@ body,
 
 /* Configurações --------------------------------------------------------- */
 
-.settings {
+/* Casca da janela de Configurações: sem moldura nativa (BR-064), com o mesmo
+   respiro e o mesmo raio dos painéis. */
+.settings-shell {
   align-items: stretch;
   justify-content: flex-start;
   gap: 0;
+  background: transparent;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
   padding: 0;
   overflow: hidden;
   background: var(--oh-surface);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-window-radius);
+  box-shadow: var(--oh-shadow-float);
+  color: var(--oh-text);
   user-select: text;
   -webkit-user-select: text;
-}
-
-/* Cabeçalho da tela: ícone, título, subtítulo, atalho e fechar. */
-.settings__header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.9rem 1.1rem 0.7rem;
-  border-bottom: 1px solid var(--oh-border);
-}
-
-.settings__header-icon {
-  display: grid;
-  place-items: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: var(--oh-radius-full);
-  color: var(--oh-accent);
-  background: rgba(0, 242, 254, 0.1);
-  border: 1px solid rgba(0, 242, 254, 0.28);
-}
-
-.settings__header-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.settings__header-title {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--oh-text-strong);
-}
-
-.settings__header-subtitle {
-  margin: 0.1rem 0 0;
-  font-size: 0.72rem;
-  color: var(--oh-text-muted);
-}
-
-.settings__header-hint {
-  font-family: var(--oh-font-mono, monospace);
-  font-size: 0.65rem;
-  color: var(--oh-text-muted);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius);
-  padding: 0.15rem 0.35rem;
-}
-
-.settings__header-close {
-  font: inherit;
-  font-size: 0.9rem;
-  line-height: 1;
-  color: var(--oh-text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--oh-radius);
-  padding: 0.3rem 0.45rem;
-  cursor: pointer;
-}
-
-.settings__header-close:hover {
-  color: var(--oh-text);
-  background: rgba(255, 255, 255, 0.06);
 }
 
 /* Barra de abas com ícone (BR-047/BR-062): ativa com sublinhado. */
@@ -1857,7 +1806,7 @@ body,
   height: 100%;
   margin: 0;
   border: 1px solid var(--oh-border);
-  border-radius: var(--oh-radius-md);
+  border-radius: var(--oh-window-radius);
   background: var(--oh-read-surface);
   color: var(--oh-text);
   box-shadow: var(--oh-shadow-float);
@@ -1955,38 +1904,134 @@ body,
   cursor: nwse-resize;
 }
 
-.panel__header {
+/* Cabeçalho padrão das janelas (BR-064) ------------------------------- */
+
+.window-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.5rem 0.45rem 0.6rem;
+  gap: var(--oh-space-2);
+  flex: 0 0 auto;
+  min-height: 56px;
+  padding: var(--oh-space-2) var(--oh-space-4);
   border-bottom: 1px solid var(--oh-divider);
   background: var(--oh-surface-container-low);
 }
 
-/* Cabeçalho da Transcrição ao Vivo (BR-040): selo + título. */
-.panel__heading-row {
+/* O grip vive no canto superior esquerdo em todas as janelas. */
+.window-header__drag {
+  margin-left: calc(-1 * var(--oh-space-1));
+}
+
+.window-header__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--oh-radius-sm);
+  color: var(--oh-accent);
+  background: rgba(0, 242, 254, 0.1);
+  border: 1px solid rgba(0, 242, 254, 0.28);
+}
+
+.window-header__text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+
+.window-header__title-row {
   display: flex;
   align-items: center;
   gap: var(--oh-space-2);
   min-width: 0;
 }
 
-.panel__title-badge {
+.window-header__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--oh-font-sans);
+  font-size: var(--oh-headline-md-size);
+  line-height: var(--oh-headline-md-line);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--oh-text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-header__subtitle {
+  overflow: hidden;
+  font-size: var(--oh-label-sm-size);
+  line-height: var(--oh-label-sm-line);
+  color: var(--oh-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.window-header__actions {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--oh-space-1-5);
+  min-width: 0;
+}
+
+.window-header__hint {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--oh-text-muted);
+  font-family: var(--oh-font-mono);
+  font-size: var(--oh-status-size);
+}
+
+.window-header__close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: var(--oh-radius-sm);
-  color: var(--oh-accent);
-  background: rgba(0, 242, 254, 0.12);
-  border: 1px solid rgba(0, 242, 254, 0.3);
+  background: transparent;
+  color: var(--oh-text-muted);
+  cursor: pointer;
 }
 
-/* Alça de arraste padrão (componente `DragHandle`), no canto direito de todas
-   as janelas (BR-040). */
+.window-header__close:hover {
+  color: var(--oh-text-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.window-header__close:focus-visible {
+  outline: none;
+  box-shadow: var(--oh-focus-ring), var(--oh-glow-focus);
+}
+
+/* O header de Sugestões tem muitos controles: mantém margem e deixa as ações
+   quebrarem em vez de comprimir o título contra a borda. */
+.panel[data-route="suggestions"] .window-header__actions {
+  gap: var(--oh-space-1);
+}
+
+.panel[data-route="suggestions"] .window-header__actions .icon-button {
+  width: 24px;
+  height: 24px;
+}
+
+/* Alça de arraste padrão (componente `DragHandle`), no canto superior
+   esquerdo de todas as janelas (BR-064). */
 .drag-handle {
   display: inline-flex;
   align-items: center;
@@ -2004,65 +2049,6 @@ body,
 .drag-handle:hover {
   background: rgba(255, 255, 255, 0.07);
   color: var(--oh-text);
-}
-
-.panel__heading {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.panel__title {
-  font-family: var(--oh-font-sans);
-  font-size: var(--oh-headline-md-size);
-  line-height: var(--oh-headline-md-line);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--oh-text-strong);
-}
-
-.panel__subtitle {
-  font-size: var(--oh-label-sm-size);
-  color: var(--oh-text-muted);
-}
-
-.panel__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
-  margin-left: auto;
-}
-
-/* A janela de Sugestões tem muitos controles no cabeçalho: uma linha só. */
-.panel[data-route="suggestions"] {
-  --oh-panel-header-pad: 0.4rem;
-}
-
-.panel[data-route="suggestions"] .panel__header {
-  gap: var(--oh-space-1);
-  padding-left: var(--oh-space-1-5);
-  padding-right: var(--oh-space-1-5);
-}
-
-.panel[data-route="suggestions"] .panel__actions {
-  flex-wrap: nowrap;
-  flex: 0 0 auto;
-  gap: 0.25rem;
-}
-
-.panel[data-route="suggestions"] .panel__title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* O botão de contexto extra é menor para não apertar o cabeçalho. */
-.panel[data-route="suggestions"] .panel__actions .icon-button {
-  width: 24px;
-  height: 24px;
 }
 
 .panel__button,
@@ -2099,19 +2085,6 @@ body,
 
 .panel__select {
   max-width: 160px;
-}
-
-.panel__close {
-  border: none;
-  background: transparent;
-  color: var(--oh-text-muted);
-  font-size: 0.8rem;
-  cursor: pointer;
-  padding: 0.2rem 0.35rem;
-}
-
-.panel__close:hover {
-  color: var(--oh-text-strong);
 }
 
 .panel__body {
@@ -2261,15 +2234,27 @@ body,
   overflow-x: auto;
 }
 
+/* Em painéis estreitos, o controle Auto-sugerir mantém o anel e a contagem,
+   mas libera o rótulo para o título não ser truncado (BR-064). */
+@media (max-width: 620px) {
+  .auto-control__label {
+    display: none;
+  }
+}
+
 @media (max-width: 420px) {
-  .panel__header {
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    padding: 0.35rem;
+  .window-header {
+    gap: var(--oh-space-1);
+    padding-inline: var(--oh-space-2);
   }
 
-  .panel__actions {
-    gap: 0.25rem;
+  .window-header__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .window-header__actions {
+    gap: var(--oh-space-1);
   }
 
   .panel__button,
@@ -3087,25 +3072,6 @@ body,
 }
 
 /* Cabeçalho da janela de sugestões (BR-039) ------------------------------- */
-
-.suggestions-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--oh-space-1);
-  min-width: 0;
-}
-
-.suggestions-title__spark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: var(--oh-radius-sm);
-  border: 1px solid rgba(0, 242, 254, 0.35);
-  background: rgba(0, 242, 254, 0.14);
-  color: var(--oh-accent);
-}
 
 .live-badge {
   flex: 0 0 auto;

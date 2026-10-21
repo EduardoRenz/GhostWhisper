@@ -6,7 +6,7 @@ import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useTranscriptActivity } from "../../core/application/useTranscriptActivity";
 import type { PanelTab } from "../../core/domain/settings";
-import { WaveformIcon } from "../../components/icons";
+import { JournalIcon, SummaryIcon, WaveformIcon } from "../../components/icons";
 import { PanelFrame } from "../panels/PanelFrame";
 import { PanelTabs } from "./PanelTabs";
 import { JournalView } from "../journal/JournalView";
@@ -69,25 +69,25 @@ export function PanelWindow() {
     void saveSettings({ ...settings, panel_tab: next }).then(() => reload());
   };
 
-  const heading = (
-    <div className="panel__heading-row">
-      {tab === "transcription" && (
-        <span className="panel__title-badge" aria-hidden="true">
-          <WaveformIcon size={16} />
-        </span>
-      )}
-      <span className="panel__title">
-        {tab === "summary"
-          ? "Resumo"
-          : tab === "session"
-            ? "Sessão"
-            : "Transcrição ao Vivo"}
-      </span>
-    </div>
-  );
+  const HeaderIcon =
+    tab === "summary"
+      ? SummaryIcon
+      : tab === "session"
+        ? JournalIcon
+        : WaveformIcon;
+  const title =
+    tab === "summary"
+      ? "Resumo"
+      : tab === "session"
+        ? "Sessão"
+        : "Transcrição ao Vivo";
 
   return (
-    <PanelFrame label="chat" heading={heading}>
+    <PanelFrame
+      label="chat"
+      title={title}
+      icon={<HeaderIcon size={16} />}
+    >
       <PanelTabs
         active={tab}
         onChange={changeTab}

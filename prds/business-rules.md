@@ -800,8 +800,8 @@ uma nota de revisão.
   - o rodapé mostra **"Idioma de Entrada:"** + seletor e o **estado real** do
     Whisper à direita. **Não** exibir latência/“WebRTC” inventados;
   - a linha de medidores e o botão de texto "Sugestões" **saem** da aba (o
-    waveform e o atalho ficam no notch); o header arrasta pelo título/ícone e o
-    **grip de arraste** fica no canto superior direito de todas as janelas;
+    waveform e o atalho ficam no notch); o **grip de arraste** fica no canto
+    superior esquerdo de todas as janelas (revisado pela BR-064);
   - o histórico usa o mesmo cartão e a mesma hora, sem a ação de IA.
 - **Motivo:** pedido do usuário — "deixe o layout o mais fiel possível" ao print
   anexado, com microfone/outros em cores distintas, hora por mensagem e cartões
@@ -1352,4 +1352,37 @@ uma nota de revisão.
   Transcrição ao clique.
 - **Detalhes:** [`session/tasks/11-task.md`](session/tasks/11-task.md),
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md) §2.1.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-064 — Casco padrão das janelas: header, arraste e raio
+
+- **Decisão:** todas as janelas internas com header (Chat, Sugestões, Histórico
+  e Configurações) usam o **mesmo casco**:
+  - **grip de arraste no canto superior esquerdo**, seguido do selo de ícone
+    (32 px, canto arredondado), título (e subtítulo opcional), ações e **fechar
+    no canto direito**;
+  - header com margem horizontal de **16 px** e vertical de **8 px** (mínimo de
+    56 px de altura); o título não encosta na borda e não é comprimido: as
+    ações quebram em outra linha quando não couberem;
+  - **alça de arraste única** (`DragHandle`), no canto superior esquerdo. O
+    título/ícone não arrastam, para não capturar cliques dos controles;
+  - **raio externo padrão das janelas** em `--oh-window-radius`, definido como
+    `--oh-radius-sm` (0,5 rem/8 px) — a mesma geometria dos balões de conversa;
+  - **Configurações sem moldura nativa**: `decorations: false`, janela
+    transparente, shell de 8 px, `ResizeHandles` para redimensionar e o mesmo
+    `WindowHeader`; o fechar continua chamando `settings_close`.
+- **Motivo:** o mockup do usuário (2026-10-21) mostra o grip à esquerda, ícone +
+  título com respiro e fechar à direita; algumas janelas não tinham arraste e os
+  raios de 24 px deixavam a casca mais arredondada que os balões. A janela de
+  Configurações somava o header próprio à moldura do sistema.
+- **Consequência:** novo componente `WindowHeader` usado por `PanelFrame` e
+  `SettingsPage`; `PanelFrame` passa a receber `icon`/`titleExtra`; Chat,
+  Sugestões e Histórico usam o selo no header; `--oh-window-radius` substitui
+  `--oh-radius-md` no `.panel` e no `.settings`; a densidade do HUD
+  (`compact`/`standard`/`expanded`) **não muda**. O comportamento de
+  redimensionar/arrastar e o fechar de cada janela são preservados.
+- **Detalhes:** [`chat/tasks/17-task.md`](chat/tasks/17-task.md),
+  [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md) §4/§6,
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md) §2,
+  [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §1.
 - **Data:** 2026-10-21 · **Status:** Ativa

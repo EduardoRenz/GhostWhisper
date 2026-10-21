@@ -12,6 +12,7 @@ import {
   getShortcutCatalog,
   setShortcuts as setShortcutsIpc,
 } from "../../adapters/ipc/shortcuts";
+import { panelStartDrag } from "../../adapters/ipc/panels";
 import {
   SHORTCUT_ACTIONS,
   defaultBindings,
@@ -19,6 +20,8 @@ import {
   type ShortcutConflict,
   type ShortcutInfo,
 } from "../../core/domain/shortcuts";
+import { ResizeHandles } from "../panels/ResizeHandles";
+import { WindowHeader } from "../../components/WindowHeader";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantSettings } from "./AssistantSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
@@ -205,30 +208,23 @@ export function SettingsPage() {
     });
 
   return (
-    <main className="app settings" data-route="settings">
-      <header className="settings__header">
-        <span className="settings__header-icon" aria-hidden="true">
-          <TranscriptIcon size={20} />
-        </span>
-        <div className="settings__header-text">
-          <h1 className="settings__header-title">Configurações</h1>
-          <p className="settings__header-subtitle">
-            Personalize captura de áudio, IA local, privacidade e atalhos do
-            GhostWhisper
-          </p>
-        </div>
-        <kbd className="settings__header-hint">Esc</kbd>
-        <button
-          type="button"
-          className="settings__header-close"
-          aria-label="Fechar configurações"
-          onClick={() => void closeSettings()}
-        >
-          ✕
-        </button>
-      </header>
+    <main className="app panel-shell settings-shell" data-route="settings">
+      <ResizeHandles />
+      <div className="settings">
+        <WindowHeader
+          className="settings__header"
+          title="Configurações"
+          subtitle="Personalize captura de áudio, IA local, privacidade e atalhos do GhostWhisper"
+          icon={<TranscriptIcon size={18} />}
+          hint={<kbd className="window-header__hint">Esc</kbd>}
+          onStartDrag={() => void panelStartDrag()}
+          onClose={() => void closeSettings()}
+          closeLabel="Fechar configurações"
+          dragLabel="Mover configurações"
+          headingLevel="h1"
+        />
 
-      <nav className="settings__tabs" role="tablist" aria-label="Seções">
+        <nav className="settings__tabs" role="tablist" aria-label="Seções">
         {TABS.map((entry) => {
           const Icon = entry.Icon;
           return (
@@ -572,6 +568,7 @@ export function SettingsPage() {
           </button>
         </div>
       </footer>
+      </div>
     </main>
   );
 }

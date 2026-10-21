@@ -49,7 +49,8 @@ pelo usuário (2026-10-19); o contrato em
 | Cabeçalho | altura ~48 px; `WaveformIcon` estático em selo 28×28; título 15/600 | SVG do projeto (BR-008), `--oh-headline-md-size`, `--oh-accent` |
 | Título | **"Transcrição ao Vivo"** na aba Transcrição; **"Resumo"** na aba Resumo | `PanelWindow` |
 | Subtítulo | removido do cabeçalho | o estado vai para o rodapé e para o notch |
-| Grip de arraste | visível no canto superior direito de **todas** as janelas; o cabeçalho (título/ícone) também arrasta | `DragHandle`/`PanelFrame`/`panel_start_drag` |
+| Cabeçalho | `WindowHeader`: grip à esquerda, selo + título, ações e fechar à direita; padding 16/8 px | `WindowHeader`/`PanelFrame` (BR-064) |
+| Grip de arraste | visível no canto superior **esquerdo** de todas as janelas; só a alça arrasta | `DragHandle`/`PanelFrame`/`panel_start_drag` |
 | Medidores | fora da aba; o waveform do notch continua | BR-032 |
 | Atalho "Sugestões" no topo da conversa | removido; o notch já abre a janela | BR-032/BR-033 |
 | Pill de abas | `width:100%`; três colunas iguais; `gap:2px`; `padding:2px`; raio `--oh-radius-full` | `PanelTabs` |

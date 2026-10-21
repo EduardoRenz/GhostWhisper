@@ -61,4 +61,21 @@ describe("PanelFrame", () => {
     fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
     expect(panelHide).toHaveBeenCalledWith("suggestions");
   });
+
+  it("usa o header padrão: grip à esquerda e fechar à direita", () => {
+    const { container } = render(
+      <PanelFrame label="chat" title="Transcrição ao Vivo">
+        x
+      </PanelFrame>,
+    );
+    const header = container.querySelector(".window-header")!;
+    const drag = screen.getByLabelText("Mover janela");
+    const close = screen.getByRole("button", { name: "Fechar" });
+
+    expect(header.firstElementChild).toBe(drag);
+    expect(header.lastElementChild).toBe(close);
+
+    fireEvent.pointerDown(drag);
+    expect(panelStartDrag).toHaveBeenCalled();
+  });
 });
