@@ -27,12 +27,18 @@ pub fn language_name(code: &str) -> &'static str {
     }
 }
 
-/// Prompt base de decodificação do whisper (Perssua: remote config `whisper_prompt`).
+/// Prompt base de decodificação do whisper: **vazio** (sem `initial_prompt`).
 ///
-/// Reduz alucinação: instrui o modelo a não inventar quando não tem certeza. A
-/// regra de idioma é acrescentada pela camada de aplicação
-/// (`domain::transcription::decode_prompt`).
-pub const DEFAULT_WHISPER_PROMPT: &str =
+/// O `initial_prompt` do whisper é **contexto**, não instrução. Um prompt
+/// instrucional ("só transcreva o que estiver claro…") vira texto plausível
+/// quando o áudio é incerto: o modelo continua o prompt em vez de transcrever
+/// (ISS-059). Quem quiser contexto cadastra apenas nomes/siglas/jargões.
+pub const DEFAULT_WHISPER_PROMPT: &str = "";
+
+/// Default antigo (instrucional), limpo na migração de settings.
+///
+/// Mantido só para reconhecer quem salvou o texto antes da correção da ISS-059.
+const LEGACY_INSTRUCTION_PROMPT: &str =
     "Only transcribe what is clearly spoken. If uncertain, transcribe nothing.";
 
 /// Teto de caracteres do prompt de decodificação.
@@ -719,6 +725,12 @@ impl Settings {
             .chars()
             .take(MAX_WHISPER_PROMPT_CHARS)
             .collect();
+        // Migração (ISS-059): o default antigo era uma instrução e o whisper a
+        // continuava quando o áudio era incerto ("frases sem sentido"). Limpa
+        // quem ainda tem exatamente esse texto; contexto real é preservado.
+        if self.whisper_prompt.trim() == LEGACY_INSTRUCTION_PROMPT {
+            self.whisper_prompt.clear();
+        }
         // Agentes inválidos são descartados ao carregar um arquivo antigo/Manual;
         // no save, `validate` recusa em vez de descartar. A identidade (ícone/cor)
         // é normalizada antes: um ícone desconhecido não derruba o agente (BR-037).
@@ -1427,16 +1439,27 @@ mod tests {
     }
 
     #[test]
-    fn whisper_prompt_defaults_to_the_perssua_contract() {
-        assert_eq!(Settings::default().whisper_prompt, DEFAULT_WHISPER_PROMPT);
+    fn whisper_prompt_defaults_to_empty() {
+        // ISS-059: sem instrução por padrão (o modelo a continuava em áudio incerto).
+        assert_eq!(Settings::default().whisper_prompt, "");
         let json = serde_json::to_string(&Settings::default()).expect("serializa");
-        let legacy = json.replace(
-            &format!("\"whisper_prompt\":\"{DEFAULT_WHISPER_PROMPT}\","),
-            "",
-        );
-        assert!(!legacy.contains("whisper_prompt"));
-        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
-        assert_eq!(parsed.whisper_prompt, DEFAULT_WHISPER_PROMPT);
+        assert!(json.contains("\"whisper_prompt\":\"\""));
+    }
+
+    #[test]
+    fn sanitized_clears_the_legacy_instruction_prompt() {
+        // Quem salvou o default antigo é migrado para vazio; contexto real fica.
+        let legacy = Settings {
+            whisper_prompt: LEGACY_INSTRUCTION_PROMPT.to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(legacy.sanitized().whisper_prompt, "");
+
+        let context = Settings {
+            whisper_prompt: "Grafana, Kubernetes".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(context.sanitized().whisper_prompt, "Grafana, Kubernetes");
     }
 
     #[test]

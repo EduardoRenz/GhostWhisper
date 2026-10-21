@@ -18,6 +18,7 @@ use crate::ports::speech_engine_factory::SpeechEngineFactory;
 use crate::ports::speech_to_text::SpeechToText;
 
 use super::serialising_speech_to_text::SerialisingSpeechToText;
+use super::speech_gate::SpeechGate;
 use super::whisper_speech_to_text::WhisperSpeechToText;
 
 /// Motor em cache, válido enquanto (modelo, backend) não mudarem.
@@ -36,7 +37,7 @@ struct CachedEngine {
 pub struct WhisperSpeechEngineFactory {
     models: Arc<dyn ModelStore>,
     settings: Arc<dyn SettingsStore>,
-    gate: Arc<Mutex<()>>,
+    gate: Arc<SpeechGate>,
     publisher: Option<Arc<dyn EventPublisher>>,
     /// A GPU foi desabilitada após um encerramento sujo (marca de crash do boot).
     force_cpu: bool,
@@ -49,7 +50,7 @@ impl WhisperSpeechEngineFactory {
         Self {
             models,
             settings,
-            gate: Arc::new(Mutex::new(())),
+            gate: Arc::new(SpeechGate::new()),
             publisher: None,
             force_cpu: false,
             cached: Mutex::new(None),
@@ -97,7 +98,7 @@ fn engine_params(settings: &Settings, force_cpu: bool) -> EngineParams {
         value => value.to_string(),
     };
     let language = map_whisper_language(&settings.source_language);
-    let prompt = decode_prompt(&settings.whisper_prompt, &settings.source_language);
+    let prompt = decode_prompt(&settings.whisper_prompt);
     let use_gpu = match settings.acceleration.trim() {
         "cpu" => false,
         "gpu" => !force_cpu,
@@ -156,20 +157,18 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
         Ok(asr)
     }
 
-    /// Aplica um novo idioma (e o prompt derivado) ao motor **em cache**, sem
-    /// recarregar o modelo (BR-034). Sem motor em cache (nenhuma sessão ativa),
-    /// é no-op — a próxima sessão já nasce com a configuração nova.
+    /// Aplica um novo idioma ao motor **em cache**, sem recarregar o modelo
+    /// (BR-034). O prompt é só contexto e não depende do idioma (ISS-059), então
+    /// não é recomputado. Sem motor em cache (nenhuma sessão ativa), é no-op —
+    /// a próxima sessão já nasce com a configuração nova.
     fn update_language(&self, language: &str) -> Result<()> {
-        let settings = self.settings.load().unwrap_or_default();
         let whisper_language = map_whisper_language(language);
-        let prompt = decode_prompt(&settings.whisper_prompt, language);
         let cache = self
             .cached
             .lock()
             .map_err(|_| GhostWhisperError::Other("cache do ASR envenenado".into()))?;
         if let Some(engine) = cache.as_ref() {
             engine.whisper.update_language(whisper_language);
-            engine.whisper.update_prompt(prompt);
         }
         Ok(())
     }
@@ -227,14 +226,16 @@ mod tests {
         let custom = Settings {
             whisper_model: "small".into(),
             source_language: "pt".into(),
+            whisper_prompt: "Grafana, Kubernetes".into(),
             ..Settings::default()
         };
         let params = engine_params(&custom, false);
         assert_eq!(params.model, "small");
         assert_eq!(params.language, "pt");
-        assert!(params.prompt.contains("Transcribe it in Portuguese."));
+        // ISS-059: o prompt é só contexto; a regra de idioma não é anexada.
+        assert_eq!(params.prompt, "Grafana, Kubernetes");
 
-        // Vazio cai nos padrões seguros; `auto` não acrescenta a regra de idioma.
+        // Vazio cai nos padrões seguros; sem prompt por default.
         let blank = Settings {
             whisper_model: "  ".into(),
             source_language: "  ".into(),
@@ -243,7 +244,7 @@ mod tests {
         let params = engine_params(&blank, false);
         assert_eq!(params.model, "tiny");
         assert_eq!(params.language, "auto");
-        assert_eq!(params.prompt, Settings::default().whisper_prompt);
+        assert_eq!(params.prompt, "");
     }
 
     #[test]

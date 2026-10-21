@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-048**.
+único no repositório). Próximo ID livre: **ISS-060**.
 
 > `ISS-022` permanece reservada pelo PRD [`assistant`](../assistant/issues.md);
 > esta PRD começa em `ISS-023` para não colidir.
@@ -16,6 +16,8 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ISS-026 | Microfone sem AEC referenciado (eco/duplicata em viva-voz) | Média | FIXED |
 | ISS-027 | Engine CPU-only sem flash attention: modelo grande fica inviável | Média | FIXED |
 | ISS-028 | Passe final beam search duplicado no fechamento do turno | Baixa | FIXED |
+| ISS-058 | Commit de fala preso atrás de prévia e silêncio fixo de 1 s | Alta | FIXED |
+| ISS-059 | Prompt instrucional vazava para a transcrição (frases sem sentido) | Alta | FIXED |
 
 ---
 
@@ -85,6 +87,53 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 - **Correção:** E3 — reusar o resultado da prévia quando ela cobre o turno.
 - **Arquivos:** `application/transcription_pipeline.rs`
 - **Task:** [`tasks/03-task.md`](tasks/03-task.md)
+
+## ISS-058 — Commit de fala preso atrás de prévia e silêncio fixo de 1 s
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** o texto final da frase demora ~1,7–2,2 s (e até 25 s em fala
+  contínua) para chegar ao histórico/sugestor; o usuário pediu "pedaços de frases
+  concluídas o mais rápido possível".
+- **Causa raiz:** três somas no mesmo caminho:
+  1. o agendador continuava pedindo **prévia durante o silêncio** (passo de
+     0,75 s), então o passe final entrava na fila atrás de uma prévia descartável;
+  2. a fila global do ASR era **FIFO entre canais** — o final do microfone
+     esperava a prévia do sistema, mesmo sendo autoritativo;
+  3. o fechamento só acontecia com **1 s cheio** de silêncio, mesmo quando a
+     prévia já mostrava uma frase concluída.
+- **Correção:** etapa 1 do plano de latência — corte de prévias após **250 ms**
+  de pausa (`preview_cutoff_ms`); prioridade `Final` > `Preview` na fila global
+  (`SpeechGate`, sem preempção do passe em execução); fechamento em **700 ms**
+  quando a prévia cobre o fim da fala e termina em `.?!`
+  (`silence_sentence_ms`), mantendo 1 s para vírgula/reticências; métrica
+  `commit_ms = espera + decodificação` no log (`"commit de fala"`).
+- **Arquivos:** `application/turn_scheduler.rs`,
+  `application/transcription_pipeline.rs`, `domain/transcription.rs`,
+  `adapters/speech/speech_gate.rs`,
+  `adapters/speech/serialising_speech_to_text.rs`,
+  `adapters/speech/whisper_speech_engine_factory.rs`
+- **Task:** [`tasks/04-task.md`](tasks/04-task.md)
+
+## ISS-059 — Prompt instrucional vazava para a transcrição (frases sem sentido)
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** “frases sem sentido” no **microfone**, repetidas na prévia e às
+  vezes mantidas no final; pior quando o áudio estava incerto.
+- **Causa raiz:** o `whisper_prompt` estava salvo como **instrução**
+  (“Only transcribe what is clearly spoken…”) e o app ainda anexava a regra de
+  idioma. O `initial_prompt` do whisper é **contexto** (texto anterior), não
+  comando: em áudio incerto o modelo o **continua** — a frase “Se você não sabe,
+  você pode falar em português” no log é paráfrase da regra de idioma.
+- **Correção:** default do prompt **vazio**; migração de settings limpa o texto
+  antigo; `decode_prompt` não anexa mais a regra de idioma (`set_language` +
+  `set_translate(false)` já bastam); a UI virou “Contexto da transcrição” com
+  aviso explícito de que instruções atrapalham.
+- **Verificação:** limpar o campo corrigiu a transcrição na hora (teste do
+  usuário, 21/10); prévias caíram de ~700–1800 ms para ~250–350 ms.
+- **Arquivos:** `domain/settings.rs`, `domain/transcription.rs`,
+  `adapters/speech/whisper_speech_engine_factory.rs`,
+  `src/core/domain/settings.ts`, `src/features/settings/SettingsPage.tsx`
+- **Task:** [`tasks/05-task.md`](tasks/05-task.md)
 
 ---
 

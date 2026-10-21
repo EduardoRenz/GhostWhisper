@@ -409,17 +409,21 @@ export function SettingsPage() {
             </p>
 
             <label className="settings__field">
-              <span>Prompt de decodificação (opcional)</span>
+              <span>Contexto da transcrição (opcional)</span>
               <textarea
                 rows={3}
-                placeholder="Only transcribe what is clearly spoken. If uncertain, transcribe nothing."
+                placeholder="Ex.: Grafana, Kubernetes, nomes da equipe"
                 value={draft.whisper_prompt}
                 onChange={(event) => update("whisper_prompt", event.target.value)}
               />
             </label>
             <p className="settings__hint">
-              Instrui o Whisper a não inventar quando não tem certeza; a regra de
-              idioma é acrescentada automaticamente. Deixar vazio desliga o prompt.
+              Use com cautela e apenas para <strong>contexto</strong>: nomes,
+              siglas e jargões que costumam aparecer. <strong>Não escreva
+              instruções</strong> como “não invente” ou “transcreva só o que
+              estiver claro”: o Whisper trata este texto como fala anterior e
+              pode repeti-lo quando o áudio está incerto, atrapalhando a
+              transcrição. O recomendado é deixar vazio.
             </p>
 
             <label className="settings__field settings__field--row">

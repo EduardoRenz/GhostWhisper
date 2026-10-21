@@ -8,8 +8,12 @@
 //! - **prévias frequentes** decodificam o turno que cresce (~a cada 0,75 s de
 //!   áudio novo) e publicam um **texto rolante** revisável (`is_final = false`);
 //! - a primeira prévia espera `INITIAL_PREVIEW_MS` (1,2 s), como no Perssua;
-//! - o turno fecha após **1 s de silêncio** (`VAD_SILENCE_DURATION_MS`) com um
-//!   passe **final** autoritativo (beam search) sobre o turno;
+//! - o turno fecha após **1 s de silêncio** (`VAD_SILENCE_DURATION_MS`) — o
+//!   fechamento antecipado por pontuação forte (0,7 s) fica desligado por padrão
+//!   e só existe por env (L1/ISS-058) — com um passe **final** autoritativo
+//!   (beam search) no turno;
+//! - depois de **250 ms** de pausa a prévia para de ser pedida: ela entraria na
+//!   frente do passe final na fila global do ASR e atrasaria a frase;
 //! - **gate de fala sustentada** (RMS) evita decodificar ruído/clique;
 //! - **filtro de alucinação** no texto decodificado;
 //! - **telemetria de RTF** (tempo real) por passe.
@@ -22,7 +26,7 @@
 //! `pendingUtteranceComplete`).
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -31,8 +35,8 @@ use crate::domain::audio::{
     has_sustained_speech, AudioLevel, SPEECH_RMS_THRESHOLD, TARGET_SAMPLE_RATE,
 };
 use crate::domain::transcription::{
-    is_likely_hallucination, strip_phrase_loop, Speaker, SpeechQuality, TranscribedSpan,
-    TranscriptSegment,
+    ends_with_strong_punctuation, is_likely_hallucination, strip_phrase_loop, Speaker,
+    SpeechQuality, TranscribedSpan, TranscriptSegment,
 };
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::audio_consumer::AudioConsumer;
@@ -72,13 +76,23 @@ struct DecodeRequest {
     audio: Vec<f32>,
     /// Milissegundos do turno cobertos por `audio`.
     cut_ms: i64,
+    /// Silêncio já decorrido no fim da fala quando o turno foi fechado (ms).
+    ///
+    /// Só serve à métrica de commit (`espera + fila + decodificação`): mede
+    /// quanto o fechamento esperou depois da última fala antes de pedir o final.
+    wait_ms: i64,
+    /// Instante em que o pedido entrou na fila do canal (métrica de fila).
+    enqueued_at: Instant,
 }
 
 /// Pedido concluído, com o contexto necessário para publicar.
 struct DecodeOutcome {
     request: DecodeRequest,
     result: Result<Vec<TranscribedSpan>>,
+    /// Tempo total da chamada ao ASR (inclui espera na fila global, se houve).
     wall_ms: u128,
+    /// Tempo parado na fila **do canal** antes de a decodificação começar.
+    queue_ms: i64,
 }
 
 /// Como as decodificações são executadas.
@@ -127,6 +141,12 @@ pub struct TranscriptionPipeline {
     last_attempt_failed: AtomicBool,
     /// Fim (ms, relativo ao turno) da última janela com fala.
     last_voiced_end_ms: Mutex<i64>,
+    /// Instante de parede da última janela com fala.
+    ///
+    /// A espera de commit é medida por aqui, não pelo offset do buffer: áudio em
+    /// blocos grandes ou um tick atrasado faziam o offset "pular" e inflar a
+    /// espera (visto no log: 1792 ms com silêncio configurado em 1000 ms).
+    last_voiced_at: Mutex<Option<Instant>>,
     /// Houve fala no turno atual (desde o último fechamento).
     had_speech: AtomicBool,
     /// Último estado de atividade publicado para a UI (evita repetição).
@@ -137,8 +157,16 @@ pub struct TranscriptionPipeline {
     /// fechar turnos diferentes em paralelo, e um final nunca pode ser descartado
     /// porque outro turno começou.
     pending_finals: Mutex<Vec<u64>>,
-    /// Último texto de prévia publicado, por turno (fallback se o final falhar).
-    last_preview: Mutex<Option<(u64, String)>>,
+    /// Último texto de prévia publicado: turno, corte (ms) e texto.
+    ///
+    /// O corte diz se aquela prévia realmente cobria o fim da fala — a decisão de
+    /// fechamento curto não pode confiar em pontuação de um texto antigo.
+    last_preview: Mutex<Option<(u64, i64, String)>>,
+    /// Latência do último commit (ms): fim da fala → segmento final publicado.
+    ///
+    /// `espera de silêncio + decodificação final`. Exposta para teste e para
+    /// afinar os limiares; não muda o comportamento.
+    last_commit_latency_ms: AtomicI64,
     /// Como executar as decodificações.
     mode: Mutex<DecodeMode>,
 }
@@ -216,10 +244,12 @@ impl TranscriptionPipeline {
             last_attempt_at: Mutex::new(now),
             last_attempt_failed: AtomicBool::new(false),
             last_voiced_end_ms: Mutex::new(0),
+            last_voiced_at: Mutex::new(None),
             had_speech: AtomicBool::new(false),
             activity: AtomicBool::new(false),
             pending_finals: Mutex::new(Vec::new()),
             last_preview: Mutex::new(None),
+            last_commit_latency_ms: AtomicI64::new(-1),
             mode: Mutex::new(DecodeMode::Inline),
         }
     }
@@ -305,6 +335,9 @@ impl TranscriptionPipeline {
         asr: Arc<dyn SpeechToText>,
     ) {
         while let Ok(request) = rx.recv() {
+            // Quanto o pedido esperou na fila do canal (ex.: atrás de uma prévia
+            // em voo). A espera na fila **global** fica dentro de `wall_ms`.
+            let queue_ms = request.enqueued_at.elapsed().as_millis() as i64;
             let started = Instant::now();
             let result = asr.transcribe(&request.audio, request.quality);
             let wall_ms = started.elapsed().as_millis();
@@ -315,6 +348,7 @@ impl TranscriptionPipeline {
                 request,
                 result,
                 wall_ms,
+                queue_ms,
             });
         }
     }
@@ -351,6 +385,7 @@ impl TranscriptionPipeline {
                     request,
                     result,
                     wall_ms,
+                    queue_ms: 0,
                 });
             }
         }
@@ -374,6 +409,7 @@ impl TranscriptionPipeline {
             ms_since_last_attempt: self.ms_since_last_attempt(),
             decode_in_flight: self.in_flight.load(Ordering::SeqCst) > 0,
             final_requested: self.final_pending_for_current_turn(),
+            preview_ends_sentence: self.preview_ends_sentence(),
             last_attempt_failed: self.last_attempt_failed.load(Ordering::Relaxed),
         };
 
@@ -389,6 +425,8 @@ impl TranscriptionPipeline {
                     quality: SpeechQuality::Preview,
                     audio,
                     cut_ms,
+                    wait_ms: 0,
+                    enqueued_at: Instant::now(),
                 });
             }
             Decision::Finalize { cut_ms } => {
@@ -443,6 +481,9 @@ impl TranscriptionPipeline {
         }
         self.mark_attempt();
 
+        // Espera real até o fechamento (relógio de parede + piso do áudio).
+        let wait_ms = self.commit_wait_ms(cut_ms);
+
         // Consome o turno imediatamente: o áudio já está no pedido e a captura
         // segue para o próximo turno (Perssua: `prepareNextUtterance`).
         let drained_ms = {
@@ -470,6 +511,11 @@ impl TranscriptionPipeline {
         let leftover = (self.last_voiced_end_ms() - drained_ms).max(0);
         if remaining == 0 {
             self.set_last_voiced_end_ms(0);
+            // Sem áudio restante, o relógio da última fala também zera: o
+            // próximo turno não herda uma espera antiga.
+            if let Ok(mut slot) = self.last_voiced_at.lock() {
+                *slot = None;
+            }
             self.had_speech.store(false, Ordering::Relaxed);
         } else {
             self.set_last_voiced_end_ms(leftover);
@@ -505,6 +551,7 @@ impl TranscriptionPipeline {
             }
             self.set_last_decode(0);
             self.publish_turn(turn, &text, base_ms, cut_ms, true);
+            self.note_commit(turn, wait_ms, 0, 0);
             self.publish_activity();
             return;
         }
@@ -515,6 +562,8 @@ impl TranscriptionPipeline {
             quality: SpeechQuality::Final,
             audio,
             cut_ms,
+            wait_ms,
+            enqueued_at: Instant::now(),
         });
     }
 
@@ -529,6 +578,8 @@ impl TranscriptionPipeline {
             quality,
             audio,
             cut_ms,
+            wait_ms,
+            ..
         } = outcome.request;
         log_rtf(self.channel, quality, cut_ms, cut_ms, outcome.wall_ms);
 
@@ -550,7 +601,7 @@ impl TranscriptionPipeline {
                         };
                         self.publish_turn(turn, &decoded.text, base_ms, cut_ms, false);
                         if let Ok(mut slot) = self.last_preview.lock() {
-                            *slot = Some((turn, decoded.text.clone()));
+                            *slot = Some((turn, cut_ms, decoded.text.clone()));
                         }
                         // Perssua (`applyRecognition`): se o VAD do whisper marcou
                         // o fim da fala há ≥ `silence_ms`, o turno terminou — mesmo
@@ -587,7 +638,8 @@ impl TranscriptionPipeline {
                         self.last_attempt_failed.store(false, Ordering::Relaxed);
                         match self.clean(spans) {
                             Some(decoded) => {
-                                self.publish_turn(turn, &decoded.text, base_ms, cut_ms, true)
+                                self.publish_turn(turn, &decoded.text, base_ms, cut_ms, true);
+                                self.note_commit(turn, wait_ms, outcome.queue_ms, outcome.wall_ms);
                             }
                             // Final sem texto (alucinação/loop/silêncio): a prévia
                             // mostrada tem de sair da conversa (ISS-021).
@@ -596,7 +648,14 @@ impl TranscriptionPipeline {
                     }
                     Err(error) => {
                         self.note_failure(quality, error);
-                        self.persist_preview_fallback(turn, base_ms, cut_ms);
+                        self.persist_preview_fallback(
+                            turn,
+                            base_ms,
+                            cut_ms,
+                            wait_ms,
+                            outcome.queue_ms,
+                            outcome.wall_ms,
+                        );
                     }
                 }
             }
@@ -617,16 +676,83 @@ impl TranscriptionPipeline {
     }
 
     /// Se o passe final falhar, persiste o texto da prévia (não perde o turno).
-    fn persist_preview_fallback(&self, turn: u64, base_ms: i64, cut_ms: i64) {
+    fn persist_preview_fallback(
+        &self,
+        turn: u64,
+        base_ms: i64,
+        cut_ms: i64,
+        wait_ms: i64,
+        queue_ms: i64,
+        asr_ms: u128,
+    ) {
         let text = self.last_preview.lock().ok().and_then(|guard| {
             guard
                 .as_ref()
-                .filter(|(t, _)| *t == turn)
-                .map(|(_, text)| text.clone())
+                .filter(|(t, _, _)| *t == turn)
+                .map(|(_, _, text)| text.clone())
         });
         let Some(text) = text else { return };
         tracing::warn!(turn, "passe final falhou; persistindo a última prévia");
         self.publish_turn(turn, &text, base_ms, cut_ms, true);
+        self.note_commit(turn, wait_ms, queue_ms, asr_ms);
+    }
+
+    /// Registra a latência de commit (fim da fala → segmento final publicado).
+    ///
+    /// `wait_ms` é a espera de silêncio decidida pelo agendador; `queue_ms` é a
+    /// fila **do canal**; `asr_ms` é a chamada ao ASR (inclui a fila global).
+    /// O total (`commit_ms`) é a soma — a decomposição mostra onde otimizar.
+    fn note_commit(&self, turn: u64, wait_ms: i64, queue_ms: i64, asr_ms: u128) {
+        let commit_ms = wait_ms
+            .saturating_add(queue_ms)
+            .saturating_add(asr_ms as i64);
+        self.last_commit_latency_ms
+            .store(commit_ms, Ordering::Relaxed);
+        tracing::info!(
+            channel = ?self.channel,
+            turn,
+            wait_ms,
+            queue_ms,
+            asr_ms = asr_ms as i64,
+            commit_ms,
+            "commit de fala"
+        );
+    }
+
+    /// Latência do último commit de fala (ms); `-1` se nada foi commitado ainda.
+    ///
+    /// Serve de métrica para afinar o endpointing — o alvo é o commit aparecer
+    /// perto de 1 s depois da última palavra.
+    #[cfg(test)]
+    pub fn last_commit_latency_ms(&self) -> i64 {
+        self.last_commit_latency_ms.load(Ordering::Relaxed)
+    }
+
+    /// A última prévia cobre o fim da fala **e** termina em pontuação forte?
+    ///
+    /// "Cobrir" significa que a decodificação foi feita com áudio até depois do
+    /// último trecho falado: uma prévia cortada antes do fim da fala não pode
+    /// decidir o fechamento (a última palavra ainda não estava nela).
+    fn preview_ends_sentence(&self) -> bool {
+        let current = self.turn.load(Ordering::Relaxed);
+        let last_decode = self.last_decode_ms();
+        if last_decode < self.last_voiced_end_ms() {
+            return false;
+        }
+        self.last_preview
+            .lock()
+            .map(|guard| {
+                guard
+                    .as_ref()
+                    .is_some_and(|(preview_turn, preview_cut, text)| {
+                        // Mesma prévia que ancorou a cadência: a pontuação é do
+                        // texto que realmente cobriu o fim da fala.
+                        *preview_turn == current
+                            && *preview_cut == last_decode
+                            && ends_with_strong_punctuation(text)
+                    })
+            })
+            .unwrap_or(false)
     }
 
     /// Junta os spans e filtra vazio/alucinação.
@@ -689,7 +815,7 @@ impl TranscriptionPipeline {
             .map(|guard| {
                 guard
                     .as_ref()
-                    .is_some_and(|(preview_turn, _)| *preview_turn == turn)
+                    .is_some_and(|(preview_turn, _, _)| *preview_turn == turn)
             })
             .unwrap_or(false);
         if !showed_preview {
@@ -809,6 +935,26 @@ impl TranscriptionPipeline {
         if let Ok(mut slot) = self.last_voiced_end_ms.lock() {
             *slot = v;
         }
+    }
+    fn set_last_voiced_at(&self, at: Instant) {
+        if let Ok(mut slot) = self.last_voiced_at.lock() {
+            *slot = Some(at);
+        }
+    }
+    /// Espera de parede desde a última fala (ms), se houve fala.
+    fn voiced_wait_ms(&self) -> Option<i64> {
+        self.last_voiced_at
+            .lock()
+            .ok()
+            .and_then(|slot| *slot)
+            .map(|at| Instant::now().saturating_duration_since(at).as_millis() as i64)
+    }
+    /// Espera de commit: parede desde a última fala, com piso no silêncio que
+    /// existe no próprio áudio (determinístico nos testes e imune a blocos
+    /// grandes de áudio que fariam o offset pular).
+    fn commit_wait_ms(&self, cut_ms: i64) -> i64 {
+        let audio_wait = (cut_ms - self.last_voiced_end_ms()).max(0);
+        audio_wait.max(self.voiced_wait_ms().unwrap_or(0))
     }
     fn set_last_decode(&self, buffered_ms: i64) {
         if let Ok(mut slot) = self.last_decode_ms.lock() {
@@ -948,6 +1094,7 @@ impl AudioConsumer for TranscriptionPipeline {
             if level.rms > SPEECH_RMS_THRESHOLD {
                 let already_speaking = self.had_speech.swap(true, Ordering::Relaxed);
                 self.set_last_voiced_end_ms(buffered_ms);
+                self.set_last_voiced_at(Instant::now());
                 if !already_speaking {
                     self.publish_activity();
                 }
@@ -1251,6 +1398,12 @@ mod tests {
         (pipeline, publisher)
     }
 
+    /// Pipeline com limiares de turno explícitos (testes de experimento).
+    fn pipeline_with_timings(asr: Arc<dyn SpeechToText>, timings: TurnTimings) -> Fixture {
+        let (pipeline, publisher, rows) = pipeline(asr);
+        (pipeline.with_timings(timings), publisher, rows)
+    }
+
     /// Pipeline com a origem de tempo de uma sessão retomada (BR-019).
     fn pipeline_with_origin(
         text: &str,
@@ -1362,6 +1515,150 @@ mod tests {
         assert_eq!(segments[1].text, "bom dia");
         assert_eq!(rows.all().len(), 1, "final persistido");
         assert_eq!(pipeline.buffered_samples(), 0, "buffer consumido");
+    }
+
+    #[test]
+    fn commit_latency_counts_the_silence_wait() {
+        let (pipeline, _publisher, _rows) = pipeline(Arc::new(FakeAsr {
+            text: "bom dia".into(),
+        }));
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        assert_eq!(pipeline.last_commit_latency_ms(), -1, "ainda não commitou");
+
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+
+        let commit_ms = pipeline.last_commit_latency_ms();
+        assert!(
+            commit_ms >= 1_000,
+            "o commit precisa contabilizar a espera de silêncio: {commit_ms} ms"
+        );
+        assert!(
+            commit_ms < 1_500,
+            "a decodificação fake é imediata: {commit_ms} ms"
+        );
+    }
+
+    #[test]
+    fn finished_sentence_closes_at_the_short_silence() {
+        // Experimento (desligado por padrão): com a pontuação confirmando a
+        // frase, o turno fecha em 0,7 s em vez de esperar o silêncio cheio.
+        let (pipeline, publisher, _rows) = pipeline_with_timings(
+            Arc::new(FakeAsr {
+                text: "bom dia.".into(),
+            }),
+            TurnTimings {
+                silence_sentence_ms: 700,
+                ..TurnTimings::default()
+            },
+        );
+        pipeline.consume(&speech(1_500));
+        pipeline.tick(); // prévia
+        assert!(!publisher.segments().last().expect("prévia").is_final);
+
+        pipeline.consume(&silence(700));
+        pipeline.tick();
+
+        let segments = publisher.segments();
+        assert!(
+            segments.last().expect("final").is_final,
+            "frase concluída devia fechar em 0,7 s"
+        );
+        let commit_ms = pipeline.last_commit_latency_ms();
+        assert!(
+            (700..1_000).contains(&commit_ms),
+            "commit devia ser o fechamento curto: {commit_ms} ms"
+        );
+    }
+
+    #[test]
+    fn default_does_not_close_on_punctuation_alone() {
+        // Regressão de 21/10 ("transcrições erradas, mais demoras"): o default
+        // **não** antecipa o fechamento pela pontuação do whisper.
+        let (pipeline, publisher, _rows) = pipeline(Arc::new(FakeAsr {
+            text: "bom dia.".into(),
+        }));
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        let before = publisher.segments().len();
+
+        pipeline.consume(&silence(700));
+        pipeline.tick();
+        assert_eq!(
+            publisher.segments().len(),
+            before,
+            "0,7 s com ponto não pode fechar o turno por padrão"
+        );
+
+        pipeline.consume(&silence(300));
+        pipeline.tick();
+        assert!(
+            publisher.segments().last().expect("final").is_final,
+            "1 s de silêncio fecha"
+        );
+    }
+
+    #[test]
+    fn comma_pause_does_not_close_the_turn() {
+        // Pausa depois de vírgula é pausa interna: espera o silêncio cheio.
+        let (pipeline, publisher, _rows) = pipeline(Arc::new(FakeAsr {
+            text: "vamos fechar o documento,".into(),
+        }));
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        let segments_before = publisher.segments().len();
+
+        pipeline.consume(&silence(700));
+        pipeline.tick();
+        assert_eq!(
+            publisher.segments().len(),
+            segments_before,
+            "vírgula não pode fechar o turno"
+        );
+
+        pipeline.consume(&silence(300));
+        pipeline.tick();
+        assert!(
+            publisher.segments().last().expect("final").is_final,
+            "com 1 s de silêncio o turno fecha"
+        );
+    }
+
+    #[test]
+    fn previews_stop_when_speech_pauses() {
+        // Experimento (desligado por padrão): a prévia pedida no início da pausa
+        // entraria na frente do passe final.
+        let asr = Arc::new(RecordingAsr::new());
+        let (pipeline, _publisher, _rows) = pipeline_with_timings(
+            asr.clone(),
+            TurnTimings {
+                preview_cutoff_ms: 250,
+                ..TurnTimings::default()
+            },
+        );
+
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        assert_eq!(asr.qualities(), vec![SpeechQuality::Preview]);
+
+        // 0,8 s de silêncio: o passo da prévia (0,75 s) já estaria satisfeito,
+        // mas a pausa encerrou a rolagem.
+        pipeline.consume(&silence(800));
+        pipeline.tick();
+        assert_eq!(
+            asr.qualities(),
+            vec![SpeechQuality::Preview],
+            "não pode pedir prévia durante a pausa"
+        );
+
+        pipeline.consume(&silence(200));
+        pipeline.tick();
+        assert_eq!(
+            asr.qualities(),
+            vec![SpeechQuality::Preview, SpeechQuality::Final],
+            "o fechamento vem direto, sem prévia no meio"
+        );
     }
 
     #[test]

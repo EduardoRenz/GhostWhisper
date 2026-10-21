@@ -109,10 +109,12 @@ Regras transpostas (equivalência com o Perssua):
 | Passo entre prévias | `SERVER_WINDOW_DURATION_SEC 0.75` | `preview_step_ms` |
 | Força por ociosidade | `SERVER_IDLE_FORCE_PROCESS_MS 1000` | `idle_force_ms` |
 | Fim do turno por silêncio | `VAD_SILENCE_DURATION_MS 1000` | `silence_ms` |
+| Fim do turno por **frase concluída** | (não existe) | `silence_sentence_ms` (experimento, default = `silence_ms` — desligado) |
+| Prévia durante a pausa | continua até o commit | `preview_cutoff_ms` (experimento, default = `silence_ms` — desligado) |
 | Fim do turno pelo VAD do whisper | `endedInNoise` | `speech_end_ms` da prévia |
 | Mínimo para virar segmento | `FINAL_UTTERANCE_MIN_SEC 0.8` | `min_segment_ms` |
 | Turno em fala contínua | `MAX_CONTEXT_MS 55000` | `max_turn_ms` **25 000** (§2.2) |
-| Fila de decodificação | `whisper-server` único | thread única + `Final` prioritário |
+| Fila de decodificação | `whisper-server` único | `SpeechGate` global: `Final` > `Preview` |
 | Fechamento pendente | `pendingUtteranceComplete` | `final_requested` + resultado aplicado por turno |
 
 ### Invariantes
@@ -123,8 +125,13 @@ Regras transpostas (equivalência com o Perssua):
   transitória não "queima" 750 ms).
 - **I3.** Após uma falha, a próxima prévia espera o relógio de ociosidade (nunca
   re-tenta a cada tick).
-- **I4.** `Final` é prioritário e não é coalescido.
+- **I4.** `Final` é prioritário: no adaptador nunca é coalescido/descartado e, na
+  fila global entre canais (`SpeechGate`), passa na frente de prévias que ainda
+  **esperam** — sem preempção de um passe em execução (o whisper não interrompe).
 - **I5.** `stop()`/`flush()` esperam (com teto) o passe final do turno aberto.
+- **I6.** A decisão de fechar cedo por frase só vale quando a **mesma prévia** que
+  ancorou a cadência cobre o fim da fala e termina em pontuação forte; a métrica
+  `commit_ms` (espera + decodificação) é logada em `info`.
 
 ---
 
@@ -135,11 +142,21 @@ e no ASR (`GHOSTWHISPER_ASR_THREADS`), espelhando o `runtimeConfig.js` do Perssu
 
 `GHOSTWHISPER_INITIAL_PREVIEW_MS`, `GHOSTWHISPER_PREVIEW_STEP_MS`,
 `GHOSTWHISPER_IDLE_FORCE_MS`, `GHOSTWHISPER_VAD_SILENCE_MS`,
+`GHOSTWHISPER_SILENCE_SENTENCE_MS`, `GHOSTWHISPER_PREVIEW_CUTOFF_MS`,
 `GHOSTWHISPER_MIN_SEGMENT_MS`, `GHOSTWHISPER_MIN_WINDOW_MS`,
-`GHOSTWHISPER_MAX_TURN_MS`, `GHOSTWHISPER_ASR_THREADS`.
+`GHOSTWHISPER_MAX_TURN_MS`, `GHOSTWHISPER_ASR_THREADS`,
+`GHOSTWHISPER_WHISPER_FLASH_ATTN` (`0` desliga o flash attention mantendo a GPU;
+A/B de qualidade no Vulkan) e `GHOSTWHISPER_WHISPER_FALLBACK` (`1` religa o
+fallback por temperatura **no passe final**; default desligado, paridade `-nf`).
 
 Telemetria: `RUST_LOG=info` (padrão) já traz RTF, áudio e parede por passe
-(`log_rtf` em `transcription_pipeline.rs`).
+(`log_rtf` em `transcription_pipeline.rs`), o **commit de fala**
+(`commit_ms = wait_ms + queue_ms + asr_ms`: fim da fala → segmento final, com a
+espera de parede, a fila do canal e a fila global + decode separadas) e a linha
+`fila do ASR` (`gate_wait_ms`/`decode_ms`) por final. Os logs do whisper.cpp/ggml
+são roteados para o `tracing` (`whisper-rs/tracing_backend` +
+`install_logging_hooks`) e ficam em `whisper_rs=warn` por padrão — para depurar o
+ASR, `RUST_LOG=info,whisper_rs=debug`.
 
 ---
 

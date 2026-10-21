@@ -358,9 +358,8 @@ export const WHISPER_MODEL_SIZES: Record<string, string> = {
   "large-v3": "~3.1 GB",
 };
 
-/** Prompt de decodificação padrão (Perssua: `whisper_prompt`). */
-export const DEFAULT_WHISPER_PROMPT =
-  "Only transcribe what is clearly spoken. If uncertain, transcribe nothing.";
+/** Contexto do `initial_prompt` (vazio por padrão — ver ISS-059). */
+export const DEFAULT_WHISPER_PROMPT = "";
 
 /**
  * Ganho de microfone (1×–12×). O padrão e o teto são os do Perssua

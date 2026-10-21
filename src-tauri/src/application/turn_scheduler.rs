@@ -11,7 +11,12 @@
 //! - primeira prévia só depois de `initial_preview_ms` (`INITIAL_PREVIEW_MS`);
 //! - força um passe se ficar `idle_force_ms` sem processar
 //!   (`SERVER_IDLE_FORCE_PROCESS_MS`);
-//! - fecha o turno após `silence_ms` de silêncio (`VAD_SILENCE_DURATION_MS`).
+//! - fecha o turno após `silence_ms` de silêncio (`VAD_SILENCE_DURATION_MS`);
+//! - o fechamento antecipado por pontuação forte (`silence_sentence_ms`) existe
+//!   como **experimento desligado por padrão**: o whisper marca ponto em pausa
+//!   interna e picar a frase piora a transcrição (ISS-058, relato de 21/10);
+//! - **para de pedir prévia** após `preview_cutoff_ms` de pausa (a prévia
+//!   atrasaria o passe final na fila do ASR).
 
 /// Limiares de tempo do turno.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +29,24 @@ pub struct TurnTimings {
     pub idle_force_ms: i64,
     /// Silêncio que encerra o turno (`1 s`).
     pub silence_ms: i64,
+    /// Silêncio que encerra o turno quando a prévia já cobre o fim da fala e
+    /// termina em pontuação forte (`1 s` = **desligado**, igual ao `silence_ms`).
+    ///
+    /// Fechar em 0,7 s a partir da pontuação do whisper picava frases no meio:
+    /// o modelo marca ponto em pausas internas, então o turno fechava cedo demais
+    /// — mais turnos, menos contexto por frase e mais decodificações (relato de
+    /// 21/10: "transcrições erradas, mais demoras"). Fica como experimento por
+    /// env (`GHOSTWHISPER_SILENCE_SENTENCE_MS=700`) até termos medição de
+    /// qualidade que sustente o contrário.
+    pub silence_sentence_ms: i64,
+    /// Silêncio a partir do qual não se pede mais prévia (`1 s` = **desligado**).
+    ///
+    /// **Desligado por padrão** (igual ao `silence_ms`): a prévia continua
+    /// rolando durante a pausa, como antes da L1. O corte em 250 ms existe como
+    /// experimento por env (`GHOSTWHISPER_PREVIEW_CUTOFF_MS=250`) — ele evita
+    /// que a última prévia entre na frente do passe final, mas congela o texto
+    /// rolante mais cedo.
+    pub preview_cutoff_ms: i64,
     /// Fala mínima do turno para virar segmento final (`0.8 s`).
     pub min_segment_ms: i64,
     /// Áudio mínimo do turno para valer uma decodificação (`0.35 s`).
@@ -44,6 +67,8 @@ impl Default for TurnTimings {
             preview_step_ms: 750,
             idle_force_ms: 1_000,
             silence_ms: 1_000,
+            silence_sentence_ms: 1_000,
+            preview_cutoff_ms: 1_000,
             min_segment_ms: 800,
             min_window_ms: 350,
             max_turn_ms: 25_000,
@@ -64,10 +89,27 @@ impl TurnTimings {
             preview_step_ms: env_ms("GHOSTWHISPER_PREVIEW_STEP_MS", defaults.preview_step_ms),
             idle_force_ms: env_ms("GHOSTWHISPER_IDLE_FORCE_MS", defaults.idle_force_ms),
             silence_ms: env_ms("GHOSTWHISPER_VAD_SILENCE_MS", defaults.silence_ms),
+            silence_sentence_ms: env_ms(
+                "GHOSTWHISPER_SILENCE_SENTENCE_MS",
+                defaults.silence_sentence_ms,
+            ),
+            preview_cutoff_ms: env_ms("GHOSTWHISPER_PREVIEW_CUTOFF_MS", defaults.preview_cutoff_ms),
             min_segment_ms: env_ms("GHOSTWHISPER_MIN_SEGMENT_MS", defaults.min_segment_ms),
             min_window_ms: env_ms("GHOSTWHISPER_MIN_WINDOW_MS", defaults.min_window_ms),
             max_turn_ms: env_ms("GHOSTWHISPER_MAX_TURN_MS", defaults.max_turn_ms),
         }
+        .clamped()
+    }
+
+    /// Mantém os limiares coerentes quando vêm do ambiente.
+    ///
+    /// O fechamento por frase nunca pode ser **mais lento** que o fechamento por
+    /// silêncio, e o corte de prévias nunca pode passar do fechamento por frase.
+    fn clamped(mut self) -> Self {
+        self.silence_ms = self.silence_ms.max(100);
+        self.silence_sentence_ms = self.silence_sentence_ms.clamp(100, self.silence_ms);
+        self.preview_cutoff_ms = self.preview_cutoff_ms.clamp(0, self.silence_sentence_ms);
+        self
     }
 }
 
@@ -97,6 +139,12 @@ pub struct TurnState {
     pub decode_in_flight: bool,
     /// Já foi pedido o passe final do turno atual.
     pub final_requested: bool,
+    /// A última prévia cobre o fim da fala **e** termina em pontuação forte.
+    ///
+    /// Só nesse caso a pausa curta é confiável: a prévia viu a última palavra e
+    /// ela fechou uma frase. Prévia desatualizada (corte antes do fim da fala) ou
+    /// texto terminando em vírgula mantêm o fechamento conservador.
+    pub preview_ends_sentence: bool,
     /// A última tentativa de decodificação falhou (transitório).
     pub last_attempt_failed: bool,
 }
@@ -128,7 +176,7 @@ pub fn decide(state: &TurnState, timings: &TurnTimings) -> Decision {
     }
 
     // Silêncio suficiente após fala: o turno terminou.
-    let silence_ms = state.buffered_ms - state.last_voiced_end_ms;
+    let silence_ms = (state.buffered_ms - state.last_voiced_end_ms).max(0);
     if state.had_speech
         && silence_ms >= timings.silence_ms
         && state.buffered_ms >= timings.min_segment_ms
@@ -138,8 +186,24 @@ pub fn decide(state: &TurnState, timings: &TurnTimings) -> Decision {
         };
     }
 
-    // Prévia durante a fala (texto rolante).
+    // Frase concluída: a prévia cobre o fim da fala e termina em pontuação
+    // forte. Fecha antes do silêncio cheio — a pausa depois do ponto é fim de
+    // frase, não pausa interna (que deixaria a prévia sem pontuação forte).
     if state.had_speech
+        && state.preview_ends_sentence
+        && silence_ms >= timings.silence_sentence_ms
+        && state.buffered_ms >= timings.min_segment_ms
+    {
+        return Decision::Finalize {
+            cut_ms: state.buffered_ms,
+        };
+    }
+
+    // Prévia durante a fala (texto rolante). A pausa encerra a rolagem: uma
+    // prévia pedida agora entraria na frente do passe final na fila do ASR e
+    // atrasaria a frase que o usuário acabou de falar.
+    if state.had_speech
+        && silence_ms < timings.preview_cutoff_ms
         && state.buffered_ms >= timings.initial_preview_ms
         && state.buffered_ms >= timings.min_window_ms
         && !state.decode_in_flight
@@ -178,6 +242,7 @@ mod tests {
             ms_since_last_attempt: 0,
             decode_in_flight: false,
             final_requested: false,
+            preview_ends_sentence: false,
             last_attempt_failed: false,
         }
     }
@@ -257,6 +322,88 @@ mod tests {
         let mut s = state(2_000);
         s.last_voiced_end_ms = 900; // 1,1 s de silêncio
         assert_eq!(decide(&s, &timings), Decision::Finalize { cut_ms: 2_000 });
+    }
+
+    #[test]
+    fn finished_sentence_closes_before_full_silence() {
+        // Experimento (desligado por padrão): com a pontuação confirmando a
+        // frase, o turno fecha em 0,7 s em vez de esperar o silêncio cheio.
+        let timings = TurnTimings {
+            silence_sentence_ms: 700,
+            ..TurnTimings::default()
+        };
+        let mut s = state(2_000);
+        s.last_voiced_end_ms = 1_300; // 0,7 s de silêncio
+        s.preview_ends_sentence = true;
+        assert_eq!(decide(&s, &timings), Decision::Finalize { cut_ms: 2_000 });
+    }
+
+    #[test]
+    fn early_close_is_off_by_default() {
+        // Regressão de 21/10: o default não pode antecipar o fechamento só pela
+        // pontuação do whisper (ele marca ponto em pausa interna). Na pausa,
+        // a prévia continua (baseline), mas o turno **não** fecha.
+        let timings = TurnTimings::default();
+        let mut s = state(2_000);
+        s.last_voiced_end_ms = 1_300; // 0,7 s de silêncio
+        s.preview_ends_sentence = true;
+        assert_eq!(decide(&s, &timings), Decision::Preview { cut_ms: 2_000 });
+    }
+
+    #[test]
+    fn comma_pause_waits_for_full_silence() {
+        let timings = TurnTimings::default();
+        let mut s = state(2_000);
+        s.last_voiced_end_ms = 1_300; // 0,7 s de silêncio
+        s.preview_ends_sentence = false; // prévia sem pontuação forte
+        assert_eq!(decide(&s, &timings), Decision::Preview { cut_ms: 2_000 });
+
+        // No silêncio cheio o turno fecha de qualquer forma.
+        s.last_voiced_end_ms = 1_000; // 1,0 s
+        assert_eq!(decide(&s, &timings), Decision::Finalize { cut_ms: 2_000 });
+    }
+
+    #[test]
+    fn previews_stop_when_speech_pauses() {
+        // Experimento (desligado por padrão): corte de prévias em 0,25 s.
+        let timings = TurnTimings {
+            preview_cutoff_ms: 250,
+            ..TurnTimings::default()
+        };
+        // Passo satisfeito, mas já há 0,3 s de silêncio: não pede prévia (ela
+        // entraria na frente do passe final).
+        let mut s = state(2_000);
+        s.last_voiced_end_ms = 1_700;
+        s.last_decode_ms = 1_000;
+        assert_eq!(decide(&s, &timings), Decision::Wait);
+
+        // Durante a fala (silêncio abaixo do corte) a prévia continua.
+        s.last_voiced_end_ms = 1_950;
+        assert_eq!(decide(&s, &timings), Decision::Preview { cut_ms: 2_000 });
+    }
+
+    #[test]
+    fn previews_continue_during_pause_by_default() {
+        // Baseline restaurada (regressão de 21/10): a prévia continua rolando
+        // durante a pausa, como antes da L1.
+        let timings = TurnTimings::default();
+        let mut s = state(2_000);
+        s.last_voiced_end_ms = 1_700; // 0,3 s de silêncio
+        s.last_decode_ms = 1_000;
+        assert_eq!(decide(&s, &timings), Decision::Preview { cut_ms: 2_000 });
+    }
+
+    #[test]
+    fn sentence_timing_is_clamped_to_the_full_silence() {
+        let timings = TurnTimings {
+            silence_ms: 600,
+            silence_sentence_ms: 900,
+            preview_cutoff_ms: 900,
+            ..TurnTimings::default()
+        }
+        .clamped();
+        assert_eq!(timings.silence_sentence_ms, 600);
+        assert_eq!(timings.preview_cutoff_ms, 600);
     }
 
     #[test]

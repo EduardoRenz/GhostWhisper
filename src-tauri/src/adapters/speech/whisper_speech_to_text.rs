@@ -70,6 +70,8 @@ const FINAL_TIMEOUT_MAX_MS: u64 = 120_000;
 const DECODE_TEMPERATURE: f32 = 0.0;
 /// Incremento de temperatura 0 desliga o fallback (equivale a `-nf`).
 const DECODE_TEMPERATURE_INC: f32 = 0.0;
+/// Incremento quando o fallback é religado no passe final (opt-in).
+const DECODE_TEMPERATURE_FALLBACK_INC: f32 = 0.2;
 /// Limiar de entropia (abaixo do padrão 2.4, menos alucinação).
 const DECODE_ENTROPY_THOLD: f32 = 2.2;
 
@@ -190,7 +192,8 @@ impl LoadedWhisper {
                 feature = "vulkan",
                 feature = "cuda",
                 feature = "hipblas"
-            ));
+            ))
+            && flash_attn_allowed();
         let mut context_params = WhisperContextParameters::default();
         if effective_gpu {
             context_params.use_gpu(true);
@@ -539,6 +542,38 @@ fn run_worker(
     }
 }
 
+/// Flash attention pode ser desligado por ambiente, mantendo a GPU.
+///
+/// `GHOSTWHISPER_WHISPER_FLASH_ATTN=0` serve para A/B de qualidade: no Vulkan
+/// (RADV/Polaris) o caminho do flash attention é o menos testado do ggml. O
+/// default é ligado, como antes.
+fn flash_attn_allowed() -> bool {
+    match std::env::var("GHOSTWHISPER_WHISPER_FLASH_ATTN") {
+        Ok(raw) => parse_switch(&raw),
+        Err(_) => true,
+    }
+}
+
+/// Interpreta um booleano de ambiente (`0/false/off/no` desligam).
+fn parse_switch(raw: &str) -> bool {
+    !matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "0" | "false" | "off" | "no"
+    )
+}
+
+/// Fallback de temperatura no passe final (`GHOSTWHISPER_WHISPER_FALLBACK=1`).
+///
+/// Desligado por padrão (paridade com o `-nf` do Perssua). Quando ligado, o
+/// final repete a decodificação com temperatura crescente se a entropia passar
+/// do limiar — a defesa nativa do whisper contra loop/alucinação.
+fn decode_fallback_allowed() -> bool {
+    std::env::var("GHOSTWHISPER_WHISPER_FALLBACK")
+        .ok()
+        .map(|raw| parse_switch(&raw))
+        .unwrap_or(false)
+}
+
 /// Monta os parâmetros e executa a decodificação no estado carregado.
 fn decode_with(
     loaded: &mut LoadedWhisper,
@@ -567,8 +602,18 @@ fn decode_with(
     // Perssua (`WhisperServerManager.js` / `runWhisperCli`): fixa temperatura e
     // entropia e suprime tokens de não-fala. Sem isso o whisper faz "fallback"
     // por temperatura (até ~5 decodificações extras) em áudio difícil.
+    //
+    // Exceção opt-in (`GHOSTWHISPER_WHISPER_FALLBACK=1`): no **passe final**,
+    // religa o fallback por temperatura. É a defesa nativa do whisper contra
+    // loop/alucinação (repete a decodificação com temperatura maior quando a
+    // entropia passa do limiar); fica fora da prévia para não custar latência.
+    let temperature_inc = if quality == SpeechQuality::Final && decode_fallback_allowed() {
+        DECODE_TEMPERATURE_FALLBACK_INC
+    } else {
+        DECODE_TEMPERATURE_INC
+    };
     params.set_temperature(DECODE_TEMPERATURE);
-    params.set_temperature_inc(DECODE_TEMPERATURE_INC);
+    params.set_temperature_inc(temperature_inc);
     params.set_entropy_thold(DECODE_ENTROPY_THOLD);
     params.set_suppress_nst(true);
     // Prompt de decodificação (Perssua: `whisper_prompt` + regra de idioma). Só
@@ -738,5 +783,18 @@ mod tests {
             Ok(Err(GhostWhisperError::AsrBusy)) => {}
             other => panic!("esperava AsrBusy, veio {other:?}"),
         }
+    }
+
+    #[test]
+    fn flash_attn_switch_parses_falsey_values() {
+        // Diagnóstico de qualidade no Vulkan: só `0/false/off/no` desligam.
+        assert!(parse_switch("1"));
+        assert!(parse_switch("true"));
+        assert!(parse_switch("on"));
+        assert!(parse_switch(""));
+        assert!(!parse_switch("0"));
+        assert!(!parse_switch("false"));
+        assert!(!parse_switch(" OFF "));
+        assert!(!parse_switch("no"));
     }
 }

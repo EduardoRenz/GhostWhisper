@@ -263,3 +263,246 @@ o fechamento do E3, mas dois documentos seguiam com estado antigo:
 ### Verificação
 - `cargo test --lib` **330 ✓** · `clippy -D warnings` ✓ · `fmt --check` ✓ ·
   `pnpm test` 123 ✓ · `tsc` ✓ (última rodada registrada no E3).
+
+## 2026-10-21 — L1: commit de fala mais rápido (fila + endpointing) (ISS-058, task 04)
+
+- **IDs:** ISS-058, T04, BR-029, R16, R17
+- **Refs:** [`issues.md`](issues.md), [`tasks/04-task.md`](tasks/04-task.md),
+  [`../../mvp/architecture/transcription-streaming.md`](../../mvp/architecture/transcription-streaming.md) §3–§4,
+  [`../../business-rules.md`](../../business-rules.md) BR-029
+
+### Relato
+*“Preciso de pedaços de frases concluídas o mais rápido possível para que o
+sugestor e a sessão possam utilizar o mais rápido possível.”*
+
+### Diagnóstico
+- O sugestor só consome **finais** (`latest_final_end_ms`), então toda a latência
+  do turno entra nele: silêncio + passe final.
+- Três somas no caminho crítico: (1) o agendador continuava pedindo **prévia
+  durante o silêncio** (passo de 0,75 s), e o final entrava atrás dela na fila;
+  (2) a fila global do ASR era **FIFO entre canais** — o final do microfone
+  esperava a prévia do sistema; (3) o fechamento exigia **1 s cheio**, mesmo com
+  a prévia já mostrando frase concluída.
+- Em fala contínua o teto de `max_turn_ms` (25 s) continua sendo o pior caso;
+  isso é a **etapa 3** (commit por frase), fora desta task.
+- Revisão de segunda opinião: manter 1→2→3; medir antes de chamar de "risco
+  baixo"; **descartar prévia enfileirada ≠ cancelar a que está executando**; a
+  disputa entre canais na fila global não estava no plano original.
+
+### Decisão
+- **Etapa 1** (esta): decisão pura nova em `turn_scheduler` — `preview_cutoff_ms`
+  (250 ms) para a rolagem na pausa e `silence_sentence_ms` (700 ms) quando a
+  prévia **cobre** o fim da fala e termina em `.?!`; vírgula/reticências mantêm
+  1 s. Desvio consciente do Perssua (1 s fixo), documentado em BR-029.
+- **`SpeechGate`** substitui o `Mutex<()>`: `Final` passa na frente de prévias que
+  esperam, sem preempção do passe em execução (o whisper não interrompe).
+- **Métrica `commit_ms`** = espera de silêncio + decodificação, logada em `info`;
+  o acessor fica em `#[cfg(test)]` para os testes de latência.
+- A prévia guarda `(turno, corte, texto)` e o fechamento curto exige o **mesmo
+  corte** que ancorou a cadência — pontuação de texto antigo não decide.
+
+### Verificação
+- `cargo test --lib` **614 ✓** (10 ignorados) · clippy `-D warnings` ✓ ·
+  rustfmt nos arquivos alterados ✓.
+- Teste pesado com modelo real (`tiny`, JFK streaming):
+  `end_to_end_streams_preview_before_final` ✓.
+- **Pendente:** teste manual no app (task 04, seção "Como testar").
+- Nota: `cargo fmt --check` global continua com diffs **pré-existentes** em 18
+  arquivos do PRD `recording` (não tocados aqui).
+
+### Próximos passos
+- **Etapa 2:** commit otimista (publicar a prévia estável como final e corrigir
+  com o beam em background) — exige `update_text` na porta de transcrições
+  (`insert` hoje é `INSERT` puro) e merge por id na UI.
+- **Etapa 3:** commit por frase (corta a unidade; única que ataca o teto de 25 s
+  em fala contínua).
+
+## 2026-10-21 — Métrica de commit confiável e ruído do whisper silenciado (ISS-058, task 04)
+
+- **IDs:** ISS-058, T04, BR-029, R16, R17
+- **Refs:** [`tasks/04-task.md`](tasks/04-task.md),
+  [`../../mvp/architecture/transcription-streaming.md`](../../mvp/architecture/transcription-streaming.md) §4
+
+### Relato
+Log real de sessão (21/10): `commit de fala channel=System turn=0 wait_ms=1792
+asr_ms=1616 commit_ms=3408` com `audio_ms=21888`, e uma prévia do microfone de
+23,5 s (1,8 s de decode). Além disso, o stderr estava inundado de
+`whisper_full_with_state: beam search...`.
+
+### Diagnóstico
+- **Turnos longos** (21–23 s) dominam: o passe final custa 1,6 s e a prévia
+  custa 1,8 s — é o caso que só a etapa 3 (commit por frase) resolve.
+- `wait_ms=1792` com `silence_ms=1000`: a espera era calculada por **offset de
+  áudio**; um tick atrasado (ou bloco grande) fazia o offset "pular" e inflar o
+  número. Não dava para separar espera real de atraso do agendador.
+- `asr_ms` misturava **fila global** (o final pode esperar uma prévia em
+  execução — sem preempção) com decode; não dava para provar a prioridade do
+  `SpeechGate`.
+- O flood do whisper.cpp vinha do logger padrão (stderr), fora do `tracing`.
+
+### Decisão
+- `wait_ms` por **relógio de parede** desde a última janela falada, com piso no
+  silêncio contido no áudio (determinístico nos testes).
+- `commit_ms = wait_ms + queue_ms + asr_ms`; `queue_ms` é a fila do **canal** e
+  `asr_ms` a chamada ao ASR (fila global + decode). Nova linha `fila do ASR`
+  (`gate_wait_ms`/`decode_ms`) por final separa os dois.
+- `whisper-rs/tracing_backend` + `install_logging_hooks()`; filtro padrão
+  `RUST_LOG` + `whisper_rs=warn` (mesmo com `RUST_LOG=info`), com escape em
+  `whisper_rs=debug`.
+
+### Verificação
+- `cargo test --lib` **614 ✓** · clippy `-D warnings` ✓ · rustfmt nos arquivos
+  alterados ✓.
+- Hook do whisper verificado em execução: com `RUST_LOG=info` os eventos chegam
+  pelo alvo `whisper_rs::whisper_logging_hook`; com o filtro padrão, **zero**
+  linhas no buffer do subscriber.
+- **Pendente:** nova rodada de log no app (esperado: `wait_ms` ≈ 700/1000,
+  `queue_ms` ≈ 0, `asr_ms` = fila + decode, sem ruído do whisper).
+
+## 2026-10-21 — Regressão: fechamento por pontuação piorou a transcrição (ISS-058, task 04)
+
+- **IDs:** ISS-058, T04, BR-029, R16, R17
+- **Refs:** [`tasks/04-task.md`](tasks/04-task.md),
+  [`../../business-rules.md`](../../business-rules.md) BR-029
+
+### Relato
+*“Senti uma piora, transcrição erradas, mais demoras.”* — depois de testar a L1
+com o fechamento antecipado em 0,7 s ligado por padrão.
+
+### Diagnóstico
+- O whisper marca **ponto em pausa interna** com frequência; a regra "última
+  prévia cobre o fim + termina em `.?!`" disparava em pausas que não eram fim de
+  frase.
+- Cada fechamento antecipado cria **mais um turno**: o whisper decodifica cada
+  turno isolado (sem contexto do anterior) → mais erros de fronteira e mais
+  decodificações (com dois canais, mais fila e mais demora percebida).
+- O efeito composto com a prioridade do final era o oposto do desejado: mais
+  finais ⇒ prévias esperando ⇒ texto rolante mais lento.
+
+### Decisão
+- `silence_sentence_ms` volta a **1000** por padrão (= `silence_ms`), ou seja, o
+  fechamento antecipado fica **desligado**. Continua disponível por env
+  (`GHOSTWHISPER_SILENCE_SENTENCE_MS=700`) para experimentos com medição.
+- Mantidos: corte de prévias na pausa (`preview_cutoff_ms=250` — não muda texto),
+  prioridade `Final` > `Preview` (`SpeechGate`) e a métrica decomposta.
+- Testes anti-regressão (R16) que **falhariam** no código anterior:
+  `early_close_is_off_by_default` (decisão pura) e
+  `default_does_not_close_on_punctuation_alone` (pipeline).
+
+### Verificação
+- `cargo test --lib` **616 ✓** · clippy `-D warnings` ✓ · rustfmt nos arquivos
+  alterados ✓.
+- **Pendente:** novo teste manual do usuário (default 1 s) — se a piora persistir,
+  o próximo suspeito é o `preview_cutoff_ms`, desligável com
+  `GHOSTWHISPER_PREVIEW_CUTOFF_MS=60000`.
+
+## 2026-10-21 — Rollback da L1 para o baseline (ISS-058, task 04)
+
+- **IDs:** ISS-058, T04, BR-029, R16, R17
+- **Refs:** [`tasks/04-task.md`](tasks/04-task.md), BR-029
+
+### Relato
+*“Aliás, gerando bem mais frases sem sentido agora também.”* — depois do rollback
+do fechamento em 0,7 s, a percepção de piora continuou.
+
+### Decisão
+- **Voltar o comportamento ao baseline** e manter só o que é observável:
+  - `silence_sentence_ms = 1000` (fechamento por pontuação **desligado**);
+  - `preview_cutoff_ms = 1000` (prévia continua rolando na pausa, como antes);
+  - mantidos: `SpeechGate` com prioridade `Final` > `Preview`, métrica
+    decomposta e o silenciamento do whisper.cpp.
+- Assim, a única diferença de texto/segmentação em relação ao commit anterior é
+  **nenhuma**; o que resta é ordenação de fila (neutra para o texto) e
+  telemetria.
+- Experimentos continuam disponíveis por env:
+  `GHOSTWHISPER_SILENCE_SENTENCE_MS=700` e `GHOSTWHISPER_PREVIEW_CUTOFF_MS=250`.
+
+### Verificação
+- `cargo test --lib` **617 ✓** · clippy `-D warnings` ✓ · rustfmt ✓.
+- Testes de baseline (R16): `early_close_is_off_by_default`,
+  `previews_continue_during_pause_by_default`,
+  `default_does_not_close_on_punctuation_alone`.
+- **Pendência aberta:** investigar a origem das “frases sem sentido” no canal
+  System. O log de 19:49 mostra **turno de 25 s** (teto) com áudio contínuo e
+  `flash_attn=true` num build Vulkan — contrário à BR-029, que prevê flash
+  attention só em CUDA/hipBLAS. Hipóteses a testar: (a) Aceleração = CPU nas
+  configurações; (b) `GHOSTWHISPER_MAX_TURN_MS=10000`; (c) desligar flash
+  attention no Vulkan.
+
+## 2026-10-21 — Diagnóstico das "frases sem sentido" (ISS-058, task 04)
+
+- **IDs:** ISS-058, T04, BR-029, R16, R17
+- **Refs:** [`tasks/04-task.md`](tasks/04-task.md), BR-029
+
+### Relato
+*“Acho que ambos, mas os sem sentido, os últimos foram minhas”* — as frases sem
+sentido aparecem no **microfone** (fala do próprio usuário), não só no System.
+*“O AEC eu testando microfone uma vez estava mais atrapalhando… sem isso ela fica
+limpa”* — AEC fica **desligado por escolha** do usuário (o NLMS abafa a voz).
+
+### Achados nas configurações reais
+- `whisper_model: small`, `acceleration: auto` (GPU), `aec_enabled: false`.
+- `whisper_prompt` customizado e **instructional**:
+  *"Only transcribe what is clearly spoken… Probabilly you are in an techincal
+  context, some tech words will appear, like Python, Javascript, Code etc"*.
+  O `initial_prompt` do whisper é **contexto**, não instrução; com áudio
+  incerto o modelo tende a continuar o prompt — candidato forte às frases
+  plausíveis e sem sentido.
+- O `decode_prompt` ainda anexa *"The audio is spoken in Portuguese…"*; com
+  `source_language=pt` o `set_language` já força o idioma, então a regra é
+  redundante e aumenta a superfície de vazamento.
+
+### Decisão
+- **Não** mexer no AEC (preferência do usuário; voz limpa sem ele).
+- Diagnóstico em duas frentes, sem mudar defaults:
+  1. teste limpando o `whisper_prompt` (só configuração);
+  2. novo switch `GHOSTWHISPER_WHISPER_FLASH_ATTN=0` para A/B do flash attention
+     **mantendo a GPU** (o log mostra `flash_attn=true` num build Vulkan; a
+     BR-029 prevê flash attention só em CUDA/hipBLAS).
+
+### Verificação
+- `cargo test --lib` **618 ✓** · clippy `-D warnings` ✓ · `parse_switch` testado.
+- Switch extra: `GHOSTWHISPER_WHISPER_FALLBACK=1` (fallback de temperatura só no
+  final; default desligado, paridade `-nf`).
+- **Pendente:** resultado do A/B (prompt vazio e/ou flash attention off).
+
+## 2026-10-21 — Prompt instrucional vazava para a transcrição (ISS-059, task 05)
+
+- **IDs:** ISS-059, T05, BR-027, BR-034, R16, R17
+- **Refs:** [`issues.md`](issues.md), [`tasks/05-task.md`](tasks/05-task.md),
+  [`../../business-rules.md`](../../business-rules.md) BR-027/BR-034
+
+### Relato
+*“Frases sem sentido… inclusive repetida… na prévia e, às vezes, no final”* no
+**microfone**. Depois: *“removi o prompt do whisper… melhorou bastante, prévia
+sem erro praticamente, bolhas sensatas.”*
+
+### Diagnóstico
+- O `whisper_prompt` salvo era **instrucional** (“Only transcribe what is clearly
+  spoken…”) e o app ainda anexava a regra de idioma em inglês.
+- O `initial_prompt` do whisper é **contexto** (fala anterior), não comando: em
+  áudio incerto o modelo **continua o prompt**. A frase “Se você não sabe, você
+  pode falar em português” vista no log é paráfrase da regra de idioma.
+- Prova prática: limpar o campo corrigiu na hora; as prévias caíram de
+  ~700–1800 ms para ~250–350 ms (menos tokens de prompt no decoder).
+
+### Correção
+- `DEFAULT_WHISPER_PROMPT` **vazio** (backend e frontend) + migração em
+  `Settings::sanitized` que limpa exatamente o default antigo (contexto real é
+  preservado).
+- `decode_prompt(base)` virou só sanitização (trim + NUL); a regra de idioma
+  saiu — `set_language` + `set_translate(false)` já fixam idioma e não-tradução.
+- `update_language` não recomputa mais prompt (ele não depende do idioma).
+- UI: “Contexto da transcrição (opcional)”, placeholder de nomes/jargões e aviso
+  de que **instruções atrapalham** e podem ser repetidas; recomendação de deixar
+  vazio.
+- BR-027 reescrita; CA-01.1/CA-01.2 do PRD atualizados; BR-034 ajustada.
+
+### Verificação
+- `cargo test --lib` **619 ✓** · clippy `-D warnings` ✓ · `pnpm test` **388 ✓** ·
+  `tsc --noEmit` ✓.
+- Testes anti-regressão (R16): `sanitized_clears_the_legacy_instruction_prompt`,
+  `whisper_prompt_defaults_to_empty`,
+  `decode_prompt_keeps_only_context_and_drops_instructions`,
+  `engine_params_reads_settings`.
+- **Pendente:** abrir Configurações no app e conferir o novo texto (task 05).

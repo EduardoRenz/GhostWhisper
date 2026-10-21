@@ -82,11 +82,11 @@ cada task atualiza `tasks/NN-task.md` para `CONCLUDED` e o `memory.md` deste PRD
 
 ### US-01 — Transcrição mais precisa (E1)
 
-- **CA-01.1** Toda decodificação envia o `whisper_prompt` configurado (default:
-  `"Only transcribe what is clearly spoken. If uncertain, transcribe nothing."`).
-- **CA-01.2** O prompt de decodificação acrescenta a regra de idioma
-  (`The audio is spoken in <idioma>. Transcribe it in <idioma>. Do not translate
-  it to English.`) e o idioma é mapeado (`pt-br` → `pt`).
+- **CA-01.1** Toda decodificação envia o `whisper_prompt` configurado, que é
+  **contexto** (default **vazio**). Instruções são desencorajadas pela UI: o
+  modelo as continua quando o áudio é incerto (ISS-059).
+- **CA-01.2** O idioma é fixado por `set_language` + `set_translate(false)`; a
+  regra de idioma **não** vai mais no prompt (`pt-br` → `pt`).
 - **CA-01.3** A reamostragem do microfone aplica anti-aliasing antes de decimar
   (sem tom espelhado acima de 8 kHz).
 - **CA-01.4** Limiares de gate/VAD permanecem os do **BR-018** (o gate fica no

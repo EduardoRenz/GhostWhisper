@@ -1316,9 +1316,22 @@ fn migrate_legacy_data_dir(dir: &std::path::Path) -> crate::error::Result<()> {
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // whisper.cpp/ggml são barulhentos (um `whisper_full_with_state` por token).
+    // O hook do `whisper-rs` manda esses logs para o `tracing`; aqui eles ficam
+    // em `warn` por padrão mesmo quando o usuário sobe o nível global com
+    // `RUST_LOG=info` (o caso comum). Para depurar o ASR:
+    // `RUST_LOG=info,whisper_rs=debug`.
+    let raw = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
+    let directives = if raw.contains("whisper_rs") {
+        raw
+    } else {
+        format!("{raw},whisper_rs=warn")
+    };
+    let filter = EnvFilter::try_new(directives)
+        .unwrap_or_else(|_| EnvFilter::new("info,whisper_rs=warn"));
 
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    whisper_rs::install_logging_hooks();
 }
 
 #[cfg(test)]

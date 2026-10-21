@@ -39,7 +39,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 cpal = "0.15"
 libpulse-binding = "2"
 libpulse-simple-binding = "2"
-whisper-rs = "0.16"
+whisper-rs = { version = "0.16", features = ["tracing_backend"] }
 ureq = { version = "2", features = ["json"] }
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }

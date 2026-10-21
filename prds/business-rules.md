@@ -353,26 +353,34 @@ uma nota de revisão.
 - **Data:** 2026-10-18 · **Status:** Ativa
 
 ## BR-027 — Precisão do ASR: prompt de decodificação, anti-alias e modelo por GPU
-- **Decisão:** toda decodificação local envia um `initial_prompt`
-  (`whisper_prompt`, default `"Only transcribe what is clearly spoken. If
-  uncertain, transcribe nothing."`) acrescido da **regra de idioma**
-  (`pt-br` → `pt`, com "Transcribe it in <idioma>. Do not translate it to
-  English."); prompt **vazio desliga** o recurso. A decimação do microfone aplica
-  **passa-baixa antes de reduzir a taxa** (anti-aliasing). O catálogo ganha
-  `large-v3` e `large-v3-turbo` (recomendados **com GPU**; o default do modelo
-  continua `tiny`). O app **detecta GPU** (Vulkan/DRM no Linux-first) e **sugere**
-  o modelo adequado na tela de configurações, **sem trocar sozinho**. Os limiares
-  de gate/VAD **permanecem os do BR-018**.
+- **Decisão:** a decodificação local **não envia `initial_prompt` por padrão**
+  (`whisper_prompt` vazio). Quem quiser pode cadastrar **apenas contexto**
+  (nomes, siglas, jargões). Instruções ("não invente", "transcreva só o que
+  estiver claro") **atrapalham**: o `initial_prompt` é tratado pelo modelo como
+  **fala anterior** e pode ser repetido quando o áudio é incerto (ISS-059). O
+  idioma é fixado por `set_language` + `set_translate(false)` e **não vai mais no
+  prompt**; o default antigo (instrucional) é limpo na migração de settings. A
+  decimação do microfone aplica **passa-baixa antes de reduzir a taxa**
+  (anti-aliasing). O catálogo ganha `large-v3` e `large-v3-turbo` (recomendados
+  **com GPU**; o default do modelo continua `tiny`). O app **detecta GPU**
+  (Vulkan/DRM no Linux-first) e **sugere** o modelo adequado na tela de
+  configurações, **sem trocar sozinho**. Os limiares de gate/VAD **permanecem os
+  do BR-018**.
 - **Motivo:** paridade com o Perssua (BR-015) e o pedido do usuário ("mais
-  acertivo na transcrição"); o prompt e o anti-alias são ganhos baratos e o
-  modelo grande só faz sentido junto com GPU.
-- **Consequência:** as features de GPU (`cuda`/`hipblas`/`metal`) são declaradas
-  agora e a **aceleração real** é o entregável E3
+  acertivo na transcrição"); o anti-alias é ganho barato e o modelo grande só faz
+  sentido junto com GPU. O prompt instrucional foi **removido** após o relato de
+  21/10 ("frases sem sentido"): limpar o campo corrigiu a transcrição na hora.
+- **Consequência:** o prompt fica como **contexto opcional** (a UI avisa que
+  instruções atrapalham) e o default é vazio. As features de GPU
+  (`cuda`/`hipblas`/`metal`) são declaradas agora e a **aceleração real** é o
+  entregável E3
   ([`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md));
   a sugestão de GPU é informativa e não altera `Settings`.
 - **Detalhes:** [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md)
-  §2/§5; [`precision-and-performance/tasks/01-task.md`](precision-and-performance/tasks/01-task.md).
-- **Data:** 2026-10-18 · **Status:** Ativa (implementada na task 01, aguardando teste manual)
+  §2/§5; [`precision-and-performance/issues.md`](precision-and-performance/issues.md)
+  ISS-059; [`precision-and-performance/tasks/05-task.md`](precision-and-performance/tasks/05-task.md).
+- **Data:** 2026-10-18 (atualizada em 2026-10-21) · **Status:** Ativa (prompt
+  default vazio + contexto opcional)
 
 ## BR-028 — Sugestão ao vivo: fast-first, streaming e automático por fala nova
 - **Decisão:** a sugestão ao vivo tem **dois passes**: um **fast-first** curto
@@ -484,12 +492,23 @@ uma nota de revisão.
   quando não cobre. **AEC** e ajuste de **commits** ficam pendentes na task 03.
   No áudio, o microfone ganha **AEC referenciado** no áudio do sistema (NLMS com
   guarda de *double-talk*, ligado por padrão com toggle), aplicado **antes** do
-  ganho. Os **commits** de turno ficam em **1 s de silêncio** — paridade com o
-  `local_whisper_vad_silence_duration_ms` do Perssua; os 650 ms são do provider
-  realtime em nuvem, e cortar mais picaria frase no meio.
+  ganho. Os **commits** de turno ficam em **1 s de silêncio**. O fechamento
+  antecipado (0,7 s) quando a última prévia cobre o fim da fala e termina em
+  pontuação forte existe como **experimento desligado por padrão**: o relato de
+  21/10 ("transcrições erradas, mais demoras") mostrou que o whisper marca ponto
+  em pausa interna, e antecipar picava a frase — mais turnos, menos contexto e
+  mais decodificações. Fica atrás de `GHOSTWHISPER_SILENCE_SENTENCE_MS=700` até
+  haver medição de qualidade que o sustente. O corte de prévias na pausa
+  (`preview_cutoff_ms`, 250 ms) também é **experimento desligado por padrão**
+  (default = `silence_ms`): a prévia continua rolando até o commit, como antes.
+  O passe **final** mantém **prioridade** sobre prévias que esperam na fila
+  global do ASR.
 - **Detalhes:** [`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md),
+  [`precision-and-performance/tasks/04-task.md`](precision-and-performance/tasks/04-task.md),
   [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §4.
-- **Data:** 2026-10-18 · **Status:** Ativa (E3 completo: reuso do passe final + GPU/Vulkan + AEC + commits avaliados)
+- **Data:** 2026-10-18 (atualizada em 2026-10-21) · **Status:** Ativa (E3 completo:
+  reuso do passe final + GPU/Vulkan + AEC + commits avaliados; L1: prioridade do
+  final + fechamento por frase)
 
 ## BR-032 — Notch em dois estados, por ícones, com ação primária verde
 - **Decisão:** o overlay (`ActionBar`) tem **dois estados**: **repouso** (sem sessão)
@@ -558,9 +577,9 @@ uma nota de revisão.
   cache do motor ([`notch/issues.md`](notch/issues.md) → ISS-033).
 - **Consequência:** no núcleo, `language` vira `Mutex<String>` com `update_language`
   (mesmo padrão já usado para o **prompt**) e **sai da chave do cache** da fábrica;
-  a regra de idioma do `initial_prompt` (`decode_prompt`) é recomputada. Novo IPC
-  `session_set_language`. Um passe **em voo** termina no idioma anterior; o próximo
-  já usa o novo.
+  o prompt é só contexto e não depende do idioma (ISS-059), então só o idioma é
+  aplicado. Novo IPC `session_set_language`. Um passe **em voo** termina no idioma
+  anterior; o próximo já usa o novo.
 - **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-06),
   [`notch/architecture/notch-ui.md`](notch/architecture/notch-ui.md) §4,
   [`notch/tasks/04-task.md`](notch/tasks/04-task.md),

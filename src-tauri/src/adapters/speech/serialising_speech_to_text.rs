@@ -4,57 +4,56 @@
 //! (microfone e sistema) disputem CPU ao mesmo tempo, o que degradava a
 //! latência e podia estourar o tempo limite. A fila é curta por construção
 //! (janelas de poucos segundos), então previsibilidade supera throughput.
+//!
+//! A fila tem **prioridade**: o passe final (a frase que o usuário acabou de
+//! falar) passa na frente de prévias que ainda estão esperando — ver
+//! [`SpeechGate`].
 
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::domain::transcription::{SpeechQuality, TranscribedSpan};
-use crate::error::{GhostWhisperError, Result};
+use crate::error::Result;
 use crate::ports::speech_to_text::SpeechToText;
+
+use super::speech_gate::{SpeechGate, SpeechGateGuard};
 
 /// Tempo máximo de espera na fila antes de desistir (evita travar o pipeline).
 const QUEUE_WAIT: Duration = Duration::from_secs(20);
-/// Intervalo entre tentativas de aquisição da trava.
-const QUEUE_POLL: Duration = Duration::from_millis(5);
 
-/// Adaptador que envolve um ASR com uma trava global compartilhada.
+/// Adaptador que envolve um ASR com uma fila global compartilhada.
 pub struct SerialisingSpeechToText {
     inner: Arc<dyn SpeechToText>,
-    gate: Arc<Mutex<()>>,
+    gate: Arc<SpeechGate>,
 }
 
 impl SerialisingSpeechToText {
     /// Cria o adaptador; `gate` deve ser compartilhado entre todos os canais.
-    pub fn new(inner: Arc<dyn SpeechToText>, gate: Arc<Mutex<()>>) -> Self {
+    pub fn new(inner: Arc<dyn SpeechToText>, gate: Arc<SpeechGate>) -> Self {
         Self { inner, gate }
     }
 
-    /// Adquire a trava global (com espera limitada).
-    fn lock_gate(&self) -> Result<MutexGuard<'_, ()>> {
-        let deadline = std::time::Instant::now() + QUEUE_WAIT;
-        loop {
-            match self.gate.try_lock() {
-                Ok(guard) => return Ok(guard),
-                Err(std::sync::TryLockError::Poisoned(_)) => {
-                    return Err(GhostWhisperError::Other("fila do ASR envenenada".into()));
-                }
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    if std::time::Instant::now() >= deadline {
-                        return Err(GhostWhisperError::Other(
-                            "fila do ASR ocupada demais (espera >20s)".into(),
-                        ));
-                    }
-                    std::thread::sleep(QUEUE_POLL);
-                }
-            }
-        }
+    /// Adquire a fila global (com espera limitada e prioridade do final).
+    fn lock_gate(&self, quality: SpeechQuality) -> Result<SpeechGateGuard<'_>> {
+        self.gate.acquire(quality, QUEUE_WAIT)
     }
 }
 
 impl SpeechToText for SerialisingSpeechToText {
     fn transcribe(&self, samples: &[f32], quality: SpeechQuality) -> Result<Vec<TranscribedSpan>> {
-        let _guard = self.lock_gate()?;
-        self.inner.transcribe(samples, quality)
+        let queued_at = Instant::now();
+        let _guard = self.lock_gate(quality)?;
+        // Espera na fila **global** (entre canais); o decode vem depois.
+        let gate_wait_ms = queued_at.elapsed().as_millis() as i64;
+        let started = Instant::now();
+        let result = self.inner.transcribe(samples, quality);
+        let decode_ms = started.elapsed().as_millis() as i64;
+        // Final sempre reporta (ele não deveria esperar); prévia só quando a
+        // espera é anormal, para não poluir o log.
+        if matches!(quality, SpeechQuality::Final) || gate_wait_ms >= 1_000 {
+            tracing::info!(?quality, gate_wait_ms, decode_ms, "fila do ASR");
+        }
+        result
     }
 }
 
@@ -66,7 +65,7 @@ mod tests {
 
     #[test]
     fn forwards_quality_in_order() {
-        let gate = Arc::new(Mutex::new(()));
+        let gate = Arc::new(SpeechGate::new());
         let inner = Arc::new(FakeSpeechToText::new().with_response("ok"));
         let a = SerialisingSpeechToText::new(
             Arc::clone(&inner) as Arc<dyn SpeechToText>,
@@ -120,7 +119,7 @@ mod tests {
 
     #[test]
     fn never_decodes_in_parallel() {
-        let gate = Arc::new(Mutex::new(()));
+        let gate = Arc::new(SpeechGate::new());
         let inner = Arc::new(SlowAsr {
             concurrent: Arc::new(AtomicUsize::new(0)),
             max_parallel: Arc::new(AtomicUsize::new(0)),

@@ -152,6 +152,21 @@ pub fn is_likely_hallucination(text: &str) -> bool {
 }
 
 /// Minúsculas, sem pontuação, espaços colapsados (para comparação robusta).
+/// A fala termina uma **frase**? (`.`, `!`, `?`)
+///
+/// Serve para fechar o turno mais cedo: uma pausa curta depois de pontuação
+/// forte é fim de frase com alta confiança; depois de vírgula/travessão é
+/// pausa interna. Fechamentos comuns (`"`, `)`, `»`) são ignorados e reticências
+/// contam como pausa interna (a frase ficou em suspenso).
+pub fn ends_with_strong_punctuation(text: &str) -> bool {
+    let trimmed = text.trim_end();
+    let trimmed = trimmed.trim_end_matches(['"', '\'', '”', '’', ')', ']', '}', '»']);
+    if trimmed.ends_with("...") || trimmed.ends_with('…') {
+        return false;
+    }
+    matches!(trimmed.chars().last(), Some('.' | '!' | '?'))
+}
+
 fn normalize_for_match(text: &str) -> String {
     text.to_lowercase()
         .chars()
@@ -321,15 +336,6 @@ fn normalize_token(word: &str) -> String {
 
 // --- Prompt de decodificação (`initial_prompt`) ------------------------------
 
-/// Nome do idioma em inglês, como o Perssua usa no `initial_prompt`.
-fn whisper_language_name(code: &str) -> Option<&'static str> {
-    match code.trim().to_ascii_lowercase().replace('_', "-").as_str() {
-        "pt" | "pt-br" => Some("Portuguese"),
-        "en" => Some("English"),
-        _ => None,
-    }
-}
-
 /// Mapeia o código de idioma do app para o aceito pelo whisper.cpp.
 ///
 /// `pt-br`/`pt_br` viram `pt` (como o Perssua faz); `auto` fica `auto`.
@@ -341,26 +347,20 @@ pub fn map_whisper_language(code: &str) -> String {
     }
 }
 
-/// Monta o `initial_prompt`: base + regra de idioma (Perssua `pt()`).
+/// Sanitiza o `initial_prompt`: só contexto, sem instrução e sem NUL.
 ///
-/// Transposto do Perssua 0.27.5 (`build/static/js/310.8def3e52.chunk.js`):
-/// reduz alucinação e impede a tradução. Regras:
-/// - Base vazia/só espaços ⇒ string vazia (nenhum prompt é aplicado).
-/// - Idioma `auto`/desconhecido ⇒ devolve só a base.
-/// - NUL é removido: `set_initial_prompt` do `whisper-rs` entra em pânico com
-///   NUL e o prompt vem de um campo editável (BR-027).
-pub fn decode_prompt(base: &str, language: &str) -> String {
-    let base = base.trim().replace('\0', "");
-    if base.is_empty() {
-        return String::new();
-    }
-    match whisper_language_name(language) {
-        Some(name) => format!(
-            "{base} The audio is spoken in {name}. Transcribe it in {name}. \
-             Do not translate it to English."
-        ),
-        None => base,
-    }
+/// **Desvio consciente vs. Perssua (ISS-059):** a regra de idioma
+/// (`"The audio is spoken in Portuguese. Transcribe it in Portuguese…"`) saiu do
+/// prompt. `set_language` + `set_translate(false)` já fixam idioma e
+/// não-tradução; como o `initial_prompt` é tratado pelo modelo como **fala
+/// anterior**, uma frase imperativa em inglês vira texto plausível quando o áudio
+/// é incerto — o modelo continua o prompt em vez de transcrever.
+///
+/// Regras: base vazia/só espaços ⇒ string vazia (nenhum prompt é aplicado); NUL
+/// é removido (o `set_initial_prompt` do `whisper-rs` entra em pânico com NUL e o
+/// prompt vem de um campo editável).
+pub fn decode_prompt(base: &str) -> String {
+    base.trim().replace('\0', "")
 }
 
 #[cfg(test)]
@@ -374,22 +374,27 @@ mod tests {
     }
 
     #[test]
-    fn decode_prompt_adds_the_language_rule() {
-        let prompt = decode_prompt(crate::domain::settings::DEFAULT_WHISPER_PROMPT, "pt");
-        assert!(prompt.starts_with(crate::domain::settings::DEFAULT_WHISPER_PROMPT));
-        assert!(prompt.contains("The audio is spoken in Portuguese."));
-        assert!(prompt.contains("Transcribe it in Portuguese."));
-        assert!(prompt.contains("Do not translate it to English."));
+    fn decode_prompt_keeps_only_context_and_drops_instructions() {
+        // ISS-059: o default é vazio e a regra de idioma saiu do prompt — só o
+        // contexto digitado é aplicado, sem instruções que o modelo possa
+        // continuar quando o áudio é incerto.
+        assert_eq!(
+            decode_prompt(crate::domain::settings::DEFAULT_WHISPER_PROMPT),
+            ""
+        );
+        assert_eq!(
+            decode_prompt("Grafana, Kubernetes, Grafana"),
+            "Grafana, Kubernetes, Grafana"
+        );
+        assert!(!decode_prompt("Grafana").contains("Portuguese"));
+        assert!(!decode_prompt("Grafana").contains("Transcribe"));
     }
 
     #[test]
-    fn decode_prompt_handles_auto_empty_and_null_bytes() {
-        assert_eq!(decode_prompt("base", "auto"), "base");
-        assert_eq!(decode_prompt("base", ""), "base");
-        assert_eq!(decode_prompt("base", "xx"), "base");
-        assert_eq!(decode_prompt("", "pt"), "");
-        assert_eq!(decode_prompt("   ", "pt"), "");
-        assert_eq!(decode_prompt("ba\0se", "auto"), "base");
+    fn decode_prompt_handles_empty_and_null_bytes() {
+        assert_eq!(decode_prompt(""), "");
+        assert_eq!(decode_prompt("   "), "");
+        assert_eq!(decode_prompt("ba\0se"), "base");
     }
 
     #[test]
@@ -508,5 +513,28 @@ mod tests {
         assert!(!is_likely_hallucination("The quarterly numbers are up"));
         // Uma palavra repetida 2–3× pode ser fala natural.
         assert!(!is_likely_hallucination("very very good"));
+    }
+
+    #[test]
+    fn strong_punctuation_marks_a_finished_sentence() {
+        assert!(ends_with_strong_punctuation("Vamos fechar o documento."));
+        assert!(ends_with_strong_punctuation("Você concorda?"));
+        assert!(ends_with_strong_punctuation("Cuidado!"));
+        assert!(ends_with_strong_punctuation("  Frase com espaço no fim.  "));
+        // Fechamentos depois do ponto não escondem a pontuação.
+        assert!(ends_with_strong_punctuation("\"Já terminou.\""));
+        assert!(ends_with_strong_punctuation("(pronto!)"));
+    }
+
+    #[test]
+    fn weak_endings_do_not_mark_a_finished_sentence() {
+        // Pausa interna: vírgula, travessão, dois-pontos, reticências.
+        assert!(!ends_with_strong_punctuation("Vamos fechar o documento,"));
+        assert!(!ends_with_strong_punctuation("Eu acho que —"));
+        assert!(!ends_with_strong_punctuation("O resultado foi:"));
+        assert!(!ends_with_strong_punctuation("Então eu pensei..."));
+        assert!(!ends_with_strong_punctuation("Então eu pensei…"));
+        assert!(!ends_with_strong_punctuation("sem pontuação"));
+        assert!(!ends_with_strong_punctuation(""));
     }
 }

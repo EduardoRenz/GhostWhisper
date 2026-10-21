@@ -93,8 +93,11 @@ prévias curtas; fica como opção para turnos longos ou GPUs mais fortes.
 - **Reuso do passe final.** Se o VAD nativo do whisper já marcou o fim da fala
   (`speech_end_ms`), o resultado da prévia é promovido a final, sem segundo beam
   search (Perssua: `endedInNoise`).
-- **Commits.** Avaliar `silence_ms` menor e commit periódico, com guarda que
-  impede picar frase no meio.
+- **Commits.** Fecham em **1 s** de silêncio (default, igual ao Perssua). O
+  fechamento em **0,7 s** por pontuação forte (`silence_sentence_ms`) e o corte
+  de prévias na pausa (`preview_cutoff_ms`) existem como **experimentos
+  opt-in** — desligados após o relato de 21/10. O passe final mantém prioridade
+  na fila global (`SpeechGate`). Ver task 04 / ISS-058.
 
 ### 4.1 Desvios conscientes (R12)
 
@@ -103,6 +106,8 @@ prévias curtas; fica como opção para turnos longos ou GPUs mais fortes.
 | Manter caminho CPU com modelo menor | Linux sem GPU garantida; `large-v3` em CPU é inviável |
 | AEC implementado na porta de áudio (Rust) | Não temos `AudioWorklet`/WebAudio do Electron |
 | Commits por turno, não por provider realtime | Nosso ASR é local (whisper.cpp), não `gpt-live-transcribe` |
+| Fechamento curto (0,7 s) **desligado por padrão** | O whisper marca ponto em pausa interna; antecipar picava a frase e piorava qualidade/latência (21/10). Fica por env, para medir antes de ligar |
+| Prompt só como **contexto**, sem regra de idioma | O `initial_prompt` é fala anterior; instruções vazavam como texto inventado (ISS-059). Idioma é fixado no decode |
 | Streaming por SSE genérico | Providers BYO key (OpenAI-compatível/Gemini), sem SDK |
 
 ## 5. Evidência no bundle do Perssua
