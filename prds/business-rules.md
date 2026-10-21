@@ -1386,3 +1386,124 @@ uma nota de revisão.
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md) §2,
   [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §1.
 - **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-065 — Gravação é propriedade da sessão (não existe gravação avulsa)
+
+- **Decisão:** a gravação nasce, pausa, retoma e termina **com a sessão**. Não há
+  gravação sem sessão, em background ou órfã de um id. Pausar a **gravação** não
+  pausa a sessão (a transcrição segue); pausar a **sessão** pausa a gravação.
+  O `stop` da sessão finaliza o arquivo.
+- **Motivo:** o arquivo precisa de dono (histórico, diário, export e exclusão em
+  cascata); gravação solta vira lixo em disco sem vínculo com a reunião.
+- **Consequência:** o botão de câmera só aparece com sessão ativa; cada
+  pausa/retomada gera um **segmento**; o modal de fim de sessão é o único ponto
+  de entrega do arquivo.
+- **Detalhes:** [`recording/prd.md`](recording/prd.md) US-01/US-02,
+  [`recording/architecture/recording.md`](recording/architecture/recording.md) §4.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-066 — Perfil de gravação para ler a tela, não para cinema
+
+- **Decisão:** os padrões de gravação são **resolução nativa · 8 fps · CRF 27 ·
+  `preset veryfast` · `-threads 2` · AAC 96 kbps**. O teto é **25% de um núcleo**
+  (≈6% de uma máquina de 4 núcleos) e **≤ 250 MB/h** numa reunião típica.
+- **Motivo:** medições na máquina de referência (i5-6400, 1920×1080, X11) em
+  2026-10-21: 1080p/10 fps custa 15,7% de um núcleo (`ultrafast`) e 23,8%
+  (`veryfast`); 30 fps custa 47,6%. O custo é **por frame** — reduzir resolução
+  não economiza e destrói a legibilidade de texto. O Whisper disputa os mesmos
+  4 núcleos.
+- **Consequência:** FPS é a variável de custo; `ultrafast` fica fora do padrão
+  porque desliga CABAC/deblocking e serrilha texto; `-threads 2` é obrigatório
+  para o encoder não afogar o ASR; 720p é opção, não padrão.
+- **Detalhes:** [`recording/architecture/recording.md`](recording/architecture/recording.md) §8;
+  [`recording/prd.md`](recording/prd.md) RNF-01…RNF-03 e CA-04.3.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-067 — Segmentos em MKV e remux para MP4 no fim (crash-safe)
+
+- **Decisão:** durante a captura, cada trecho é um **`.mkv` próprio** (válido
+  mesmo truncado). No `stop`, os segmentos são concatenados com **`-c copy`** e
+  remuxados para **MP4 com `+faststart`** (se o container final for MKV, o
+  concat vai direto para `.mkv`). Re-encode só quando as dimensões mudarem
+  entre segmentos. O progresso da finalização aparece no modal.
+- **Motivo:** MP4 só é reproduzível depois do `moov`; um crash no meio de uma
+  reunião de 1 h perderia tudo. `-c copy` mantém o custo de finalização em I/O
+  (~2–5 s por hora) e permite barra de progresso honesta.
+- **Consequência:** as configurações de gravação são **congeladas no início da
+  sessão** (segmentos precisam ser concatenáveis); os segmentos são apagados
+  após o remux, salvo `recording_keep_segments`; falha na finalização preserva
+  `parts/`.
+- **Detalhes:** [`recording/prd.md`](recording/prd.md) US-02/US-03;
+  [`recording/architecture/recording.md`](recording/architecture/recording.md) §5.2–§5.6.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-068 — Modal "Sessão Finalizada" no encerramento explícito
+
+- **Decisão:** encerrar a sessão **pelo usuário** abre a janela `session-end`
+  com duração, mídia (tamanho/formato), itens processados, **Abrir local**,
+  **Baixar Sessão** (export Markdown do Histórico), **Descartar gravação** e
+  **Nova Sessão**. Exclusão de sessão, limpeza de órfãs no boot e `stop` interno
+  do serviço **não** abrem o modal.
+- **Motivo:** o fim da reunião é o momento em que o usuário quer o material;
+  separar "parar" de "levar o arquivo" reduz idas ao Histórico. O mockup do
+  usuário (2026-10-21) fixa o layout.
+- **Consequência:** o `session_stop` do IPC devolve o payload do resumo; a janela
+  reusa o padrão `capture_pending`/`capture_clear`; o modal é a única superfície
+  de download/descarte da gravação.
+- **Detalhes:** [`recording/prd.md`](recording/prd.md) US-03;
+  [`recording/architecture/recording.md`](recording/architecture/recording.md) §7.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-069 — O áudio gravado é o cru, não o do ASR
+
+- **Decisão:** a gravação usa **microfone e áudio do sistema mixados**, em
+  **48 kHz**, direto das fontes — **sem** o ganho 8×, o noise gate e o AEC do
+  [`MicrophoneFrontEnd`](../src-tauri/src/adapters/audio/microphone_front_end.rs)
+  (BR-018). O microfone não passa pelo pipeline de transcrição.
+- **Motivo:** o áudio do ASR é otimizado para reconhecimento (16 kHz mono,
+  ganho, gate, eco subtraído) e soa bombeado e cortado nas pausas; a gravação
+  precisa do som natural para ser assistida.
+- **Consequência:** o `ffmpeg` abre um **segundo cliente** no microfone
+  (Pulse/PipeWire permite múltiplos leitores); em ALSA puro pode haver contenção
+  (ISS-050). Isolar a gravação do pipeline também garante que uma falha dela não
+  afeta a transcrição (RNF-07).
+- **Detalhes:** [`recording/architecture/recording.md`](recording/architecture/recording.md) §5.2;
+  [`recording/prd.md`](recording/prd.md) §2.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-070 — O alvo padrão da gravação é a janela da reunião, não a tela inteira
+
+- **Decisão:** a gravação captura **uma janela** (`x11grab -window_id`) por
+  padrão, com fallback explícito para **tela inteira**. O alvo é **congelado por
+  sessão** e escolhido no início (janela ativa via `_NET_ACTIVE_WINDOW`, ou
+  seletor). O overlay do GhostWhisper **não** entra no vídeo, mas continua
+  visível e utilizável na tela.
+- **Motivo:** o Linux **não** tem API de exclusão de janela da captura (BR-006;
+  diferente de `WDA_EXCLUDEFROMCAPTURE`/`NSWindowSharingNone`). Capturar a
+  janela é o único caminho em X11 que mantém o overlay visível **e** fora do
+  arquivo. Verificado em 2026-10-21: `ffmpeg 7.0.2` tem `-window_id` e a captura
+  da janela funciona (1888×1006 a 8 fps, ~20% de um núcleo).
+- **Consequência:** só a janela escolhida é gravada — trocar de janela não
+  acompanha, e diálogos/popups que são janelas separadas ficam de fora. Em
+  Wayland nativo (BR-007) a gravação fica desabilitada; a exclusão por compositor
+  (KDE Plasma 6.6+ "Hide from Screencast") é caminho futuro, não v1. Janela
+  fechada/minimizada/redimensionada encerra o segmento; se as dimensões mudarem,
+  a finalização reencoda com `scale`/`pad` e mostra progresso.
+- **Detalhes:** [`recording/prd.md`](recording/prd.md) US-06;
+  [`recording/architecture/recording.md`](recording/architecture/recording.md) §5.3;
+  [`mvp/architecture/wayland-spike.md`](mvp/architecture/wayland-spike.md) §2–§3.
+- **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-071 — Gravação é local, silenciosa e com indicador visível
+
+- **Decisão:** o arquivo nunca sai do dispositivo; nada de upload, telemetria ou
+  nuvem. Enquanto grava, o botão fica **vermelho** e o estado é do backend. Nem
+  frame nem amostra de áudio vão para log.
+- **Motivo:** BR-002/BR-004/BR-005 e o mesmo contrato de privacidade do áudio: a
+  gravação é mais sensível que a transcrição (expõe a tela inteira).
+- **Consequência:** "Descartar gravação" apaga arquivo e segmentos; excluir a
+  sessão apaga o vídeo junto (com aviso); o modal e o Histórico mostram o caminho
+  apenas localmente.
+- **Detalhes:** [`recording/prd.md`](recording/prd.md) RNF-08;
+  [`recording/architecture/recording.md`](recording/architecture/recording.md) §11.
+- **Data:** 2026-10-21 · **Status:** Ativa
