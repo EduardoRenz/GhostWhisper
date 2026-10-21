@@ -27,6 +27,18 @@ export const IDLE_RECORDING: RecordingState = {
   size_bytes: 0,
 };
 
+/** Alvo de captura devolvido pelo seletor (BR-070). */
+export type RecordingTarget =
+  | { kind: "window"; id: number; label: string; width: number; height: number }
+  | {
+      kind: "screen";
+      label: string;
+      width: number;
+      height: number;
+      x: number;
+      y: number;
+    };
+
 /** O ambiente consegue gravar? */
 export interface RecordingCapabilities {
   available: boolean;
@@ -39,6 +51,7 @@ export interface RecordingSummary {
   kind: RecordingKind;
   status: string;
   path: string | null;
+  segments_dir: string | null;
   size_bytes: number;
   duration_ms: number;
   width: number;
@@ -104,6 +117,9 @@ export function formatBytes(bytes: number): string {
 export function mediaLabel(summary: RecordingSummary | null): string {
   if (!summary || summary.status === "discarded") {
     return "Sem gravação";
+  }
+  if (summary.status === "failed") {
+    return "Falhou (segmentos preservados)";
   }
   if (summary.kind === "audio") {
     return `${formatBytes(summary.size_bytes)} (FLAC)`;

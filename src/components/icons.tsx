@@ -615,3 +615,39 @@ export function TrashIcon({ className, size = 18 }: IconProps) {
     </Icon>
   );
 }
+
+/** Monitor: gravar a tela inteira. */
+export function MonitorIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="4.4" width="18" height="12.2" rx="1.6" />
+        <path d="M12 16.6V20M8.6 20h6.8" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Janela: uma janela capturável no seletor. */
+export function WindowIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3.4" y="4.6" width="17.2" height="14.8" rx="1.8" />
+        <path d="M3.4 8.6h17.2" />
+      </g>
+    </Icon>
+  );
+}

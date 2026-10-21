@@ -18,6 +18,7 @@ describe("RecordingButton — botão de câmera", () => {
         capabilities={CAPABILITIES}
         busy={false}
         onToggle={vi.fn()}
+        onPick={vi.fn()}
       />,
     );
     const button = screen.getByRole("button", { name: /Gravar esta sessão/ });
@@ -32,6 +33,7 @@ describe("RecordingButton — botão de câmera", () => {
         capabilities={CAPABILITIES}
         busy={false}
         onToggle={vi.fn()}
+        onPick={vi.fn()}
       />,
     );
     const button = screen.getByRole("button", { name: "Pausar gravação" });
@@ -46,6 +48,7 @@ describe("RecordingButton — botão de câmera", () => {
         capabilities={CAPABILITIES}
         busy={false}
         onToggle={vi.fn()}
+        onPick={vi.fn()}
       />,
     );
     const button = screen.getByRole("button", { name: "Retomar gravação" });
@@ -64,6 +67,7 @@ describe("RecordingButton — botão de câmera", () => {
         }}
         busy={false}
         onToggle={vi.fn()}
+        onPick={vi.fn()}
       />,
     );
     const button = screen.getByRole("button", { name: "ffmpeg não encontrado" });
@@ -78,6 +82,7 @@ describe("RecordingButton — botão de câmera", () => {
         capabilities={CAPABILITIES}
         busy={false}
         onToggle={onToggle}
+        onPick={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Gravar esta sessão/ }));

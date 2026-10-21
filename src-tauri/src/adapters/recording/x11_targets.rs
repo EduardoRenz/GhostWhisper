@@ -47,11 +47,61 @@ impl ScreenTargets for X11ScreenTargets {
     fn screen(&self) -> Option<RecordingTarget> {
         let (connection, screen_num) = RustConnection::connect(None).ok()?;
         let screen = &connection.setup().roots[screen_num];
+        let monitor_count = crate::adapters::screen::x11_monitors::monitors().len();
         Some(RecordingTarget::Screen {
-            label: "Tela inteira".to_string(),
+            label: if monitor_count > 1 {
+                "Todos os monitores".to_string()
+            } else {
+                "Tela inteira".to_string()
+            },
             width: u32::from(screen.width_in_pixels),
             height: u32::from(screen.height_in_pixels),
+            x: 0,
+            y: 0,
         })
+    }
+
+    fn monitors(&self) -> Vec<RecordingTarget> {
+        crate::adapters::screen::x11_monitors::monitors()
+            .into_iter()
+            .enumerate()
+            .map(|(index, monitor)| RecordingTarget::Screen {
+                label: format!(
+                    "{} — {}×{}",
+                    if monitor.name.is_empty() {
+                        format!("Monitor {}", index + 1)
+                    } else {
+                        monitor.name
+                    },
+                    monitor.width,
+                    monitor.height
+                ),
+                width: u32::from(monitor.width),
+                height: u32::from(monitor.height),
+                x: monitor.x,
+                y: monitor.y,
+            })
+            .collect()
+    }
+
+    fn windows(&self) -> Vec<RecordingTarget> {
+        let Some((connection, screen_num)) = RustConnection::connect(None).ok() else {
+            return Vec::new();
+        };
+        let root = connection.setup().roots[screen_num].root;
+        let mut out: Vec<RecordingTarget> = Vec::new();
+        // Do topo para a base: o usuário vê a janela da frente primeiro.
+        for id in stacking_window_ids(&connection, root).iter().rev() {
+            if let Some(target) = window_target(&connection, *id) {
+                if !out
+                    .iter()
+                    .any(|existing| existing.window_id() == target.window_id())
+                {
+                    out.push(target);
+                }
+            }
+        }
+        out
     }
 }
 
@@ -67,16 +117,23 @@ fn active_window_id(connection: &RustConnection, root: Window) -> Option<Window>
     (id != 0).then_some(id)
 }
 
+/// Janelas gerenciadas na ordem de empilhamento (base → topo).
+fn stacking_window_ids(connection: &RustConnection, root: Window) -> Vec<Window> {
+    let Some(atom) = intern(connection, b"_NET_CLIENT_LIST_STACKING") else {
+        return Vec::new();
+    };
+    connection
+        .get_property(false, root, atom, AtomEnum::WINDOW, 0, 1024)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .and_then(|reply| reply.value32().map(|ids| ids.collect()))
+        .unwrap_or_default()
+}
+
 /// Janela do topo da pilha que não é o GhostWhisper.
 fn topmost_window(connection: &RustConnection, root: Window) -> Option<RecordingTarget> {
-    let atom = intern(connection, b"_NET_CLIENT_LIST_STACKING")?;
-    let reply = connection
-        .get_property(false, root, atom, AtomEnum::WINDOW, 0, 1024)
-        .ok()?
-        .reply()
-        .ok()?;
-    let ids: Vec<Window> = reply.value32()?.collect();
-    ids.iter()
+    stacking_window_ids(connection, root)
+        .iter()
         .rev()
         .find_map(|id| window_target(connection, *id))
 }

@@ -41,6 +41,7 @@ const BASE: SessionEnd = {
     kind: "video",
     status: "ready",
     path: "/tmp/reuniao.mp4",
+    segments_dir: null,
     size_bytes: 214 * 1024 * 1024,
     duration_ms: 872_000,
     width: 1920,
@@ -56,6 +57,14 @@ describe("SessionEndWindow — modal de fim de sessão", () => {
   beforeEach(() => {
     context.mockReset();
     vi.mocked(recordingDiscard).mockClear();
+  });
+
+  it("mostra 'Carregando sessão…' enquanto o contexto não chega", async () => {
+    context.mockResolvedValue(null);
+    render(<SessionEndWindow />);
+
+    expect(await screen.findByText("Carregando sessão…")).toBeDefined();
+    expect(screen.queryByText(/Nenhuma sessão/)).toBeNull();
   });
 
   it("mostra duração, mídia e itens processados", async () => {

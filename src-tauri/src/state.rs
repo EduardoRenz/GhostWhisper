@@ -525,8 +525,15 @@ mod tests {
         fn capabilities(&self) -> crate::ports::screen_recorder::RecordingCapabilities {
             crate::ports::screen_recorder::RecordingCapabilities::available("x264")
         }
-        fn start(&self, _session_id: &str) -> Result<()> {
+        fn start(
+            &self,
+            _session_id: &str,
+            _target: Option<crate::domain::recording::RecordingTarget>,
+        ) -> Result<()> {
             Ok(())
+        }
+        fn targets(&self) -> Vec<crate::domain::recording::RecordingTarget> {
+            Vec::new()
         }
         fn pause(&self) -> Result<()> {
             Ok(())

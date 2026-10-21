@@ -62,6 +62,9 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
         capabilities.encoder === "vaapi" ? "vaapi" : "x264"
       ]
     : "detectando…";
+  // Pediu VAAPI, mas o build/dispositivo não tem: cai para x264.
+  const encoderFallback =
+    settings.recording_encoder === "vaapi" && capabilities?.encoder === "x264";
 
   const pickFolder = async () => {
     if (!isTauriRuntime()) {
@@ -341,6 +344,11 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
           <p className="settings__card-description">
             Encoder detectado: <strong>{encoderLabel}</strong>.
           </p>
+          {encoderFallback ? (
+            <p className="settings__card-description settings__card-description--warn">
+              VAAPI indisponível neste ambiente; a gravação usará x264.
+            </p>
+          ) : null}
           {capabilities && !capabilities.available ? (
             <p className="settings__card-description settings__card-description--warn">
               {capabilities.reason ?? "Gravação indisponível neste ambiente."}

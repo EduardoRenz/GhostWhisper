@@ -2,7 +2,7 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-21
-- **Status:** Em implementação (v1 funcional; pendências nas tasks 03, 07 e 10)
+- **Status:** Em implementação (v1 funcional; pendências nas tasks 03 e 10)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/recording.md`](architecture/recording.md),
@@ -265,8 +265,13 @@ Como usuário, quero **usar o app normalmente, com o overlay visível**, e que e
       divergirem, reencoda com `scale`+`pad` mostrando `Otimizando gravação…`.
 - [ ] **CA-06.7** "Tela inteira" é escolha explícita e **inclui** o overlay —
       a UI avisa isso no seletor.
-- [ ] **CA-06.8** Em Wayland puro, o alvo por janela não existe e a gravação
-      fica indisponível com explicação (BR-007/ISS-051).
+- [ ] **CA-06.8** Em Wayland (nativo **ou** via XWayland), a gravação fica
+      indisponível com explicação: a root do XWayland não contém as janelas
+      Wayland nativas, então o vídeo sairia vazio/incompleto (BR-007/ISS-051).
+- [ ] **CA-06.9** Com vários monitores, o seletor lista **"Todos os monitores"**
+      (a tela virtual) e **cada monitor** com nome e resolução; gravar um
+      monitor específico usa o offset dele (`:0.0+X,Y`). O **print de tela**
+      captura o **monitor sob o cursor**, com fallback para o primário.
 
 ## 5. Requisitos não funcionais
 
@@ -308,8 +313,6 @@ Medições feitas em **2026-10-21** na máquina de referência (i5-6400, 4 núcl
 - **Transmissão** (streaming) ou compartilhamento do arquivo.
 - **Múltiplas faixas de áudio separadas** no MP4 (mic e sistema vão **mixados**;
   stems ficam para um PRD futuro — ver §9).
-- **Escolher o monitor** em multi-monitor: a v1 grava **uma janela** ou a tela
-  inteira do display padrão.
 - **Upload/cloud**, telemetria ou backend (BR-002, BR-004).
 - **Legendas queimadas** no vídeo a partir da transcrição.
 
@@ -341,7 +344,7 @@ Medições feitas em **2026-10-21** na máquina de referência (i5-6400, 4 núcl
 | Tema | Decisão | Motivo |
 |---|---|---|
 | Onde fica o botão | Último item de `NotchTabs`, depois de Sugestões | Mockup do usuário; é ação da sessão, não do painel |
-| Alvo da captura | **Janela da reunião** (padrão) ou tela inteira | Único jeito em X11 de manter o overlay visível e fora do vídeo (BR-070) |
+| Alvo da captura | **Janela da reunião** (padrão), **todos os monitores** ou **um monitor** | Único jeito em X11 de manter o overlay visível e fora do vídeo (BR-070) |
 | Vínculo | Gravação **é** da sessão; não existe sem ela | BR-065; evita arquivo órfão sem dono |
 | Pausa | Pausa só a gravação, não a sessão; pausar a sessão pausa a gravação | Pedido do usuário ("pausar e continuar sempre") |
 | Aba de settings | **Nova** aba "Gravação" (6ª) | 5 abas já cobrem IA, áudio, agente, HUD e atalhos; gravação é mídia |

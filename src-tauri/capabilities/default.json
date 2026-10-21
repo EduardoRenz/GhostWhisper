@@ -11,7 +11,8 @@
     "dwell",
     "ask",
     "capture",
-    "session-end"
+    "session-end",
+    "recording-picker"
   ],
   "permissions": [
     "core:default",

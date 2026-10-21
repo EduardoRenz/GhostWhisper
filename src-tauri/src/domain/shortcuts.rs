@@ -14,6 +14,8 @@ pub enum ShortcutAction {
     FocusAsk,
     /// Captura a tela e pergunta (BR-055).
     CaptureScreen,
+    /// Inicia/pausa/retoma a gravação da sessão (BR-065).
+    RecordingToggle,
 }
 
 impl ShortcutAction {
@@ -26,16 +28,18 @@ impl ShortcutAction {
             ShortcutAction::RequestInsight => "request_insight",
             ShortcutAction::FocusAsk => "focus_ask",
             ShortcutAction::CaptureScreen => "capture_screen",
+            ShortcutAction::RecordingToggle => "recording_toggle",
         }
     }
 
     /// Todas as ações, na ordem de exibição.
-    pub fn all() -> [ShortcutAction; 6] {
+    pub fn all() -> [ShortcutAction; 7] {
         [
             ShortcutAction::FocusAsk,
             ShortcutAction::CaptureScreen,
             ShortcutAction::ToggleOverlay,
             ShortcutAction::ToggleSession,
+            ShortcutAction::RecordingToggle,
             ShortcutAction::ToggleStealth,
             ShortcutAction::RequestInsight,
         ]
@@ -50,6 +54,7 @@ impl ShortcutAction {
             ShortcutAction::RequestInsight => "Pedir sugestão",
             ShortcutAction::FocusAsk => "Perguntar ao GhostWhisper",
             ShortcutAction::CaptureScreen => "Capturar a tela e perguntar",
+            ShortcutAction::RecordingToggle => "Gravar/pausar a gravação",
         }
     }
 
@@ -63,6 +68,7 @@ impl ShortcutAction {
             // Paridade com a barra do Perssua (⌘ Space / ⌥ C no macOS).
             ShortcutAction::FocusAsk => "CommandOrControl+Space",
             ShortcutAction::CaptureScreen => "Alt+C",
+            ShortcutAction::RecordingToggle => "CommandOrControl+Shift+R",
         }
     }
 }

@@ -12,7 +12,7 @@
 | 04 | Finalização: concat `-c copy`, remux MP4, progresso, re-encode e órfãos | CONCLUDED |
 | 05 | `RecordingService`: ciclo de vida amarrado à sessão e falha isolada | CONCLUDED |
 | 06 | IPC + eventos `recording_*` + `SessionEndDto` no `session_stop` | CONCLUDED |
-| 07 | Botão de câmera no notch (4 estados, atalho, acessibilidade) | IN PROGRESS |
+| 07 | Botão de câmera no notch (4 estados, atalho, acessibilidade) | CONCLUDED |
 | 08 | Modal "Sessão Finalizada" (janela, progresso, ações) | CONCLUDED |
 | 09 | Configurações: aba "Gravação" (campos, padrões, normalização, estimativa) | CONCLUDED |
 | 10 | Histórico/export, documentação, verificação e pacotes | IN PROGRESS |

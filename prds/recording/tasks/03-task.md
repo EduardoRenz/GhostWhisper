@@ -36,6 +36,17 @@ exclusão de janela (BR-006), então o alvo é o caminho.
   no início): lista de janelas com app + título; opção **"Tela inteira"**.
 - `src/adapters/ipc/recording.ts`: `listRecordingWindows`, `getActiveWindow`.
 
+## Estado (2026-10-21)
+
+- **Feito:** janela ativa/topo (`_NET_ACTIVE_WINDOW` + `_NET_CLIENT_LIST_STACKING`),
+  seletor de janelas (janela `recording-picker`, clique secundário no botão),
+  alvo explícito no `recording_start` e congelado na sessão; **monitores**
+  (RandR 1.5: todos os monitores ou um específico, com offset) e print de tela
+  no monitor sob o cursor.
+- **Pendente:** observar `ConfigureNotify`/`DestroyNotify`/`UnmapNotify`
+  (`window_watch.rs`) para redimensionar/fechar a janela durante a captura
+  (CA-06.5/06.6, ISS-053).
+
 ## Critérios de aceite
 
 - [ ] Com `recording_target = "window"`, o início usa a janela ativa; se ela for

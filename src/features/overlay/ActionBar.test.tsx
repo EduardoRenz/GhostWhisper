@@ -34,6 +34,7 @@ const base = {
   recordingBusy: false,
   recordingCapabilities: { available: true, encoder: "x264", reason: null },
   onToggleRecording: vi.fn(),
+  onPickRecordingTarget: vi.fn(),
 };
 
 const button = (name: string) =>

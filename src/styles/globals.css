@@ -5102,3 +5102,143 @@ body,
 .settings__card-description--warn {
   color: var(--oh-danger);
 }
+
+/* Seletor de janelas da gravação (BR-070) */
+
+.recording-picker {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  pointer-events: none;
+}
+
+.recording-picker__card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 24px);
+  padding-bottom: 12px;
+  gap: 10px;
+  background: var(--oh-surface-container-low);
+  border: 1px solid var(--oh-border-strong);
+  border-radius: var(--oh-window-radius);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+.recording-picker__header {
+  border-bottom: 1px solid var(--oh-divider);
+}
+
+.recording-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.recording-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.76rem;
+  text-align: left;
+  color: var(--oh-text);
+  background: var(--oh-surface-container);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm);
+  cursor: pointer;
+}
+
+.recording-picker__item:hover:not(:disabled) {
+  border-color: var(--oh-accent);
+  background: var(--oh-surface-container-high);
+}
+
+.recording-picker__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.recording-picker__item-icon {
+  display: inline-flex;
+  color: var(--oh-accent);
+}
+
+.recording-picker__item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recording-picker__item-size {
+  flex: 0 0 auto;
+  color: var(--oh-text-muted);
+  font-size: 0.68rem;
+}
+
+.recording-picker__loading,
+.recording-picker__notice,
+.recording-picker__error {
+  margin: 0;
+  padding: 0 16px;
+  font-size: 0.74rem;
+  color: var(--oh-text-muted);
+}
+
+.recording-picker__notice {
+  color: var(--oh-accent);
+}
+
+.recording-picker__error {
+  color: var(--oh-danger);
+}
+
+.recording-picker__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  color: var(--oh-text-muted);
+  font-size: 0.7rem;
+}
+
+.recording-picker__cancel {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--oh-text-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.recording-picker__cancel:hover {
+  color: var(--oh-text);
+}
+
+/* Selo de gravação no Histórico (BR-068/CA-05.1) */
+
+.history__recording-badge {
+  display: inline-block;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: var(--oh-accent);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}

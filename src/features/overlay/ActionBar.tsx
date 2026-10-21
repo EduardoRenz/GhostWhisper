@@ -61,6 +61,7 @@ interface ActionBarProps {
   recordingBusy: boolean;
   recordingCapabilities: RecordingCapabilities | null;
   onToggleRecording: () => void;
+  onPickRecordingTarget: () => void;
 }
 
 /**
@@ -106,6 +107,7 @@ export function ActionBar({
   recordingBusy,
   recordingCapabilities,
   onToggleRecording,
+  onPickRecordingTarget,
 }: ActionBarProps) {
   const [confirming, setConfirming] = useState(false);
 
@@ -181,6 +183,7 @@ export function ActionBar({
             recordingBusy={recordingBusy}
             recordingCapabilities={recordingCapabilities}
             onToggleRecording={onToggleRecording}
+            onPickRecordingTarget={onPickRecordingTarget}
           />
 
           <SessionPill

@@ -205,6 +205,12 @@ RecordingTarget::Screen      →  -f x11grab -video_size <WxH> -i :0.0
 - **Dimensões divergentes entre segmentos:** a finalização detecta e reencoda
   com `scale`+`pad` para o tamanho do primeiro, sob a fase
   `Otimizando gravação…` (CA-06.6).
+- **Monitores (RandR 1.5):** `x11_monitors` usa `GetMonitors` e devolve nome,
+  geometria e primário; sem RandR 1.5 cai para a tela virtual. O seletor mostra
+  **"Todos os monitores"** (tela virtual) e, com mais de um, **cada monitor**.
+  Um monitor vira `RecordingTarget::Screen { x, y, .. }`, e o `ffmpeg` recebe
+  `-i :0.0+X,Y` com `-video_size` do monitor. O **print de tela** usa o monitor
+  **sob o cursor** (`monitor_under_pointer`), com fallback para o primário.
 - **Limitação assumida:** popups/diálogos que são janelas separadas ficam de
   fora, e trocar de janela não acompanha (ISS-052). "Tela inteira" é a válvula
   de escape.
@@ -415,7 +421,8 @@ kbps clampado, strings fora do allowlist caem no padrão, caminho vazio →
 | Situação | Comportamento |
 |---|---|
 | `ffmpeg` ausente | botão desabilitado, `reason` no *tooltip*, sessão normal |
-| sem `DISPLAY` (Wayland puro) | idem, `reason: "gravação disponível apenas em X11/XWayland (BR-007)"` |
+| sessão Wayland (`WAYLAND_DISPLAY`/`XDG_SESSION_TYPE=wayland`) | botão desabilitado: a root do XWayland não contém janelas Wayland nativas |
+| sem `DISPLAY` | idem, `reason: "gravação disponível apenas em X11/XWayland (BR-007)"` |
 | janela alvo fechada ou minimizada | `stop` com `status=interrupted`, segmentos preservados, modal mostra "Abrir local" |
 | janela alvo redimensionada | fecha o segmento e abre outro na nova geometria (ISS-053) |
 | encoder falha no meio | `status=failed`, sessão continua, toast discreto |

@@ -8,6 +8,7 @@ import { HistoryWindow } from "./features/history/HistoryWindow";
 import { DwellPopoverWindow } from "./features/dwell/DwellPopoverWindow";
 import { AskWindow } from "./features/ask/AskWindow";
 import { CapturePreviewWindow } from "./features/ask/CapturePreviewWindow";
+import { RecordingPickerWindow } from "./features/recording/RecordingPickerWindow";
 import { SessionEndWindow } from "./features/session-end/SessionEndWindow";
 import { useHudOpacity } from "./core/application/useHudOpacity";
 
@@ -22,6 +23,7 @@ export type Route =
   | "ask"
   | "capture"
   | "session-end"
+  | "recording-picker"
   | "unknown";
 
 /**
@@ -43,6 +45,7 @@ export function resolveRoute(): Route {
     if (label === "ask") return "ask";
     if (label === "capture") return "capture";
     if (label === "session-end") return "session-end";
+    if (label === "recording-picker") return "recording-picker";
     if (label === "overlay") return "overlay";
     return "unknown";
   } catch {
@@ -56,6 +59,7 @@ export function resolveRoute(): Route {
     if (target === "ask") return "ask";
     if (target === "capture") return "capture";
     if (target === "session-end") return "session-end";
+    if (target === "recording-picker") return "recording-picker";
     }
     return "overlay";
   }
@@ -108,6 +112,10 @@ export function App() {
 
   if (route === "session-end") {
     return <SessionEndWindow />;
+  }
+
+  if (route === "recording-picker") {
+    return <RecordingPickerWindow />;
   }
 
   return (

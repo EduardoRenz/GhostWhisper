@@ -13,6 +13,7 @@ const VIDEO: RecordingSummary = {
   kind: "video",
   status: "ready",
   path: "/tmp/reuniao.mp4",
+  segments_dir: null,
   size_bytes: 214 * 1024 * 1024,
   duration_ms: 872_000,
   width: 1920,
@@ -41,6 +42,9 @@ describe("gravação — formatação", () => {
     ).toBe("214.0 MB (FLAC)");
     expect(mediaLabel(null)).toBe("Sem gravação");
     expect(mediaLabel({ ...VIDEO, status: "discarded" })).toBe("Sem gravação");
+    expect(mediaLabel({ ...VIDEO, status: "failed", path: null })).toBe(
+      "Falhou (segmentos preservados)",
+    );
   });
 
   it("estima o custo por hora a partir das settings", () => {

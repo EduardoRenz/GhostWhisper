@@ -55,7 +55,13 @@ pub fn segment_args(request: &SegmentRequest<'_>) -> Vec<String> {
                 args.extend(["-video_size".into(), format!("{width}x{height}")]);
             }
         }
-        args.extend(["-i".into(), ":0.0".into()]);
+        let (x, y) = spec.target.offset();
+        let input = if x == 0 && y == 0 {
+            ":0.0".to_string()
+        } else {
+            format!(":0.0+{x},{y}")
+        };
+        args.extend(["-i".into(), input]);
     }
 
     let mut audio_index = if spec.kind == RecordingKind::Video { 1 } else { 0 };
@@ -440,9 +446,29 @@ mod tests {
             label: "Tela".into(),
             width: 1920,
             height: 1080,
+            x: 0,
+            y: 0,
         };
         let args = args_for(&spec, true, true);
         assert!(args.join(" ").contains("-video_size 1920x1080"));
+    }
+
+    #[test]
+    fn a_monitor_target_uses_its_offset() {
+        let mut spec = spec();
+        spec.target = RecordingTarget::Screen {
+            label: "HDMI-1 — 1920×1080".into(),
+            width: 1920,
+            height: 1080,
+            x: 1920,
+            y: 0,
+        };
+        let args = args_for(&spec, true, true);
+        assert!(
+            args.join(" ").contains("-i :0.0+1920,0"),
+            "{}",
+            args.join(" ")
+        );
     }
 
     #[test]
@@ -472,6 +498,8 @@ mod tests {
             label: "x".into(),
             width: 1920,
             height: 1080,
+            x: 0,
+            y: 0,
         };
         let args = args_for(&spec, true, true);
         let joined = args.join(" ");

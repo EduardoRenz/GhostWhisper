@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { copyText } from "../../core/application/clipboard";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { exportSessionMarkdown, pickMarkdownPath, saveSessionMarkdown } from "../../adapters/ipc/export";
 import {
   useSessionHistory,
@@ -150,6 +151,16 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               Continuar sessão
             </button>
           )}
+          {current.recording_path ? (
+            <button
+              type="button"
+              className="overlay__button"
+              title="Abre a pasta da gravação"
+              onClick={() => void revealItemInDir(current.recording_path!)}
+            >
+              Abrir gravação
+            </button>
+          ) : null}
           <button
             type="button"
             className="overlay__button"
@@ -237,6 +248,14 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               <span className="history__row-meta">
                 {formatDateTime(session.started_at_ms)} ·{" "}
                 {sessionDuration(session)}
+                {session.recording_kind ? (
+                  <>
+                    {" · "}
+                    <span className="history__recording-badge">
+                      {session.recording_kind === "audio" ? "Áudio" : "Vídeo"}
+                    </span>
+                  </>
+                ) : null}
                 {session.id === activeSessionId ? " · gravando" : ""}
               </span>
             </button>

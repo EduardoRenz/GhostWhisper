@@ -34,6 +34,7 @@ interface NotchTabsProps {
   recordingBusy: boolean;
   recordingCapabilities: RecordingCapabilities | null;
   onToggleRecording: () => void;
+  onPickRecordingTarget: () => void;
 }
 
 /**
@@ -61,6 +62,7 @@ export function NotchTabs({
   recordingBusy,
   recordingCapabilities,
   onToggleRecording,
+  onPickRecordingTarget,
 }: NotchTabsProps) {
   return (
     <nav className="notch-tabs" aria-label="Modos do HUD" data-interactive>
@@ -119,6 +121,7 @@ export function NotchTabs({
         capabilities={recordingCapabilities}
         busy={recordingBusy}
         onToggle={onToggleRecording}
+        onPick={onPickRecordingTarget}
       />
     </nav>
   );

@@ -1,6 +1,6 @@
 # 07 — Botão de câmera no notch
 
-- **Status:** IN PROGRESS
+- **Status:** CONCLUDED
 - **Depende de:** 06
 - **Habilita:** 08
 - **Issues:** — · **BR:** BR-065, BR-066

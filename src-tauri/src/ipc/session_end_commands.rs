@@ -4,11 +4,14 @@
 //! ela busca o contexto ao montar (padrão do `capture_pending`).
 
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::domain::recording::Recording;
 use crate::error::Result;
 use crate::state::AppState;
+
+/// Evento avisando a janela `session-end` de que há um novo contexto.
+pub const SESSION_END_OPEN_EVENT: &str = "session_end_open";
 
 /// Resumo de mídia exibido no modal.
 #[derive(Debug, Clone, Serialize)]
@@ -16,6 +19,8 @@ pub struct RecordingSummaryDto {
     pub kind: String,
     pub status: String,
     pub path: Option<String>,
+    /// Pasta dos segmentos (usada quando a finalização falhou).
+    pub segments_dir: Option<String>,
     pub size_bytes: u64,
     pub duration_ms: i64,
     pub width: u32,
@@ -30,6 +35,7 @@ impl From<Recording> for RecordingSummaryDto {
             kind: recording.kind.as_str().to_string(),
             status: recording.status.as_str().to_string(),
             path: recording.path,
+            segments_dir: recording.segments_dir,
             size_bytes: recording.size_bytes,
             duration_ms: recording.duration_ms,
             width: recording.width,
@@ -90,6 +96,8 @@ pub fn session_end_open(
         let _ = window.center();
         let _ = window.show();
         let _ = window.set_focus();
+        // A janela existe desde o boot (oculta): avisa para reler o contexto.
+        let _ = window.emit(SESSION_END_OPEN_EVENT, ());
     }
     Ok(())
 }

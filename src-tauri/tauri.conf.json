@@ -137,6 +137,20 @@
         "center": false
       },
       {
+        "label": "recording-picker",
+        "title": "Gravar janela",
+        "width": 440,
+        "height": 420,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "center": true
+      },
+      {
         "label": "session-end",
         "title": "Sessão Finalizada",
         "width": 560,

@@ -31,6 +31,13 @@ Markdown, documentar e empacotar o binário de captura.
     licença;
   - teste do AppImage numa máquina sem `ffmpeg` no `PATH`.
 
+## Estado (2026-10-21)
+
+- **Feito:** selo `Vídeo`/`Áudio` no Histórico, ação **Abrir gravação**, linha
+  `Gravação:` no export, exclusão apagando todas as execuções.
+- **Pendente:** abrir o player no início da gravação (hoje revela o arquivo) e o
+  empacotamento (`ffmpeg`/`parec`, ISS-049).
+
 ## Critérios de aceite
 
 - [ ] O Histórico mostra o selo e abre a gravação no gerenciador.

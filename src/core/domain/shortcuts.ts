@@ -5,6 +5,7 @@ export type ShortcutAction =
   | "capture_screen"
   | "toggle_overlay"
   | "toggle_session"
+  | "recording_toggle"
   | "toggle_stealth"
   | "request_insight";
 
@@ -31,6 +32,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   "capture_screen",
   "toggle_overlay",
   "toggle_session",
+  "recording_toggle",
   "toggle_stealth",
   "request_insight",
 ];
@@ -41,6 +43,7 @@ export const defaultBindings = (): ShortcutBinding[] => [
   { action: "capture_screen", accelerator: "Alt+C" },
   { action: "toggle_overlay", accelerator: "CommandOrControl+Shift+O" },
   { action: "toggle_session", accelerator: "CommandOrControl+Shift+S" },
+  { action: "recording_toggle", accelerator: "CommandOrControl+Shift+R" },
   { action: "toggle_stealth", accelerator: "CommandOrControl+Shift+H" },
   { action: "request_insight", accelerator: "CommandOrControl+Shift+I" },
 ];

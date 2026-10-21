@@ -9,6 +9,8 @@ interface RecordingButtonProps {
   capabilities: RecordingCapabilities | null;
   busy: boolean;
   onToggle: () => void;
+  /** Abre o seletor de janelas (clique secundário). */
+  onPick: () => void;
 }
 
 /**
@@ -22,6 +24,7 @@ export function RecordingButton({
   capabilities,
   busy,
   onToggle,
+  onPick,
 }: RecordingButtonProps) {
   const recording = state.status === "recording";
   const paused = state.status === "paused";
@@ -37,7 +40,7 @@ export function RecordingButton({
         ? "Pausar gravação"
         : paused
           ? "Retomar gravação"
-          : `Gravar esta sessão${state.target_label ? ` (${state.target_label})` : ""}`;
+          : `Gravar esta sessão${state.target_label ? ` (${state.target_label})` : ""} · clique direito para escolher a janela`;
 
   const classes = [
     "notch-tabs__recording",
@@ -58,6 +61,12 @@ export function RecordingButton({
       title={title}
       disabled={disabled}
       onClick={onToggle}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        if (!disabled) {
+          onPick();
+        }
+      }}
     >
       <VideoCameraIcon className="notch-tabs__icon" size={15} />
       {recording ? <span className="notch-tabs__rec-dot" aria-hidden="true" /> : null}

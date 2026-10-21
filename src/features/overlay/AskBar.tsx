@@ -9,7 +9,7 @@ interface AskBarProps {
   onChange: (value: string) => void;
   /** Envia a pergunta (Enter). */
   onSubmit: (question: string) => void;
-  /** Captura a tela e pergunta (com ou sem texto). */
+  /** Captura o monitor sob o cursor e pergunta (com ou sem texto). */
   onCapture: () => void;
   /** Foca o campo (atalho "Perguntar"). */
   focusSignal: number;
@@ -109,7 +109,7 @@ export function AskBar({
           title={
             attached
               ? "Já há um print anexado — confirme a pergunta para enviá-lo"
-              : "Captura a tela e anexa à pergunta (Alt+C)"
+              : "Captura o monitor sob o cursor e anexa à pergunta (Alt+C)"
           }
           aria-label="Capturar Tela"
           disabled={busy || attached}

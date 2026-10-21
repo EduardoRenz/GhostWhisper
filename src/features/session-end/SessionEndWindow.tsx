@@ -58,7 +58,9 @@ export function SessionEndWindow() {
     progress?.phase === "finalizing" ||
     data?.recording?.status === "finalizing";
   const percent = progress?.phase === "finalizing" ? progress.percent : 0;
-  const hasRecording = Boolean(data?.recording?.path);
+  const hasRecording = Boolean(
+    data?.recording?.path ?? data?.recording?.segments_dir,
+  );
   const failed = progress?.phase === "failed";
 
   return (
@@ -75,9 +77,9 @@ export function SessionEndWindow() {
         />
 
         {loading ? (
-          <p className="session-end__loading">Carregando resumo…</p>
+          <p className="session-end__loading">Carregando sessão…</p>
         ) : !data ? (
-          <p className="session-end__loading">Nenhuma sessão para mostrar.</p>
+          <p className="session-end__loading">Carregando sessão…</p>
         ) : (
           <>
             <div className="session-end__stats">

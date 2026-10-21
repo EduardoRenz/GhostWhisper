@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// FPS padrão da gravação (BR-066: custo é por frame, não por resolução).
 pub const DEFAULT_RECORDING_FPS: u32 = 8;
@@ -156,7 +156,7 @@ pub struct Recording {
 }
 
 /// Alvo de captura (BR-070).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RecordingTarget {
     /// Uma janela X11 (o overlay não entra no vídeo).
@@ -166,11 +166,13 @@ pub enum RecordingTarget {
         width: u32,
         height: u32,
     },
-    /// A tela inteira (inclui o overlay).
+    /// A tela inteira ou um monitor específico (inclui o overlay).
     Screen {
         label: String,
         width: u32,
         height: u32,
+        x: i16,
+        y: i16,
     },
 }
 
@@ -188,6 +190,14 @@ impl RecordingTarget {
         match self {
             RecordingTarget::Window { id, .. } => Some(*id),
             RecordingTarget::Screen { .. } => None,
+        }
+    }
+
+    /// Origem da captura na tela (`0,0` para janelas).
+    pub fn offset(&self) -> (i16, i16) {
+        match self {
+            RecordingTarget::Screen { x, y, .. } => (*x, *y),
+            RecordingTarget::Window { .. } => (0, 0),
         }
     }
 
@@ -337,6 +347,8 @@ mod tests {
                 label: "Tela inteira".to_string(),
                 width: 1920,
                 height: 1080,
+                x: 0,
+                y: 0,
             },
             keep_segments: false,
             microphone: true,
@@ -429,6 +441,8 @@ mod tests {
             label: "Tela inteira".to_string(),
             width: 1920,
             height: 1080,
+            x: 0,
+            y: 0,
         };
         assert_eq!(screen.window_id(), None);
         assert_eq!(screen.label(), "Tela inteira");

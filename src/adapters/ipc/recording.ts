@@ -3,6 +3,7 @@ import { invokeSafe } from "./client";
 import type {
   RecordingCapabilities,
   RecordingState,
+  RecordingTarget,
 } from "../../core/domain/recording";
 
 /** O ambiente consegue gravar? */
@@ -10,9 +11,27 @@ export const recordingCapabilities = (): Promise<
   RecordingCapabilities | undefined
 > => invokeSafe<RecordingCapabilities>("recording_capabilities");
 
-/** Inicia a gravação da sessão ativa. */
+/** Inicia a gravação da sessão ativa (alvo da configuração). */
 export const recordingStart = (): Promise<void | undefined> =>
   invokeSafe<void>("recording_start");
+
+/** Inicia a gravação num alvo escolhido no seletor. */
+export const recordingStartWith = (
+  target: RecordingTarget,
+): Promise<void | undefined> =>
+  invokeSafe<void>("recording_start", { target });
+
+/** Alvos do seletor: tela inteira + janelas. */
+export const recordingTargets = (): Promise<RecordingTarget[] | undefined> =>
+  invokeSafe<RecordingTarget[]>("recording_targets");
+
+/** Abre o seletor de janelas. */
+export const recordingPickerOpen = (): Promise<void | undefined> =>
+  invokeSafe<void>("recording_picker_open");
+
+/** Fecha o seletor de janelas. */
+export const recordingPickerClose = (): Promise<void | undefined> =>
+  invokeSafe<void>("recording_picker_close");
 
 /** Pausa a gravação (a sessão continua). */
 export const recordingPause = (): Promise<void | undefined> =>

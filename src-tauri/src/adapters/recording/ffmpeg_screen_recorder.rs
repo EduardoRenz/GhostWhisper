@@ -374,8 +374,29 @@ fn system_device() -> Option<String> {
     crate::adapters::audio::pulse_system_audio_source::default_monitor_name().ok()
 }
 
+/// A sessão é Wayland nativo?
+///
+/// Sob Wayland, o `DISPLAY` do XWayland existe, mas a root do XWayland **não**
+/// contém as janelas Wayland nativas: o `x11grab` gravaria um desktop vazio ou
+/// incompleto. Melhor recusar com explicação do que entregar um vídeo quebrado.
+fn is_wayland(wayland_display: Option<&str>, session_type: Option<&str>) -> bool {
+    wayland_display.is_some_and(|value| !value.trim().is_empty())
+        || session_type.is_some_and(|value| value.eq_ignore_ascii_case("wayland"))
+}
+
+fn is_wayland_session() -> bool {
+    let wayland = std::env::var("WAYLAND_DISPLAY").ok();
+    let session = std::env::var("XDG_SESSION_TYPE").ok();
+    is_wayland(wayland.as_deref(), session.as_deref())
+}
+
 /// Detecta `ffmpeg` + X11 + áudio.
 fn detect_capabilities(ffmpeg: &Path, audio: AudioMode) -> RecordingCapabilities {
+    if is_wayland_session() {
+        return RecordingCapabilities::unavailable(
+            "gravação indisponível em Wayland: o XWayland não captura janelas Wayland nativas (use uma sessão X11)",
+        );
+    }
     if std::env::var_os("DISPLAY").is_none() {
         return RecordingCapabilities::unavailable(
             "gravação disponível apenas em X11/XWayland (BR-007)",
@@ -472,6 +493,8 @@ mod tests {
                 label: "Tela inteira".to_string(),
                 width: 1920,
                 height: 1080,
+                x: 0,
+                y: 0,
             },
             keep_segments: true,
             microphone: true,
@@ -508,6 +531,15 @@ mod tests {
             .expect("finalize");
         assert!(artifact.size_bytes > 0, "arquivo final não vazio");
         assert!(artifact.path.exists());
+    }
+
+    #[test]
+    fn detects_wayland_sessions() {
+        assert!(is_wayland(Some("wayland-0"), None));
+        assert!(is_wayland(None, Some("wayland")));
+        assert!(!is_wayland(None, Some("x11")));
+        assert!(!is_wayland(Some(""), Some("x11")));
+        assert!(!is_wayland(None, None));
     }
 
     #[test]

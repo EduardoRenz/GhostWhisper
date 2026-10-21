@@ -90,6 +90,10 @@ export interface SessionSummary {
   /** Resumo vivo persistido (`sessions.overview`), quando existe. */
   overview?: string | null;
   status: "active" | "ended";
+  /** Tipo da gravação mais recente da sessão (selo do histórico). */
+  recording_kind?: "video" | "audio" | null;
+  /** Arquivo final da gravação mais recente. */
+  recording_path?: string | null;
 }
 
 /** Título exibido de uma sessão (o Perssua chama de "sessão sem título"). */

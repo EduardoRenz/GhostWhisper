@@ -2,6 +2,11 @@
 //!
 //! O Perssua usa o `desktopCapturer` do Electron; aqui a captura é do **X11**
 //! (`GetImage` na root window), alinhado a BR-007 (X11/XWayland primeiro).
+//!
+//! Com **dois monitores**, capturar a root inteira e reduzir para 1280 px
+//! deixaria cada tela com ~640 px (texto ilegível). Por isso o print captura o
+//! **monitor sob o cursor** (RandR 1.5), com fallback para a tela virtual.
+//!
 //! A imagem é reescalada para **≤1280 px** no lado maior e recomprimida em
 //! **JPEG q0.86** — o preset `balanced` do Perssua, que corta o custo de
 //! tokens sem perder legibilidade.
@@ -47,8 +52,22 @@ impl ScreenCapture for X11ScreenCapture {
         let screen = &connection.setup().roots[screen_num];
         let root = screen.root;
 
-        let width = u32::from(screen.width_in_pixels);
-        let height = u32::from(screen.height_in_pixels);
+        // Monitor sob o cursor; sem RandR, a tela virtual inteira.
+        let (grab_x, grab_y, width, height) =
+            match crate::adapters::screen::x11_monitors::monitor_under_pointer() {
+                Some(monitor) => (
+                    monitor.x,
+                    monitor.y,
+                    u32::from(monitor.width),
+                    u32::from(monitor.height),
+                ),
+                None => (
+                    0,
+                    0,
+                    u32::from(screen.width_in_pixels),
+                    u32::from(screen.height_in_pixels),
+                ),
+            };
         if width == 0 || height == 0 {
             return Err(GhostWhisperError::Other(
                 "a tela não tem dimensões — cole a imagem com Ctrl+V".to_string(),
@@ -68,8 +87,8 @@ impl ScreenCapture for X11ScreenCapture {
             .get_image(
                 ImageFormat::Z_PIXMAP,
                 root,
-                0,
-                0,
+                grab_x,
+                grab_y,
                 width
                     .try_into()
                     .map_err(|_| GhostWhisperError::Other("tela larga demais".to_string()))?,

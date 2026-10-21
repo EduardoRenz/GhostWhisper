@@ -183,3 +183,110 @@ aprovar a PRD (botão de câmera, modal de fim de sessão e aba de configuraçõ
 
 - `cargo test --lib`: **589** ✓ · `cargo clippy --lib --all-targets`: limpo.
 - `pnpm exec tsc --noEmit`: limpo · `pnpm test`: **382** ✓ · `pnpm build` ✓.
+
+---
+
+## 2026-10-21 — Seletor de janelas, histórico e atalho (v1.2)
+
+- **IDs:** BR-065, BR-068, BR-070 · **Refs:** [`prd.md`](prd.md),
+  [`tasks/03-task.md`](tasks/03-task.md), [`tasks/10-task.md`](tasks/10-task.md)
+
+### O que entrou
+
+- **Seletor de janelas (task 03):** nova janela `recording-picker`, aberta pelo
+  **clique secundário** no botão de câmera. Lista a tela inteira e as janelas
+  (`_NET_CLIENT_LIST_STACKING`, do topo para a base); a escolha inicia a
+  gravação com alvo explícito (`recording_start(target)`). O seletor fica
+  bloqueado com gravação em andamento (alvo é congelado).
+- **Atalho (task 07):** `Ctrl+Shift+R` (`recording_toggle`) inicia/pausa/retoma,
+  no grupo de atalhos "demorados" (a pausa espera o `ffmpeg` fechar o segmento).
+- **Histórico (task 10):** `db_list_sessions` devolve `recording_kind`/`recording_path`;
+  a lista mostra o selo **Vídeo/Áudio** e o detalhe ganhou **Abrir gravação**.
+- **Nome de arquivo amigável:** `<título-da-sessão>-AAAAMMDD-HHMMSS.mp4`
+  (slug do `subject`, fallback para o id).
+- **Falha na finalização:** o modal mostra "Falhou (segmentos preservados)" e
+  **Abrir local** passa a revelar a pasta dos segmentos.
+- **Aviso de encoder:** pedir VAAPI num ambiente sem VAAPI mostra o aviso de
+  fallback para x264.
+
+### Verificação
+
+- `cargo test --lib`: **590** ✓ · `cargo clippy --lib --all-targets`: limpo.
+- `pnpm exec tsc --noEmit`: limpo · `pnpm test`: **386** ✓ · `pnpm build` ✓.
+
+### Ainda pendente
+
+- Ciclo da janela (resize/fechar/minimizar) — ISS-053/CA-06.5/06.6.
+- Recuperação guiada de gravação interrompida (CA-02.5).
+- Espaço em disco (CA-02.9) e permissão da pasta (CA-04.6).
+- Empacotamento `ffmpeg`/`parec` e licença (ISS-049).
+
+---
+
+## 2026-10-21 — Multi-monitor na gravação e no print (v1.3)
+
+- **IDs:** BR-055, BR-070 · **Refs:** [`prd.md`](prd.md) US-06/CA-06.9,
+  [`architecture/recording.md`](architecture/recording.md) §5.3
+
+### Pedido
+
+O usuário perguntou como escolher **entre dois monitores** na gravação e como o
+**print de tela** se comporta nesse cenário.
+
+### Antes
+
+Os dois pegavam a **root window inteira**: a tela virtual somando todos os
+monitores (ex.: 3840×1080). O print reduzia tudo para ≤1280 px e cada monitor
+ficava com ~640 px — texto ilegível.
+
+### Agora
+
+- **`adapters/screen/x11_monitors.rs`**: RandR 1.5 (`GetMonitors`) devolve nome,
+  geometria e primário; sem RandR 1.5 (ou com 0 monitores, como nesta máquina)
+  cai para a tela virtual. `monitor_at` escolhe pelo ponto; `monitor_under_pointer`
+  usa `QueryPointer`.
+- **Seletor de gravação:** com mais de um monitor, lista **"Todos os monitores"**
+  + **cada monitor** (nome e resolução) + janelas. Um monitor vira
+  `RecordingTarget::Screen { x, y, .. }` e o `ffmpeg` recebe `-i :0.0+X,Y`.
+- **Print de tela:** captura o **monitor sob o cursor**, com fallback para o
+  primário/tela virtual (não reduz mais os dois monitores juntos).
+- **Features:** `x11rb` ganhou `randr` no `Cargo.toml`.
+
+### Verificação
+
+- `cargo test --lib`: **594** ✓ (testes de `monitor_at`, `contains` e do offset
+  `-i :0.0+1920,0`).
+- `cargo clippy --lib --all-targets`: limpo.
+- `pnpm exec tsc --noEmit`: limpo · `pnpm test`: **386** ✓ · `pnpm build` ✓.
+- Nesta máquina o X server reporta 0 monitores RandR; o fallback (tela virtual
+  1920×1080) foi exercitado. Num setup real de dois monitores, o `GetMonitors`
+  lista os dois.
+
+---
+
+## 2026-10-21 — Guard de Wayland e portabilidade do pacote
+
+- **IDs:** BR-007, BR-070, ISS-051 · **Refs:** [`prd.md`](prd.md) CA-06.8,
+  [`architecture/recording.md`](architecture/recording.md) §11
+
+### Guard de Wayland
+
+`FfmpegScreenRecorder` passou a detectar `WAYLAND_DISPLAY` e
+`XDG_SESSION_TYPE=wayland` **antes** de olhar o `DISPLAY`. Motivo: sob Wayland o
+XWayland expõe um `DISPLAY`, mas a root do XWayland **não** contém as janelas
+Wayland nativas — o `x11grab` gravaria um desktop vazio/incompleto. Agora a
+gravação fica desabilitada com mensagem explícita, em vez de gerar um vídeo
+quebrado. Teste puro `detects_wayland_sessions`.
+
+### Portabilidade (resumo da avaliação)
+
+- **GPU:** o binário é **Vulkan** (build `--features vulkan`). NVIDIA/AMD/Intel
+  funcionam pelo ICD do driver; **CUDA/ROCm não** são usados (exigiriam builds
+  próprios). Sem ICD, o probe ignora rasterizers de software e cai para CPU.
+- **Wayland:** captura não confiável; agora recusada com explicação.
+- **Áudio:** exige Pulse/PipeWire; gravação exige `ffmpeg` (x11grab) e, sem
+  Pulse no ffmpeg, `parec` — nenhum dos dois está empacotado (ISS-049).
+- **glibc:** AppImage gerado no Ubuntu 24.04 (glibc 2.39); distros mais antigas
+  podem não abrir. Só `amd64`.
+- **Decisões pendentes:** empacotar `ffmpeg`/`parec`, base de build mais antiga
+  e eventual variante CUDA.

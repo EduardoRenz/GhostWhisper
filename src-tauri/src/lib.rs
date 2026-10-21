@@ -96,6 +96,9 @@ pub fn run() {
             ipc::recording_commands::recording_stop,
             ipc::recording_commands::recording_state,
             ipc::recording_commands::recording_discard,
+            ipc::recording_commands::recording_targets,
+            ipc::recording_commands::recording_picker_open,
+            ipc::recording_commands::recording_picker_close,
             ipc::session_end_commands::session_end_open,
             ipc::session_end_commands::session_end_context,
             ipc::session_end_commands::session_end_close,
@@ -147,6 +150,16 @@ pub fn run() {
             if let Some(settings_window) = app.get_webview_window("settings") {
                 let window = settings_window.clone();
                 settings_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                });
+            }
+            // Seletor de janelas: fechar esconde.
+            if let Some(picker) = app.get_webview_window("recording-picker") {
+                let window = picker.clone();
+                picker.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = window.hide();
@@ -679,6 +692,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&publisher),
         Arc::clone(&settings),
         Arc::clone(&clock),
+        Arc::clone(&sessions),
         recordings_dir,
     ));
     let recording: Arc<dyn RecordingController> = recording_impl.clone();
@@ -1133,7 +1147,9 @@ fn dispatch_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
         // turno (até 20 s) e pedir insight faz HTTP bloqueante (até 60 s) — na main
         // thread isso congela a interface; no listener, engole os próximos atalhos
         // (ISS-020). Thread própria para os dois.
-        ShortcutAction::ToggleSession | ShortcutAction::RequestInsight => {
+        ShortcutAction::ToggleSession
+        | ShortcutAction::RequestInsight
+        | ShortcutAction::RecordingToggle => {
             let app = app.clone();
             std::thread::spawn(move || run_shortcut(&app, action));
         }
@@ -1174,6 +1190,22 @@ fn run_shortcut(app: &tauri::AppHandle, action: ShortcutAction) {
                 .start(&[AudioChannel::Microphone, AudioChannel::System])
             {
                 tracing::warn!("falha ao iniciar sessão pelo atalho: {error}");
+            }
+        }
+        ShortcutAction::RecordingToggle => {
+            let current = state.recording.state();
+            let result = match current.status.as_str() {
+                "recording" => state.recording.pause(),
+                "paused" => state.recording.resume(),
+                _ => match state.session.current_session_id() {
+                    Some(session_id) => state.recording.start(&session_id, None),
+                    None => Err(GhostWhisperError::Config(
+                        "inicie uma sessão antes de gravar".to_string(),
+                    )),
+                },
+            };
+            if let Err(error) = result {
+                tracing::warn!("falha no atalho de gravação: {error}");
             }
         }
         ShortcutAction::FocusAsk => {

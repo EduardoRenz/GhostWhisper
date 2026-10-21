@@ -4,7 +4,7 @@
 //! `RecordingLifecycle` é chamado pelo `SessionService`: a gravação acompanha o
 //! ciclo da sessão (BR-065) sem que a sessão conheça `ffmpeg`.
 
-use crate::domain::recording::{Recording, RecordingState};
+use crate::domain::recording::{Recording, RecordingState, RecordingTarget};
 use crate::error::Result;
 use crate::ports::screen_recorder::RecordingCapabilities;
 use crate::ports::session_controller::AudioChannel;
@@ -17,7 +17,13 @@ pub trait RecordingController: Send + Sync {
     fn capabilities(&self) -> RecordingCapabilities;
 
     /// Inicia a gravação na sessão ativa (erro se não houver sessão).
-    fn start(&self, session_id: &str) -> Result<()>;
+    ///
+    /// `target` explícito vem do seletor de janelas; `None` usa a configuração
+    /// (janela ativa ou tela inteira).
+    fn start(&self, session_id: &str, target: Option<RecordingTarget>) -> Result<()>;
+
+    /// Alvos do seletor: a tela inteira e as janelas (vazio sem X11).
+    fn targets(&self) -> Vec<RecordingTarget>;
 
     /// Pausa a gravação (fecha o segmento); a sessão continua.
     fn pause(&self) -> Result<()>;

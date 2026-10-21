@@ -7,11 +7,12 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use chrono::TimeZone;
 use uuid::Uuid;
 
 use crate::domain::recording::{
     clamp_audio_kbps, clamp_fps, pick_or_default, Recording, RecordingKind, RecordingSpec,
-    RecordingState, RecordingStatus, DEFAULT_RECORDING_CONTAINER, DEFAULT_RECORDING_QUALITY,
+    RecordingState, RecordingStatus, RecordingTarget, DEFAULT_RECORDING_CONTAINER, DEFAULT_RECORDING_QUALITY,
     DEFAULT_RECORDING_RESOLUTION, DEFAULT_RECORDING_TARGET, RECORDING_CONTAINERS,
     RECORDING_ENCODERS, RECORDING_QUALITIES, RECORDING_RESOLUTIONS, RECORDING_TARGETS,
 };
@@ -21,6 +22,7 @@ use crate::ports::clock::Clock;
 use crate::ports::event_publisher::{EventPublisher, RecordingProgressEvent};
 use crate::ports::recording::{RecordingController, RecordingLifecycle};
 use crate::ports::recordings_repository::RecordingsRepository;
+use crate::ports::repositories::SessionRepository;
 use crate::ports::screen_recorder::{
     FinalizeRequest, RecordingCapabilities, RecordingFinalizer, RecordingStart, ScreenRecorder,
 };
@@ -38,6 +40,7 @@ pub struct RecordingService {
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsStore>,
     clock: Arc<dyn Clock>,
+    sessions: Arc<dyn SessionRepository>,
     /// Pasta padrão quando as settings não definem uma.
     default_dir: PathBuf,
     capabilities: RecordingCapabilities,
@@ -88,6 +91,7 @@ impl RecordingService {
         publisher: Arc<dyn EventPublisher>,
         settings: Arc<dyn SettingsStore>,
         clock: Arc<dyn Clock>,
+        sessions: Arc<dyn SessionRepository>,
         default_dir: PathBuf,
     ) -> Self {
         let capabilities = recorder.capabilities();
@@ -99,6 +103,7 @@ impl RecordingService {
             publisher,
             settings,
             clock,
+            sessions,
             default_dir,
             capabilities,
             inner: Arc::new(Mutex::new(Inner::empty())),
@@ -117,6 +122,7 @@ impl RecordingService {
         settings: &Settings,
         capabilities: &RecordingCapabilities,
         channels: &[AudioChannel],
+        requested: Option<RecordingTarget>,
     ) -> Result<RecordingSpec> {
         let kind = RecordingKind::parse(&settings.recording_mode);
         let target_setting = pick_or_default(
@@ -124,12 +130,13 @@ impl RecordingService {
             &RECORDING_TARGETS,
             DEFAULT_RECORDING_TARGET,
         );
-        let target = if target_setting == "window" {
-            self.targets
+        let target = match requested {
+            Some(target) => Some(target),
+            None if target_setting == "window" => self
+                .targets
                 .active_window()
-                .or_else(|| self.targets.screen())
-        } else {
-            self.targets.screen()
+                .or_else(|| self.targets.screen()),
+            None => self.targets.screen(),
         }
         .ok_or_else(|| {
             GhostWhisperError::Config(
@@ -181,6 +188,28 @@ impl RecordingService {
         })
     }
 
+    /// Prefixo amigável do arquivo (`Título-AAAAMMDD-HHMMSS`).
+    fn file_stem(&self, session_id: &str, started_at_ms: i64) -> String {
+        let stamp = chrono::Local
+            .timestamp_millis_opt(started_at_ms)
+            .single()
+            .map(|moment| moment.format("%Y%m%d-%H%M%S").to_string())
+            .unwrap_or_else(|| started_at_ms.to_string());
+        let subject = self
+            .sessions
+            .get(session_id)
+            .ok()
+            .flatten()
+            .and_then(|session| session.subject);
+        let slug = subject
+            .as_deref()
+            .and_then(slugify)
+            .unwrap_or_else(|| {
+                session_id.chars().take(8).collect::<String>()
+            });
+        format!("{slug}-{stamp}")
+    }
+
     fn state_of(active: &Active, now_ms: i64, status: &str) -> RecordingState {
         let running = active
             .resumed_at_ms
@@ -202,7 +231,23 @@ impl RecordingController for RecordingService {
         self.capabilities.clone()
     }
 
-    fn start(&self, session_id: &str) -> Result<()> {
+    fn targets(&self) -> Vec<RecordingTarget> {
+        let monitors = self.targets.monitors();
+        let mut out = Vec::new();
+        match self.targets.screen() {
+            // Com mais de um monitor, "Todos os monitores" + cada um.
+            Some(screen) if monitors.len() > 1 => {
+                out.push(screen);
+                out.extend(monitors);
+            }
+            Some(screen) => out.push(screen),
+            None => out.extend(monitors),
+        }
+        out.extend(self.targets.windows());
+        out
+    }
+
+    fn start(&self, session_id: &str, target: Option<RecordingTarget>) -> Result<()> {
         let capabilities = self.capabilities.clone();
         if !capabilities.available {
             return Err(GhostWhisperError::Config(
@@ -234,7 +279,7 @@ impl RecordingController for RecordingService {
         } else {
             channels
         };
-        let spec = self.build_spec(&settings, &capabilities, &channels)?;
+        let spec = self.build_spec(&settings, &capabilities, &channels, target)?;
         let (width, height) = spec.target.dimensions();
 
         let id = Uuid::new_v4().to_string();
@@ -242,8 +287,9 @@ impl RecordingController for RecordingService {
         // Cada execução tem sua pasta e seu arquivo: continuar uma sessão
         // antiga **não** sobrescreve a gravação anterior (BR-065).
         let session_dir = spec.output_dir.join(session_id);
-        let segments_dir = session_dir.join(started_at_ms.to_string());
-        let output = session_dir.join(format!("{started_at_ms}.{}", spec.extension()));
+        let stem = self.file_stem(session_id, started_at_ms);
+        let segments_dir = session_dir.join(&stem);
+        let output = session_dir.join(format!("{stem}.{}", spec.extension()));
         let recording = Recording {
             id: id.clone(),
             session_id: session_id.to_string(),
@@ -595,7 +641,7 @@ impl RecordingLifecycle for RecordingService {
             .map(|settings| settings.recording_auto_start)
             .unwrap_or(false);
         if capturing && auto {
-            if let Err(error) = self.start(session_id) {
+            if let Err(error) = self.start(session_id, None) {
                 tracing::warn!("gravação automática não iniciou: {error}");
             }
         }
@@ -627,7 +673,7 @@ impl RecordingLifecycle for RecordingService {
             .and_then(|inner| inner.current_session_id.clone());
         if auto {
             if let Some(session_id) = session_id {
-                if let Err(error) = self.start(&session_id) {
+                if let Err(error) = self.start(&session_id, None) {
                     tracing::warn!("gravação automática não iniciou: {error}");
                 }
             }
@@ -643,10 +689,30 @@ impl RecordingLifecycle for RecordingService {
     }
 }
 
+/// Nome de arquivo seguro a partir do título da sessão.
+fn slugify(value: &str) -> Option<String> {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for character in value.trim().chars().take(60) {
+        if character.is_alphanumeric() {
+            for lower in character.to_lowercase() {
+                slug.push(lower);
+            }
+            last_dash = false;
+        } else if !last_dash && !slug.is_empty() {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-').to_string();
+    (!slug.is_empty()).then_some(slug)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::adapters::persistence::memory::in_memory_recordings_repository::InMemoryRecordingsRepository;
+    use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
     use crate::domain::recording::{RecordingArtifact, RecordingTarget, DEFAULT_RECORDING_FPS};
     use crate::domain::settings::Settings;
     use crate::ports::screen_recorder::RecordingCapabilities;
@@ -683,7 +749,21 @@ mod tests {
                 label: "Tela inteira".into(),
                 width: 1920,
                 height: 1080,
+                x: 0,
+                y: 0,
             })
+        }
+        fn windows(&self) -> Vec<RecordingTarget> {
+            Vec::new()
+        }
+        fn monitors(&self) -> Vec<RecordingTarget> {
+            vec![RecordingTarget::Screen {
+                label: "Monitor 1 — 1920×1080".into(),
+                width: 1920,
+                height: 1080,
+                x: 0,
+                y: 0,
+            }]
         }
     }
 
@@ -789,6 +869,7 @@ mod tests {
             Arc::new(NoopPublisher),
             Arc::new(FakeSettings(Settings::default())),
             Arc::new(FakeClock),
+            Arc::new(InMemorySessionRepository::new()),
             dir.to_path_buf(),
         )
     }
@@ -800,7 +881,7 @@ mod tests {
         service
             .on_session_started("s1", &[AudioChannel::Microphone], true)
             .expect("hook");
-        service.start("s1").expect("start");
+        service.start("s1", None).expect("start");
         let state = service.state();
         assert_eq!(state.status, "recording");
         assert_eq!(state.target_label.as_deref(), Some("Reunião"));
@@ -816,7 +897,7 @@ mod tests {
         service
             .on_session_started("s1", &[AudioChannel::Microphone], true)
             .expect("hook");
-        service.start("s1").expect("start");
+        service.start("s1", None).expect("start");
         service.pause().expect("pause");
         assert_eq!(service.state().status, "paused");
         service.resume().expect("resume");
@@ -830,7 +911,7 @@ mod tests {
         service
             .on_session_started("s1", &[AudioChannel::Microphone], true)
             .expect("hook");
-        service.start("s1").expect("start");
+        service.start("s1", None).expect("start");
         service.stop().expect("stop");
         // A finalização é assíncrona: aguarda o estado virar `ready`.
         for _ in 0..50 {
@@ -861,15 +942,16 @@ mod tests {
             Arc::new(NoopPublisher),
             Arc::new(FakeSettings(Settings::default())),
             Arc::new(FakeClock),
+            Arc::new(InMemorySessionRepository::new()),
             dir.path().to_path_buf(),
         );
 
         service
             .on_session_started("s1", &[AudioChannel::Microphone], true)
             .expect("hook");
-        service.start("s1").expect("primeira gravação");
+        service.start("s1", None).expect("primeira gravação");
         service.stop().expect("finaliza a primeira");
-        service.start("s1").expect("gravação nova na mesma sessão");
+        service.start("s1", None).expect("gravação nova na mesma sessão");
 
         let stored = recordings.list_by_session("s1").expect("lista");
         assert_eq!(stored.len(), 2, "duas execuções, dois arquivos");
@@ -877,10 +959,20 @@ mod tests {
     }
 
     #[test]
+    fn slugify_makes_a_safe_file_name() {
+        assert_eq!(
+            slugify("Reunião com o Cliente!"),
+            Some("reunião-com-o-cliente".to_string())
+        );
+        assert_eq!(slugify("a/b:c*d"), Some("a-b-c-d".to_string()));
+        assert_eq!(slugify("   "), None);
+    }
+
+    #[test]
     fn start_without_a_session_is_refused() {
         let dir = tempfile::tempdir().expect("dir");
         let service = service(dir.path());
-        let error = service.start("s1").expect_err("erro");
+        let error = service.start("s1", None).expect_err("erro");
         assert!(error.to_string().contains("sessão ativa"), "{error}");
     }
 
@@ -891,7 +983,7 @@ mod tests {
         service
             .on_session_started("s1", &[AudioChannel::Microphone], true)
             .expect("hook");
-        service.start("s1").expect("start");
+        service.start("s1", None).expect("start");
         service.stop().expect("stop");
         service.discard("s1").expect("discard");
         let stored = service.get_by_session("s1").expect("get").expect("existe");
@@ -912,12 +1004,13 @@ mod tests {
             Arc::new(NoopPublisher),
             store,
             Arc::new(FakeClock),
+            Arc::new(InMemorySessionRepository::new()),
             dir.path().to_path_buf(),
         );
         service
             .on_session_started("s1", &[AudioChannel::Microphone], true)
             .expect("hook");
-        service.start("s1").expect("start");
+        service.start("s1", None).expect("start");
         let stored = service.get_by_session("s1").expect("get").expect("existe");
         assert_eq!(stored.fps, 8);
     }

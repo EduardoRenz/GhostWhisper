@@ -15,4 +15,10 @@ pub trait ScreenTargets: Send + Sync {
 
     /// A tela inteira (geometria do display).
     fn screen(&self) -> Option<RecordingTarget>;
+
+    /// Janelas capturáveis, da mais alta para a mais baixa na pilha.
+    fn windows(&self) -> Vec<RecordingTarget>;
+
+    /// Monitores físicos/lógicos (vazio sem X11).
+    fn monitors(&self) -> Vec<RecordingTarget>;
 }

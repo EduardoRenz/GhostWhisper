@@ -16,6 +16,7 @@ import {
 } from "../../adapters/ipc/overlay";
 import { panelHide, panelOpen, panelOpenTab } from "../../adapters/ipc/panels";
 import { askOpen } from "../../adapters/ipc/ask";
+import { recordingPickerOpen } from "../../adapters/ipc/recording";
 import { sessionEndOpen } from "../../adapters/ipc/sessionEnd";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
 import { useInteractiveRegions } from "../../core/application/useInteractiveRegions";
@@ -197,6 +198,7 @@ export function Overlay() {
             recordingBusy={recordingBusy}
             recordingCapabilities={recordingCapabilities}
             onToggleRecording={() => void toggleRecording()}
+            onPickRecordingTarget={() => void recordingPickerOpen()}
           />
         </DwellProvider>
       </div>
