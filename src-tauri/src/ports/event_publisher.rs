@@ -99,6 +99,21 @@ pub struct JournalUpdate {
     pub error: Option<String>,
 }
 
+/// Atividade de transcrição de um canal (fala em processamento).
+///
+/// Emitido no início da fala e quando o passe final termina. É o sinal que a
+/// aba Sessão usa para mostrar que ainda há transcrição chegando antes de o
+/// usuário perguntar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TranscriptActivityEvent {
+    /// Sessão dona do canal (eventos de sessão antiga são ignorados pela UI).
+    pub session_id: String,
+    /// `microphone` | `system`.
+    pub channel: &'static str,
+    /// `true` enquanto a fala está sendo processada.
+    pub processing: bool,
+}
+
 /// Publica eventos do domínio para a interface.
 ///
 /// Adaptador: `TauriEventPublisher`; dobra de teste: `RecordingEventPublisher`.
@@ -107,6 +122,11 @@ pub trait EventPublisher: Send + Sync {
     fn emit_segment(&self, segment: &TranscriptSegment);
     /// Emite o nível de áudio de um canal.
     fn emit_audio_level(&self, channel: AudioChannel, level: AudioLevel);
+    /// Emite o início/fim do processamento de fala de um canal.
+    ///
+    /// Default no-op: fakes de teste que não observam atividade não precisam
+    /// implementar (o adaptador Tauri sobrescreve).
+    fn emit_transcript_activity(&self, _activity: &TranscriptActivityEvent) {}
     /// Emite uma mudança de estado da sessão.
     fn emit_session_state(&self, state: &SessionStateEvent);
     /// Emite uma sugestão já persistida (painel ou atalho global).

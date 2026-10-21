@@ -1,11 +1,12 @@
 import type { KeyboardEvent, ReactElement } from "react";
 import {
   JournalIcon,
+  MicIcon,
   SummaryIcon,
-  TranscriptIcon,
   type IconProps,
 } from "../../components/icons";
 import type { PanelTab } from "../../core/domain/settings";
+import type { TranscriptActivity } from "../../core/application/useTranscriptActivity";
 
 interface TabDefinition {
   id: PanelTab;
@@ -14,7 +15,7 @@ interface TabDefinition {
 }
 
 const TABS: TabDefinition[] = [
-  { id: "transcription", label: "Transcrição", Icon: TranscriptIcon },
+  { id: "transcription", label: "Transcrição", Icon: MicIcon },
   { id: "summary", label: "Resumo", Icon: SummaryIcon },
   { id: "session", label: "Sessão", Icon: JournalIcon },
 ];
@@ -22,6 +23,24 @@ const TABS: TabDefinition[] = [
 interface PanelTabsProps {
   active: PanelTab;
   onChange: (tab: PanelTab) => void;
+  /** Atividade de transcrição por canal (efeito na aba Transcrição). */
+  transcriptionActivity?: TranscriptActivity;
+}
+
+const IDLE: TranscriptActivity = { microphone: false, system: false };
+
+/** Texto do tooltip/status da aba Transcrição. */
+function activityLabel(activity: TranscriptActivity): string {
+  if (activity.microphone && activity.system) {
+    return "Transcrição processando microfone e Outros";
+  }
+  if (activity.microphone) {
+    return "Transcrição processando microfone";
+  }
+  if (activity.system) {
+    return "Transcrição processando Outros";
+  }
+  return "Transcrição em silêncio";
 }
 
 /**
@@ -31,7 +50,11 @@ interface PanelTabsProps {
  * Acessível: `role="tablist"`, `aria-selected` por aba e navegação pelas setas
  * (←/→/Home/End).
  */
-export function PanelTabs({ active, onChange }: PanelTabsProps) {
+export function PanelTabs({
+  active,
+  onChange,
+  transcriptionActivity = IDLE,
+}: PanelTabsProps) {
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = TABS.findIndex((tab) => tab.id === active);
     const selectAt = (target: number) => {
@@ -52,6 +75,8 @@ export function PanelTabs({ active, onChange }: PanelTabsProps) {
     }
   };
 
+  const activity = activityLabel(transcriptionActivity);
+
   return (
     <div
       className="panel-tabs"
@@ -62,6 +87,11 @@ export function PanelTabs({ active, onChange }: PanelTabsProps) {
     >
       {TABS.map(({ id, label, Icon }) => {
         const selected = active === id;
+        const isTranscription = id === "transcription";
+        const streamingMic =
+          isTranscription && transcriptionActivity.microphone;
+        const streamingSystem =
+          isTranscription && transcriptionActivity.system;
         return (
           <button
             key={id}
@@ -71,9 +101,20 @@ export function PanelTabs({ active, onChange }: PanelTabsProps) {
             aria-selected={selected}
             aria-controls={`panel-view-${id}`}
             tabIndex={selected ? 0 : -1}
-            className={`panel-tabs__tab${selected ? " panel-tabs__tab--active" : ""}`}
+            title={isTranscription ? activity : undefined}
+            className={[
+              "panel-tabs__tab",
+              selected ? "panel-tabs__tab--active" : "",
+              streamingMic ? "panel-tabs__tab--streaming-mic" : "",
+              streamingSystem ? "panel-tabs__tab--streaming-system" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onClick={() => onChange(id)}
           >
+            {isTranscription && (
+              <span className="panel-tabs__status-dot" aria-hidden="true" />
+            )}
             <Icon className="panel-tabs__icon" size={16} />
             <span>{label}</span>
           </button>

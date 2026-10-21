@@ -57,3 +57,4 @@
   confirmação de encerrar **1058×72**; o menu abriu **758×252** (abaixo da
   barra), as opções responderam e, ao fechar, a janela voltou a **72** px de
   altura.
+- AppImage/deb finais publicados às **23:04** (Vulkan).

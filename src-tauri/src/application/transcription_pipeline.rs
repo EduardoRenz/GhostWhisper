@@ -36,7 +36,7 @@ use crate::domain::transcription::{
 };
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::audio_consumer::AudioConsumer;
-use crate::ports::event_publisher::EventPublisher;
+use crate::ports::event_publisher::{EventPublisher, TranscriptActivityEvent};
 use crate::ports::repositories::TranscriptionsRepository;
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::speech_to_text::SpeechToText;
@@ -129,6 +129,8 @@ pub struct TranscriptionPipeline {
     last_voiced_end_ms: Mutex<i64>,
     /// Houve fala no turno atual (desde o último fechamento).
     had_speech: AtomicBool,
+    /// Último estado de atividade publicado para a UI (evita repetição).
+    activity: AtomicBool,
     /// Turnos com passe final pendente (aguardando o resultado).
     ///
     /// É um conjunto, não um único turno: o `tick` e o resultado da prévia podem
@@ -215,6 +217,7 @@ impl TranscriptionPipeline {
             last_attempt_failed: AtomicBool::new(false),
             last_voiced_end_ms: Mutex::new(0),
             had_speech: AtomicBool::new(false),
+            activity: AtomicBool::new(false),
             pending_finals: Mutex::new(Vec::new()),
             last_preview: Mutex::new(None),
             mode: Mutex::new(DecodeMode::Inline),
@@ -257,6 +260,9 @@ impl TranscriptionPipeline {
     pub fn stop(&self) {
         self.flush();
         self.stop.store(true, Ordering::Relaxed);
+        // O canal parou: o sinal não pode ficar aceso na UI.
+        self.had_speech.store(false, Ordering::Relaxed);
+        self.publish_activity();
     }
 
     /// Publica o áudio que sobrou no buffer como último segmento final.
@@ -324,6 +330,7 @@ impl TranscriptionPipeline {
         };
 
         self.in_flight.fetch_add(1, Ordering::SeqCst);
+        self.publish_activity();
         match sender {
             Some(tx) => {
                 if tx.send(request).is_err() {
@@ -332,6 +339,7 @@ impl TranscriptionPipeline {
                         slot.clear();
                     }
                     tracing::warn!("thread de decodificação encerrada; pedido descartado");
+                    self.publish_activity();
                 }
             }
             None => {
@@ -486,6 +494,7 @@ impl TranscriptionPipeline {
             );
             // A prévia já publicada não pode ficar pendurada (ISS-021).
             self.retract_turn(turn, base_ms, cut_ms);
+            self.publish_activity();
             return;
         }
 
@@ -496,6 +505,7 @@ impl TranscriptionPipeline {
             }
             self.set_last_decode(0);
             self.publish_turn(turn, &text, base_ms, cut_ms, true);
+            self.publish_activity();
             return;
         }
 
@@ -526,6 +536,7 @@ impl TranscriptionPipeline {
             SpeechQuality::Preview => {
                 if turn != self.turn.load(Ordering::Relaxed) {
                     tracing::trace!(turn, "prévia de turno já fechado; descartada");
+                    self.publish_activity();
                     return;
                 }
                 match outcome.result {
@@ -534,6 +545,7 @@ impl TranscriptionPipeline {
                         self.set_last_decode(cut_ms);
                         self.last_attempt_failed.store(false, Ordering::Relaxed);
                         let Some(decoded) = self.clean(spans) else {
+                            self.publish_activity();
                             return;
                         };
                         self.publish_turn(turn, &decoded.text, base_ms, cut_ms, false);
@@ -566,6 +578,7 @@ impl TranscriptionPipeline {
                     .unwrap_or(false);
                 if !was_pending {
                     tracing::trace!(turn, "passe final superado; descartado");
+                    self.publish_activity();
                     return;
                 }
                 self.set_last_decode(0);
@@ -588,6 +601,7 @@ impl TranscriptionPipeline {
                 }
             }
         }
+        self.publish_activity();
     }
 
     /// Registra falha de decodificação sem consumir a cadência de prévias.
@@ -827,6 +841,27 @@ impl TranscriptionPipeline {
             .unwrap_or(true)
     }
 
+    /// Publica o estado de atividade do canal quando ele muda.
+    ///
+    /// A UI usa o evento na aba Transcrição (sinal de fala em processamento).
+    /// O estado é composto: fala no turno atual, decodificação em voo ou final
+    /// pendente. Assim o sinal começa no primeiro bloco falado e só apaga quando
+    /// o passe final terminou.
+    fn publish_activity(&self) {
+        let processing = self.had_speech()
+            || self.in_flight.load(Ordering::SeqCst) > 0
+            || !self.pending_finals_empty();
+        if self.activity.swap(processing, Ordering::Relaxed) == processing {
+            return;
+        }
+        self.publisher
+            .emit_transcript_activity(&TranscriptActivityEvent {
+                session_id: self.session_id.clone(),
+                channel: self.channel.as_str(),
+                processing,
+            });
+    }
+
     /// Emite o nível de áudio (throttle por tempo).
     fn emit_level(&self, samples: &[f32]) {
         let Some(level) = AudioLevel::from_samples(samples) else {
@@ -911,8 +946,11 @@ impl AudioConsumer for TranscriptionPipeline {
         // da última janela falada, base do corte por silêncio.
         if let Some(level) = AudioLevel::from_samples(samples) {
             if level.rms > SPEECH_RMS_THRESHOLD {
-                self.had_speech.store(true, Ordering::Relaxed);
+                let already_speaking = self.had_speech.swap(true, Ordering::Relaxed);
                 self.set_last_voiced_end_ms(buffered_ms);
+                if !already_speaking {
+                    self.publish_activity();
+                }
             }
         }
 
@@ -1149,20 +1187,28 @@ mod tests {
 
     struct RecordingPublisher {
         segments: Mutex<Vec<TranscriptSegment>>,
+        activity: Mutex<Vec<TranscriptActivityEvent>>,
     }
     impl RecordingPublisher {
         fn new() -> Self {
             Self {
                 segments: Mutex::new(Vec::new()),
+                activity: Mutex::new(Vec::new()),
             }
         }
         fn segments(&self) -> Vec<TranscriptSegment> {
             self.segments.lock().unwrap().clone()
         }
+        fn activity(&self) -> Vec<TranscriptActivityEvent> {
+            self.activity.lock().unwrap().clone()
+        }
     }
     impl EventPublisher for RecordingPublisher {
         fn emit_segment(&self, segment: &TranscriptSegment) {
             self.segments.lock().unwrap().push(segment.clone());
+        }
+        fn emit_transcript_activity(&self, activity: &TranscriptActivityEvent) {
+            self.activity.lock().unwrap().push(activity.clone());
         }
         fn emit_audio_level(&self, _channel: AudioChannel, _level: AudioLevel) {}
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
@@ -1316,6 +1362,31 @@ mod tests {
         assert_eq!(segments[1].text, "bom dia");
         assert_eq!(rows.all().len(), 1, "final persistido");
         assert_eq!(pipeline.buffered_samples(), 0, "buffer consumido");
+    }
+
+    #[test]
+    fn transcript_activity_tracks_speech_until_the_final() {
+        let (pipeline, publisher) = fake_pipeline("bom dia");
+
+        assert!(publisher.activity().is_empty(), "ocioso não publica nada");
+
+        // Primeiro bloco falado: o canal fica ativo antes de qualquer prévia.
+        pipeline.consume(&speech(1_500));
+        let started = publisher.activity();
+        assert_eq!(started.len(), 1);
+        assert!(started[0].processing);
+        assert_eq!(started[0].channel, "microphone");
+        assert_eq!(started[0].session_id, "s1");
+
+        // O passe final termina: o canal volta a ocioso.
+        pipeline.tick();
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+        let activity = publisher.activity();
+        assert!(
+            activity.last().is_some_and(|event| !event.processing),
+            "o final devia desligar o sinal: {activity:?}"
+        );
     }
 
     #[test]

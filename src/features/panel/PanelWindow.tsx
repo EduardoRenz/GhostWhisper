@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { subscribe } from "../../adapters/ipc/events";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
+import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
+import { useTranscriptActivity } from "../../core/application/useTranscriptActivity";
 import type { PanelTab } from "../../core/domain/settings";
 import { WaveformIcon } from "../../components/icons";
 import { PanelFrame } from "../panels/PanelFrame";
@@ -24,7 +26,9 @@ const PANEL_TAB_EVENT = "panel_tab";
  */
 export function PanelWindow() {
   const opened = usePanelOpen("chat");
+  const { state } = useSessionState();
   const { settings, reload } = useSettings();
+  const transcriptionActivity = useTranscriptActivity(state.session_id);
   const [tab, setTab] = useState<PanelTab>(settings.panel_tab);
 
   // As settings carregam de forma assíncrona: acompanha a aba persistida.
@@ -84,7 +88,11 @@ export function PanelWindow() {
 
   return (
     <PanelFrame label="chat" heading={heading}>
-      <PanelTabs active={tab} onChange={changeTab} />
+      <PanelTabs
+        active={tab}
+        onChange={changeTab}
+        transcriptionActivity={transcriptionActivity}
+      />
 
       <div className="panel-tab-body">
         <div

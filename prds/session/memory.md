@@ -387,3 +387,29 @@ IA não sabia o que já tinha respondido (as respostas não entravam no prompt).
 - **O que continua:** a lupa/Ctrl+K, a barra de pesquisa e o trailer de resumo;
   a aba segue com a lista (mais recente no topo), o rodapé e o export.
 
+---
+
+## 2026-10-21 — Sinal de transcrição na aba (streaming por canal)
+
+- **IDs:** BR-063, T11 · **Refs:** [`tasks/11-task.md`](tasks/11-task.md),
+  [`../chat/architecture/transcription-panel.md`](../chat/architecture/transcription-panel.md) §2.1
+
+### Pedido
+Na aba **Sessão** (Perguntas e respostas), saber quando a fala ainda está sendo
+transcrita. O efeito vai na **aba Transcrição existente**, sem botão novo:
+ciano L→R para microfone, cor de Outros R→L, ambos simultâneos.
+
+### Implementação
+- Evento `transcript_activity` (`session_id`, `channel`, `processing`) emitido
+  pelo `TranscriptionPipeline`: `true` no primeiro bloco falado do turno,
+  `false` quando o passe final termina (ou o turno é descartado/parado).
+- `useTranscriptActivity` filtra a sessão e mantém um booleano por canal.
+- `PanelTabs` (aba existente) recebe a atividade, mostra o ponto de status e
+  aplica os sweeps CSS; o clique continua trocando para Transcrição.
+
+### Verificação
+- `cargo test --lib` 545 ✓ · `clippy` ✓ · `rustfmt` ✓.
+- `pnpm test` 357 ✓ · `tsc` ✓ · `pnpm build` ✓.
+- Validado no AppImage: ponto + mic na aba existente; áudio do sistema acendeu
+  o ponto na cor de Outros e o sweep na aba.
+

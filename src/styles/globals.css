@@ -2588,6 +2588,133 @@ body,
   border-color: rgba(0, 242, 254, 0.5);
 }
 
+/* Aba Transcrição: sinal de fala em processamento (ISS-047/task 18).
+ *
+ * O gradiente atravessa o fundo da aba: microfone da esquerda para a direita
+ * (ciano); Outros da direita para a esquerda (cor do falante). Com os dois
+ * canais ativos, os dois gradientes rodam ao mesmo tempo. O conteúdo fica
+ * acima das camadas. */
+.panel-tabs__tab {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.panel-tabs__tab > * {
+  position: relative;
+  z-index: 1;
+}
+
+.panel-tabs__tab::before,
+.panel-tabs__tab::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.panel-tabs__tab--streaming-mic::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--oh-accent) 52%, transparent) 50%,
+    transparent 100%
+  );
+  opacity: 1;
+  animation: panel-tabs-sweep-lr 1.8s ease-in-out infinite;
+}
+
+.panel-tabs__tab--streaming-system::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--oh-speaker-they) 56%, transparent) 50%,
+    transparent 100%
+  );
+  opacity: 1;
+  animation: panel-tabs-sweep-rl 1.8s ease-in-out infinite;
+}
+
+@keyframes panel-tabs-sweep-lr {
+  0% {
+    transform: translateX(-100%);
+  }
+  55%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes panel-tabs-sweep-rl {
+  0% {
+    transform: translateX(100%);
+  }
+  55%,
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* Tinta de base: o canal fica identificável mesmo entre as passagens da onda. */
+.panel-tabs__tab--streaming-mic {
+  background-color: rgba(0, 242, 254, 0.08);
+}
+
+.panel-tabs__tab--streaming-system {
+  background-color: rgba(167, 139, 250, 0.1);
+}
+
+.panel-tabs__tab--streaming-mic.panel-tabs__tab--streaming-system {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 242, 254, 0.09) 0%,
+    rgba(167, 139, 250, 0.11) 100%
+  );
+}
+
+.panel-tabs__status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--oh-text-muted);
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.panel-tabs__tab--streaming-mic .panel-tabs__status-dot {
+  background: var(--oh-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--oh-accent) 16%, transparent);
+}
+
+.panel-tabs__tab--streaming-system .panel-tabs__status-dot {
+  background: var(--oh-speaker-they);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--oh-speaker-they) 16%, transparent);
+}
+
+.panel-tabs__tab--streaming-mic.panel-tabs__tab--streaming-system
+  .panel-tabs__status-dot {
+  background: linear-gradient(
+    90deg,
+    var(--oh-accent) 50%,
+    var(--oh-speaker-they) 50%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-tabs__tab--streaming-mic::before,
+  .panel-tabs__tab--streaming-system::after {
+    animation: none;
+    transform: none;
+    opacity: 0.35;
+  }
+}
+
 .panel-tabs__icon {
   color: currentColor;
 }

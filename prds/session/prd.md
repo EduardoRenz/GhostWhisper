@@ -309,6 +309,23 @@ Como usuário, quero o diário **no export Markdown** da sessão.
 - [ ] Uma sessão encerrada **mantém** o diário; "Continuar" a partir do
       Histórico reabre a sessão e o diário volta junto.
 
+### US-09 — Saber quando a transcrição ainda está em processamento
+
+Como usuário na aba **Sessão** (Perguntas e respostas), quero ver na aba
+**Transcrição** se a fala ainda está sendo processada, para só perguntar quando
+o texto estiver pronto.
+
+**Critérios de aceite**
+
+- [ ] A aba **Transcrição** existente (botão de aba ao lado de Resumo/Sessão)
+      recebe o efeito; **nenhum botão novo** é criado.
+- [ ] Microfone processando: gradiente ciano da esquerda para a direita.
+- [ ] Outros processando: gradiente na cor de Outros da direita para a esquerda.
+- [ ] Os dois canais ao mesmo tempo: os dois gradientes rodam juntos.
+- [ ] Sem gradiente (ponto neutro): fala terminou de processar / silêncio.
+- [ ] O sinal cobre do primeiro bloco de fala até o resultado final do turno
+      (evento `transcript_activity` do core), sem piscar entre prévias (BR-063).
+
 ## 5. Requisitos
 
 ### Funcionais (RF)

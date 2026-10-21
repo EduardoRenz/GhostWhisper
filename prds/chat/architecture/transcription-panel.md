@@ -52,7 +52,7 @@ pelo usuário (2026-10-19); o contrato em
 | Grip de arraste | visível no canto superior direito de **todas** as janelas; o cabeçalho (título/ícone) também arrasta | `DragHandle`/`PanelFrame`/`panel_start_drag` |
 | Medidores | fora da aba; o waveform do notch continua | BR-032 |
 | Atalho "Sugestões" no topo da conversa | removido; o notch já abre a janela | BR-032/BR-033 |
-| Pill de abas | `width:100%`; duas colunas iguais; `gap:2px`; `padding:2px`; raio `--oh-radius-full` | `PanelTabs` |
+| Pill de abas | `width:100%`; três colunas iguais; `gap:2px`; `padding:2px`; raio `--oh-radius-full` | `PanelTabs` |
 | Aba ativa | contorno `rgba(0,242,254,.5)`, texto/ícone `--oh-accent`, fundo transparente/sutil | print |
 | Aba inativa | texto `--oh-text-muted`; hover `--oh-text` | print |
 | Rodapé | borda superior `--oh-divider`; idioma à esquerda; status à direita em mono 10 | `LanguageBar` |
@@ -62,8 +62,22 @@ pelo usuário (2026-10-19); o contrato em
 
 - O cabeçalho mantém o arraste (`panel__drag`) e o fechar (`panel__close`); o
   título/ícone entram no `heading` do `PanelFrame`.
-- A troca de aba continua em `Settings.panel_tab`; as duas visões ficam montadas
+- A troca de aba continua em `Settings.panel_tab`; as três visões ficam montadas
   (`hidden`), como na BR-033.
+
+### 2.1 Sinal de transcrição na aba (BR-063)
+
+- A aba **Transcrição** existente (não um botão novo) recebe o estado do
+  pipeline por canal:
+  - `panel-tabs__tab--streaming-mic`: sweep ciano L→R;
+  - `panel-tabs__tab--streaming-system`: sweep na cor de Outros R→L;
+  - os dois juntos quando ambos os canais estão ativos.
+- O evento `transcript_activity` (`session_id`, `channel`, `processing`) vem do
+  `TranscriptionPipeline`: `true` no primeiro bloco falado, `false` no fim do
+  passe final do turno. A UI (`useTranscriptActivity`) só filtra a sessão e
+  mantém um booleano por canal.
+- O ponto de status dentro da aba acompanha a cor; sem atividade fica neutro.
+  O clique na aba continua sendo a troca de aba (`PanelWindow.changeTab`).
 
 ## 3. Cartões de mensagem (task 11)
 

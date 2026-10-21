@@ -7,6 +7,7 @@ use crate::domain::audio::AudioLevel;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
     EventPublisher, JournalUpdate, LlmSourceUsage, SessionStateEvent, SuggestionCadenceEvent,
+    TranscriptActivityEvent,
 };
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -25,6 +26,8 @@ pub const SUGGESTION_EVENT: &str = "suggestion";
 pub const ASR_STATUS_EVENT: &str = "asr_status";
 /// Nome do evento de cadencia do auto-sugerir (BR-039).
 pub const SUGGESTION_CADENCE_EVENT: &str = "suggestion_cadence";
+/// Nome do evento de atividade de transcrição por canal.
+pub const TRANSCRIPT_ACTIVITY_EVENT: &str = "transcript_activity";
 /// Nome do evento de fonte de IA que respondeu (BR-045).
 pub const LLM_SOURCE_USED_EVENT: &str = "llm_source_used";
 /// Nome do evento de progresso do diário de perguntas (BR-052).
@@ -80,6 +83,10 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_suggestion_cadence(&self, cadence: &SuggestionCadenceEvent) {
         let _ = self.app.emit(SUGGESTION_CADENCE_EVENT, cadence);
+    }
+
+    fn emit_transcript_activity(&self, activity: &TranscriptActivityEvent) {
+        let _ = self.app.emit(TRANSCRIPT_ACTIVITY_EVENT, activity);
     }
 
     fn emit_asr_status(&self, status: &AsrStatus) {

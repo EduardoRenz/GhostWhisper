@@ -16,6 +16,7 @@
 | 08 | Pesquisa no diário (FTS com escape) + perguntas no export Markdown | CONCLUDED |
 | 09 | Documentação (BRs/ISS/memory), verificação e pacotes | CONCLUDED |
 | 10 | Dívida de índices do schema + ancoragem do FTS por `id` | CONCLUDED |
+| 11 | Sinal de transcrição em andamento na aba Transcrição (BR-063) | CONCLUDED |
 
 ## Revisão v2 (2026-10-20)
 
@@ -43,6 +44,8 @@ compositor** tirar as janelas antes do `GetImage`.
 - A **05** acrescenta as perguntas prontas **dentro** do composer da 04.
 - A **06** implementa a captura de tela (porta + X11 + colar imagem) — não
   depende da 01.
+- A **11** usa a aba existente e o evento de atividade do pipeline (BR-063);
+  depende da 02/04.
 - A **07** torna o pedido **multimodal** e liga o print à pergunta — depende
   da 06 (tem o que enviar).
 - A **08** fecha o ciclo: busca no diário (com escape do `MATCH`) e o

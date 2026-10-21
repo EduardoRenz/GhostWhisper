@@ -1324,3 +1324,32 @@ uma nota de revisão.
   [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §9,
   [`ai-sources/tasks/12-task.md`](ai-sources/tasks/12-task.md).
 - **Data:** 2026-10-20 · **Status:** Ativa
+
+## BR-063 — Sinal de transcrição em andamento na aba Transcrição
+
+- **Decisão:** a aba **Transcrição** do painel da sessão (o botão de aba que já
+  existe, ao lado de Resumo e Sessão) recebe um **sinal visual de fala em
+  processamento**, sem criar um botão novo:
+  - microfone processando: gradiente **ciano** (`--oh-accent`) atravessando o
+    fundo da **esquerda para a direita**, suave e repetido;
+  - Outros processando: gradiente na **cor do falante Outros**
+    (`--oh-speaker-they`) atravessando da **direita para a esquerda**;
+  - ambos: os dois gradientes rodam **ao mesmo tempo**.
+  O ponto de status dentro da aba acompanha a cor (ciano, cor de Outros ou
+  dividido). Sem atividade, o ponto fica neutro e nenhum gradiente roda — é o
+  sinal de que a fala terminou de ser processada e há silêncio.
+- **Fonte da verdade:** evento `transcript_activity` por canal, emitido pelo
+  core no **primeiro bloco falado** do turno e desligado quando o **passe final**
+  do turno é publicado. Assim o sinal não pisca entre prévias e cobre o tempo
+  em que o usuário ainda não deve perguntar. A UI apenas reflete o evento; não
+  infere atividade do nível de áudio.
+- **Motivo:** na aba **Sessão** (Perguntas e respostas) o usuário precisa saber
+  se a fala ainda está sendo transcrita antes de formular a pergunta. O mockup
+  do usuário mostra o efeito na própria aba existente (BR-015).
+- **Consequência:** novo evento no `EventPublisher`; instrumentação do
+  `TranscriptionPipeline` por canal; hook `useTranscriptActivity`; classes
+  `panel-tabs__tab--streaming-mic/system`; a aba continua trocando para
+  Transcrição ao clique.
+- **Detalhes:** [`session/tasks/11-task.md`](session/tasks/11-task.md),
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md) §2.1.
+- **Data:** 2026-10-21 · **Status:** Ativa
