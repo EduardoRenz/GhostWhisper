@@ -91,7 +91,8 @@ pub struct AssistantMode {
     pub category: String,
     pub system_prompt: String,
     pub suggestion_prompt: String,
-    /// Prompt do resumo (persistido; consumo em feature futura — BR-076).
+    /// Prompt do resumo (usado pelo `SummaryService` quando o agente está
+    /// ativo — BR-076/BR-084).
     #[serde(default)]
     pub summary_prompt: String,
     pub context: String,
@@ -264,6 +265,32 @@ pub fn default_settings() -> Settings {
 }
 ```
 
+### 3.6 Resumo por agente (BR-076/BR-084)
+
+O `SummaryService` carrega as settings, resolve o agente **ativo**
+(`assistant_mode_id`; id ausente → Padrão) e usa
+`effective_summary_prompt(&mode)`:
+
+- **primeira geração / regeneração manual** (`current = None`): system prompt =
+  `summary_prompt` do agente; vazio depois do `trim` → `SUMMARY_SYSTEM_PROMPT`
+  do Padrão (BR-079);
+- **atualização incremental** (`Some(previous)`): system prompt =
+  `SUMMARY_UPDATE_SYSTEM_PROMPT`; o resumo corrente continua sendo a base da
+  estrutura. As seções existentes (inclusive as marcadas como "não
+  mencionado") são preservadas;
+- trocar o agente no meio da sessão não reestrutura o resumo já gerado; a nova
+  estrutura vale na próxima regeneração manual ou sessão.
+
+O agente **Entrevista com RH** tem `summary_prompt = HR_SUMMARY_PROMPT`, com as
+seções **Overall summary**, **What I answered**, **What the recruiter said
+about the company**, **Benefits and salary expectations**, **Main questions and
+answers** e **Brief opinion and insight on how I did**; seções sem informação
+recebem "Not discussed so far in the session." (traduzido).
+
+A **revisão de catálogo 2** (BR-084) atualiza o `summary_prompt` do RH já
+semeado **somente** quando ele ainda é o contrato geral antigo; prompt editado
+ou vazio é preservado, e um RH excluído não volta.
+
 ## 4. IPC
 
 | Command | Entrada | Saída | Mudança |
@@ -417,6 +444,11 @@ fundo, e o ícone herda `currentColor` (BR-037 — sem hex solto).
 | semeadura não sobrescreve agente do usuário com o mesmo id | idem |
 | revisão do catálogo funde Entrevista Técnica + System Design e adiciona RH | idem |
 | revisão não ressuscita um agente excluído depois dela | idem |
+| revisão 2 troca o prompt de resumo do RH apenas se ainda for o geral | idem |
+| `SummaryService` usa o `summary_prompt` do agente ativo | `application/summary_service.rs` |
+| prompt de resumo vazio cai no do Padrão | idem |
+| atualização incremental usa o prompt incremental | idem |
+| `HR_SUMMARY_PROMPT` tem as seis seções do debrief | `application/prompts/summary.rs` |
 | `default_settings()` traz os 4 agentes de fábrica | `application/assistant_catalog.rs` |
 | `Settings::default()` nasce **vazio** (domínio puro) | `domain/settings.rs` |
 | `sanitized()` volta para `default` se o selecionado sumiu | `domain/settings.rs` |

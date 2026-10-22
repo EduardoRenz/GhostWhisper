@@ -20,6 +20,7 @@
 | 12 | Ajuda nos campos de prompt (tooltips) | CONCLUDED |
 | 13 | Contrato comum de leitura da transcrição | CONCLUDED |
 | 14 | Entrevista Técnica funde System Design; novo Entrevista com RH | CONCLUDED |
+| 15 | Resumo por agente ativo + debrief da Entrevista com RH | CONCLUDED |
 
 ## Implementação (2026-10-22)
 

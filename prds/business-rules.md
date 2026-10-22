@@ -1658,26 +1658,32 @@ uma nota de revisão.
   [`assistants/tasks/02-task.md`](assistants/tasks/02-task.md).
 - **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
 
-## BR-076 — Prompt de resumo por agente (persistido, ainda não consumido)
+## BR-076 — Prompt de resumo por agente (consumido pelo agente ativo)
 
 - **Decisão:** todo agente tem um **prompt de resumo** próprio
   (`AssistantMode.summary_prompt`), gravado e editável no painel de
-  Assistentes. **Nesta entrega o campo é persistido, mas não é consumido**: o
-  `SummaryService` continua usando o contrato global de resumo. O campo
-  entra na validação como um dos prompts do agente (limite de 16 384
-  caracteres) e é semeado nos agentes de fábrica com o contrato de resumo já
-  existente.
+  Assistentes. O `SummaryService` **consome** o campo: o resumo usa o prompt do
+  agente **ativo** (`assistant_mode_id`); vazio depois do `trim` usa o do
+  **Padrão** (BR-079). A primeira geração e a regeneração manual aplicam o
+  contrato; as atualizações incrementais usam o prompt incremental e preservam
+  a estrutura do resumo corrente (BR-084). O campo entra na validação como um
+  dos prompts do agente (limite de 16 384 caracteres).
 - **Motivo:** pedido do usuário (2026-10-21) — o agente passa a ter "os prompts
-  ou pré prompts usados em algumas telas"; o resumo por agente é a próxima
-  feature e precisa do dado pronto.
+  ou pré prompts usados em algumas telas"; o resumo por agente era a próxima
+  feature e precisava do dado pronto. Em 2026-10-22 o usuário pediu para
+  colocar o prompt em prática.
 - **Consequência:** `AssistantMode` ganha `summary_prompt` (`serde(default)`,
-  então `settings.json` antigo continua válido) nos dois lados (Rust + TS); a
-  tela de Resumo **não** muda nesta entrega.
-- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.1,
-  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.1,
+  então `settings.json` antigo continua válido) nos dois lados (Rust + TS); o
+  `SummaryService` resolve o agente ativo e usa `effective_summary_prompt`; a
+  tela de Resumo continua a mesma; a estrutura só muda numa primeira geração,
+  regeneração manual ou sessão nova.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.1/§13.4,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.1/§3.6,
   [`assistants/tasks/01-task.md`](assistants/tasks/01-task.md),
-  [`assistants/tasks/06-task.md`](assistants/tasks/06-task.md).
-- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
+  [`assistants/tasks/06-task.md`](assistants/tasks/06-task.md),
+  [`assistants/tasks/15-task.md`](assistants/tasks/15-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22; consumo
+  ativado em 2026-10-22 — BR-084)
 
 ## BR-077 — Modal único de agente (criar e editar)
 
@@ -1733,8 +1739,8 @@ uma nota de revisão.
   sugestão deixa de ser o de Reunião e passa a ser o do Padrão; o bloco
   `## Domain criteria` passa a ser **sempre** incluído (do agente ou do Padrão);
   o card da aba "Assistentes" exibe o prompt herdado com a nota "Herdado do
-  agente Padrão". O prompt de resumo continua **não consumido** (BR-076): o
-  helper já está pronto para a feature futura.
+  agente Padrão". O prompt de resumo passou a ser **consumido** (BR-076/BR-084)
+  pelo resumo do agente ativo; o tooltip foi atualizado.
 - **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.4,
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.2,
   [`assistants/tasks/10-task.md`](assistants/tasks/10-task.md).
@@ -1838,4 +1844,35 @@ uma nota de revisão.
 - **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.2/§7.3,
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.4,
   [`assistants/tasks/14-task.md`](assistants/tasks/14-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-084 — O resumo usa o prompt do agente ativo; RH tem debrief próprio
+
+- **Decisão:** o `SummaryService` resolve o agente **ativo**
+  (`assistant_mode_id`) no catálogo efetivo e usa o `summary_prompt` desse
+  agente na primeira geração e na regeneração manual. Vazio depois do `trim`
+  usa o prompt do **Padrão** (BR-079). As atualizações incrementais usam o
+  `SUMMARY_UPDATE_SYSTEM_PROMPT` e o resumo corrente como base: preservam a
+  estrutura e as seções existentes, inclusive as marcadas como "não
+  mencionado". Trocar de agente no meio da sessão não reestrutura o resumo já
+  gerado; a nova estrutura vale na próxima regeneração manual ou sessão.
+- **Estrutura do RH:** o agente **Entrevista com RH** tem um contrato de
+  debrief próprio (`HR_SUMMARY_PROMPT`) com as seções, nesta ordem:
+  **Overall summary**, **What I answered**, **What the recruiter said about the
+  company**, **Benefits and salary expectations**, **Main questions and
+  answers** e **Brief opinion and insight on how I did**. Seções sem
+  informação dizem "Not discussed so far in the session." (traduzido). A
+  opinião é a avaliação do assistente como entrevistador, baseada só na
+  transcrição; não inventa fatos nem apresenta a avaliação como fala do RH.
+- **Motivo:** pedido do usuário (2026-10-22) — colocar o prompt de resumo em
+  prática com a mesma regra de fallback e testar a estrutura específica da
+  entrevista com RH.
+- **Consequência:** `HR_SUMMARY_PROMPT` em `application::prompts::summary`; o
+  agente de RH de fábrica passa a usá-lo; a revisão de catálogo **2** atualiza
+  o `summary_prompt` do RH já semeado **somente** quando ele ainda é o contrato
+  geral antigo — prompt editado ou vazio é preservado, e um RH excluído não
+  volta. O resumo dos demais agentes continua com o contrato geral do Padrão.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13.4,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.6,
+  [`assistants/tasks/15-task.md`](assistants/tasks/15-task.md).
 - **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)

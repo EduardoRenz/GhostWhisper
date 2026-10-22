@@ -21,6 +21,7 @@ use crate::ports::summary_generator::{
 };
 
 use super::context::{self, ContextChunk};
+use super::prompts::assistant::{default_mode, effective_summary_prompt, resolve_mode};
 use super::prompts::summary as summary_prompts;
 use super::session_lookup::resolve_session;
 
@@ -91,13 +92,15 @@ impl SummaryService {
         Some(settings.source_language.clone())
     }
 
-    /// Processa um chunk (primeiro usa o contrato completo; os demais, o incremental).
+    /// Processa um chunk (primeiro usa o contrato do agente ativo; os demais,
+    /// o incremental).
     #[allow(clippy::too_many_arguments)]
     fn process_chunk(
         &self,
         chunk: &ContextChunk,
         current: Option<&MeetingSummary>,
         language: Option<&str>,
+        summary_prompt: &str,
     ) -> Result<(Option<String>, String)> {
         let request = match current {
             Some(previous) => CompletionRequest::user(summary_prompts::summary_update_user_prompt(
@@ -112,7 +115,7 @@ impl SummaryService {
                 &chunk.text,
                 language,
             ))
-            .with_system(summary_prompts::SUMMARY_SYSTEM_PROMPT)
+            .with_system(summary_prompt)
             .with_temperature(self.limits.temperature)
             .with_max_tokens(self.limits.max_tokens),
         };
@@ -138,6 +141,16 @@ impl SummaryGenerator for SummaryService {
 
     fn generate(&self, request: SummaryRequest) -> Result<SummaryResult> {
         let settings = self.settings.load()?;
+        // O resumo usa o contrato do agente **ativo** (BR-076); um prompt vazio
+        // cai no do Padrão (BR-079). A estrutura é definida na primeira geração
+        // ou na regeneração manual; as atualizações incrementais preservam a
+        // estrutura do resumo corrente.
+        let mode = resolve_mode(
+            &settings.assistant_mode_id,
+            &settings.custom_assistant_modes,
+        )
+        .unwrap_or_else(default_mode);
+        let summary_prompt = effective_summary_prompt(&mode);
         let session = resolve_session(self.sessions.as_ref(), request.session_id)?;
         let segments = self.transcriptions.list_by_session(&session.id)?;
         let stored = self.summaries.get(&session.id)?;
@@ -172,7 +185,7 @@ impl SummaryGenerator for SummaryService {
         let language = self.language(&settings);
         for chunk in &chunks {
             let (subject, markdown) =
-                self.process_chunk(chunk, current.as_ref(), language.as_deref())?;
+                self.process_chunk(chunk, current.as_ref(), language.as_deref(), summary_prompt)?;
             let summarized_from_ms = current
                 .as_ref()
                 .map(|summary| summary.summarized_from_ms)
@@ -234,9 +247,11 @@ mod tests {
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
     use crate::adapters::settings::memory::InMemorySettingsStore;
     use crate::adapters::system::system_clock::FixedClock;
+    use crate::application::prompts::assistant::factory_mode;
     use crate::application::test_support::FakeLlmController;
     use crate::domain::ai_route::{AiCapability, AiRouteScope};
     use crate::domain::session::{Session, SessionStatus};
+    use crate::domain::settings::Settings;
     use crate::domain::transcription::{Speaker, TranscriptSegment};
     use crate::ports::meeting_summaries_repository::MeetingSummariesRepository;
     use crate::ports::repositories::TranscriptionsRepository;
@@ -277,6 +292,10 @@ mod tests {
     }
 
     fn fixture(responses: Vec<&str>) -> Fixture {
+        fixture_with_settings(responses, Settings::default())
+    }
+
+    fn fixture_with_settings(responses: Vec<&str>, settings: Settings) -> Fixture {
         let sessions = Arc::new(InMemorySessionRepository::new());
         sessions.create(&session()).expect("create session");
         let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
@@ -287,7 +306,7 @@ mod tests {
         );
         let service = SummaryService::new(
             llm.clone(),
-            Arc::new(InMemorySettingsStore::new()),
+            Arc::new(InMemorySettingsStore::with_settings(settings)),
             sessions.clone(),
             transcriptions.clone(),
             summaries.clone(),
@@ -398,6 +417,78 @@ mod tests {
     }
 
     #[test]
+    fn uses_the_active_agents_summary_prompt() {
+        // BR-076/BR-084: o resumo usa o contrato do agente ativo.
+        let hr = factory_mode("hr_interview").expect("agente de RH");
+        let settings = Settings {
+            assistant_mode_id: "hr_interview".to_string(),
+            custom_assistant_modes: vec![hr],
+            ..Settings::default()
+        };
+        let fixture = fixture_with_settings(
+            vec!["SUBJECT: Entrevista\nCONTENT: ## Overall summary\n\nConversa inicial."],
+            settings,
+        );
+        fixture
+            .transcriptions
+            .insert(&segment("1", 0, "ME: contei minha trajetória"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SummaryRequest {
+                session_id: None,
+                mode: SummaryMode::Auto,
+            })
+            .expect("summary");
+
+        let system = fixture
+            .llm
+            .last_request()
+            .expect("pedido")
+            .system
+            .expect("system");
+        assert!(system.contains("Overall summary"));
+        assert!(system.contains("What I answered"));
+        assert!(system.contains("Brief opinion and insight"));
+        assert!(!system.contains("Confirmed Decisions"));
+    }
+
+    #[test]
+    fn an_empty_summary_prompt_falls_back_to_the_default() {
+        // BR-079: prompt de resumo vazio usa o do Padrão.
+        let mut hr = factory_mode("hr_interview").expect("agente de RH");
+        hr.summary_prompt = "   ".to_string();
+        let settings = Settings {
+            assistant_mode_id: "hr_interview".to_string(),
+            custom_assistant_modes: vec![hr],
+            ..Settings::default()
+        };
+        let fixture = fixture_with_settings(vec!["SUBJECT: T\nCONTENT: ## A\n\nok"], settings);
+        fixture
+            .transcriptions
+            .insert(&segment("1", 0, "fala"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SummaryRequest {
+                session_id: None,
+                mode: SummaryMode::Auto,
+            })
+            .expect("summary");
+
+        let system = fixture
+            .llm
+            .last_request()
+            .expect("pedido")
+            .system
+            .expect("system");
+        assert!(system.contains("Confirmed Decisions"));
+        assert!(!system.contains("Overall summary"));
+    }
+
+    #[test]
     fn updates_incrementally_from_the_cursor() {
         let fixture = fixture(vec![
             "SUBJECT: T\nCONTENT: ## A\n\nprimeiro",
@@ -435,6 +526,10 @@ mod tests {
         assert!(request.prompt.contains("CURRENT SESSION SUMMARY"));
         assert!(request.prompt.contains("segundo"));
         assert!(request.prompt.contains("primeiro"));
+        assert_eq!(
+            request.system.as_deref(),
+            Some(summary_prompts::SUMMARY_UPDATE_SYSTEM_PROMPT)
+        );
     }
 
     #[test]

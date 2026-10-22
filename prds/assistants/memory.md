@@ -181,9 +181,8 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
 - `pnpm tauri:build` (Vulkan) concluído a cada mudança de core/UI (pill,
   BR-079 e BR-080): `GhostWhisper_0.1.0_amd64.deb` (17 MiB) e `.AppImage`
   (93 MiB) em `src-tauri/target/release/bundle/`. O bundle final embute
-  `index-DBiEL83a.js` / `index-BBaXZUJu.css` e o loader do Vulkan
-  (rebuild após a fusão Entrevista Técnica + System Design e o novo RH,
-  BR-083).
+  `index-DtMaM2Pl.js` / `index-BBaXZUJu.css` e o loader do Vulkan
+  (rebuild após o resumo por agente e o debrief de RH, BR-084).
 - `cargo fmt --check` **não** está limpo no repositório por arquivos
   anteriores à entrega (ex.: `ask_service.rs`, `recording_service.rs`,
   `connection.rs`); os arquivos alterados nesta PRD foram formatados.
@@ -343,3 +342,28 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
   `system_design` para `technical_interview`. Depois da revisão, edições e
   exclusões são respeitadas; "Restaurar Padrões" usa o catálogo novo.
 - **Testes:** 638 no `cargo test --lib`; 422 no `pnpm test`; `tsc` limpo.
+
+## 2026-10-22 — Resumo por agente ativo + debrief de RH (BR-076/BR-084)
+
+- **IDs:** BR-076, BR-084 · **Refs:** [`prd.md`](prd.md) §13.4,
+  [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §3.6,
+  [`tasks/15-task.md`](tasks/15-task.md)
+
+- **Pedido:** colocar o `summary_prompt` em prática com a mesma regra de
+  fallback (vazio = Padrão) e testar um contrato específico para a **Entrevista
+  com RH**.
+- **Decisão:** o `SummaryService` resolve o agente ativo
+  (`assistant_mode_id`) e usa `effective_summary_prompt` na primeira geração e
+  na regeneração manual. As atualizações incrementais usam
+  `SUMMARY_UPDATE_SYSTEM_PROMPT` e preservam a estrutura do resumo corrente;
+  trocar de agente no meio da sessão só muda a estrutura na próxima
+  regeneração/sessão.
+- **RH:** `HR_SUMMARY_PROMPT` com **Overall summary**, **What I answered**,
+  **What the recruiter said about the company**, **Benefits and salary
+  expectations**, **Main questions and answers** e **Brief opinion and insight
+  on how I did**; seções vazias dizem "Not discussed so far in the session."
+  (traduzido).
+- **Migração:** revisão de catálogo **2** troca o `summary_prompt` do RH já
+  semeado somente se ele ainda for o contrato geral; prompt editado/vazio é
+  preservado e um RH excluído não volta.
+- **Testes:** 643 no `cargo test --lib`; 422 no `pnpm test`; `tsc` limpo.

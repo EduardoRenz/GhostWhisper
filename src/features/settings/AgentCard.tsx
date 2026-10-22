@@ -172,7 +172,7 @@ export function AgentCard({
           text={summary}
           empty="Sem prompt de resumo."
           inherited={summaryInherited}
-          hint="Salvo por agente, mas ainda não consumido: o resumo continua com o contrato global."
+          hint="Usado pelo resumo quando este agente está ativo; vazio = herda o do agente Padrão."
         />
       </div>
     </article>

@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use crate::application::assistant_catalog::ASSISTANT_CATALOG_REVISION;
 use crate::application::prompts::assistant::factory_modes;
+use crate::application::prompts::summary::SUMMARY_SYSTEM_PROMPT;
 use crate::domain::settings::Settings;
 use crate::error::Result;
 use crate::ports::settings_store::SettingsStore;
@@ -96,16 +97,33 @@ fn normalize_legacy_prompts(settings: &mut Settings) -> bool {
     changed
 }
 
-/// Aplica a revisão do catálogo (BR-083) **uma vez**.
+/// Aplica as revisões do catálogo pendentes (BR-083/BR-084) **uma vez**.
 ///
-/// Revisão 1: `system_design` é absorvido por `technical_interview` e
-/// `hr_interview` entra. Preserva `context` e `source_id` do agente técnico
-/// (e o contexto/fonte do system design, quando o técnico não tinha).
+/// A revisão é aplicada por etapas: uma settings na revisão 0 passa pela 1 e
+/// pela 2 na mesma execução; uma na revisão 1 passa só pela 2. A marca final é
+/// gravada mesmo quando a etapa não altera nenhum campo (ex.: agente de RH
+/// excluído pelo usuário), para a revisão não repetir no próximo boot.
 fn upgrade_catalog(settings: &mut Settings) -> bool {
-    if settings.assistant_catalog_revision >= ASSISTANT_CATALOG_REVISION {
+    let from = settings.assistant_catalog_revision;
+    if from >= ASSISTANT_CATALOG_REVISION {
         return false;
     }
 
+    if from < 1 {
+        upgrade_catalog_to_revision_1(settings);
+    }
+    if from < 2 {
+        upgrade_catalog_to_revision_2(settings);
+    }
+
+    settings.assistant_catalog_revision = ASSISTANT_CATALOG_REVISION;
+    true
+}
+
+/// Revisão 1 (BR-083): funde `system_design` em `technical_interview` e cria o
+/// RH. Preserva `context` e `source_id` do agente técnico (e o contexto/fonte
+/// do system design, quando o técnico não tinha).
+fn upgrade_catalog_to_revision_1(settings: &mut Settings) {
     let factory = factory_modes();
     let mut technical = factory
         .iter()
@@ -171,8 +189,24 @@ fn upgrade_catalog(settings: &mut Settings) -> bool {
     if settings.assistant_mode_id == "system_design" {
         settings.assistant_mode_id = "technical_interview".to_string();
     }
-    settings.assistant_catalog_revision = ASSISTANT_CATALOG_REVISION;
-    true
+}
+
+/// Revisão 2 (BR-084): o RH passa a ter o contrato de resumo próprio.
+///
+/// Só troca quando o campo ainda é o contrato geral da semente antiga; um
+/// prompt editado (ou vazio) pelo usuário é preservado.
+fn upgrade_catalog_to_revision_2(settings: &mut Settings) {
+    let hr_prompt = factory_modes()
+        .into_iter()
+        .find(|mode| mode.id == "hr_interview")
+        .map(|mode| mode.summary_prompt)
+        .expect("hr_interview no catálogo de fábrica");
+
+    for mode in &mut settings.custom_assistant_modes {
+        if mode.id == "hr_interview" && mode.summary_prompt.trim() == SUMMARY_SYSTEM_PROMPT.trim() {
+            mode.summary_prompt = hr_prompt.clone();
+        }
+    }
 }
 
 /// Resultado da semeadura (para o log do boot).
@@ -553,6 +587,8 @@ mod tests {
         assert_eq!(hr.name, "Entrevista com RH");
         assert!(hr.suggestion_prompt.contains("Open questions"));
         assert!(hr.suggestion_prompt.contains("STAR answer"));
+        assert!(hr.summary_prompt.contains("Overall summary"));
+        assert!(!hr.summary_prompt.contains("Confirmed Decisions"));
 
         let custom = saved
             .custom_assistant_modes
@@ -598,5 +634,67 @@ mod tests {
             .custom_assistant_modes
             .iter()
             .any(|mode| mode.id == "hr_interview"));
+    }
+
+    #[test]
+    fn revision_2_gives_hr_its_summary_contract() {
+        let mut hr = agent("hr_interview", "Entrevista com RH");
+        hr.summary_prompt = SUMMARY_SYSTEM_PROMPT.to_string();
+        let mut custom = agent("hr_custom", "RH custom");
+        custom.summary_prompt = "Meu resumo customizado.".to_string();
+
+        let settings = Settings {
+            custom_assistant_modes: vec![hr, custom],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 1,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+        let outcome = AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("revisão 2");
+        assert!(outcome.upgraded);
+
+        let saved = store.load().expect("lê");
+        let hr = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "hr_interview")
+            .expect("RH");
+        assert!(hr.summary_prompt.contains("Overall summary"));
+        assert!(!hr.summary_prompt.contains("Confirmed Decisions"));
+
+        let custom = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "hr_custom")
+            .expect("custom");
+        assert_eq!(custom.summary_prompt, "Meu resumo customizado.");
+        assert_eq!(saved.assistant_catalog_revision, ASSISTANT_CATALOG_REVISION);
+    }
+
+    #[test]
+    fn revision_2_preserves_an_edited_hr_summary_prompt() {
+        let mut hr = agent("hr_interview", "RH");
+        hr.summary_prompt = "Meu resumo customizado.".to_string();
+        let settings = Settings {
+            custom_assistant_modes: vec![hr],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 1,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+
+        AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("revisão 2");
+
+        let saved = store.load().expect("lê");
+        let hr = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "hr_interview")
+            .expect("RH");
+        assert_eq!(hr.summary_prompt, "Meu resumo customizado.");
     }
 }

@@ -26,8 +26,8 @@ IA, desenhado a partir do mockup do usuário (2026-10-21):
    leitura direta dos **prompts** do agente (sugestão e resumo).
 3. **Um modal único** para **criar** e **editar** agente, com os mesmos campos
    nos dois casos: nome, ícone, cor, prompt de sugestão e prompt de resumo.
-4. **Prompt de resumo por agente**: campo novo, persistido agora, consumido por
-   uma feature futura.
+4. **Prompt de resumo por agente**: campo novo, persistido e consumido pelo
+   resumo do **agente ativo**; vazio usa o do Padrão (BR-076/BR-084).
 5. Os agentes que hoje são **de fábrica** (Reunião, Entrevista Técnica,
    LeetCode, Entrevista com RH) passam a ser **do usuário**: editáveis e
    excluíveis de vez.
@@ -52,9 +52,9 @@ A aba "Assistente" de hoje é um formulário, não um painel:
   tirá-la.
 - **O agente Padrão não é distinguível**: ele é mais um item do `<select>`, ao
   lado dos outros, sem nenhuma marca de que é o padrão do sistema.
-- **Não existe prompt de resumo por agente.** O `SummaryService` usa um contrato
-  global (`SUMMARY_SYSTEM_PROMPT`), então a identidade do agente não alcança a
-  tela de Resumo — e não há onde preparar isso.
+- **Não existia prompt de resumo por agente.** O `SummaryService` usa um
+  contrato global (`SUMMARY_SYSTEM_PROMPT`), então a identidade do agente não
+  alcançava a tela de Resumo — e não havia onde preparar isso.
 - A aba ainda mistura três assuntos: **agentes**, **cadências** (resumo e
   sugestões automáticas) e **perguntas prontas**.
 
@@ -72,8 +72,9 @@ Mesmas personas do MVP ([`../mvp/prd.md`](../mvp/prd.md) §3), com foco em:
   cor e os dois prompts.
 - **CU-05 — Ver quem está falando:** a badge "Ativo" diz qual agente está
   respondendo agora.
-- **CU-06 — Preparar o resumo por agente:** gravar o prompt de resumo do agente
-  agora, para a feature de resumo por agente consumir depois.
+- **CU-06 — Resumo por agente:** o resumo usa o prompt do agente **ativo**;
+  vazio usa o do Padrão. A primeira geração/regeneração aplica a estrutura; as
+  atualizações incrementais a preservam.
 - **CU-07 — Não perder o Padrão:** o agente Padrão continua ali, sempre, como
   fallback seguro — ninguém o apaga por engano.
 
@@ -92,8 +93,13 @@ Mesmas personas do MVP ([`../mvp/prd.md`](../mvp/prd.md) §3), com foco em:
 - **Modal único** de criação/edição (`Dialog` in-page), com os campos: nome,
   ícone, cor, prompt de sugestão, prompt de resumo e um bloco "avançado" com
   categoria, prompt de sistema e contexto fixo.
-- **Prompt de resumo por agente** (`summary_prompt`) no modelo, persistido e
-  editável — **não consumido** pelo `SummaryService` nesta entrega.
+- **Prompt de resumo por agente** (`summary_prompt`) no modelo, persistido,
+  editável e **consumido pelo `SummaryService`** quando o agente está ativo;
+  vazio usa o do Padrão (BR-076/BR-084).
+- **Resumo por agente ativo**: a primeira geração e a regeneração manual usam o
+  `summary_prompt` do agente; as atualizações incrementais preservam a
+  estrutura. O agente **Entrevista com RH** tem um contrato de debrief próprio
+  (BR-084).
 - **Agentes de fábrica viram do usuário**: semeadura única dos quatro agentes
   (Reunião, Entrevista Técnica, LeetCode, Entrevista com RH) na lista do usuário,
   com edição definitiva e exclusão definitiva.
@@ -105,10 +111,8 @@ Mesmas personas do MVP ([`../mvp/prd.md`](../mvp/prd.md) §3), com foco em:
 
 ### 4.2 Fora do escopo (PRD futura)
 
-- **Consumir** o `summary_prompt` na geração de resumo (feature à parte: o
-  `SummaryService` continua com o contrato global).
-- **Selecionar o agente ativo** pelo painel — a troca continua na tela de
-  sugestões (`AgentSelector`), único lugar implementado hoje.
+- **Selecionar o agente ativo** pelo painel — a troca é global pelo seletor do
+  notch (BR-080).
 - **"Restaurar padrão"** de um agente de fábrica **individual** (voltar ao
   contrato original daquele agente) — o "Restaurar Padrões" global continua
   existindo e traz todos os agentes de fábrica de volta (§8.6).
@@ -173,7 +177,7 @@ As decisões acima viram regras canônicas em
 |---|---|
 | BR-074 | Painel "Assistentes": o Padrão no topo, os agentes configurados abaixo |
 | BR-075 | Os agentes de fábrica viram agentes do usuário (semeadura única) |
-| BR-076 | Prompt de resumo por agente (persistido, ainda não consumido) |
+| BR-076 | Prompt de resumo por agente (consumido pelo agente ativo) |
 | BR-077 | Modal único de agente (criar e editar) |
 | BR-078 | Barra de abas das Configurações em pílulas |
 | BR-079 | Prompt vazio herda o do agente Padrão |
@@ -181,6 +185,7 @@ As decisões acima viram regras canônicas em
 | BR-081 | Ajuda nos campos de prompt (tooltip) |
 | BR-082 | O contrato de leitura da transcrição é comum a todos os agentes |
 | BR-083 | Entrevista Técnica funde System Design; novo Entrevista com RH |
+| BR-084 | O resumo usa o prompt do agente ativo; RH tem debrief próprio |
 
 ## 7. Modelo de dados
 
@@ -190,7 +195,8 @@ Detalhe de implementação:
 ### 7.1 `AssistantMode` ganha `summary_prompt`
 
 ```rust
-/// Prompt do resumo (persistido; o consumo é de uma feature futura — BR-076).
+/// Prompt do resumo (usado pelo `SummaryService` quando o agente está ativo —
+/// BR-076/BR-084).
 #[serde(default)]
 pub summary_prompt: String,
 ```
@@ -251,8 +257,9 @@ correspondente do **agente Padrão**:
   preenchido — a herança é por campo, não um atalho para criar um agente vazio.
 - O card da aba "Assistentes" mostra o prompt **efetivo** e, quando ele veio do
   Padrão, a nota "Herdado do agente Padrão".
-- O prompt de resumo continua **não consumido** (BR-076); o helper já resolve o
-  vazio para quando a feature de resumo por agente entrar.
+- O prompt de resumo é **consumido** pelo `SummaryService` (BR-076/BR-084): o
+  agente ativo define o contrato; vazio usa o do Padrão; as atualizações
+  incrementais preservam a estrutura do resumo corrente.
 
 ## 8. Fluxos
 
@@ -329,6 +336,12 @@ catálogo. Ver
       separado (BR-083).
 - [ ] O prompt de **Entrevista com RH** cobre perguntas em aberto, aprofundamento
       de respostas vagas e STAR quando cabível (BR-083).
+- [ ] O **resumo** usa o `summary_prompt` do agente ativo; vazio usa o do
+      Padrão (BR-076/BR-084).
+- [ ] O resumo da **Entrevista com RH** separa resumo geral, o que ME
+      respondeu, o que o RH disse da empresa, benefícios/pretenções, outras
+      perguntas e respostas, e opinião de entrevistador; seções sem informação
+      dizem que o assunto não foi mencionado até o momento (BR-084).
 
 ## 10. Riscos e limites
 
@@ -360,6 +373,7 @@ catálogo. Ver
 | 12 | Ajuda nos campos de prompt (BR-081) | CONCLUDED |
 | 13 | Contrato comum de leitura da transcrição (BR-082) | CONCLUDED |
 | 14 | Entrevista Técnica funde System Design; novo Entrevista com RH (BR-083) | CONCLUDED |
+| 15 | Resumo por agente ativo + debrief da Entrevista com RH (BR-076/BR-084) | CONCLUDED |
 
 Detalhes, entregáveis e critérios por task: [`tasks/_tasks.md`](tasks/_tasks.md).
 
@@ -428,7 +442,7 @@ THEY, que é do contexto ao vivo).
 | Campo | O que é | Onde é usado hoje | Se ficar vazio |
 |---|---|---|---|
 | `suggestion_prompt` — **Prompt de Sugestão** | Contrato da sugestão ao vivo (só a cena) | Base do prompt de sistema da sugestão (passe completo, `suggestion_system_prompt`), **depois** do contrato comum de leitura (BR-082) | Usa o prompt do **Padrão** (BR-079) |
-| `summary_prompt` — **Prompt de Resumo** | Contrato do resumo deste agente | **Não consumido**: o `SummaryService` ainda usa o contrato global (BR-076) | Usa o do **Padrão** (BR-079), quando a feature entrar |
+| `summary_prompt` — **Prompt de Resumo** | Contrato do resumo deste agente | **Usado quando este agente está ativo** (primeira geração/regeneração); as atualizações incrementais preservam a estrutura (BR-076/BR-084) | Usa o do **Padrão** (BR-079) |
 | `system_prompt` — **Prompt de sistema (critérios de domínio)** | Papel, tom e critérios do domínio | Bloco `## Domain criteria` do prompt da sugestão; **não** é usado pelo resumo nem pela Busca | Usa o do **Padrão** (BR-079) |
 | `context` — **Contexto fixo do agente** | Fatos estáveis (produto, empresa, vocabulário) | Bloco `## Agent context` nos **dois** passes da sugestão (rápido e completo) | Nenhum contexto extra |
 | `category` — Categoria | Rótulo de organização | Nenhum: é metadado (validado, ≤ 60 caracteres) | `custom` |
@@ -468,6 +482,24 @@ soltos no editor inline ao lado do Prompt de Sugestão.
 
 Cada prompt (e a Categoria) tem um tooltip com o texto da tabela acima, no
 modal de edição; os painéis do card também têm a ajuda dos dois prompts.
-O Prompt de Resumo diz explicitamente que ainda não é consumido. O tooltip do
-Prompt de Sugestão avisa que o contrato comum de leitura (BR-082) é aplicado
-automaticamente — o texto do campo não precisa repeti-lo.
+O Prompt de Resumo diz que é usado quando o agente está ativo e que vazio
+herda o do Padrão. O tooltip do Prompt de Sugestão avisa que o contrato comum
+de leitura (BR-082) é aplicado automaticamente — o texto do campo não precisa
+repeti-lo.
+
+### 13.4 Como o resumo é montado
+
+1. O `SummaryService` resolve o agente ativo (`assistant_mode_id`) no catálogo
+   efetivo; se o id sumiu, usa o Padrão.
+2. O system prompt da **primeira geração** e da **regeneração manual** é
+   `effective_summary_prompt(mode)`: o `summary_prompt` do agente ou, vazio
+   depois do `trim`, o `SUMMARY_SYSTEM_PROMPT` do Padrão (BR-079).
+3. As **atualizações incrementais** usam `SUMMARY_UPDATE_SYSTEM_PROMPT` e o
+   resumo corrente como base: preservam a estrutura e as seções já existentes,
+   inclusive as marcadas como "não mencionado".
+4. Trocar o agente no meio da sessão **não** reestrutura o resumo já gerado; a
+   nova estrutura vale na próxima regeneração manual (ou numa sessão nova).
+5. O agente **Entrevista com RH** usa `HR_SUMMARY_PROMPT` (BR-084): resumo
+   geral, o que ME respondeu, o que o RH disse da empresa,
+   benefícios/pretenções, outras perguntas e respostas, e uma opinião de
+   entrevistador.

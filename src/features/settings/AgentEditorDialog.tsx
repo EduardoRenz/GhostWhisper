@@ -240,7 +240,7 @@ export function AgentEditorDialog({
           <HelpLabel
             htmlFor="agent-summary-prompt"
             label="Prompt de Resumo"
-            hint="Contrato de resumo deste agente. Hoje é apenas salvo — o resumo ainda usa o contrato global. Vazio = usa o do agente Padrão."
+            hint="Contrato de resumo deste agente. É usado quando este agente está ativo; as atualizações incrementais preservam a estrutura. Vazio = usa o do agente Padrão."
           />
           <textarea
             id="agent-summary-prompt"
