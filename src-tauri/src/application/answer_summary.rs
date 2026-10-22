@@ -163,10 +163,7 @@ mod tests {
                 !visible.contains(SUMMARY_OPEN),
                 "vazou em {prefix:?}: {visible:?}"
             );
-            assert!(
-                !visible.contains("<!--res"),
-                "sufixo ambíguo em {prefix:?}"
-            );
+            assert!(!visible.contains("<!--res"), "sufixo ambíguo em {prefix:?}");
         }
     }
 
@@ -221,7 +218,10 @@ mod tests {
     #[test]
     fn an_incomplete_block_falls_back() {
         assert_eq!(extract("resposta\n<!--resumo: sem fecho"), None);
-        assert_eq!(without_summary("resposta\n<!--resumo: sem fecho"), "resposta");
+        assert_eq!(
+            without_summary("resposta\n<!--resumo: sem fecho"),
+            "resposta"
+        );
     }
 
     #[test]

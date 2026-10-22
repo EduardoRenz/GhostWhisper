@@ -64,13 +64,20 @@ pub fn segment_args(request: &SegmentRequest<'_>) -> Vec<String> {
         args.extend(["-i".into(), input]);
     }
 
-    let mut audio_index = if spec.kind == RecordingKind::Video { 1 } else { 0 };
-    let mic_index = request.microphone.filter(|_| request.with_audio).map(|device| {
-        let index = audio_index;
-        audio_index += 1;
-        args.extend(["-f".into(), "pulse".into(), "-i".into(), device.to_string()]);
-        index
-    });
+    let mut audio_index = if spec.kind == RecordingKind::Video {
+        1
+    } else {
+        0
+    };
+    let mic_index = request
+        .microphone
+        .filter(|_| request.with_audio)
+        .map(|device| {
+            let index = audio_index;
+            audio_index += 1;
+            args.extend(["-f".into(), "pulse".into(), "-i".into(), device.to_string()]);
+            index
+        });
     let system_index = request.system.filter(|_| request.with_audio).map(|device| {
         let index = audio_index;
         args.extend(["-f".into(), "pulse".into(), "-i".into(), device.to_string()]);
@@ -210,7 +217,11 @@ pub fn concat_args(request: &super::finalizer::ConcatRequest) -> Vec<String> {
 }
 
 /// Argumentos do reencode de emergência (dimensões diferentes — ISS-053).
-pub fn normalize_args(request: &super::finalizer::ConcatRequest, width: u32, height: u32) -> Vec<String> {
+pub fn normalize_args(
+    request: &super::finalizer::ConcatRequest,
+    width: u32,
+    height: u32,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-y".into(),
@@ -250,9 +261,11 @@ pub fn normalize_args(request: &super::finalizer::ConcatRequest, width: u32, hei
     args
 }
 
-
 /// Entradas de áudio cru do fallback (`parec`), com os índices do `ffmpeg`.
-fn fallback_audio_inputs(args: &mut Vec<String>, audio: &FallbackAudio) -> (Option<usize>, Option<usize>) {
+fn fallback_audio_inputs(
+    args: &mut Vec<String>,
+    audio: &FallbackAudio,
+) -> (Option<usize>, Option<usize>) {
     let mut index = 1;
     let mut push = |args: &mut Vec<String>, path: &std::path::Path| {
         let current = index;
@@ -269,10 +282,7 @@ fn fallback_audio_inputs(args: &mut Vec<String>, audio: &FallbackAudio) -> (Opti
         ]);
         current
     };
-    let microphone = audio
-        .microphone
-        .as_deref()
-        .map(|path| push(args, path));
+    let microphone = audio.microphone.as_deref().map(|path| push(args, path));
     let system = audio.system.as_deref().map(|path| push(args, path));
     (microphone, system)
 }
@@ -374,7 +384,10 @@ pub fn fallback_audio_args(
         ]);
         current
     };
-    let microphone = audio.microphone.as_deref().map(|path| push(&mut args, path));
+    let microphone = audio
+        .microphone
+        .as_deref()
+        .map(|path| push(&mut args, path));
     let system = audio.system.as_deref().map(|path| push(&mut args, path));
     let graph = audio_filter(microphone, system).unwrap_or_default();
     args.extend([

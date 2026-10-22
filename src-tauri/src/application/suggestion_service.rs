@@ -231,7 +231,7 @@ fn sampling(mode: &crate::domain::assistant::AssistantMode) -> (u32, f32) {
     match mode.id.as_str() {
         // O agente Padrão é contextual: pode virar entrevista técnica (código),
         // então leva o mesmo orçamento dos técnicos.
-        "default" | "technical_interview" | "leetcode" | "system_design" => {
+        "default" | "technical_interview" | "leetcode" => {
             (TECHNICAL_MAX_TOKENS, TECHNICAL_TEMPERATURE)
         }
         _ => (MEETING_MAX_TOKENS, MEETING_TEMPERATURE),

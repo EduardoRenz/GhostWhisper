@@ -60,12 +60,7 @@ impl RecordingsRepository for LocalRecordingsRepository {
         Ok(())
     }
 
-    fn update_status(
-        &self,
-        id: &str,
-        status: RecordingStatus,
-        error: Option<&str>,
-    ) -> Result<()> {
+    fn update_status(&self, id: &str, status: RecordingStatus, error: Option<&str>) -> Result<()> {
         let conn = lock(&self.conn)?;
         conn.execute(
             "UPDATE recordings SET status = ?2, error = ?3 WHERE id = ?1",
@@ -153,7 +148,9 @@ mod tests {
 
     fn repository() -> LocalRecordingsRepository {
         let conn = open_in_memory().expect("banco");
-        LocalRecordingsRepository::new(crate::adapters::persistence::sqlite::connection::shared(conn))
+        LocalRecordingsRepository::new(crate::adapters::persistence::sqlite::connection::shared(
+            conn,
+        ))
     }
 
     fn recording(session_id: &str) -> Recording {
@@ -203,7 +200,10 @@ mod tests {
         repo.update_status("rec-s1", RecordingStatus::Paused, None)
             .expect("pause");
         assert_eq!(
-            repo.get_by_session("s1").expect("get").expect("existe").status,
+            repo.get_by_session("s1")
+                .expect("get")
+                .expect("existe")
+                .status,
             RecordingStatus::Paused
         );
 

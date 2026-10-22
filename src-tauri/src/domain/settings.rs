@@ -213,6 +213,13 @@ pub struct Settings {
     /// usuário não volta no próximo boot.
     #[serde(default)]
     pub assistant_modes_seeded: bool,
+    /// Revisão do catálogo de agentes de fábrica (mudanças estruturais).
+    ///
+    /// `0` = settings anteriores à revisão. O boot aplica as mudanças do
+    /// catálogo (fusões e novos agentes) **uma vez** e grava a revisão atual
+    /// (BR-083). Depois disso, edições e exclusões do usuário são respeitadas.
+    #[serde(default)]
+    pub assistant_catalog_revision: u32,
     /// Atualização automática do resumo enquanto a janela está aberta.
     #[serde(default = "default_enabled")]
     pub summary_auto_refresh: bool,
@@ -423,6 +430,7 @@ impl Default for Settings {
             assistant_mode_migrated: false,
             custom_assistant_modes: Vec::new(),
             assistant_modes_seeded: false,
+            assistant_catalog_revision: 0,
             summary_auto_refresh: true,
             summary_interval_secs: default_summary_interval(),
             suggestion_auto_refresh: true,
@@ -1119,6 +1127,7 @@ mod tests {
         assert!(settings.custom_assistant_modes.is_empty());
         // O domínio nasce puro: quem semeia os agentes é a aplicação (BR-075).
         assert!(!settings.assistant_modes_seeded);
+        assert_eq!(settings.assistant_catalog_revision, 0);
         assert!(settings.validate().is_ok());
     }
 
@@ -1130,6 +1139,7 @@ mod tests {
             .replace("\"assistant_mode_migrated\":false,", "")
             .replace("\"custom_assistant_modes\":[],", "")
             .replace("\"assistant_modes_seeded\":false,", "")
+            .replace("\"assistant_catalog_revision\":0,", "")
             .replace("\"summary_auto_refresh\":true,", "")
             .replace("\"summary_interval_secs\":30,", "")
             .replace("\"suggestion_auto_refresh\":true,", "")
@@ -1139,6 +1149,7 @@ mod tests {
         let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
         assert_eq!(parsed.assistant_mode_id, "default");
         assert!(!parsed.assistant_mode_migrated);
+        assert_eq!(parsed.assistant_catalog_revision, 0);
         assert_eq!(parsed.summary_interval_secs, 30);
         assert!(parsed.validate().is_ok());
     }

@@ -35,12 +35,7 @@ impl RecordingsRepository for InMemoryRecordingsRepository {
         Ok(())
     }
 
-    fn update_status(
-        &self,
-        id: &str,
-        status: RecordingStatus,
-        error: Option<&str>,
-    ) -> Result<()> {
+    fn update_status(&self, id: &str, status: RecordingStatus, error: Option<&str>) -> Result<()> {
         let mut items = self.lock()?;
         if let Some(item) = items.iter_mut().find(|item| item.id == id) {
             item.status = status;

@@ -32,8 +32,8 @@ use crate::ports::llm_controller::LlmController;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
 
 use super::answer_summary;
-use super::prompts::assistant as assistant_prompts;
 use super::context;
+use super::prompts::assistant as assistant_prompts;
 use super::session_lookup::resolve_session;
 
 /// Teto do contexto enviado com a pergunta (mesma ordem de grandeza da
@@ -97,7 +97,8 @@ const ASK_RULES: &str = "Esta é uma pergunta direta do usuário (não uma suges
 fn system_prompt() -> String {
     format!(
         "{}\n\n{}",
-        assistant_prompts::DEFAULT_SYSTEM_PROMPT, ASK_RULES
+        assistant_prompts::DEFAULT_SYSTEM_PROMPT,
+        ASK_RULES
     )
 }
 
@@ -189,10 +190,7 @@ impl AskService {
     /// toa. A janela de tempo continua como rede de segurança (uma pergunta
     /// depois de uma pausa longa não manda meia hora de fala).
     fn build_context(&self, session_id: &str, now_rel_ms: i64) -> AskContext {
-        let entries = self
-            .journal
-            .list_by_session(session_id)
-            .unwrap_or_default();
+        let entries = self.journal.list_by_session(session_id).unwrap_or_default();
 
         // O início da última pergunta respondida (o par pergunta/resposta dela
         // já está coberto pelo resumo; a fala durante a resposta é nova).
@@ -274,11 +272,7 @@ struct AskContext {
 ///
 /// A janela deslizante mantém o prompt pequeno: os resumos mais antigos saem
 /// primeiro; o teto é aplicado do mais novo para o mais antigo.
-fn recent_summaries(
-    entries: &[JournalEntry],
-    limit: usize,
-    max_chars: usize,
-) -> Vec<String> {
+fn recent_summaries(entries: &[JournalEntry], limit: usize, max_chars: usize) -> Vec<String> {
     if limit == 0 || max_chars == 0 {
         return Vec::new();
     }
@@ -299,7 +293,12 @@ fn recent_summaries(
     let mut kept: Vec<String> = Vec::new();
     let mut chars = 0usize;
     for entry in picked.iter().rev() {
-        let text = entry.summary.as_deref().unwrap_or_default().trim().to_string();
+        let text = entry
+            .summary
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
         let len = text.chars().count();
         if !kept.is_empty() && chars + len > max_chars {
             break;
@@ -458,10 +457,10 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use crate::adapters::persistence::memory::in_memory_journal_repository::entry as journal_entry;
     use crate::adapters::persistence::memory::in_memory_journal_repository::InMemoryJournalRepository;
     use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
-    use crate::adapters::persistence::memory::in_memory_journal_repository::entry as journal_entry;
     use crate::adapters::system::system_clock::MutableClock;
     use crate::domain::journal::JournalRequestSource;
     use crate::domain::llm::Completion;
@@ -693,15 +692,10 @@ mod tests {
     fn the_request_has_room_for_code_and_the_summary() {
         let f = fixture(Arc::new(FakeLlm::ok("x")));
         session(&f);
-        f.service.ask(ask("inverta uma árvore binária em python"))
+        f.service
+            .ask(ask("inverta uma árvore binária em python"))
             .expect("pergunta");
-        let sent = f
-            .llm
-            .request
-            .lock()
-            .expect("lock")
-            .clone()
-            .expect("pedido");
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
         assert_eq!(sent.max_tokens, Some(MAX_TOKENS));
     }
 
@@ -851,13 +845,7 @@ mod tests {
             .expect("fala");
 
         f.service.ask(ask("primeira?")).expect("pergunta");
-        let first = f
-            .llm
-            .request
-            .lock()
-            .expect("lock")
-            .clone()
-            .expect("pedido");
+        let first = f.llm.request.lock().expect("lock").clone().expect("pedido");
         assert!(first.prompt.contains("fala antiga"), "{}", first.prompt);
         assert!(
             !first.prompt.contains("<previous_questions>"),
@@ -871,20 +859,16 @@ mod tests {
             .expect("fala");
         f.service.ask(ask("segunda?")).expect("pergunta");
 
-        let second = f
-            .llm
-            .request
-            .lock()
-            .expect("lock")
-            .clone()
-            .expect("pedido");
+        let second = f.llm.request.lock().expect("lock").clone().expect("pedido");
         assert!(
             second.prompt.contains("<previous_questions>"),
             "{}",
             second.prompt
         );
         assert!(
-            second.prompt.contains("P: primeira? / R: primeira resposta"),
+            second
+                .prompt
+                .contains("P: primeira? / R: primeira resposta"),
             "{}",
             second.prompt
         );
@@ -928,14 +912,25 @@ mod tests {
         let f = fixture(Arc::new(FakeLlm::ok("x")));
         session(&f);
         for index in 0..7 {
-            answered_entry(&f, &format!("e{index}"), index * 1_000, &format!("resumo {index}"));
+            answered_entry(
+                &f,
+                &format!("e{index}"),
+                index * 1_000,
+                &format!("resumo {index}"),
+            );
         }
 
         let context = f.service.build_context("s1", 10_000);
 
         assert_eq!(context.summaries.len(), CONTEXT_SUMMARIES);
-        assert_eq!(context.summaries.first().map(String::as_str), Some("resumo 2"));
-        assert_eq!(context.summaries.last().map(String::as_str), Some("resumo 6"));
+        assert_eq!(
+            context.summaries.first().map(String::as_str),
+            Some("resumo 2")
+        );
+        assert_eq!(
+            context.summaries.last().map(String::as_str),
+            Some("resumo 6")
+        );
     }
 
     #[test]

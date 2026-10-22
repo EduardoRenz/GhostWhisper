@@ -169,32 +169,45 @@ pub custom_assistant_modes: Vec<AssistantMode>,
 /// Agentes de fábrica já materializados na lista do usuário (BR-075).
 #[serde(default)]
 pub assistant_modes_seeded: bool,
+
+/// Revisão do catálogo de fábrica (BR-083); `0` = settings anteriores.
+#[serde(default)]
+pub assistant_catalog_revision: u32,
 ```
 
-- `Settings::default()` → `custom_assistant_modes: Vec::new()` e
-  `assistant_modes_seeded: false`. O domínio **não** conhece o catálogo de
-  fábrica (que vive na aplicação) — R1. A materialização é da aplicação (§3.4).
+- `Settings::default()` → `custom_assistant_modes: Vec::new()`,
+  `assistant_modes_seeded: false` e `assistant_catalog_revision: 0`. O domínio
+  **não** conhece o catálogo de fábrica (que vive na aplicação) — R1. A
+  materialização é da aplicação (§3.4).
 - `selected_mode_exists()` → `id == PROTECTED_MODE_ID || está na lista`.
 - `sanitized()` → descarta agentes inválidos e, se o selecionado sumiu, volta
   para `default`.
 - `validate()` → `validate_custom_modes` (agora permite ids de fábrica).
 
-### 3.4 Semeadura (migração de boot)
+### 3.4 Semeadura e revisões do catálogo (migração de boot)
 
 Novo caso de uso em
 `src-tauri/src/application/assistant_catalog_migration.rs`:
 
 ```rust
-pub struct SeedOutcome { pub added: Vec<String>, pub seeded: bool }
+pub struct SeedOutcome {
+    pub added: Vec<String>,
+    pub seeded: bool,
+    pub upgraded: bool,
+}
 
 pub struct AssistantCatalogMigration { settings: Arc<dyn SettingsStore> }
 
 impl AssistantCatalogMigration {
-    /// Materializa os agentes de fábrica na lista do usuário (uma única vez).
     pub fn seed(&self) -> Result<SeedOutcome> {
         let mut settings = self.settings.load()?;
+        let normalized = normalize_legacy_prompts(&mut settings); // BR-082
         if settings.assistant_modes_seeded {
-            return Ok(SeedOutcome { added: vec![], seeded: true });
+            let upgraded = upgrade_catalog(&mut settings);        // BR-083
+            if normalized || upgraded {
+                self.settings.save(&settings)?;
+            }
+            return Ok(SeedOutcome { added: vec![], seeded: true, upgraded });
         }
         let mut added = Vec::new();
         for mode in factory_modes() {
@@ -204,23 +217,36 @@ impl AssistantCatalogMigration {
             }
         }
         settings.assistant_modes_seeded = true;
+        settings.assistant_catalog_revision = ASSISTANT_CATALOG_REVISION;
         self.settings.save(&settings)?;
-        Ok(SeedOutcome { added, seeded: true })
+        Ok(SeedOutcome { added, seeded: true, upgraded: false })
     }
 }
 ```
 
 Regras:
 
-- Roda **uma vez** (a marca `assistant_modes_seeded`).
-- Roda também em **instalação nova**: `Settings::default()` nasce vazio (§3.3),
-  então o primeiro boot materializa os 4.
-- Não sobrescreve agente que o usuário já tenha com o mesmo id.
-- Não mexe em `assistant_mode_id`: o id do agente semeado é o mesmo, então a
-  seleção continua válida.
+- A **semeadura** roda **uma vez** (a marca `assistant_modes_seeded`) e não
+  sobrescreve um agente que o usuário já tenha com o mesmo id.
+- A **revisão do catálogo** roda uma vez por revisão
+  (`assistant_catalog_revision < ASSISTANT_CATALOG_REVISION`, definida em
+  `application/assistant_catalog.rs`):
+  - revisão 1 (**BR-083**): remove `system_design`, sobrescreve
+    `technical_interview` com o prompt fundido (preserva `context` e
+    `source_id`; carrega o contexto/fonte do system design quando o técnico não
+    tinha), adiciona `hr_interview` e troca a seleção ativa de `system_design`
+    para `technical_interview`;
+  - depois da revisão, edições e exclusões do usuário são respeitadas (um
+    `hr_interview` excluído não volta).
+- Roda também em **instalação nova**: `Settings::default()` nasce vazio e com
+  revisão 0 (§3.3), então o primeiro boot materializa os **4 agentes atuais**
+  (Reunião, Entrevista Técnica, LeetCode e Entrevista com RH) e grava a revisão.
+- Um `assistant_mode_id` de agente semeado continua válido; só a revisão troca
+  `system_design` pelo técnico fundido.
 
 Wiring: `lib.rs` (composition root) instancia e chama `seed()` no boot, ao
-lado da migração do agente Padrão (BR-059).
+lado da migração do agente Padrão (BR-059); `outcome.upgraded` loga
+"catálogo de agentes atualizado".
 
 ### 3.5 Defaults materializados (para o "Restaurar Padrões")
 
@@ -233,6 +259,7 @@ pub fn default_settings() -> Settings {
     let mut settings = Settings::default();
     settings.custom_assistant_modes = factory_modes();
     settings.assistant_modes_seeded = true;
+    settings.assistant_catalog_revision = ASSISTANT_CATALOG_REVISION;
     settings
 }
 ```
@@ -388,6 +415,8 @@ fundo, e o ícone herda `currentColor` (BR-037 — sem hex solto).
 | `effective_modes` = protegido + lista, sem duplicata | `application/prompts/assistant.rs` |
 | semeadura acrescenta os 4 de fábrica uma única vez | `application/assistant_catalog_migration.rs` |
 | semeadura não sobrescreve agente do usuário com o mesmo id | idem |
+| revisão do catálogo funde Entrevista Técnica + System Design e adiciona RH | idem |
+| revisão não ressuscita um agente excluído depois dela | idem |
 | `default_settings()` traz os 4 agentes de fábrica | `application/assistant_catalog.rs` |
 | `Settings::default()` nasce **vazio** (domínio puro) | `domain/settings.rs` |
 | `sanitized()` volta para `default` se o selecionado sumiu | `domain/settings.rs` |

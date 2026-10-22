@@ -18,10 +18,7 @@ pub fn recording_capabilities(state: State<'_, AppState>) -> RecordingCapabiliti
 ///
 /// `target` explícito vem do seletor de janelas; omitido, usa a configuração.
 #[tauri::command(async)]
-pub fn recording_start(
-    state: State<'_, AppState>,
-    target: Option<RecordingTarget>,
-) -> Result<()> {
+pub fn recording_start(state: State<'_, AppState>, target: Option<RecordingTarget>) -> Result<()> {
     let session_id = state.session.current_session_id().ok_or_else(|| {
         GhostWhisperError::Config("inicie uma sessão antes de gravar".to_string())
     })?;
@@ -76,10 +73,7 @@ pub fn recording_stop(state: State<'_, AppState>) -> Result<()> {
 
 /// Troca o alvo no meio da gravação (fecha um segmento e abre outro).
 #[tauri::command(async)]
-pub fn recording_switch_target(
-    state: State<'_, AppState>,
-    target: RecordingTarget,
-) -> Result<()> {
+pub fn recording_switch_target(state: State<'_, AppState>, target: RecordingTarget) -> Result<()> {
     state.recording.switch_target(target)
 }
 
@@ -91,9 +85,6 @@ pub fn recording_state(state: State<'_, AppState>) -> RecordingState {
 
 /// Apaga arquivo e segmentos; a sessão e a transcrição permanecem.
 #[tauri::command(async)]
-pub fn recording_discard(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<()> {
+pub fn recording_discard(state: State<'_, AppState>, session_id: String) -> Result<()> {
     state.recording.discard(&session_id)
 }

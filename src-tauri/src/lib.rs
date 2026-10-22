@@ -255,10 +255,10 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::audio::shared_audio_reference::{SharedAudioReference, SystemAudioReferenceTap};
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
     use adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
-    use adapters::pending::in_memory_pending_session_end::InMemoryPendingSessionEnd;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
+    use adapters::pending::in_memory_pending_session_end::InMemoryPendingSessionEnd;
     use adapters::persistence::sqlite::connection as db_connection;
     use adapters::persistence::sqlite::local_journal_repository::LocalJournalRepository;
     use adapters::persistence::sqlite::local_meeting_summaries_repository::LocalMeetingSummariesRepository;
@@ -303,8 +303,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::manual_suggestion_context::ManualSuggestionContextStore;
     use ports::meeting_summaries_repository::MeetingSummariesRepository;
     use ports::model_store::ModelStore;
-    use ports::pending_session_end::PendingSessionEnd;
     use ports::overlay_window::OverlayWindowController;
+    use ports::pending_session_end::PendingSessionEnd;
     use ports::pointer_source::PointerSource;
     use ports::recording::{RecordingController, RecordingLifecycle};
     use ports::recordings_repository::RecordingsRepository;
@@ -492,6 +492,9 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     .seed()
     {
         Ok(outcome) => {
+            if outcome.upgraded {
+                tracing::info!("catálogo de agentes atualizado");
+            }
             if !outcome.added.is_empty() {
                 tracing::info!(
                     agents = ?outcome.added,
@@ -1330,8 +1333,8 @@ fn init_tracing() {
     } else {
         format!("{raw},whisper_rs=warn")
     };
-    let filter = EnvFilter::try_new(directives)
-        .unwrap_or_else(|_| EnvFilter::new("info,whisper_rs=warn"));
+    let filter =
+        EnvFilter::try_new(directives).unwrap_or_else(|_| EnvFilter::new("info,whisper_rs=warn"));
 
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
     whisper_rs::install_logging_hooks();

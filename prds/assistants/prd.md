@@ -29,7 +29,7 @@ IA, desenhado a partir do mockup do usuário (2026-10-21):
 4. **Prompt de resumo por agente**: campo novo, persistido agora, consumido por
    uma feature futura.
 5. Os agentes que hoje são **de fábrica** (Reunião, Entrevista Técnica,
-   LeetCode, System Design) passam a ser **do usuário**: editáveis e
+   LeetCode, Entrevista com RH) passam a ser **do usuário**: editáveis e
    excluíveis de vez.
 
 Além disso, a **barra de abas** das Configurações passa do sublinhado para o
@@ -95,7 +95,7 @@ Mesmas personas do MVP ([`../mvp/prd.md`](../mvp/prd.md) §3), com foco em:
 - **Prompt de resumo por agente** (`summary_prompt`) no modelo, persistido e
   editável — **não consumido** pelo `SummaryService` nesta entrega.
 - **Agentes de fábrica viram do usuário**: semeadura única dos quatro agentes
-  (Reunião, Entrevista Técnica, LeetCode, System Design) na lista do usuário,
+  (Reunião, Entrevista Técnica, LeetCode, Entrevista com RH) na lista do usuário,
   com edição definitiva e exclusão definitiva.
 - **Move** de conteúdo: as **cadências** (resumo/sugestões automáticas +
   intervalos) e as **perguntas prontas** saem da aba "Assistentes" e viram uma
@@ -180,6 +180,7 @@ As decisões acima viram regras canônicas em
 | BR-080 | Seletor de agentes global, flutuando acima do notch |
 | BR-081 | Ajuda nos campos de prompt (tooltip) |
 | BR-082 | O contrato de leitura da transcrição é comum a todos os agentes |
+| BR-083 | Entrevista Técnica funde System Design; novo Entrevista com RH |
 
 ## 7. Modelo de dados
 
@@ -204,25 +205,29 @@ pub summary_prompt: String,
 | Conceito | Onde | Efeito |
 |---|---|---|
 | Agente **protegido** | `application::prompts::assistant::default_mode()` (id `default`) | Sempre existe, nunca editável, nunca excluível |
-| Agente **de fábrica** | `application::prompts::assistant::factory_modes()` (4 agentes) | **Semente** da lista do usuário (BR-075) |
+| Agente **de fábrica** | `application::prompts::assistant::factory_modes()` (4: Reunião, Entrevista Técnica, LeetCode, Entrevista com RH) | **Semente** da lista do usuário (BR-075) |
 | Agente **do usuário** | `settings.custom_assistant_modes` | A lista "AGENTES CONFIGURADOS" |
 
 Resolução (`resolve_mode`): `default` → agente protegido; qualquer outro id →
 só na lista do usuário. Agente de fábrica excluído **não volta** (a exclusão é
 definitiva).
 
-### 7.3 Semeadura única
+### 7.3 Semeadura e revisões do catálogo
 
 `Settings.assistant_modes_seeded: bool` (`serde(default)` = `false`) marca que os
 agentes de fábrica já foram materializados. Uma migração no boot:
 
-1. se `!assistant_modes_seeded` → acrescenta os 4 agentes de fábrica que ainda
+1. se `!assistant_modes_seeded` → acrescenta os agentes de fábrica que ainda
    não existem (por id) em `custom_assistant_modes`;
-2. marca `assistant_modes_seeded = true` e salva.
+2. marca `assistant_modes_seeded = true` e salva;
+3. se `assistant_catalog_revision < ASSISTANT_CATALOG_REVISION` → aplica a
+   revisão do catálogo **uma vez** (BR-083): funde/remove/adiciona agentes,
+   preserva `context`/`source_id` do agente técnico e o resto da lista, e grava
+   a revisão atual. Depois dela, edições e exclusões do usuário são respeitadas.
 
 A semeadura roda também em **instalação nova**: o `Settings::default()` do
-domínio nasce **puro** (lista vazia, marca desligada), porque o catálogo de
-fábrica vive na camada de aplicação — o `domain` não pode depender de
+domínio nasce **puro** (lista vazia, marca desligada, revisão 0), porque o
+catálogo de fábrica vive na camada de aplicação — o `domain` não pode depender de
 `application` (R1). Quem materializa é a aplicação, no boot e no
 "Restaurar Padrões" (§8.6).
 
@@ -296,7 +301,8 @@ como excluir o agente Padrão — ele não aparece na lista.
 "Restaurar Padrões" na janela de Configurações volta os agentes de fábrica. Como
 o catálogo vive na camada de aplicação (não no `Settings::default()` do
 domínio), o core expõe um default **materializado** (`settings_defaults`): o
-default do domínio + os 4 agentes de fábrica + a marca ligada. Ver
+default do domínio + os 4 agentes de fábrica + a marca ligada + a revisão do
+catálogo. Ver
 [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §5.
 
 ## 9. Critérios de aceite do produto
@@ -318,6 +324,11 @@ default do domínio + os 4 agentes de fábrica + a marca ligada. Ver
 - [ ] Os agentes de fábrica podem ser **editados** e **excluídos de vez**.
 - [ ] As **cadências** e as **perguntas prontas** aparecem na aba "Geral & HUD".
 - [ ] A tela de sugestões continua trocando o agente ativo (BR-037).
+- [ ] O catálogo de fábrica tem **Entrevista Técnica** (código + system design)
+      e **Entrevista com RH**; não existe mais o agente **System Design**
+      separado (BR-083).
+- [ ] O prompt de **Entrevista com RH** cobre perguntas em aberto, aprofundamento
+      de respostas vagas e STAR quando cabível (BR-083).
 
 ## 10. Riscos e limites
 
@@ -348,6 +359,7 @@ default do domínio + os 4 agentes de fábrica + a marca ligada. Ver
 | 11 | Seletor global de agentes acima do notch (BR-080) | CONCLUDED |
 | 12 | Ajuda nos campos de prompt (BR-081) | CONCLUDED |
 | 13 | Contrato comum de leitura da transcrição (BR-082) | CONCLUDED |
+| 14 | Entrevista Técnica funde System Design; novo Entrevista com RH (BR-083) | CONCLUDED |
 
 Detalhes, entregáveis e critérios por task: [`tasks/_tasks.md`](tasks/_tasks.md).
 

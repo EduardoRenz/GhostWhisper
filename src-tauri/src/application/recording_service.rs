@@ -14,9 +14,10 @@ use uuid::Uuid;
 
 use crate::domain::recording::{
     clamp_audio_kbps, clamp_fps, pick_or_default, Recording, RecordingKind, RecordingSpec,
-    RecordingState, RecordingStatus, RecordingTarget, DEFAULT_RECORDING_CONTAINER, DEFAULT_RECORDING_QUALITY,
-    DEFAULT_RECORDING_RESOLUTION, DEFAULT_RECORDING_TARGET, RECORDING_CONTAINERS,
-    RECORDING_ENCODERS, RECORDING_QUALITIES, RECORDING_RESOLUTIONS, RECORDING_TARGETS,
+    RecordingState, RecordingStatus, RecordingTarget, DEFAULT_RECORDING_CONTAINER,
+    DEFAULT_RECORDING_QUALITY, DEFAULT_RECORDING_RESOLUTION, DEFAULT_RECORDING_TARGET,
+    RECORDING_CONTAINERS, RECORDING_ENCODERS, RECORDING_QUALITIES, RECORDING_RESOLUTIONS,
+    RECORDING_TARGETS,
 };
 use crate::domain::settings::Settings;
 use crate::error::{GhostWhisperError, Result};
@@ -31,7 +32,6 @@ use crate::ports::screen_recorder::{
 use crate::ports::screen_targets::ScreenTargets;
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::settings_store::SettingsStore;
-
 
 /// Orquestra a gravação da sessão.
 pub struct RecordingService {
@@ -213,9 +213,7 @@ impl RecordingService {
         let slug = subject
             .as_deref()
             .and_then(slugify)
-            .unwrap_or_else(|| {
-                session_id.chars().take(8).collect::<String>()
-            });
+            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
         format!("{slug}-{stamp}")
     }
 
@@ -312,9 +310,7 @@ impl RecordingService {
                     continue;
                 }
                 let hits = match &candidate {
-                    Some((candidate_id, _, hits)) if *candidate_id == id => {
-                        hits.saturating_add(1)
-                    }
+                    Some((candidate_id, _, hits)) if *candidate_id == id => hits.saturating_add(1),
                     _ => 1,
                 };
                 candidate = Some((id, target.clone(), hits));
@@ -378,7 +374,10 @@ impl RecordingController for RecordingService {
         let settings = self.settings.load()?;
         let (channels, current) = {
             let inner = self.lock()?;
-            (inner.last_channels.clone(), inner.current_session_id.clone())
+            (
+                inner.last_channels.clone(),
+                inner.current_session_id.clone(),
+            )
         };
         match current.as_deref() {
             Some(current) if current == session_id => {}
@@ -432,9 +431,11 @@ impl RecordingController for RecordingService {
             segments_dir,
         };
         if let Err(error) = self.recorder.start(&start) {
-            let _ = self
-                .recordings
-                .update_status(&id, RecordingStatus::Failed, Some(&error.to_string()));
+            let _ = self.recordings.update_status(
+                &id,
+                RecordingStatus::Failed,
+                Some(&error.to_string()),
+            );
             self.publisher.emit_recording_state(&RecordingState::idle());
             return Err(error);
         }
@@ -567,9 +568,11 @@ impl RecordingController for RecordingService {
             .max(active.accumulated_ms);
 
         if parts.is_empty() && audio.is_none() {
-            let _ =
-                self.recordings
-                    .update_status(&active.id, RecordingStatus::Failed, Some("nenhum segmento"));
+            let _ = self.recordings.update_status(
+                &active.id,
+                RecordingStatus::Failed,
+                Some("nenhum segmento"),
+            );
             self.publish_idle();
             return Ok(());
         }
@@ -696,9 +699,7 @@ impl RecordingService {
                         .get_by_session(&session_id)
                         .ok()
                         .flatten()
-                        .is_some_and(|recording| {
-                            recording.status == RecordingStatus::Discarded
-                        })
+                        .is_some_and(|recording| recording.status == RecordingStatus::Discarded)
                     {
                         finalizer.cleanup(&request.parts, &request.output);
                         let _ = std::fs::remove_file(&artifact.path);
@@ -715,13 +716,7 @@ impl RecordingService {
                         artifact.duration_ms,
                         clock.now_ms(),
                     );
-                    emit(
-                        "ready",
-                        100,
-                        Some(path),
-                        artifact.size_bytes,
-                        None,
-                    );
+                    emit("ready", 100, Some(path), artifact.size_bytes, None);
                     // Só volta para ocioso se nenhuma gravação nova começou
                     // (continuar a sessão durante a finalização da anterior).
                     if let Ok(mut guard) = inner.lock() {
@@ -739,17 +734,11 @@ impl RecordingService {
                         .get_by_session(&session_id)
                         .ok()
                         .flatten()
-                        .is_some_and(|recording| {
-                            recording.status == RecordingStatus::Discarded
-                        });
+                        .is_some_and(|recording| recording.status == RecordingStatus::Discarded);
                     if discarded {
                         return;
                     }
-                    let _ = recordings.update_status(
-                        &id,
-                        RecordingStatus::Failed,
-                        Some(&message),
-                    );
+                    let _ = recordings.update_status(&id, RecordingStatus::Failed, Some(&message));
                     emit("failed", 0, None, 0, Some(message.clone()));
                     if let Ok(mut guard) = inner.lock() {
                         if guard.active.is_none() {
@@ -773,7 +762,9 @@ impl RecordingService {
 
     /// `true` quando há uma gravação em andamento.
     fn has_active(&self) -> bool {
-        self.lock().map(|inner| inner.active.is_some()).unwrap_or(false)
+        self.lock()
+            .map(|inner| inner.active.is_some())
+            .unwrap_or(false)
     }
 }
 
@@ -1001,7 +992,12 @@ mod tests {
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
         fn emit_segment(&self, _segment: &crate::domain::transcription::TranscriptSegment) {}
-        fn emit_audio_level(&self, _channel: AudioChannel, _level: crate::domain::audio::AudioLevel) {}
+        fn emit_audio_level(
+            &self,
+            _channel: AudioChannel,
+            _level: crate::domain::audio::AudioLevel,
+        ) {
+        }
         fn emit_session_state(&self, _state: &crate::ports::event_publisher::SessionStateEvent) {}
         fn emit_insight(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
         fn emit_suggestion(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
@@ -1011,11 +1007,7 @@ mod tests {
         ) {
         }
         fn emit_asr_status(&self, _status: &crate::domain::transcription::AsrStatus) {}
-        fn emit_llm_source_used(
-            &self,
-            _usage: &crate::ports::event_publisher::LlmSourceUsage,
-        ) {
-        }
+        fn emit_llm_source_used(&self, _usage: &crate::ports::event_publisher::LlmSourceUsage) {}
         fn emit_journal(&self, _update: &crate::ports::event_publisher::JournalUpdate) {}
     }
 
@@ -1111,7 +1103,9 @@ mod tests {
             .expect("hook");
         service.start("s1", None).expect("primeira gravação");
         service.stop().expect("finaliza a primeira");
-        service.start("s1", None).expect("gravação nova na mesma sessão");
+        service
+            .start("s1", None)
+            .expect("gravação nova na mesma sessão");
 
         let stored = recordings.list_by_session("s1").expect("lista");
         assert_eq!(stored.len(), 2, "duas execuções, dois arquivos");
@@ -1158,7 +1152,10 @@ mod tests {
         };
         service.switch_target(target.clone()).expect("switch");
 
-        assert_eq!(service.state().target_label.as_deref(), Some("Monitor 2 — 1920×1080"));
+        assert_eq!(
+            service.state().target_label.as_deref(),
+            Some("Monitor 2 — 1920×1080")
+        );
         assert_eq!(recorder.switches.lock().unwrap().as_slice(), &[target]);
     }
 
@@ -1208,5 +1205,4 @@ mod tests {
         let stored = service.get_by_session("s1").expect("get").expect("existe");
         assert_eq!(stored.fps, 8);
     }
-
 }

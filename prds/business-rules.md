@@ -305,7 +305,7 @@ uma nota de revisão.
 
 ## BR-024 — Sugestões por agentes, com modos personalizados
 - **Decisão:** a sugestão ao vivo tem **agentes** selecionáveis — embutidos
-  (Padrão, Reunião, Entrevista Técnica, LeetCode, System Design) e **personalizados**
+  (Padrão, Reunião, Entrevista Técnica, LeetCode, Entrevista com RH) e **personalizados**
   (nome, prompt de sistema, prompt de sugestão e contexto fixo). O contexto são os
   **últimos momentos** da conversa (≈3 min, até 40 falas, teto de 6 k caracteres),
   com a última sugestão para evitar repetição. O agente **sempre tenta** produzir
@@ -647,7 +647,7 @@ uma nota de revisão.
   `terminal`) e **cor** (tokens do design system: `cyan`, `violet`, `emerald`,
   `coral`, `slate`). Os embutidos são fixos (Padrão `sparkle/slate`, Reunião
   `users/cyan`, Entrevista Técnica `braces/violet`, LeetCode `code/emerald`,
-  System Design `layers/coral`);
+  Entrevista com RH `briefcase/coral`);
   os personalizados escolhem nas Configurações (default `sparkle/slate`). A identidade
   é **snapshotada** na sugestão, para o histórico mostrar quem respondeu. Ícones são
   SVG do projeto (BR-008); a cor é o **nome do token** (não hex), então o tema
@@ -710,7 +710,7 @@ uma nota de revisão.
 - **Decisão:** o bloco de código gerado pelos agentes é **código puro** — sem
   comentário de linha (`//`, `#`, `/* */`) dentro do bloco. A explicação de
   cada passo fica no **Markdown ao redor** do bloco. Vale para todos os
-  agentes (LeetCode, Entrevista Técnica, System Design e o Padrão).
+  agentes (LeetCode, Entrevista Técnica e o Padrão).
 - **Motivo:** pedido do usuário ("não gerar comentários nas linhas dos códigos
   gerados; a explicação deve ser feita no markdown fora do código").
 - **Consequência:** os contratos técnicos (LeetCode/Entrevista Técnica) deixam
@@ -1638,7 +1638,7 @@ uma nota de revisão.
   editado nem apagado), **todos os outros agentes vêm "Padrão de fábrica"** e
   passam a ser **do usuário**: editáveis e **excluídos de vez** (a exclusão é
   definitiva — o agente não volta). Na prática, os 4 agentes de fábrica
-  (Reunião, Entrevista Técnica, LeetCode, System Design) são **materializados
+  (Reunião, Entrevista Técnica, LeetCode, Entrevista com RH) são **materializados
   uma única vez** na lista do usuário (`settings.custom_assistant_modes`), que
   passa a ser a fonte da verdade do painel; o agente Padrão continua no core e
   é resolvido pelo id `default`.
@@ -1809,4 +1809,33 @@ uma nota de revisão.
 - **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13,
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.2,
   [`assistants/tasks/13-task.md`](assistants/tasks/13-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-083 — Entrevista Técnica funde System Design; novo Entrevista com RH
+
+- **Decisão:** o catálogo de fábrica passa a ser **Reunião**, **Entrevista
+  Técnica** (código/LeetCode + system design), **LeetCode** e **Entrevista com
+  RH**. O agente `system_design` **sai**; `technical_interview` vira o agente
+  técnico completo, com o prompt de system design incorporado (clarify → size →
+  design, QPS, ASCII, componentes genéricos). Entra `hr_interview`, focado em
+  (1) listar perguntas ainda não feitas/respondidas que o RH valoriza (vaga,
+  planos, benefícios, time, cultura, crescimento, remuneração), (2) sugerir
+  aprofundamento quando ME foi vago, sempre ancorado em algo que o RH disse ou
+  no cargo, e (3) sugerir STAR quando a pergunta for comportamental.
+- **Motivo:** pedido do usuário (2026-10-22) — a divisão entre Entrevista
+  Técnica e System Design estava granular demais; system design é parte da
+  entrevista técnica. RH é uma entrevista distinta, com outro objetivo.
+- **Consequência:** nova **revisão de catálogo** (`assistant_catalog_revision`,
+  BR-083) migra instalações já semeadas **uma vez**: remove `system_design`,
+  sobrescreve `technical_interview` com o prompt fundido (preservando
+  `context` e `source_id`; o contexto/fonte do system design é carregado quando
+  o técnico não tinha), adiciona `hr_interview` e troca a seleção ativa de
+  `system_design` para `technical_interview`. Depois da revisão, edições e
+  exclusões do usuário são respeitadas (um RH excluído não volta). O
+  "Restaurar Padrões" usa o catálogo novo. A semântica do prompt de RH entra no
+  contrato de escrita (`HR_SYSTEM_PROMPT`) e no prompt de sugestão
+  (`HR_SUGGESTION_PROMPT`).
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.2/§7.3,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.4,
+  [`assistants/tasks/14-task.md`](assistants/tasks/14-task.md).
 - **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)

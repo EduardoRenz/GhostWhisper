@@ -40,7 +40,7 @@ pub const BUILTIN_MODE_IDS: [&str; 5] = [
     "meeting",
     "technical_interview",
     "leetcode",
-    "system_design",
+    "hr_interview",
 ];
 
 /// Catálogo de **ícones** do agente (identidade visual — BR-037).
@@ -264,12 +264,7 @@ mod tests {
         assert!(validate_mode(&protected).is_err());
 
         // Os ids de fábrica são agentes do usuário (BR-075): válidos.
-        for id in [
-            "meeting",
-            "technical_interview",
-            "leetcode",
-            "system_design",
-        ] {
+        for id in ["meeting", "technical_interview", "leetcode", "hr_interview"] {
             assert!(
                 validate_mode(&custom(id, "De fábrica")).is_ok(),
                 "id de fábrica recusado: {id}"

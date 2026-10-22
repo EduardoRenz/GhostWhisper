@@ -114,10 +114,7 @@ pub fn session_end_context(state: State<'_, AppState>) -> Result<Option<SessionE
 
 /// Fecha o modal e limpa o contexto.
 #[tauri::command(async)]
-pub fn session_end_close(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<()> {
+pub fn session_end_close(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<()> {
     state.pending_session_end.clear()?;
     if let Some(window) = app.get_webview_window("session-end") {
         let _ = window.hide();

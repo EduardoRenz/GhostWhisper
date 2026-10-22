@@ -37,7 +37,7 @@ export const BUILTIN_MODE_IDS = [
   "meeting",
   "technical_interview",
   "leetcode",
-  "system_design",
+  "hr_interview",
 ] as const;
 
 /** Catálogo de ícones do agente (espelha `domain::assistant`). */

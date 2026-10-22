@@ -157,7 +157,10 @@ impl FfmpegScreenRecorder {
 
         if self.audio_mode == AudioMode::Parec {
             if spec.microphone {
-                if let Some(path) = inner.audio.as_ref().and_then(|audio| audio.microphone.clone())
+                if let Some(path) = inner
+                    .audio
+                    .as_ref()
+                    .and_then(|audio| audio.microphone.clone())
                 {
                     inner.audio_children.push(self.spawn_parec(None, &path)?);
                 }
@@ -248,7 +251,9 @@ impl FfmpegScreenRecorder {
             if inner.spec.as_ref().map(|spec| spec.kind) == Some(RecordingKind::Video) {
                 if let Some(dir) = &inner.segments_dir {
                     let index = inner.segment_index.saturating_sub(1);
-                    inner.segments.push(segment_path(dir, index, RecordingKind::Video));
+                    inner
+                        .segments
+                        .push(segment_path(dir, index, RecordingKind::Video));
                 }
             }
         }
@@ -259,22 +264,20 @@ impl FfmpegScreenRecorder {
     fn current_audio(&self, inner: &Inner) -> Option<FallbackAudio> {
         let audio = inner.audio.as_ref()?;
         let non_empty = |path: &Option<PathBuf>| {
-            path.as_ref().filter(|path| {
-                std::fs::metadata(path)
-                    .map(|meta| meta.len() > 0)
-                    .unwrap_or(false)
-            })
-            .cloned()
+            path.as_ref()
+                .filter(|path| {
+                    std::fs::metadata(path)
+                        .map(|meta| meta.len() > 0)
+                        .unwrap_or(false)
+                })
+                .cloned()
         };
         let microphone = non_empty(&audio.microphone);
         let system = non_empty(&audio.system);
         if microphone.is_none() && system.is_none() {
             return None;
         }
-        Some(FallbackAudio {
-            microphone,
-            system,
-        })
+        Some(FallbackAudio { microphone, system })
     }
 }
 

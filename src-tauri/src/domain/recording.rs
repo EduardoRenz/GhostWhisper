@@ -293,7 +293,6 @@ impl RecordingState {
             size_bytes: 0,
         }
     }
-
 }
 
 /// Artefato produzido pela finalização.

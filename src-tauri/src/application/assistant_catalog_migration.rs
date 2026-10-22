@@ -1,7 +1,7 @@
 //! Semeadura **única** dos agentes de fábrica (BR-075).
 //!
 //! O agente **Padrão** é protegido (BR-074) e vive no core. Os demais agentes
-//! de fábrica (Reunião, Entrevista Técnica, LeetCode, System Design) são
+//! de fábrica (Reunião, Entrevista Técnica, LeetCode e Entrevista com RH) são
 //! **materializados** na lista do usuário uma única vez: a partir daí são
 //! agentes dele — podem ser editados e excluídos de vez.
 //!
@@ -10,10 +10,12 @@
 //!
 //! Também remove, dos agentes de fábrica já semeados, as linhas que passaram a
 //! ser **gerais** no `TRANSCRIPT_CONTRACT` (BR-082) — preservando o resto do
-//! texto e as edições do usuário.
+//! texto e as edições do usuário — e aplica as **revisões do catálogo**
+//! (BR-083): fusão de agentes, remoção e novos agentes, uma vez por revisão.
 
 use std::sync::Arc;
 
+use crate::application::assistant_catalog::ASSISTANT_CATALOG_REVISION;
 use crate::application::prompts::assistant::factory_modes;
 use crate::domain::settings::Settings;
 use crate::error::Result;
@@ -94,6 +96,85 @@ fn normalize_legacy_prompts(settings: &mut Settings) -> bool {
     changed
 }
 
+/// Aplica a revisão do catálogo (BR-083) **uma vez**.
+///
+/// Revisão 1: `system_design` é absorvido por `technical_interview` e
+/// `hr_interview` entra. Preserva `context` e `source_id` do agente técnico
+/// (e o contexto/fonte do system design, quando o técnico não tinha).
+fn upgrade_catalog(settings: &mut Settings) -> bool {
+    if settings.assistant_catalog_revision >= ASSISTANT_CATALOG_REVISION {
+        return false;
+    }
+
+    let factory = factory_modes();
+    let mut technical = factory
+        .iter()
+        .find(|mode| mode.id == "technical_interview")
+        .cloned()
+        .expect("technical_interview no catálogo de fábrica");
+    let hr = factory
+        .iter()
+        .find(|mode| mode.id == "hr_interview")
+        .cloned()
+        .expect("hr_interview no catálogo de fábrica");
+
+    let old_technical = settings
+        .custom_assistant_modes
+        .iter()
+        .find(|mode| mode.id == "technical_interview")
+        .cloned();
+    let old_system_design = settings
+        .custom_assistant_modes
+        .iter()
+        .find(|mode| mode.id == "system_design")
+        .cloned();
+
+    if let Some(old) = &old_technical {
+        technical.context = old.context.clone();
+        technical.source_id = old.source_id.clone();
+    }
+    if let Some(old) = &old_system_design {
+        let extra = old.context.trim();
+        if !extra.is_empty() && !technical.context.contains(extra) {
+            if technical.context.trim().is_empty() {
+                technical.context = extra.to_string();
+            } else {
+                technical.context = format!("{}\n\n{extra}", technical.context.trim());
+            }
+        }
+        if technical.source_id.is_none() {
+            technical.source_id = old.source_id.clone();
+        }
+    }
+
+    let mut modes = Vec::with_capacity(settings.custom_assistant_modes.len() + 1);
+    let mut replaced = false;
+    for mode in settings.custom_assistant_modes.drain(..) {
+        match mode.id.as_str() {
+            "technical_interview" => {
+                modes.push(technical.clone());
+                replaced = true;
+            }
+            // O System Design foi absorvido pela Entrevista Técnica.
+            "system_design" => {}
+            _ => modes.push(mode),
+        }
+    }
+    if !replaced {
+        modes.push(technical);
+    }
+    if !modes.iter().any(|mode| mode.id == "hr_interview") {
+        modes.push(hr);
+    }
+    settings.custom_assistant_modes = modes;
+
+    if settings.assistant_mode_id == "system_design" {
+        settings.assistant_mode_id = "technical_interview".to_string();
+    }
+    settings.assistant_catalog_revision = ASSISTANT_CATALOG_REVISION;
+    true
+}
+
 /// Resultado da semeadura (para o log do boot).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SeedOutcome {
@@ -101,6 +182,8 @@ pub struct SeedOutcome {
     pub added: Vec<String>,
     /// A lista já está semeada.
     pub seeded: bool,
+    /// Uma revisão do catálogo foi aplicada nesta execução (BR-083).
+    pub upgraded: bool,
 }
 
 /// Materializa os agentes de fábrica na lista do usuário (uma vez só).
@@ -119,12 +202,14 @@ impl AssistantCatalogMigration {
         let mut settings = self.settings.load()?;
         let normalized = normalize_legacy_prompts(&mut settings);
         if settings.assistant_modes_seeded {
-            if normalized {
+            let upgraded = upgrade_catalog(&mut settings);
+            if normalized || upgraded {
                 self.settings.save(&settings)?;
             }
             return Ok(SeedOutcome {
                 added: Vec::new(),
                 seeded: true,
+                upgraded,
             });
         }
 
@@ -140,10 +225,14 @@ impl AssistantCatalogMigration {
             }
         }
         settings.assistant_modes_seeded = true;
+        settings.assistant_catalog_revision = settings
+            .assistant_catalog_revision
+            .max(ASSISTANT_CATALOG_REVISION);
         self.settings.save(&settings)?;
         Ok(SeedOutcome {
             added,
             seeded: true,
+            upgraded: false,
         })
     }
 }
@@ -181,18 +270,18 @@ mod tests {
 
         let outcome = migration.seed().expect("semeia");
         assert!(outcome.seeded);
+        assert!(!outcome.upgraded);
         assert_eq!(
             outcome.added,
-            vec![
-                "meeting",
-                "technical_interview",
-                "leetcode",
-                "system_design"
-            ]
+            vec!["meeting", "technical_interview", "leetcode", "hr_interview"]
         );
 
         let settings = store.load().expect("lê");
         assert!(settings.assistant_modes_seeded);
+        assert_eq!(
+            settings.assistant_catalog_revision,
+            ASSISTANT_CATALOG_REVISION
+        );
         assert_eq!(settings.custom_assistant_modes.len(), 4);
     }
 
@@ -285,6 +374,7 @@ mod tests {
         let settings = Settings {
             custom_assistant_modes: vec![meeting, custom],
             assistant_modes_seeded: true,
+            assistant_catalog_revision: ASSISTANT_CATALOG_REVISION,
             ..Settings::default()
         };
         let store = store_with(settings);
@@ -334,6 +424,7 @@ mod tests {
         let settings = Settings {
             custom_assistant_modes: vec![interview, leetcode, meeting],
             assistant_modes_seeded: true,
+            assistant_catalog_revision: ASSISTANT_CATALOG_REVISION,
             ..Settings::default()
         };
         let store = store_with(settings);
@@ -379,6 +470,7 @@ mod tests {
         let settings = Settings {
             custom_assistant_modes: vec![meeting],
             assistant_modes_seeded: true,
+            assistant_catalog_revision: ASSISTANT_CATALOG_REVISION,
             ..Settings::default()
         };
         let store = store_with(settings);
@@ -388,5 +480,123 @@ mod tests {
         let after_first = store.load().expect("lê");
         migration.seed().expect("segunda");
         assert_eq!(after_first, store.load().expect("lê"));
+    }
+
+    #[test]
+    fn upgrades_the_legacy_catalog_once() {
+        let mut technical = agent("technical_interview", "Meu técnico");
+        technical.system_prompt = "Prompt antigo do técnico.".into();
+        technical.suggestion_prompt = "Sugestão antiga do técnico.".into();
+        technical.context = "Contexto do técnico.".into();
+        technical.source_id = Some("source-a".into());
+
+        let mut system = agent("system_design", "System Design");
+        system.context = "Contexto do system design.".into();
+        system.source_id = Some("source-b".into());
+
+        let settings = Settings {
+            custom_assistant_modes: vec![
+                agent("meeting", "Reunião"),
+                technical,
+                agent("leetcode", "LeetCode"),
+                system,
+                agent("custom-vendas", "Vendas"),
+            ],
+            assistant_modes_seeded: true,
+            assistant_mode_id: "system_design".into(),
+            assistant_catalog_revision: 0,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+        let migration = AssistantCatalogMigration::new(store.clone());
+
+        let outcome = migration.seed().expect("atualiza");
+        assert!(outcome.upgraded);
+
+        let saved = store.load().expect("lê");
+        assert_eq!(saved.assistant_catalog_revision, ASSISTANT_CATALOG_REVISION);
+        assert_eq!(saved.assistant_mode_id, "technical_interview");
+
+        let ids: Vec<&str> = saved
+            .custom_assistant_modes
+            .iter()
+            .map(|mode| mode.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "meeting",
+                "technical_interview",
+                "leetcode",
+                "custom-vendas",
+                "hr_interview"
+            ]
+        );
+
+        let technical = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "technical_interview")
+            .expect("técnico");
+        assert_eq!(technical.name, "Entrevista Técnica");
+        assert!(technical.suggestion_prompt.contains("system design"));
+        assert!(technical.suggestion_prompt.contains("ASCII"));
+        assert!(technical.context.contains("Contexto do técnico."));
+        assert!(technical.context.contains("Contexto do system design."));
+        assert_eq!(technical.source_id.as_deref(), Some("source-a"));
+
+        let hr = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "hr_interview")
+            .expect("RH");
+        assert_eq!(hr.name, "Entrevista com RH");
+        assert!(hr.suggestion_prompt.contains("Open questions"));
+        assert!(hr.suggestion_prompt.contains("STAR answer"));
+
+        let custom = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "custom-vendas")
+            .expect("custom");
+        assert_eq!(custom.name, "Vendas");
+        assert_eq!(custom.suggestion_prompt, "Sugira.");
+    }
+
+    #[test]
+    fn catalog_upgrade_respects_a_later_deletion() {
+        let settings = Settings {
+            custom_assistant_modes: vec![
+                agent("technical_interview", "Técnico"),
+                agent("system_design", "System Design"),
+            ],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 0,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+        let migration = AssistantCatalogMigration::new(store.clone());
+
+        migration.seed().expect("atualiza");
+        let after_first = store.load().expect("lê");
+        assert!(after_first
+            .custom_assistant_modes
+            .iter()
+            .any(|mode| mode.id == "hr_interview"));
+
+        // O usuário exclui o RH depois da revisão; um novo boot não o ressuscita.
+        let mut settings = after_first;
+        settings
+            .custom_assistant_modes
+            .retain(|mode| mode.id != "hr_interview");
+        store.save(&settings).expect("salva");
+
+        let outcome = migration.seed().expect("segunda");
+        assert!(!outcome.upgraded);
+        let saved = store.load().expect("lê");
+        assert!(!saved
+            .custom_assistant_modes
+            .iter()
+            .any(|mode| mode.id == "hr_interview"));
     }
 }

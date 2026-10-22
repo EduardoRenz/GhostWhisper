@@ -37,12 +37,7 @@ impl FfmpegRecordingFinalizer {
     }
 
     /// Roda um comando acompanhando `out_time_us`.
-    fn run(
-        &self,
-        args: &[String],
-        total_ms: i64,
-        progress: &dyn Fn(u8),
-    ) -> Result<()> {
+    fn run(&self, args: &[String], total_ms: i64, progress: &dyn Fn(u8)) -> Result<()> {
         let mut child = Command::new(&self.ffmpeg)
             .args(args)
             .stdin(Stdio::null())
@@ -131,9 +126,7 @@ impl RecordingFinalizer for FfmpegRecordingFinalizer {
                 progress,
             )?,
             (RecordingKind::Video, Some(audio)) => {
-                let normalize = request
-                    .normalize
-                    .then(|| normalize_size(request));
+                let normalize = request.normalize.then(|| normalize_size(request));
                 self.run(
                     &fallback_mux_args(&concat, audio, &request.output, normalize),
                     request.total_ms,

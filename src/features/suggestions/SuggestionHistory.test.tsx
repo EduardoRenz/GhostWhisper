@@ -5,10 +5,10 @@ import { SuggestionHistory } from "./SuggestionHistory";
 
 const item = (overrides: Partial<Suggestion> = {}): Suggestion => ({
   session_id: "s1",
-  mode_id: "system_design",
-  mode_name: "System Design",
-  mode_icon: "layers",
-  mode_color: "coral",
+  mode_id: "technical_interview",
+  mode_name: "Entrevista Técnica",
+  mode_icon: "braces",
+  mode_color: "violet",
   generation_id: "g1",
   trigger: "auto",
   source: null,
@@ -74,8 +74,8 @@ describe("SuggestionHistory", () => {
       "Planejar um System Design de Fintech",
     );
     const badge = container.querySelector(".agent-badge");
-    expect(badge?.textContent).toContain("System Design");
-    expect(badge?.getAttribute("style")).toContain("--oh-agent-coral");
+    expect(badge?.textContent).toContain("Entrevista Técnica");
+    expect(badge?.getAttribute("style")).toContain("--oh-agent-violet");
   });
 
   it("usa o título gerado pelo agente (Subject) quando existe", () => {

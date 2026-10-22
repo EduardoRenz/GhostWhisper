@@ -12,12 +12,7 @@ pub trait RecordingsRepository: Send + Sync {
     fn upsert(&self, recording: &Recording) -> Result<()>;
 
     /// Atualiza só o estado (e o erro, quando houver).
-    fn update_status(
-        &self,
-        id: &str,
-        status: RecordingStatus,
-        error: Option<&str>,
-    ) -> Result<()>;
+    fn update_status(&self, id: &str, status: RecordingStatus, error: Option<&str>) -> Result<()>;
 
     /// Grava o resultado da finalização.
     fn set_artifact(

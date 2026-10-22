@@ -8,11 +8,19 @@
 use crate::application::prompts::assistant::factory_modes;
 use crate::domain::settings::Settings;
 
+/// Revisão atual do catálogo de agentes de fábrica (BR-083).
+///
+/// Suba este número quando uma mudança de produto alterar o catálogo
+/// materializado (fusão, remoção ou novo agente). O boot aplica a mudança
+/// **uma vez** nas settings que ainda estão numa revisão anterior.
+pub const ASSISTANT_CATALOG_REVISION: u32 = 1;
+
 /// Defaults do app com os agentes de fábrica materializados.
 pub fn default_settings() -> Settings {
     Settings {
         custom_assistant_modes: factory_modes(),
         assistant_modes_seeded: true,
+        assistant_catalog_revision: ASSISTANT_CATALOG_REVISION,
         ..Settings::default()
     }
 }
@@ -25,6 +33,10 @@ mod tests {
     fn the_defaults_carry_the_factory_agents() {
         let settings = default_settings();
         assert!(settings.assistant_modes_seeded);
+        assert_eq!(
+            settings.assistant_catalog_revision,
+            ASSISTANT_CATALOG_REVISION
+        );
         let ids: Vec<&str> = settings
             .custom_assistant_modes
             .iter()
@@ -32,12 +44,7 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            vec![
-                "meeting",
-                "technical_interview",
-                "leetcode",
-                "system_design"
-            ]
+            vec!["meeting", "technical_interview", "leetcode", "hr_interview"]
         );
         for mode in &settings.custom_assistant_modes {
             assert!(!mode.summary_prompt.is_empty());
@@ -52,5 +59,6 @@ mod tests {
         let settings = Settings::default();
         assert!(settings.custom_assistant_modes.is_empty());
         assert!(!settings.assistant_modes_seeded);
+        assert_eq!(settings.assistant_catalog_revision, 0);
     }
 }

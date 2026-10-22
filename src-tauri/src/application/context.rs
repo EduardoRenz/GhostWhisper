@@ -213,7 +213,12 @@ pub fn context_since(
     max_chars: usize,
 ) -> Option<RecentContext> {
     let window_start = now_rel_ms.saturating_sub(window_ms.max(0));
-    recent_context_from(segments, since_ms.max(window_start), max_segments, max_chars)
+    recent_context_from(
+        segments,
+        since_ms.max(window_start),
+        max_segments,
+        max_chars,
+    )
 }
 
 /// Falas a partir de `cutoff_ms` (inclusive), com os tetos de sempre.
@@ -391,8 +396,7 @@ mod tests {
             seg("2", 20_000, Speaker::They, "recente", true),
         ];
         // O corte pedido é 0 ms, mas a janela de 10 s manda só o recente.
-        let context =
-            context_since(&segments, 0, 21_000, 10_000, 40, 1_000).expect("contexto");
+        let context = context_since(&segments, 0, 21_000, 10_000, 40, 1_000).expect("contexto");
         assert!(!context.text.contains("muito antigo"));
         assert!(context.text.contains("recente"));
     }

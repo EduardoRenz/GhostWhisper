@@ -141,6 +141,12 @@ export interface Settings {
    * O default do core nasce `false`; o boot semeia a lista e liga a marca.
    */
   assistant_modes_seeded: boolean;
+  /**
+   * Revisão do catálogo de agentes de fábrica (BR-083).
+   *
+   * `0` = settings anteriores; o boot aplica as mudanças uma vez.
+   */
+  assistant_catalog_revision: number;
   /** Atualização automática do resumo enquanto a janela está aberta. */
   summary_auto_refresh: boolean;
   /** Intervalo do resumo automático (segundos). */
@@ -409,6 +415,7 @@ export const defaultSettings = (): Settings => ({
   assistant_mode_migrated: false,
   custom_assistant_modes: [],
   assistant_modes_seeded: false,
+  assistant_catalog_revision: 0,
   summary_auto_refresh: true,
   summary_interval_secs: 30,
   suggestion_auto_refresh: true,

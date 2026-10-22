@@ -127,12 +127,7 @@ fn rebuild_recordings_without_unique(conn: &Connection) -> Result<()> {
 }
 
 /// Adiciona a coluna quando ela ainda não existe (idempotente).
-fn add_column_if_missing(
-    conn: &Connection,
-    table: &str,
-    column: &str,
-    kind: &str,
-) -> Result<()> {
+fn add_column_if_missing(conn: &Connection, table: &str, column: &str, kind: &str) -> Result<()> {
     if has_column(conn, table, column)? {
         return Ok(());
     }

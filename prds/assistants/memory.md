@@ -181,8 +181,9 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
 - `pnpm tauri:build` (Vulkan) concluído a cada mudança de core/UI (pill,
   BR-079 e BR-080): `GhostWhisper_0.1.0_amd64.deb` (17 MiB) e `.AppImage`
   (93 MiB) em `src-tauri/target/release/bundle/`. O bundle final embute
-  `index-C6DurCgr.js` / `index-BBaXZUJu.css` e o loader do Vulkan
-  (rebuild após o contrato comum de transcrição, BR-082).
+  `index-DBiEL83a.js` / `index-BBaXZUJu.css` e o loader do Vulkan
+  (rebuild após a fusão Entrevista Técnica + System Design e o novo RH,
+  BR-083).
 - `cargo fmt --check` **não** está limpo no repositório por arquivos
   anteriores à entrega (ex.: `ask_service.rs`, `recording_service.rs`,
   `connection.rs`); os arquivos alterados nesta PRD foram formatados.
@@ -321,3 +322,24 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
   não são tocados.
 - **Testes:** 634 no `cargo test --lib`, incluindo agente personalizado,
   fast-first, a ausência de repetição nos prompts de fábrica e a normalização.
+
+## 2026-10-22 — Entrevista Técnica funde System Design; novo Entrevista com RH (BR-083)
+
+- **IDs:** BR-083 · **Refs:** [`prd.md`](prd.md) §7.2/§7.3,
+  [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §3.4,
+  [`tasks/14-task.md`](tasks/14-task.md)
+
+- **Pedido:** o catálogo estava granular demais; fundir Entrevista Técnica com
+  System Design e criar **Entrevista com RH** com três focos: perguntas ainda
+  não feitas/respondidas (vaga, planos, benefícios), aprofundamento quando ME
+  foi vago (ancorado no que o RH disse/cargo) e STAR quando cabível.
+- **Decisão:** `technical_interview` absorve o system design (clarify → size →
+  design, QPS, ASCII, componentes genéricos); `system_design` sai; entra
+  `hr_interview` (`HR_SYSTEM_PROMPT` + `HR_SUGGESTION_PROMPT`).
+- **Migração:** `assistant_catalog_revision` (0 → 1) roda uma vez em instalações
+  já semeadas: remove `system_design`, sobrescreve o técnico com o prompt
+  fundido (preservando `context`/`source_id`; carrega contexto/fonte do system
+  design quando o técnico não tinha), adiciona o RH e troca a seleção ativa de
+  `system_design` para `technical_interview`. Depois da revisão, edições e
+  exclusões são respeitadas; "Restaurar Padrões" usa o catálogo novo.
+- **Testes:** 638 no `cargo test --lib`; 422 no `pnpm test`; `tsc` limpo.

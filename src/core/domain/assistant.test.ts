@@ -47,6 +47,7 @@ describe("isBuiltinMode", () => {
     expect(isBuiltinMode("default")).toBe(true);
     expect(isBuiltinMode("meeting")).toBe(true);
     expect(isBuiltinMode("leetcode")).toBe(true);
+    expect(isBuiltinMode("hr_interview")).toBe(true);
     expect(isBuiltinMode("custom-vendas")).toBe(false);
   });
 });

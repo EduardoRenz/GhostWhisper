@@ -49,7 +49,9 @@ fn monitors_from(connection: &RustConnection, screen_num: usize) -> Vec<Monitor>
         .ok()
         .and_then(|cookie| cookie.reply().ok());
     let supports_1_5 = version
-        .map(|reply| reply.major_version > 1 || (reply.major_version == 1 && reply.minor_version >= 5))
+        .map(|reply| {
+            reply.major_version > 1 || (reply.major_version == 1 && reply.minor_version >= 5)
+        })
         .unwrap_or(false);
 
     if supports_1_5 {
@@ -141,22 +143,28 @@ mod tests {
 
     #[test]
     fn monitor_at_picks_the_monitor_under_the_point() {
-        let monitors = vec![monitor("DP-1", 0, 1920, true), monitor("HDMI-1", 1920, 1920, false)];
+        let monitors = vec![
+            monitor("DP-1", 0, 1920, true),
+            monitor("HDMI-1", 1920, 1920, false),
+        ];
         assert_eq!(monitor_at(&monitors, 100, 100).expect("1").name, "DP-1");
-        assert_eq!(
-            monitor_at(&monitors, 2000, 100).expect("2").name,
-            "HDMI-1"
-        );
+        assert_eq!(monitor_at(&monitors, 2000, 100).expect("2").name, "HDMI-1");
     }
 
     #[test]
     fn monitor_at_falls_back_to_primary_then_first() {
         let monitors = vec![monitor("A", 0, 1920, false), monitor("B", 1920, 1920, true)];
         // Fora de todos: usa o primário.
-        assert_eq!(monitor_at(&monitors, 9000, 9000).expect("primário").name, "B");
+        assert_eq!(
+            monitor_at(&monitors, 9000, 9000).expect("primário").name,
+            "B"
+        );
 
         let no_primary = vec![monitor("A", 0, 1920, false)];
-        assert_eq!(monitor_at(&no_primary, 9000, 9000).expect("primeiro").name, "A");
+        assert_eq!(
+            monitor_at(&no_primary, 9000, 9000).expect("primeiro").name,
+            "A"
+        );
         assert!(monitor_at(&[], 0, 0).is_none());
     }
 }
