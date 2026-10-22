@@ -164,7 +164,7 @@ export function AgentCard({
           text={suggestion}
           empty="Sem prompt de sugestão."
           inherited={suggestionInherited}
-          hint="Usado hoje: é a base do prompt de sistema da sugestão ao vivo."
+          hint="Usado hoje: é a base do prompt de sistema da sugestão ao vivo; o contrato comum de transcrição (ME/THEY, ASR) é aplicado por cima."
         />
         <PromptPanel
           icon={<SummaryIcon size={13} />}

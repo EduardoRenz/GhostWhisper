@@ -117,6 +117,9 @@ Mudanças em `validate_mode`:
 ### 3.2 `application/prompts/assistant.rs`
 
 ```rust
+/// Regras gerais de leitura da transcrição (BR-082), injetadas em todo agente.
+pub const TRANSCRIPT_CONTRACT: &str = "…";
+
 /// O agente **protegido** (Padrão) — sempre existe, nunca é editado.
 pub fn default_mode() -> AssistantMode { /* id "default" */ }
 
@@ -142,6 +145,14 @@ pub fn resolve_mode(id: &str, custom: &[AssistantMode]) -> Option<AssistantMode>
 Os **quatro agentes de fábrica** e o **agente protegido** nascem com
 `summary_prompt` = o contrato de resumo já existente (`SUMMARY_SYSTEM_PROMPT`),
 para que o card mostre **dado real** e não texto de exemplo.
+
+**Contrato comum de leitura (BR-082):** o `TRANSCRIPT_CONTRACT` é o preâmbulo de
+`suggestion_system_prompt` (todos os agentes, inclusive personalizados) e de
+`fast_first_system_prompt`. O contrato do agente fica só com o que é específico
+da cena; as linhas de ME/THEY/ASR saíram dos prompts de fábrica. O `AskService`
+explica ME/THEY no próprio `ASK_RULES`, sem herdar a prioridade do THEY (lá a
+pergunta do usuário é a prioridade); o `SUMMARY_SYSTEM_PROMPT` mantém o contrato
+profundo e ganha a definição de ME/THEY.
 
 **Fallback de prompt vazio (BR-079):** `effective_suggestion_prompt`,
 `effective_system_prompt` e `effective_summary_prompt` devolvem o valor do

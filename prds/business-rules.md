@@ -1783,3 +1783,30 @@ uma nota de revisão.
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §12,
   [`assistants/tasks/12-task.md`](assistants/tasks/12-task.md).
 - **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-082 — O contrato de leitura da transcrição é comum a todos os agentes
+
+- **Decisão:** as regras **gerais e reutilizáveis** do contexto do app — o texto
+  é uma transcrição de fala (microfone = ME, áudio do sistema = THEY), com erros
+  de reconhecimento, fragmentos, sobreposição e atribuição imperfeita — vivem
+  num único `TRANSCRIPT_CONTRACT`. Ele é injetado no **prompt de sistema de todo
+  agente** (protegido, de fábrica ou personalizado) e no **fast-first**, antes
+  do contrato específico do agente. O campo editável do agente contém apenas o
+  que é da cena; não repete o contrato.
+- **Motivo:** pedido do usuário (2026-10-22) — a mesma explicação de
+  transcrição/ME-THEY/ASR estava repetida nos prompts de fábrica, e agentes
+  personalizados e o fast-first ficavam sem ela. Regra geral do app não pode
+  depender de o usuário copiá-la em cada agente.
+- **Consequência:** `application::prompts::assistant::TRANSCRIPT_CONTRACT`;
+  `suggestion_system_prompt` e `fast_first_system_prompt` o incluem sempre; os
+  prompts de fábrica perdem as linhas duplicadas de ME/THEY; o `AskService`
+  explica ME/THEY no próprio bloco de regras (sem herdar a prioridade do THEY,
+  que é do contexto ao vivo); o contrato de resumo mantém a normalização
+  profunda e ganha a mesma definição de ME/THEY. O texto do contrato **não**
+  aparece no campo editável (é aplicado em runtime). Uma normalização de boot
+  remove as linhas antigas dos agentes de fábrica **já semeados**, preservando
+  o resto do texto e as edições do usuário.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.2,
+  [`assistants/tasks/13-task.md`](assistants/tasks/13-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)

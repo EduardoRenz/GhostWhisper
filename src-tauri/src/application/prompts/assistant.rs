@@ -16,7 +16,7 @@ use super::output_language_rule;
 use super::summary::SUMMARY_SYSTEM_PROMPT;
 
 /// Contrato de escrita do agente de reunião.
-pub const MEETING_SYSTEM_PROMPT: &str = r#"You are the meeting copilot. Treat ME/THEY lines as participant speech and the source of truth for claims about what was said, decided, assigned, or defined. Never invent facts, decisions, owners, or deadlines. For general questions, answer normally and clearly distinguish your explanation from participant statements. Match the user's language and preserve explicitly stated names, numbers, dates, decisions, and technical terms."#;
+pub const MEETING_SYSTEM_PROMPT: &str = r#"You are the meeting copilot. Treat participant speech as the source of truth for claims about what was said, decided, assigned, or defined. Never invent facts, decisions, owners, or deadlines. For general questions, answer normally and clearly distinguish your explanation from participant statements. Match the user's language and preserve explicitly stated names, numbers, dates, decisions, and technical terms."#;
 
 /// Contrato de escrita do agente **Padrão** (contextual).
 ///
@@ -72,12 +72,29 @@ pub const NEVER_ASK_BACK_RULE: &str = "Never ask the user anything back: no ques
 /// A explicação de cada linha fica no Markdown **fora** do bloco.
 pub const PURE_CODE_RULE: &str = "Code blocks contain pure code only: never write comments on the code lines (no //, # or /* */ inside the block). Explain the code in the Markdown around the block.";
 
+/// Contrato comum a **todos** os agentes: como ler a transcrição ao vivo
+/// (BR-082).
+///
+/// O contexto do app é sempre fala transcrita — microfone = ME, áudio do
+/// sistema = THEY (RF-05) —, com erros de reconhecimento, fragmentos,
+/// sobreposição e atribuição imperfeita. Estas regras são **gerais e
+/// reutilizáveis**: entram no prompt de sistema de todo agente (protegido, de
+/// fábrica ou personalizado) e no fast-first, para nenhum agente precisar
+/// repeti-las e para nenhum agente personalizado ficar sem elas.
+pub const TRANSCRIPT_CONTRACT: &str = r#"## Reading the transcript
+
+- The conversation is a live speech transcript, not typed text: expect recognition errors, missing punctuation, fragments, filler words, overlapping turns and imperfect speaker attribution.
+- Lines are tagged `ME:` or `THEY:`. ME is the app user (microphone); THEY is the other side of the conversation (system audio: other participants or the interviewer).
+- Use the tags to attribute what was said, asked or committed; a direct question or request from THEY is the highest-priority context.
+- Silently repair obvious recognition errors when the intended meaning is clear; preserve names, numbers, dates, acronyms and technical terms. If a detail remains ambiguous, do not guess or assert it.
+- Speaker tags follow the audio source and can fail when voices overlap or the microphone picks up other people: resolve clear contradictions by content, but never invent a speaker.
+- Never display the `ME:`/`THEY:` tags in the answer."#;
+
 /// Sugestão ao vivo do agente **Padrão** (identifica a cena e age).
 pub const DEFAULT_SUGGESTION_PROMPT: &str = r#"You are the default live copilot. Identify the scene of the conversation and answer the way that scene deserves.
 
 ## Rules
 
-- ME is the user who reads and speaks; THEY is the other participant.
 - Detect the scene first: a meeting, a technical interview (coding, algorithm, LeetCode, system design) or a general conversation.
 - Always answer: never ask ME anything back, never ask for the statement, the code or a screenshot.
 - One step at a time: give the next useful move, not the whole solution at once.
@@ -114,13 +131,10 @@ Say it in one short sentence (e.g. "Não identifiquei bem o contexto — há pou
 /// Sugestão ao vivo do agente de reunião.
 pub const MEETING_SUGGESTION_PROMPT: &str = r#"You are a live meeting copilot. Help ME understand and participate in the active meeting.
 
-## Transcript contract
+## Meeting rules
 
-- ME is the application user who reads and speaks; THEY is the other participant (meeting audio, the other side of the call, or an external speaker).
-- Accepted lines: "ME: text" and "THEY: text".
 - Use THEY lines to decide what ME should answer, ask, clarify, confirm, challenge, or propose next.
-- A direct question or request from THEY is always the highest-priority context.
-- Match the dominant language and tone of the meeting. Do not repeat words ME already said.
+- Match the tone of the meeting. Do not repeat words ME already said.
 
 ## Output (Markdown)
 
@@ -132,7 +146,7 @@ pub const MEETING_SUGGESTION_PROMPT: &str = r#"You are a live meeting copilot. H
   - `## Glossary` — up to five relevant terms with one-line, meeting-specific definitions.
 - Translate the section titles into the output language.
 - Never invent facts, decisions, owners, deadlines, or definitions. Never present your suggestion as something already said or decided.
-- Never display ME/THEY tags in the output. Refer to ME in the first person and to THEY by name when known.
+- Refer to ME in the first person and to THEY by name when known.
 - Always produce the useful opening blockquote; when the transcript is empty or unintelligible, say in one short sentence that there is little information to work with and stop."#;
 
 /// Sugestão ao vivo de entrevista técnica (detecta LeetCode ou system design).
@@ -140,8 +154,6 @@ pub const TECHNICAL_INTERVIEW_SUGGESTION_PROMPT: &str = r#"You are a live techni
 
 ## Rules
 
-- ME is the user who reads and speaks; THEY is the interviewer.
-- Use THEY lines to answer what was asked. A direct technical question or request is always the highest-priority context.
 - One step at a time: write only the next candidate move. Do not dump a full solution unless ME explicitly asks.
 - Never say you need the problem statement, code, or a screenshot. If the problem is not in the transcript, have ME restate or confirm it in one sentence and proceed with standard assumptions.
 - Never address ME with instructions; write ME's speakable words.
@@ -172,7 +184,6 @@ pub const LEETCODE_SUGGESTION_PROMPT: &str = r#"You are a live coding-interview 
 
 ## Rules
 
-- ME is the user who reads and speaks; THEY is the interviewer.
 - If THEY asks a coding/algorithm question or states a problem, treat the turn as LeetCode even when the transcript is short.
 - If a coding problem is present, never provide only explanation: always include code.
 - Detect the language from the transcript or ME's request; if none is detected, use structured pseudocode.
@@ -195,7 +206,6 @@ pub const SYSTEM_DESIGN_SUGGESTION_PROMPT: &str = r#"You are a live system-desig
 
 ## Rules
 
-- ME is the user who reads and speaks; THEY is the interviewer.
 - Every line is first-person singular words ME says while solving the problem — never a question addressed to ME, never guidance-style narration like "let's start" or "we should".
 - Follow the interview order: clarify, then size, then design. Do not propose architecture while requirements or numbers are still unknown.
 - When nobody answers, have ME state a reasonable assumption aloud and proceed.
@@ -315,7 +325,9 @@ pub fn resolve_mode(id: &str, custom: &[AssistantMode]) -> Option<AssistantMode>
 /// próxima fala falável, "be correct over complete", sem seções — é o que faz a
 /// bolha aparecer pequena e cedo (BR-028).
 pub fn fast_first_system_prompt(mode: &AssistantMode, language: Option<&str>) -> String {
-    let mut prompt = String::from(
+    let mut prompt = String::from(TRANSCRIPT_CONTRACT);
+    prompt.push_str("\n\n");
+    prompt.push_str(
         "You are the live copilot. Produce ONLY the first useful suggestion now: one \
          concise line the user can say aloud or act on immediately — at most three \
          short lines, no headings, no sections, no lists, no explanation. Be correct \
@@ -383,7 +395,11 @@ pub fn effective_summary_prompt(mode: &AssistantMode) -> &str {
 pub fn suggestion_system_prompt(mode: &AssistantMode, language: Option<&str>) -> String {
     let contract = effective_suggestion_prompt(mode);
 
-    let mut prompt = String::from(contract);
+    // O contrato de leitura entra **antes** do contrato do agente: é o
+    // preâmbulo comum a todos (BR-082) e o prefixo cacheável entre agentes.
+    let mut prompt = String::from(TRANSCRIPT_CONTRACT);
+    prompt.push_str("\n\n");
+    prompt.push_str(contract);
     prompt.push_str("\n\n");
     prompt.push_str(NEVER_ASK_BACK_RULE);
     prompt.push_str("\n\n");
@@ -594,6 +610,67 @@ mod tests {
     }
 
     #[test]
+    fn every_agent_gets_the_shared_transcript_contract() {
+        // BR-082: o contrato de leitura é geral e reutilizável; entra no system
+        // prompt de todo agente, inclusive personalizado, antes do contrato dele.
+        let custom = AssistantMode {
+            id: "custom-vendas".into(),
+            name: "Vendas".into(),
+            category: "custom".into(),
+            system_prompt: "Você ajuda em vendas.".into(),
+            suggestion_prompt: "Sugira a próxima fala.".into(),
+            summary_prompt: String::new(),
+            context: String::new(),
+            icon: "briefcase".into(),
+            color: "coral".into(),
+            source_id: None,
+        };
+        let modes = effective_modes(&factory_modes())
+            .into_iter()
+            .chain(std::iter::once(custom));
+        for mode in modes {
+            let prompt = suggestion_system_prompt(&mode, Some("pt"));
+            assert!(
+                prompt.starts_with(TRANSCRIPT_CONTRACT),
+                "agente sem o contrato comum: {}",
+                mode.id
+            );
+            for needle in [
+                "recognition errors",
+                "ME is the app user",
+                "THEY is the other side",
+                "Speaker tags",
+                "Never display the",
+            ] {
+                assert!(prompt.contains(needle), "{} sem `{needle}`", mode.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_fast_first_prompt_also_gets_the_shared_contract() {
+        let prompt = fast_first_system_prompt(&default_mode(), Some("pt"));
+        assert!(prompt.starts_with(TRANSCRIPT_CONTRACT));
+        assert!(prompt.contains("ME is the app user"));
+        assert!(prompt.contains("THEY is the other side"));
+    }
+
+    #[test]
+    fn the_factory_prompts_do_not_repeat_the_transcript_contract() {
+        // A fonte é uma só: os contratos dos agentes não repetem ME/THEY/ASR.
+        let text = all_catalog_text();
+        for needle in [
+            "ME is the user who reads and speaks",
+            "ME is the application user who reads and speaks",
+            "ME is the app user",
+            "Accepted lines:",
+            "Never display ME/THEY tags",
+        ] {
+            assert!(!text.contains(needle), "repetição do contrato: {needle}");
+        }
+    }
+
+    #[test]
     fn resolve_returns_the_protected_agent_and_the_user_list() {
         let custom = vec![AssistantMode {
             id: "custom-vendas".into(),
@@ -699,9 +776,10 @@ mod tests {
         assert!(prompt.contains("Reunião"));
         assert!(prompt.contains("português"));
         assert!(prompt.contains("untrusted source content"));
-        // É curto: não carrega as seções do contrato completo.
+        // É curto: não carrega as seções do contrato completo — só o preâmbulo
+        // comum de leitura (BR-082).
         assert!(!prompt.contains("## Actions"));
-        assert!(prompt.len() < MEETING_SUGGESTION_PROMPT.len());
+        assert!(!prompt.contains("## Output (Markdown)"));
     }
 
     #[test]

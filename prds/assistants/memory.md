@@ -181,8 +181,8 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
 - `pnpm tauri:build` (Vulkan) concluído a cada mudança de core/UI (pill,
   BR-079 e BR-080): `GhostWhisper_0.1.0_amd64.deb` (17 MiB) e `.AppImage`
   (93 MiB) em `src-tauri/target/release/bundle/`. O bundle final embute
-  `index-BzMJdhLl.js` / `index-BBaXZUJu.css` e o loader do Vulkan
-  (rebuild após a correção dos tooltips e do ISS-061).
+  `index-C6DurCgr.js` / `index-BBaXZUJu.css` e o loader do Vulkan
+  (rebuild após o contrato comum de transcrição, BR-082).
 - `cargo fmt --check` **não** está limpo no repositório por arquivos
   anteriores à entrega (ex.: `ask_service.rs`, `recording_service.rs`,
   `connection.rs`); os arquivos alterados nesta PRD foram formatados.
@@ -296,3 +296,28 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
   `src/core/domain/tooltip.ts`): prefere abaixo, sobe quando não há espaço,
   centraliza e prende nas bordas; recalcula em scroll/resize. Testes em
   `tooltip.test.ts` cobrem os casos (abaixo, acima, bordas, janela pequena).
+
+## 2026-10-22 — Contrato comum de leitura da transcrição (BR-082)
+
+- **IDs:** BR-082 · **Refs:** [`prd.md`](prd.md) §13,
+  [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §3.2,
+  [`tasks/13-task.md`](tasks/13-task.md)
+
+- **Pedido:** regra geral do app (transcrição de fala, ME/THEY, correção de ASR,
+  origem da fala) não deve ser copiada no prompt de cada agente; deve estar
+  **pré-embutida** no system prompt de todos.
+- **Decisão:** `TRANSCRIPT_CONTRACT` é injetado no início de
+  `suggestion_system_prompt` (protegido, de fábrica e personalizado) e de
+  `fast_first_system_prompt`. O campo editável do agente fica só com o que é da
+  cena; as linhas duplicadas de ME/THEY saíram dos 5 prompts de fábrica.
+- **Busca:** `ASK_RULES` explica ME/THEY e a atribuição imperfeita no bloco
+  `<transcript>`, sem herdar o contrato ao vivo inteiro (lá a pergunta do
+  usuário é a prioridade, não a fala do THEY). O resumo mantém o contrato
+  profundo (normalização, classificação, estrutura) e ganha a definição de
+  ME/THEY.
+- **Instalações existentes:** a migração de boot remove os trechos antigos dos
+  agentes de fábrica **já semeados** (só os trechos conhecidos; o resto do texto
+  e as edições do usuário ficam), de forma idempotente; agentes personalizados
+  não são tocados.
+- **Testes:** 634 no `cargo test --lib`, incluindo agente personalizado,
+  fast-first, a ausência de repetição nos prompts de fábrica e a normalização.

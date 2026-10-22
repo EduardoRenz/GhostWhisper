@@ -18,6 +18,7 @@
 | 10 | Fallback de prompt vazio: herda o do Padrão | CONCLUDED |
 | 11 | Seletor global de agentes acima do notch | CONCLUDED |
 | 12 | Ajuda nos campos de prompt (tooltips) | CONCLUDED |
+| 13 | Contrato comum de leitura da transcrição | CONCLUDED |
 
 ## Implementação (2026-10-22)
 

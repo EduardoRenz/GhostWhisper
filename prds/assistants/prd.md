@@ -160,7 +160,9 @@ Decisões de desenho que completam as do usuário:
    uso. Quando houver mais telas, o modelo evolui.
 7. **Os prompts aparecem como estão:** os contratos atuais são escritos em
    inglês (o modelo responde no idioma da conversa), então o card mostra o
-   texto real do agente — não uma tradução.
+   texto real do agente — não uma tradução. O contrato comum de leitura da
+   transcrição (BR-082) fica **fora** do campo: é aplicado em runtime a todos
+   os agentes.
 
 ## 6. Regras de produto
 
@@ -175,6 +177,9 @@ As decisões acima viram regras canônicas em
 | BR-077 | Modal único de agente (criar e editar) |
 | BR-078 | Barra de abas das Configurações em pílulas |
 | BR-079 | Prompt vazio herda o do agente Padrão |
+| BR-080 | Seletor de agentes global, flutuando acima do notch |
+| BR-081 | Ajuda nos campos de prompt (tooltip) |
+| BR-082 | O contrato de leitura da transcrição é comum a todos os agentes |
 
 ## 7. Modelo de dados
 
@@ -340,6 +345,9 @@ default do domínio + os 4 agentes de fábrica + a marca ligada. Ver
 | 08 | Casca: barra de abas em pílulas | CONCLUDED |
 | 09 | Regressão, testes e fechamento | CONCLUDED |
 | 10 | Fallback de prompt vazio: herda o do Padrão (BR-079) | CONCLUDED |
+| 11 | Seletor global de agentes acima do notch (BR-080) | CONCLUDED |
+| 12 | Ajuda nos campos de prompt (BR-081) | CONCLUDED |
+| 13 | Contrato comum de leitura da transcrição (BR-082) | CONCLUDED |
 
 Detalhes, entregáveis e critérios por task: [`tasks/_tasks.md`](tasks/_tasks.md).
 
@@ -394,11 +402,20 @@ monitor e a barra ocupava o primeiro pixel. Para o seletor flutuar acima:
 ## 13. Os campos de prompt do agente (e a ajuda na UI)
 
 Os prompts do agente não são todos usados do mesmo jeito. A tabela é a
-referência canônica do que cada campo faz **hoje**:
+referência canônica do que cada campo faz **hoje**.
+
+**Contrato comum de leitura (BR-082).** Todo prompt de sistema de sugestão —
+de qualquer agente, inclusive personalizado — começa com o
+`TRANSCRIPT_CONTRACT`: o texto é uma transcrição de fala, `ME` é o usuário
+(microfone), `THEY` é o outro lado (áudio do sistema), com erros de
+reconhecimento e atribuição imperfeita. Ele **não** é um campo do agente: é
+aplicado em runtime e não aparece no card/modal. O fast-first recebe o mesmo
+contrato; a Busca explica ME/THEY no bloco de regras dela (sem a prioridade do
+THEY, que é do contexto ao vivo).
 
 | Campo | O que é | Onde é usado hoje | Se ficar vazio |
 |---|---|---|---|
-| `suggestion_prompt` — **Prompt de Sugestão** | Contrato da sugestão ao vivo | Base do prompt de sistema da sugestão (passe completo, `suggestion_system_prompt`) | Usa o prompt do **Padrão** (BR-079) |
+| `suggestion_prompt` — **Prompt de Sugestão** | Contrato da sugestão ao vivo (só a cena) | Base do prompt de sistema da sugestão (passe completo, `suggestion_system_prompt`), **depois** do contrato comum de leitura (BR-082) | Usa o prompt do **Padrão** (BR-079) |
 | `summary_prompt` — **Prompt de Resumo** | Contrato do resumo deste agente | **Não consumido**: o `SummaryService` ainda usa o contrato global (BR-076) | Usa o do **Padrão** (BR-079), quando a feature entrar |
 | `system_prompt` — **Prompt de sistema (critérios de domínio)** | Papel, tom e critérios do domínio | Bloco `## Domain criteria` do prompt da sugestão; **não** é usado pelo resumo nem pela Busca | Usa o do **Padrão** (BR-079) |
 | `context` — **Contexto fixo do agente** | Fatos estáveis (produto, empresa, vocabulário) | Bloco `## Agent context` nos **dois** passes da sugestão (rápido e completo) | Nenhum contexto extra |
@@ -406,7 +423,7 @@ referência canônica do que cada campo faz **hoje**:
 | `icon` / `color` | Identidade visual | Seletor, card, badge e snapshot da sugestão (BR-037) | `sparkle` / `slate` |
 | `source_id` | Fonte de IA vinculada | Modelo pronto, sem UI (BR-048) | Fonte primária |
 
-O que o **não** é usado pelo resumo hoje: nenhum campo do agente. O
+O que **não** é usado pelo resumo hoje: nenhum campo do agente. O
 `SummaryService` usa `SUMMARY_SYSTEM_PROMPT` + `SUMMARY_UPDATE_SYSTEM_PROMPT`
 (globais) e os construtores de prompt de usuário com a transcrição.
 
@@ -414,17 +431,19 @@ O que o **não** é usado pelo resumo hoje: nenhum campo do agente. O
 
 Ordem do `suggestion_system_prompt`:
 
-1. `suggestion_prompt` (ou o do Padrão, BR-079);
-2. `NEVER_ASK_BACK_RULE` (BR-060);
-3. `PURE_CODE_RULE` (BR-061);
-4. `## Domain criteria` — `system_prompt` (ou o do Padrão);
-5. `## Agent context` — `context`, quando preenchido;
-6. `## Language`;
-7. `## Safety` (transcrição é conteúdo não confiável).
+1. `TRANSCRIPT_CONTRACT` — contrato comum de leitura (BR-082);
+2. `suggestion_prompt` (ou o do Padrão, BR-079);
+3. `NEVER_ASK_BACK_RULE` (BR-060);
+4. `PURE_CODE_RULE` (BR-061);
+5. `## Domain criteria` — `system_prompt` (ou o do Padrão);
+6. `## Agent context` — `context`, quando preenchido;
+7. `## Language`;
+8. `## Safety` (transcrição é conteúdo não confiável).
 
-O **fast-first** (primeira bolha curta) é diferente: usa um contrato fixo,
-`Agent: <nome>`, o `context` (se houver), idioma e segurança. Ele **não** usa
-`suggestion_prompt` nem `system_prompt`.
+O **fast-first** (primeira bolha curta) começa com o mesmo
+`TRANSCRIPT_CONTRACT` e depois usa um contrato fixo, `Agent: <nome>`, o
+`context` (se houver), idioma e segurança. Ele **não** usa `suggestion_prompt`
+nem `system_prompt`.
 
 ### 13.2 "Campos avançados" não é outro motor
 
@@ -437,4 +456,6 @@ soltos no editor inline ao lado do Prompt de Sugestão.
 
 Cada prompt (e a Categoria) tem um tooltip com o texto da tabela acima, no
 modal de edição; os painéis do card também têm a ajuda dos dois prompts.
-O Prompt de Resumo diz explicitamente que ainda não é consumido.
+O Prompt de Resumo diz explicitamente que ainda não é consumido. O tooltip do
+Prompt de Sugestão avisa que o contrato comum de leitura (BR-082) é aplicado
+automaticamente — o texto do campo não precisa repeti-lo.

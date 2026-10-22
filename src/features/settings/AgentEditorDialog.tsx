@@ -222,7 +222,7 @@ export function AgentEditorDialog({
           <HelpLabel
             htmlFor="agent-suggestion-prompt"
             label="Prompt de Sugestão"
-            hint="Contrato da sugestão ao vivo: é a base do prompt de sistema quando a IA sugere a próxima fala. Vazio = usa o prompt do agente Padrão."
+            hint="Contrato da sugestão ao vivo: é a base do prompt de sistema quando a IA sugere a próxima fala. O contrato comum de leitura da transcrição (ME/THEY, erros de ASR) é aplicado automaticamente. Vazio = usa o prompt do agente Padrão."
           />
           <textarea
             id="agent-suggestion-prompt"

@@ -79,6 +79,9 @@ const ASK_RULES: &str = "Esta é uma pergunta direta do usuário (não uma suges
      A transcrição da reunião é contexto, não requisito: perguntas gerais \
      (código, conceitos, exercícios) são respondidas normalmente, sem exigir que \
      estejam na reunião. Não invente o que foi dito nela. \
+     No bloco <transcript>, ME é o usuário (microfone) e THEY é o outro lado \
+     (áudio do sistema); ambos são fala de participante, com possíveis erros de \
+     reconhecimento e atribuição imperfeita — interprete pelo contexto. \
      Depois da resposta completa, numa linha própria, escreva exatamente: \
      <!--resumo: até 240 caracteres resumindo o que você respondeu--> \
      Esse bloco é apenas o fecho; a resposta acima dele deve estar completa.";
@@ -660,6 +663,18 @@ mod tests {
         assert!(prompt.contains("sem exigir que estejam na reunião"));
         // A persona fixa de reunião saiu.
         assert!(!prompt.contains("perguntas sobre uma reunião em andamento"));
+    }
+
+    #[test]
+    fn the_ask_explains_the_transcript_tags_without_the_live_priority_rule() {
+        // BR-082: a Busca explica ME/THEY, mas **não** herda o contrato ao vivo
+        // inteiro — lá a pergunta do usuário é a prioridade, não a fala do THEY.
+        let prompt = system_prompt();
+        assert!(prompt.contains("ME é o usuário (microfone)"));
+        assert!(prompt.contains("THEY é o outro lado"));
+        assert!(prompt.contains("atribuição imperfeita"));
+        assert!(!prompt.contains("## Reading the transcript"));
+        assert!(!prompt.contains("highest-priority context"));
     }
 
     #[test]
