@@ -6,7 +6,6 @@ pub mod ai_source_commands;
 pub mod ask_commands;
 pub mod audio_commands;
 pub mod database_commands;
-pub mod dwell;
 pub mod export_commands;
 pub mod journal_commands;
 pub mod llm_commands;

@@ -94,7 +94,6 @@ export function NotchTabs({
       </button>
 
       <DwellButton
-        triggerId="notch-summary"
         className="notch-tabs__item"
         title="Resumo da sessão"
         onActivate={onOpenSummary}
@@ -104,7 +103,6 @@ export function NotchTabs({
       </DwellButton>
 
       <DwellButton
-        triggerId="notch-suggestions"
         className={`notch-tabs__item${suggestionsOpen ? " notch-tabs__item--active" : ""}`}
         pressed={suggestionsOpen}
         title="Sugestões da IA"

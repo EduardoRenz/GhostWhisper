@@ -616,34 +616,30 @@ uma nota de revisão.
 
 ## BR-036 — Drill-hover (ativação por permanência) no notch
 - **Decisão:** botões **opt-in** do notch podem ser acionados por **permanência do
-  cursor** (*drill-hover*/dwell), sem clique, pensado para o modo stealth. São **dois
-  estágios**: (1) o botão se preenche da esquerda para a direita durante `dwell_ms`;
-  ao completar, abre uma **confirmação flutuante**; (2) o botão **"Sim"** da
-  confirmação também exige `dwell_ms`. **Clique** no botão original executa a ação
-  **imediatamente**, sem confirmação; clique no "Sim" confirma (fallback acessível).
+  cursor** (*drill-hover*/dwell), sem clique, pensado para o modo stealth. O
+  mecanismo tem **um único estágio**: o botão se preenche da esquerda para a
+  direita durante `dwell_ms` e, ao completar, **executa a ação diretamente**.
+  **Clique** executa na hora e cancela o preenchimento.
 - **Configuração:** `Settings.dwell_enabled` (padrão **ligado**) e
   `Settings.dwell_ms` (padrão **500 ms**, faixa **300–2000 ms**), em Configurações →
-  Ajustes. Desligado, o hover não faz nada e o clique continua normal. A duração vale
-  para os dois estágios.
+  Ajustes. Desligado, o hover não faz nada e o clique continua normal.
 - **Escopo inicial:** somente **Resumo** e **Sugestões** no notch ativo. O mecanismo
-  é genérico e opt-in: qualquer botão futuro usa o mesmo componente/porta.
-- **Confirmação:** **janela Tauri própria**, pequena e transparente, posicionada
-  **acima** do gatilho quando há espaço na **área útil do monitor**; senão **abaixo**.
-  Ela **não** redimensiona nem move a janela do notch. Conteúdo mínimo: dica
-  **"Sem clique"** + botão **"Sim"** + duração. **Sem som/toast**.
-- **Cancelamento:** a confirmação aberta fecha após `dwell_ms` quando o cursor **não**
-  está no gatilho nem na confirmação (grace); voltar a qualquer uma das áreas cancela
-  o fechamento. Sobre o "Sim", o dwell de confirmação corre normalmente. O
-  preenchimento do gatilho (estágio 1) cancela **na saída**.
-- **Motivo:** pedido do usuário — acionar sem clique ajuda no stealth; o hover não
-  deve acionar direto (evita acidente) e a confirmação precisa tolerar saídas
-  involuntárias do cursor.
-- **Consequência:** `Settings` ganha `dwell_enabled`/`dwell_ms`; nova janela `dwell`
-  + porta/adaptador/IPC; `DwellProvider` no overlay; sem som; sem mudança de schema.
+  é genérico e opt-in: qualquer botão futuro usa o mesmo componente.
+- **Cancelamento:** sair do botão antes de completar zera o preenchimento e não
+  executa nada. Ao completar, a ação roda **uma vez**; permanecer no botão depois
+  não repete. Não há som/toast.
+- **Sem confirmação intermediária:** não existe janela/popup "Sem clique"/"Sim" nem
+  segundo timer. A simplificação foi pedida após o fluxo de dois estágios se mostrar
+  instável; a decisão é executar direto no botão principal.
+- **Motivo:** acionar sem clique ajuda no stealth; o preenchimento dá o feedback e a
+  saída antes do fim evita acidente. O segundo estágio não valia a complexidade.
+- **Consequência:** `Settings` mantém `dwell_enabled`/`dwell_ms`; `DwellProvider`
+  fica só com `enabled`/`durationMs`; sem janela `dwell`, sem porta/adaptador/IPC
+  de confirmação e sem permissão de cursor.
 - **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-11),
   [`notch/architecture/drill-hover.md`](notch/architecture/drill-hover.md),
-  [`notch/tasks/09-task.md`](notch/tasks/09-task.md)…[`12-task.md`](notch/tasks/12-task.md).
-- **Data:** 2026-10-19 · **Status:** Ativa (tasks 09–12)
+  [`notch/tasks/19-task.md`](notch/tasks/19-task.md).
+- **Data:** 2026-10-19 · **Status:** Ativa (revisada em 2026-10-21 — um estágio)
 
 ## BR-037 — Identidade visual do agente (ícone + cor)
 - **Decisão:** todo agente de sugestão (embutido **e** personalizado) tem **ícone**
@@ -1327,7 +1323,7 @@ uma nota de revisão.
   própria — **"Geral & HUD"** (substitui "Ajustes") — com quatro controles:
   1. **Opacidade das janelas** (`overlay_opacity`, 20 %–100 %, padrão 75 %): a
      transparência das superfícies de **todas** as janelas (notch, Chat,
-     Sugestões, Histórico, Configurações, Perguntar, dwell e prévia do print) —
+     Sugestões, Histórico, Configurações, Perguntar e prévia do print) —
      já não é exclusiva do notch. O nome legado do campo é mantido para não
      exigir migração. A mudança é **aplicada em tempo real** (preview) e
      **salva automaticamente** com debounce; os demais campos continuam no
@@ -1562,7 +1558,6 @@ uma nota de revisão.
   2. a janela é **colocada pela primeira vez** no boot, por não haver posição
      salva (fallback centralizado/topo/canto);
   3. o usuário muda explicitamente a **âncora/densidade do notch** (BR-062);
-  4. um **popover transitório** (dwell) é posicionado relativo ao notch.
 - **Motivo:** relato do usuário — a barra “Perguntar” pulava depois que a
   captura de tela a escondia e mostrava de novo. A causa era o
   `center_ask_window` chamado em toda abertura escondida; a captura chama
@@ -1575,9 +1570,9 @@ uma nota de revisão.
   restaura antes/depois do `show`. A posição de painéis/notch/Configurações
   também não é alterada pelo ciclo da captura; o único movimento automático é
   a colocação inicial.
-- **Exceções documentadas:** a primeira colocação de cada janela, a mudança
-  explícita de âncora/densidade e os popovers ancorados (dwell) — nenhuma
-  delas é disparada por interação em outra janela.
+- **Exceções documentadas:** a primeira colocação de cada janela e a mudança
+  explícita de âncora/densidade — nenhuma delas é disparada por interação em
+  outra janela.
 - **Revisão (2026-10-21):** posição de janela só é **persistida** quando veio
   de arraste explícito. Para a barra “Perguntar”, o tracker e o save antes de
   esconder podem observar o WM, mas `AskPositionSource::Automatic` é descartado;
@@ -1594,7 +1589,7 @@ uma nota de revisão.
 - **Decisão:** toda janela do app usa `alwaysOnTop` e **reafirma**
   `set_always_on_top(true)` como último passo de qualquer exibição,
   restauração, redimensionamento ou mudança de layout. Isso vale para overlay
-  (notch), Perguntar, prévia do print, Configurações, painéis, dwell, seletor de
+  (notch), Perguntar, prévia do print, Configurações, painéis, seletor de
   gravação e modal de fim de sessão.
 - **Motivo:** no GTK/Mutter o hint `_NET_WM_STATE_ABOVE` pode se perder quando a
   janela é desmapeada/remapada (`hide`/`show`) ou tem a geometria reaplicada.
@@ -1605,7 +1600,7 @@ uma nota de revisão.
   `show_above`/`assert_above` em todos os caminhos de exibição; a restauração da
   captura só altera posição/tamanho quando o WM realmente mudou a geometria e
   termina reafirmando o topo. O adaptador do overlay mantém a reafirmação
-  própria (`apply_stealth`), e o dwell reafirma depois do `show`.
+  própria (`apply_stealth`).
 - **Detalhes:** [`session/issues.md`](session/issues.md) ISS-056,
   [`session/tasks/13-task.md`](session/tasks/13-task.md).
 - **Data:** 2026-10-21 · **Status:** Ativa

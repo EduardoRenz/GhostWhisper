@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser único
-no repositório). Próximo ID livre: **ISS-048**.
+no repositório). Próximo ID livre: **ISS-049**.
 
 > `ISS-032` segue reservada pelo PRD [`chat`](../chat/issues.md); esta PRD começa em
 > `ISS-033` para não colidir.
@@ -17,6 +17,7 @@ no repositório). Próximo ID livre: **ISS-048**.
 | ISS-044 | Notch não encosta no topo: janela 1040×260 com a barra no rodapé (~200 px invisíveis) | Alta | FIXED |
 | ISS-045 | Notch volta a uma posição antiga ao salvar settings de outra janela (aba/botão/select) | Alta | FIXED |
 | ISS-047 | Menu de canais atrás do notch e largura fixa com sobra | Média | FIXED |
+| ISS-048 | Dwell do "Sim" se perde ao mover sobre texto/contador | Média | FIXED |
 
 ---
 
@@ -206,3 +207,47 @@ Modelo:
 - **Arquivos:** …
 - **Task:** [`tasks/NN-task.md`](tasks/NN-task.md)
 -->
+
+---
+
+## ISS-048 — Dwell do "Sim" se perde ao mover sobre texto/contador
+
+- **Severidade:** Média · **Status:** FIXED ([`tasks/18-task.md`](tasks/18-task.md))
+- **Sintoma:** às vezes, ao levar o cursor até o botão **"Sim"** da confirmação,
+  o preenchimento reiniciava/parava ao passar sobre o ícone, o texto ou o badge
+  da duração; a ação sem clique não completava.
+- **Causa:** o `useDwellTimer` tratava **toda** chamada de `start()` como um novo
+  início, então reentrâncias de ponteiro (filhos do botão/movimento interno)
+  podiam zerar o segundo estágio. Os filhos também podiam virar o `target` do
+  ponteiro no WebKitGTK. A cobertura existente só testava uma entrada única e
+  não o trajeto dentro do botão.
+- **Correção (task 18):**
+  - `useDwellTimer.start()` é idempotente enquanto o timer está ativo;
+  - o botão "Sim" ganhou `pointermove` como retomada de um `leave` transitório;
+  - `.dwell-target > *` usa `pointer-events: none`, mantendo o botão como alvo
+    único de ícone/texto/badge;
+  - `pointerleave` do botão **e da janela** agora tem debounce de 120 ms e só
+    encerra se `elementFromPoint` indicar que o ponto saiu; movimento dentro
+    cancela a parada;
+  - o poll do cursor **não** usa `:hover` para iniciar o Sim (hover obsoleto
+    fazia o segundo timer disparar com o cursor ainda no Resumo);
+  - `DwellPopover` é remontado por `token`, cancelando paradas pendentes de uma
+    abertura anterior;
+  - testes cobrem travessia texto → contador, `leave` transitório, saída real,
+    retomada por `pointermove` e reinício indevido do timer.
+- **Testes anti-regressão (R16/R17):**
+  `iniciar de novo enquanto ativo não reinicia o tempo`,
+  `não reinicia o dwell ao passar do texto para o contador`,
+  `leave transitório dentro do botão não zera o dwell`,
+  `leave real fora do botão para o dwell`,
+  `não inicia o Sim só porque o gatilho está em hover`,
+  `passar do ícone/texto não reinicia o dwell do gatilho`.
+- **Arquivos:** `src/core/application/useDwellTimer.ts`,
+  `src/components/dwell/DwellPopover.tsx`, `src/styles/globals.css`,
+  `src/features/dwell/DwellPopoverWindow.test.tsx`,
+  `src/features/overlay/ActionBarDwell.test.tsx`.
+- **Task:** [`tasks/18-task.md`](tasks/18-task.md)
+- **Dano em dados existentes:** nenhum (apresentação/timing).
+- **Nota (2026-10-21):** o fluxo de confirmação "Sem clique"/"Sim" foi removido
+  na [`tasks/19-task.md`](tasks/19-task.md); o drill-hover atual tem um estágio e
+  executa direto. Este registro permanece como histórico da correção.

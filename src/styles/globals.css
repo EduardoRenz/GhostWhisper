@@ -3769,6 +3769,12 @@ body,
   z-index: 1;
 }
 
+/* O alvo de ponteiro é sempre o próprio botão; mover sobre ícone/texto não
+   interrompe o timer do drill-hover (BR-036). */
+.dwell-target > * {
+  pointer-events: none;
+}
+
 .dwell-fill {
   position: absolute;
   inset: 0;
@@ -3803,99 +3809,6 @@ body,
   }
   to {
     width: 100%;
-  }
-}
-
-.dwell-window {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-}
-
-.dwell-popover {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 12px;
-  border-radius: var(--oh-radius-full);
-  background: rgba(var(--oh-glass-card-rgb), var(--hud-alpha, 0.75));
-  -webkit-backdrop-filter: blur(var(--oh-blur-card));
-  backdrop-filter: blur(var(--oh-blur-card));
-  border: 1px solid rgba(0, 242, 254, 0.4);
-  box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.72),
-    0 0 16px -8px rgba(0, 242, 254, 0.55);
-  animation: dwell-pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-@keyframes dwell-pop-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.dwell-popover__hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding-right: 8px;
-  border-right: 1px solid var(--oh-divider);
-  color: var(--oh-text-muted);
-  font-size: var(--oh-label-sm-size);
-  line-height: var(--oh-label-sm-line);
-  white-space: nowrap;
-}
-
-.dwell-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--oh-radius-full);
-  border: 1px solid rgba(0, 242, 254, 0.4);
-  background: rgba(0, 242, 254, 0.12);
-  color: var(--oh-accent);
-  font: inherit;
-  font-size: var(--oh-label-md-size);
-  line-height: var(--oh-label-md-line);
-  cursor: pointer;
-}
-
-.dwell-confirm:hover:not(:disabled) {
-  background: rgba(0, 242, 254, 0.2);
-}
-
-.dwell-confirm:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.dwell-confirm:focus-visible {
-  outline: none;
-  box-shadow: var(--oh-focus-ring), var(--oh-glow-focus);
-}
-
-.dwell-badge {
-  padding: 2px 4px;
-  border-radius: var(--oh-radius-sm);
-  border: 1px solid rgba(0, 242, 254, 0.3);
-  background: rgba(10, 14, 22, 0.7);
-  color: var(--oh-accent);
-  font-family: var(--oh-font-mono);
-  font-size: var(--oh-status-size);
-  line-height: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dwell-popover {
-    animation: none;
   }
 }
 

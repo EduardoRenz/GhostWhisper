@@ -5,15 +5,6 @@ import { ActionBar } from "./ActionBar";
 import type { SessionChannel } from "../../core/domain/transcript";
 import { IDLE_RECORDING } from "../../core/domain/recording";
 
-const show = vi.hoisted(() => vi.fn(async () => undefined));
-
-vi.mock("../../adapters/ipc/dwell", () => ({
-  dwellShow: show,
-  dwellHide: vi.fn(async () => undefined),
-  dwellResult: vi.fn(async () => undefined),
-  dwellContext: vi.fn(async () => 500),
-}));
-
 const CHANNELS: SessionChannel[] = ["microphone", "system"];
 
 const base = {
@@ -33,7 +24,7 @@ const base = {
   onOpenSettings: vi.fn(),
   onOpenTranscription: vi.fn(),
   onOpenSummary: vi.fn(),
-    onOpenAsk: vi.fn(),
+  onOpenAsk: vi.fn(),
   suggestionsOpen: false,
   onToggleSuggestions: vi.fn(),
   historyOpen: false,
@@ -60,42 +51,52 @@ function Harness() {
 describe("ActionBar — drill-hover opt-in", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    show.mockClear();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("só Resumo e Sugestões são gatilhos de confirmação", () => {
+  it("só Resumo e Sugestões usam o drill-hover", () => {
     render(<Harness />);
 
-    expect(button("Resumo").getAttribute("aria-haspopup")).toBe("dialog");
-    expect(button("Sugestões").getAttribute("aria-haspopup")).toBe("dialog");
-    expect(button("Transcrição").getAttribute("aria-haspopup")).toBeNull();
-    expect(button("Histórico").getAttribute("aria-haspopup")).toBeNull();
+    expect(button("Resumo").classList.contains("dwell-target")).toBe(true);
+    expect(button("Sugestões").classList.contains("dwell-target")).toBe(true);
+    expect(button("Transcrição").classList.contains("dwell-target")).toBe(
+      false,
+    );
+    expect(button("Histórico").classList.contains("dwell-target")).toBe(false);
   });
 
-  it("permanecer em Resumo abre a confirmação", () => {
+  it("permanecer em Resumo executa a ação diretamente", () => {
     render(<Harness />);
 
     fireEvent.pointerOver(button("Resumo"));
     act(() => vi.advanceTimersByTime(500));
 
-    expect(show).toHaveBeenCalledTimes(1);
-    expect(show).toHaveBeenCalledWith(
-      expect.objectContaining({ width: 0, height: 0 }),
-      500,
-    );
+    expect(base.onOpenSummary).toHaveBeenCalledTimes(1);
   });
 
-  it("clique em Sugestões alterna na hora, sem confirmação", () => {
+  it("passar do ícone/texto não reinicia o dwell", () => {
+    render(<Harness />);
+    const resumo = button("Resumo");
+
+    fireEvent.pointerOver(resumo);
+    act(() => vi.advanceTimersByTime(250));
+    fireEvent.pointerOver(screen.getByText("Resumo"));
+    act(() => vi.advanceTimersByTime(250));
+
+    expect(base.onOpenSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("clique em Sugestões alterna na hora e não agenda de novo", () => {
     render(<Harness />);
 
     fireEvent.pointerOver(button("Sugestões"));
     fireEvent.click(button("Sugestões"));
+    act(() => vi.advanceTimersByTime(500));
 
     expect(base.onToggleSuggestions).toHaveBeenCalledTimes(1);
-    expect(show).not.toHaveBeenCalled();
   });
 });

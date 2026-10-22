@@ -582,3 +582,73 @@ tem largura fixa e sobra espaço.”*
 - No AppImage (X11): idle **675×72**, ativo **758×72**, confirmação de encerrar
   **1058×72**; menu abriu **758×252** abaixo da barra, opções responderam e a
   janela voltou a 72 px ao fechar.
+
+## 2026-10-21 — Dwell do "Sim" perdia o foco ao mover sobre texto/contador (ISS-048, task 18)
+
+- **IDs:** ISS-048, T18, BR-036, R16/R17
+- **Refs:** [`issues.md`](issues.md), [`tasks/18-task.md`](tasks/18-task.md),
+  [`architecture/drill-hover.md`](architecture/drill-hover.md) §2.1/§8
+
+### Relato
+*“A ação sem clique do drill-hover às vezes falha ao passar em cima do botão
+de confirmação ‘Sim’; parece se perder ao arrastar para cima de um texto ou
+no contador.”*
+
+### Diagnóstico
+- O `useDwellTimer.start()` sempre reiniciava o timeout, mesmo já ativo.
+- `DwellPopover` armava só no `pointerenter`; reentrâncias e um `leave`
+  transitório durante a travessia de ícone/texto/badge podiam zerar o estágio 2.
+- Os filhos do botão podiam virar alvo do ponteiro, tornando o hover dependente
+  do elemento interno sob o cursor.
+
+### Correção
+- `start()` idempotente: chamadas repetidas enquanto o timer está ativo não
+  reiniciam a contagem.
+- `pointermove` no "Sim" retoma o dwell se um `leave` transitório o parar.
+- `.dwell-target > * { pointer-events: none; }`: o botão é o alvo único.
+- O teste no app mostrou que o `pointerleave` da **janela** também podia ser
+  emitido ao cruzar filhos; botão e janela ganharam debounce de 120 ms com
+  checagem de `:hover` + `elementFromPoint` no último ponto — movimento dentro
+  cancela a parada; sair de fato encerra.
+- **Correção 2 (após teste):** o fallback de `:hover` no poll foi removido. O
+  webview mantinha hover obsoleto no "Sim" depois de esconder/mostrar a janela,
+  então só manter o cursor no Resumo iniciava o segundo timer. O início do "Sim"
+  agora usa exclusivamente a posição global do cursor; `elementFromPoint` fica
+  só no debounce de saída.
+- Testes cobrem travessia texto→contador, leave transitório, saída real,
+  retomada por `pointermove`, timer idempotente e travessia no gatilho.
+
+### Verificação
+- `pnpm test` **394 ✓** · `tsc --noEmit` ✓.
+- AppImage (21:20) reconstruído; manter o cursor no Resumo abre a confirmação
+  mas não inicia o "Sim"; mover para o texto/badge e permanecer confirma no
+  tempo configurado.
+
+## 2026-10-21 — Drill-hover simplificado para um estágio (BR-036, task 19)
+
+- **IDs:** BR-036 (revisão), T19 · **Rules:** R16/R17
+- **Refs:** [`tasks/19-task.md`](tasks/19-task.md),
+  [`architecture/drill-hover.md`](architecture/drill-hover.md),
+  [`../business-rules.md`](../business-rules.md) BR-036
+
+### Relato/decisão
+O fluxo de dois estágios (preencher → popup "Sem clique" + "Sim" → segundo
+timer) continuou instável mesmo após as correções de hover. O usuário pediu
+para simplificar: **se o timer do botão principal completar, executa a ação
+diretamente**.
+
+### Entregue
+- `DwellButton`: timer único; ao completar chama `onActivate`, clique continua
+  imediato; saída antes do fim cancela.
+- `DwellProvider` enxuto (`enabled` + `durationMs`), sem ação pendente/estado
+  entre janelas.
+- Removidos popup, janela Tauri `dwell`, segundo timer, porta/adaptador/IPC,
+  rota `dwell`, permissão de cursor, posicionamento e testes associados.
+- `Settings.dwell_enabled`/`dwell_ms` e o fill CSS do botão permanecem.
+- BR-036, US-11, arquitetura, notch-ui e design tokens atualizados.
+
+### Verificação
+- Frontend **377 ✓** · `tsc --noEmit` ✓.
+- Rust **614 ✓** (10 ignorados) · clippy `-D warnings` ✓.
+- AppImage (21:41) validado: hover em Resumo executa ao completar, sem janela
+  `dwell`/popup; sair antes não executa; clique imediato.

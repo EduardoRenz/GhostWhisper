@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export interface DwellTimer {
   /** `true` enquanto o cursor está sobre o alvo e o tempo corre. */
   active: boolean;
-  /** Inicia/reinicia o timer. */
+  /** Inicia o timer; repetir enquanto ativo não reinicia a contagem. */
   start: () => void;
   /** Cancela e zera (saída/clique). */
   stop: () => void;
@@ -35,11 +35,8 @@ export function useDwellTimer(
   }, []);
 
   const start = useCallback(() => {
-    if (!enabled) {
+    if (!enabled || timer.current !== null) {
       return;
-    }
-    if (timer.current !== null) {
-      window.clearTimeout(timer.current);
     }
     setActive(true);
     timer.current = window.setTimeout(() => {
@@ -48,6 +45,12 @@ export function useDwellTimer(
       elapsed.current();
     }, durationMs);
   }, [durationMs, enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      stop();
+    }
+  }, [enabled, stop]);
 
   useEffect(
     () => () => {

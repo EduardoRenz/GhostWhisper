@@ -243,32 +243,28 @@ sendo captado de forma imediata.
 ### US-11 — Acionar sem clique (drill-hover)
 
 Como usuário em modo stealth, quero acionar **Resumo** e **Sugestões** apenas
-mantendo o cursor sobre o botão, com uma confirmação, para não depender de cliques.
+mantendo o cursor sobre o botão, com feedback de preenchimento, sem precisar
+clicar.
 
 - **CA-11.1** Com `dwell_enabled`, manter o cursor sobre **Resumo** ou **Sugestões**
-  preenche o botão da esquerda para a direita em `dwell_ms` (padrão **0,5 s**). Ao
-  completar, abre a confirmação. Sair antes zera o preenchimento imediatamente.
-- **CA-11.2** A confirmação é uma **janela própria flutuante**, com a dica **"Sem
-  clique"**, o botão **"Sim"** e a duração. O "Sim" também exige `dwell_ms` para
-  confirmar; **clique** nele confirma imediatamente (fallback). Confirmar executa a
-  ação **uma vez** e fecha.
-- **CA-11.3** **Clique** no botão original executa a ação **na hora**, sem
-  confirmação.
-- **CA-11.4** A confirmação aparece **acima** do gatilho quando há espaço na área útil
-  do monitor; senão, **abaixo**; sempre visível (clamp nas bordas).
-- **CA-11.5** Se o cursor sair do gatilho e da confirmação (sem estar sobre o "Sim"),
-  a confirmação fecha após `dwell_ms`; voltar a qualquer uma das áreas cancela o
-  fechamento. `Escape` fecha na hora.
+  preenche o botão da esquerda para a direita em `dwell_ms` (padrão **0,5 s**).
+  Ao completar, a ação é executada **diretamente**, uma única vez.
+- **CA-11.2** Sair do botão antes de completar zera o preenchimento e não executa
+  nada. Permanecer depois de completar não repete a ação.
+- **CA-11.3** **Clique** no botão executa a ação **na hora** e cancela o timer.
+- **CA-11.4** Não há confirmação intermediária, popup, janela `dwell`, botão
+  "Sim" nem segundo timer. O fluxo é de **um único estágio**.
+- **CA-11.5** `Escape`/perda de atividade da sessão cancela o timer em curso.
 - **CA-11.6** `dwell_enabled` (padrão ligado) e `dwell_ms` (padrão 500 ms, faixa
-  300–2000 ms) ficam em **Ajustes** e persistem; desligado, o hover não faz nada e o
-  clique continua. A duração vale para os dois estágios.
+  300–2000 ms) ficam em **Ajustes** e persistem; desligado, o hover não faz nada e
+  o clique continua.
 - **CA-11.7** O mecanismo é **opt-in**: só Resumo e Sugestões o usam no notch; os
   demais botões não mudam. Um botão novo passa a usar sem duplicar lógica.
-- **CA-11.8** Sem som/toast. O preenchimento não re-renderiza a barra a cada quadro
-  nem republica regiões interativas (ISS-020); `prefers-reduced-motion` mantém o
-  dwell e remove glow/pulso.
+- **CA-11.8** Sem som/toast. O preenchimento é CSS-only e não republica regiões
+  interativas (ISS-020); `prefers-reduced-motion` mantém o tempo e remove
+  glow/pulso.
 - **Detalhes:** [`architecture/drill-hover.md`](architecture/drill-hover.md),
-  [`tasks/09-task.md`](tasks/09-task.md)…[`12-task.md`](tasks/12-task.md).
+  [`tasks/19-task.md`](tasks/19-task.md).
 
 ## 5. Requisitos
 
@@ -284,8 +280,9 @@ mantendo o cursor sobre o botão, com uma confirmação, para não depender de c
 - **RF-06** Troca de idioma **em tempo real** no ASR (próximo passe).
 - **RF-07** Engrenagem abre as Configurações.
 - **RF-08** Ação primária verde com **badge do atalho**.
-- **RF-09** **Drill-hover** opt-in (Resumo/Sugestões) com dois estágios,
-  confirmação flutuante e duração configurável; clique segue imediato.
+- **RF-09** **Drill-hover** opt-in (Resumo/Sugestões) de **um estágio**: o
+  preenchimento completa e executa a ação; duração configurável; clique segue
+  imediato.
 
 ### Não funcionais (RNF)
 
@@ -304,9 +301,9 @@ mantendo o cursor sobre o botão, com uma confirmação, para não depender de c
   campos de layout (sem segredos — BR-003).
 - **RNF-07 — Documentação única (BR-016):** IDs `BR-032`…`BR-034`, `ISS-033`,
   `NN-task`; sem duplicar conteúdo já documentado.
-- **RNF-08 — Drill-hover acessível e estável:** clique sempre funciona; confirmação
-  não redimensiona o notch; a janela flutuante não captura foco; `Escape` cancela;
-  `prefers-reduced-motion` preserva o tempo.
+- **RNF-08 — Drill-hover acessível e estável:** clique sempre funciona; não há
+  janela de confirmação; sair antes de completar cancela; `prefers-reduced-motion`
+  preserva o tempo e remove glow/pulso.
 
 ## 6. Não-objetivos
 
@@ -330,8 +327,7 @@ mantendo o cursor sobre o botão, com uma confirmação, para não depender de c
 | Custo do resumo automático com a janela sempre aberta | automático só com a **aba Resumo ativa** (CA-05.2) |
 | Abas + resize em Wayland | mesmo caminho X11/XWayland do overlay (BR-007) |
 | Ícones sem rótulo virarem "adivinhação" | `title` + `aria-label` obrigatórios e testados (CA-02.1, RNF-04) |
-| Hover atravessar duas janelas (notch ↔ confirmação) e fechar sem querer | grace de `dwell_ms` entre as áreas; entrar em qualquer uma cancela o fechamento (CA-11.5) |
-| Popover clipado/fora da tela | janela própria + posicionamento pela área útil do monitor, acima/abaixo (CA-11.4) |
+| Acionar por hover sem intenção | preenchimento durante `dwell_ms`; sair antes cancela e não executa (CA-11.2) |
 | Preenchimento animado republicar regiões interativas (ISS-020) | animação **CSS-only** por classe; observer ignora `.dwell-fill` |
 
 ## 8. Métricas de sucesso

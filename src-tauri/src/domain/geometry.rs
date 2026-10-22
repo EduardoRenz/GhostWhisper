@@ -103,52 +103,7 @@ pub fn should_pass_through_margin(
     )
 }
 
-/// Resultado do posicionamento da janela de confirmação do drill-hover.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DwellPopoverLayout {
-    /// Coordenada X (física) do canto superior esquerdo.
-    pub x: i32,
-    /// Coordenada Y (física) do canto superior esquerdo.
-    pub y: i32,
-    /// `true` quando abriu acima do gatilho.
-    pub above: bool,
-}
-
-/// Posiciona a confirmação **acima** do gatilho quando há espaço; senão abaixo.
-///
-/// `anchor` e `work_area` estão em **pixels físicos**; `size` é o tamanho físico
-/// da janela de confirmação. Respeita `gap` (distância do gatilho) e `margin`
-/// (borda da área útil), com clamp horizontal/vertical.
-pub fn dwell_popover_position(
-    anchor: Rect,
-    work_area: Rect,
-    size: (i32, i32),
-    gap: i32,
-    margin: i32,
-) -> DwellPopoverLayout {
-    let min_x = work_area.x + margin;
-    let max_x = (work_area.x + work_area.width - size.0 - margin).max(min_x);
-    let center_x = anchor.x + anchor.width / 2 - size.0 / 2;
-    let x = center_x.clamp(min_x, max_x);
-
-    let space_above = anchor.y - work_area.y;
-    let space_below = work_area.y + work_area.height - (anchor.y + anchor.height);
-    let needed = size.1 + gap + margin;
-    let above = space_above >= needed || (space_below < needed && space_above >= space_below);
-
-    let raw_y = if above {
-        anchor.y - gap - size.1
-    } else {
-        anchor.y + anchor.height + gap
-    };
-    let min_y = work_area.y + margin;
-    let max_y = (work_area.y + work_area.height - size.1 - margin).max(min_y);
-    let y = raw_y.clamp(min_y, max_y);
-
-    DwellPopoverLayout { x, y, above }
-}
-
-/// Trava de histerese para o click-through.
+/// Trava de histerese do click-through.
 ///
 /// Entrar numa região interativa é **imediato** (evita perder o clique — ISS-001);
 /// voltar a ignorar o cursor só ocorre após `leave_samples` amostras
@@ -330,53 +285,5 @@ mod tests {
         assert!(latch.update(true));
         latch.reset();
         assert!(!latch.update(false));
-    }
-
-    #[test]
-    fn dwell_popover_prefers_above_when_it_fits() {
-        let anchor = rect(400, 300, 100, 30);
-        let work = rect(0, 0, 1920, 1080);
-        let layout = dwell_popover_position(anchor, work, (236, 64), 8, 8);
-        assert!(layout.above);
-        assert_eq!(layout.y, 300 - 8 - 64);
-        assert_eq!(layout.x, 400 + 50 - 118);
-    }
-
-    #[test]
-    fn dwell_popover_falls_below_near_the_top() {
-        let anchor = rect(400, 10, 100, 30);
-        let work = rect(0, 0, 1920, 1080);
-        let layout = dwell_popover_position(anchor, work, (236, 64), 8, 8);
-        assert!(!layout.above);
-        assert_eq!(layout.y, 10 + 30 + 8);
-    }
-
-    #[test]
-    fn dwell_popover_clamps_horizontally_to_the_work_area() {
-        // Gatilho colado à direita (no meio vertical: acima ainda cabe).
-        let anchor = rect(1880, 500, 40, 30);
-        let work = rect(0, 0, 1920, 1080);
-        let layout = dwell_popover_position(anchor, work, (236, 64), 8, 8);
-        assert!(layout.above);
-        assert_eq!(layout.x, 1920 - 236 - 8);
-    }
-
-    #[test]
-    fn dwell_popover_clamps_vertically_in_a_tiny_work_area() {
-        let anchor = rect(20, 40, 40, 15);
-        let work = rect(0, 0, 300, 100);
-        let layout = dwell_popover_position(anchor, work, (236, 64), 8, 8);
-        assert!(!layout.above);
-        assert_eq!(layout.y, 100 - 64 - 8);
-    }
-
-    #[test]
-    fn dwell_popover_keeps_position_with_negative_monitor_origin() {
-        // Monitor à esquerda do principal (origem negativa).
-        let anchor = rect(-300, 100, 80, 30);
-        let work = rect(-1920, 0, 1920, 1080);
-        let layout = dwell_popover_position(anchor, work, (236, 64), 8, 8);
-        assert!(layout.x >= -1920 + 8);
-        assert!(layout.above);
     }
 }

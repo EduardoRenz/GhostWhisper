@@ -47,12 +47,8 @@ impl From<InteractiveRegion> for Rect {
 
 /// Alterna a visibilidade do overlay; retorna `true` se ficou visível.
 #[tauri::command]
-pub fn overlay_toggle(app: AppHandle, state: State<'_, AppState>) -> Result<bool> {
-    let visible = state.overlay.toggle();
-    if !visible {
-        crate::ipc::dwell::dismiss(&app, &state);
-    }
-    Ok(visible)
+pub fn overlay_toggle(state: State<'_, AppState>) -> Result<bool> {
+    Ok(state.overlay.toggle())
 }
 
 /// Liga/desliga o modo stealth (fora da barra de tarefas, sem título).
@@ -77,16 +73,8 @@ pub fn overlay_set_click_through(state: State<'_, AppState>, enabled: bool) -> R
 
 /// Ajusta a superfície da janela (barra/expandida/oculta).
 #[tauri::command]
-pub fn overlay_set_surface(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    surface: SurfaceDto,
-) -> Result<()> {
-    let surface: Surface = surface.into();
-    if matches!(surface, Surface::Hidden) {
-        crate::ipc::dwell::dismiss(&app, &state);
-    }
-    state.overlay.set_surface(surface);
+pub fn overlay_set_surface(state: State<'_, AppState>, surface: SurfaceDto) -> Result<()> {
+    state.overlay.set_surface(surface.into());
     Ok(())
 }
 

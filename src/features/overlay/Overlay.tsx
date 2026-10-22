@@ -4,7 +4,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type ComponentProps,
 } from "react";
 import {
   openSettingsWindow,
@@ -25,7 +24,7 @@ import { useRecording } from "../../core/application/useRecording";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { defaultBindings } from "../../core/domain/shortcuts";
-import { DwellProvider, useDwell } from "../../components/dwell/DwellProvider";
+import { DwellProvider } from "../../components/dwell/DwellProvider";
 import { ActionBar } from "./ActionBar";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 
@@ -168,7 +167,7 @@ export function Overlay() {
           durationMs={settings.dwell_ms}
           active={state.listening}
         >
-          <DwellActionBar
+          <ActionBar
             listening={state.listening}
             paused={state.paused}
             channels={state.channels}
@@ -211,19 +210,5 @@ export function Overlay() {
         </p>
       )}
     </div>
-  );
-}
-
-/** Barra com o drill-hover: esconder o overlay também fecha a confirmação. */
-function DwellActionBar(props: ComponentProps<typeof ActionBar>) {
-  const dwell = useDwell();
-  return (
-    <ActionBar
-      {...props}
-      onHide={() => {
-        dwell.cancel();
-        props.onHide();
-      }}
-    />
   );
 }

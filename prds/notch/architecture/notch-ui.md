@@ -27,9 +27,7 @@ src/features/panel/SummaryView.tsx       # conteúdo que hoje é a janela `summa
 src/features/panel/LanguageBar.tsx       # barra inferior: seletor de idioma + estado
 
 src/components/dwell/DwellButton.tsx     # opt-in: fill + clique imediato (BR-036)
-src/components/dwell/DwellPopover.tsx    # "Sem clique" + "Sim"
-src/components/dwell/DwellProvider.tsx   # ação pendente + grace no overlay
-src/features/dwell/DwellPopoverWindow.tsx # rota `dwell` (janela de confirmação)
+src/components/dwell/DwellProvider.tsx   # enabled + durationMs (um estágio)
 
 src/core/domain/shortcuts.ts             # + parseAccelerator / acceleratorBadges (puro)
 src/core/domain/settings.ts             # + panel_tab; - summary_position/summary_size
@@ -94,13 +92,11 @@ Layout do protótipo (sem copiar Tailwind/Material — BR-008/BR-035):
 ### 2.2 Drill-hover em Resumo/Sugestões (task 11)
 
 - **Gatilhos:** somente **Resumo** e **Sugestões**. Clique executa a ação na hora;
-  permanecer com o cursor preenche o item (0,5 s por padrão) e abre a confirmação.
-- **Confirmação:** janela Tauri `dwell` própria (transparente, sem foco), com **"Sem
-  clique"** + **"Sim"** + duração; acima do gatilho se couber, senão abaixo (work
-  area). O notch **não** redimensiona.
-- **Grace:** sair do gatilho e da confirmação inicia o fechamento após `dwell_ms`;
-  voltar a qualquer uma das áreas cancela; sobre o "Sim" o dwell de confirmação
-  continua.
+  permanecer com o cursor preenche o item (0,5 s por padrão) e, ao completar,
+  executa a ação **diretamente**.
+- **Sem confirmação intermediária:** não há janela `dwell`, popup "Sem clique",
+  botão "Sim" nem segundo timer. Sair antes do fim cancela; completar executa uma
+  vez.
 - **Config:** `dwell_enabled` (padrão ligado) e `dwell_ms` (padrão 500 ms) nos
   Ajustes. Sem som/toast.
 - Detalhes: [`drill-hover.md`](drill-hover.md) e BR-036.

@@ -122,21 +122,6 @@
         "center": true
       },
       {
-        "label": "dwell",
-        "title": "",
-        "width": 260,
-        "height": 60,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "shadow": false,
-        "focus": false,
-        "visible": false,
-        "center": false
-      },
-      {
         "label": "recording-picker",
         "title": "Gravar janela",
         "width": 440,

@@ -25,9 +25,6 @@ describe("resolveRoute", () => {
     windowLabel.current = "history";
     expect(resolveRoute()).toBe("history");
 
-    windowLabel.current = "dwell";
-    expect(resolveRoute()).toBe("dwell");
-
     windowLabel.current = "desconhecida";
     expect(resolveRoute()).toBe("unknown");
   });

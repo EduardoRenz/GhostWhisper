@@ -24,6 +24,8 @@ só começa após a revisão da PRD pelo usuário.
 | 15 | Notch encosta no topo (tamanho real da janela — ISS-044) | CONCLUDED |
 | 16 | Notch não se move ao salvar settings de outras janelas (ISS-045) | CONCLUDED |
 | 17 | Notch com largura dinâmica + menu de canais visível (ISS-047) | CONCLUDED |
+| 18 | Dwell do "Sim" contínuo ao mover dentro do botão (ISS-048) | CONCLUDED |
+| 19 | Drill-hover em um estágio (sem confirmação "Sim") | CONCLUDED |
 
 ## Dependências
 
@@ -33,6 +35,7 @@ só começa após a revisão da PRD pelo usuário.
 04 ─────────┘
 02,03,05 ─▶ 07 ─▶ 08
 09 ─▶ 10 ─▶ 11 ─▶ 12 ─▶ 13
+10,11 ─▶ 18
 ```
 
 - 01 é a base (ícones + `IconButton` + badges) e não muda comportamento.
@@ -49,6 +52,10 @@ só começa após a revisão da PRD pelo usuário.
   painéis contra saves de outras janelas.
 - 17 (ISS-047) depende de 11/15: menu de canais abaixo da barra e largura pelo
   conteúdo.
+- 18 (ISS-048) depende de 10/11: robustez do segundo estágio do drill-hover
+  (histórico; substituído pela 19).
+- 19 substitui o fluxo de dois estágios: o botão principal executa a ação ao
+  completar o dwell, sem janela/popup "Sim".
 - 08 (notch ativo) depende de 07: aplica a **estrutura** do protótipo (switcher,
   waveform, play/pause contextual) sobre os tokens.
 

@@ -9,7 +9,6 @@
 pub mod ai;
 pub mod ai_sources;
 pub mod audio;
-pub mod dwell;
 pub mod events;
 pub mod manual;
 pub mod overlay;

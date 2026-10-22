@@ -11,7 +11,6 @@ use crate::ports::audio_monitor::AudioMonitor;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::click_through::ClickThroughController;
 use crate::ports::clock::Clock;
-use crate::ports::dwell_popover::DwellPopoverController;
 use crate::ports::event_publisher::EventPublisher;
 use crate::ports::gpu_probe::GpuProbe;
 use crate::ports::journal_repository::JournalRepository;
@@ -87,8 +86,6 @@ pub struct AppState {
     pub publisher: Arc<dyn EventPublisher>,
     /// Registro de atalhos globais.
     pub shortcuts: Arc<dyn GlobalShortcutRegistry>,
-    /// Janela de confirmação do drill-hover (BR-036).
-    pub dwell: Arc<dyn DwellPopoverController>,
     /// Gravação da sessão (BR-065).
     pub recording: Arc<dyn RecordingController>,
     /// Sessão encerrada exibida pelo modal "Sessão Finalizada" (BR-068).
@@ -125,7 +122,6 @@ impl AppState {
         manual_context: Arc<dyn ManualSuggestionContextStore>,
         publisher: Arc<dyn EventPublisher>,
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
-        dwell: Arc<dyn DwellPopoverController>,
         recording: Arc<dyn RecordingController>,
         pending_session_end: Arc<dyn PendingSessionEnd>,
     ) -> Self {
@@ -156,7 +152,6 @@ impl AppState {
             manual_context,
             publisher,
             shortcuts,
-            dwell,
             recording,
             pending_session_end,
         }
@@ -503,23 +498,6 @@ mod tests {
         }
     }
 
-    struct FakeDwell {
-        open: Mutex<Option<u32>>,
-    }
-    impl crate::ports::dwell_popover::DwellPopoverController for FakeDwell {
-        fn show(&self, _anchor: Rect, dwell_ms: u32) -> Result<()> {
-            *self.open.lock().unwrap() = Some(dwell_ms);
-            Ok(())
-        }
-        fn hide(&self) -> Result<()> {
-            *self.open.lock().unwrap() = None;
-            Ok(())
-        }
-        fn context(&self) -> Option<u32> {
-            *self.open.lock().unwrap()
-        }
-    }
-
     struct FakeRecording;
     impl crate::ports::recording::RecordingController for FakeRecording {
         fn capabilities(&self) -> crate::ports::screen_recorder::RecordingCapabilities {
@@ -538,10 +516,7 @@ mod tests {
         fn pause(&self) -> Result<()> {
             Ok(())
         }
-        fn switch_target(
-            &self,
-            _target: crate::domain::recording::RecordingTarget,
-        ) -> Result<()> {
+        fn switch_target(&self, _target: crate::domain::recording::RecordingTarget) -> Result<()> {
             Ok(())
         }
         fn resume(&self) -> Result<()> {
@@ -603,9 +578,6 @@ mod tests {
             Arc::new(InMemoryManualSuggestionContextStore::new()),
             Arc::new(FakePublisher),
             Arc::new(FakeShortcutRegistry),
-            Arc::new(FakeDwell {
-                open: Mutex::new(None),
-            }),
             Arc::new(FakeRecording),
             Arc::new(
                 crate::adapters::pending::in_memory_pending_session_end::InMemoryPendingSessionEnd::new(),

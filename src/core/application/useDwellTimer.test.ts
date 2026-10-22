@@ -26,6 +26,21 @@ describe("useDwellTimer", () => {
     expect(result.current.active).toBe(false);
   });
 
+  it("iniciar de novo enquanto ativo não reinicia o tempo", () => {
+    const onElapsed = vi.fn();
+    const { result } = renderHook(() => useDwellTimer(500, onElapsed));
+
+    act(() => result.current.start());
+    act(() => vi.advanceTimersByTime(300));
+    act(() => result.current.start());
+    act(() => vi.advanceTimersByTime(199));
+
+    expect(onElapsed).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(onElapsed).toHaveBeenCalledTimes(1);
+  });
+
   it("stop cancela o disparo", () => {
     const onElapsed = vi.fn();
     const { result } = renderHook(() => useDwellTimer(500, onElapsed));
