@@ -9,6 +9,8 @@ export interface AssistantMode {
   system_prompt: string;
   /** Contrato da sugestão ao vivo. */
   suggestion_prompt: string;
+  /** Prompt do resumo (persistido; consumo em feature futura — BR-076). */
+  summary_prompt: string;
   /** Contexto fixo do agente. */
   context: string;
   /** Ícone do agente (catálogo — BR-037). */
@@ -23,7 +25,13 @@ export interface AssistantMode {
   source_id?: string | null;
 }
 
-/** IDs reservados dos agentes embutidos. */
+/** ID do agente **protegido** — o Padrão nunca é editado nem apagado (BR-074). */
+export const PROTECTED_MODE_ID = "default";
+
+/** Nome exibido do agente protegido (fallback fora do catálogo do core). */
+export const PROTECTED_MODE_NAME = "Padrão";
+
+/** IDs dos agentes embutidos (o catálogo de fábrica). */
 export const BUILTIN_MODE_IDS = [
   "default",
   "meeting",
@@ -89,6 +97,14 @@ export const MODE_NAME_MAX_CHARS = 120;
 /** `true` quando o id pertence a um agente embutido. */
 export const isBuiltinMode = (id: string): boolean =>
   (BUILTIN_MODE_IDS as readonly string[]).includes(id);
+
+/** `true` quando o id é o agente **protegido** (o Padrão — BR-074). */
+export const isProtectedMode = (id: string): boolean => id === PROTECTED_MODE_ID;
+
+/** Prompt de resumo do agente (vazio quando ainda não há — BR-076). */
+export const agentSummaryPrompt = (
+  mode: { summary_prompt?: string | null } | null | undefined,
+): string => mode?.summary_prompt?.trim() ?? "";
 
 /** Resumo persistido da sessão (`domain::overview::MeetingSummary`). */
 export interface MeetingSummary {

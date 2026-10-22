@@ -13,13 +13,14 @@ use crate::state::AppState;
 /// Teto do texto selecionado para a sugestão manual.
 const MANUAL_CONTEXT_MAX_CHARS: usize = 6_000;
 
-/// Lista os agentes embutidos + personalizados (com os prompts, para duplicar).
+/// Lista o catálogo efetivo de agentes: o **Padrão** (protegido) + a lista do
+/// usuário, com os prompts (para editar/duplicar).
 #[tauri::command(async)]
 pub fn assistant_modes_list(state: State<'_, AppState>) -> Result<Vec<AssistantMode>> {
     let settings = state.settings.load()?;
-    let mut modes = crate::application::prompts::assistant::builtin_modes();
-    modes.extend(settings.custom_assistant_modes);
-    Ok(modes)
+    Ok(crate::application::prompts::assistant::effective_modes(
+        &settings.custom_assistant_modes,
+    ))
 }
 
 /// Gera uma sugestão **efêmera** para a janela (não grava nada).

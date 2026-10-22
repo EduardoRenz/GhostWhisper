@@ -619,6 +619,17 @@ mod tests {
         publisher: Arc<RecordingPublisher>,
     }
 
+    /// Simula uma instalação já semeada (BR-075): o boot materializa os
+    /// agentes de fábrica na lista do usuário.
+    fn seeded(mut settings: Settings) -> Settings {
+        if settings.custom_assistant_modes.is_empty() {
+            settings.custom_assistant_modes =
+                crate::application::prompts::assistant::factory_modes();
+            settings.assistant_modes_seeded = true;
+        }
+        settings
+    }
+
     fn fixture(settings: Settings, response: &str) -> Fixture {
         let sessions = Arc::new(InMemorySessionRepository::new());
         sessions.create(&session()).expect("create session");
@@ -628,7 +639,7 @@ mod tests {
         let publisher = Arc::new(RecordingPublisher::new());
         let service = SuggestionService::new(
             llm.clone(),
-            Arc::new(InMemorySettingsStore::with_settings(settings)),
+            Arc::new(InMemorySettingsStore::with_settings(seeded(settings))),
             sessions,
             transcriptions.clone(),
             messages.clone(),
@@ -932,7 +943,9 @@ mod tests {
         let publisher = Arc::new(RecordingPublisher::new());
         let service = SuggestionService::new(
             Arc::new(ChunkedLlm),
-            Arc::new(InMemorySettingsStore::with_settings(Settings::default())),
+            Arc::new(InMemorySettingsStore::with_settings(seeded(
+                Settings::default(),
+            ))),
             sessions,
             transcriptions,
             Arc::new(InMemoryMessagesRepository::new()),
@@ -1027,6 +1040,7 @@ mod tests {
                 category: "custom".into(),
                 system_prompt: "Você ajuda em vendas B2B.".into(),
                 suggestion_prompt: "Sugira a próxima fala de vendas.".into(),
+                summary_prompt: String::new(),
                 context: "Produto: GhostWhisper.".into(),
                 icon: "briefcase".into(),
                 color: "coral".into(),

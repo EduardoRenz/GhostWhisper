@@ -8,6 +8,8 @@ pub mod answer_summary;
 pub mod ai_source_migration;
 pub mod ai_source_service;
 pub mod ask_service;
+pub mod assistant_catalog;
+pub mod assistant_catalog_migration;
 pub mod assistant_mode_migration;
 pub mod context;
 pub mod llm_router;

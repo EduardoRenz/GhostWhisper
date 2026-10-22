@@ -135,6 +135,12 @@ export interface Settings {
   assistant_mode_migrated: boolean;
   /** Agentes personalizados criados pelo usuário. */
   custom_assistant_modes: AssistantMode[];
+  /**
+   * Agentes de fábrica já materializados na lista do usuário (BR-075).
+   *
+   * O default do core nasce `false`; o boot semeia a lista e liga a marca.
+   */
+  assistant_modes_seeded: boolean;
   /** Atualização automática do resumo enquanto a janela está aberta. */
   summary_auto_refresh: boolean;
   /** Intervalo do resumo automático (segundos). */
@@ -402,6 +408,7 @@ export const defaultSettings = (): Settings => ({
   assistant_mode_id: "default",
   assistant_mode_migrated: false,
   custom_assistant_modes: [],
+  assistant_modes_seeded: false,
   summary_auto_refresh: true,
   summary_interval_secs: 30,
   suggestion_auto_refresh: true,

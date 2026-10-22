@@ -1,13 +1,19 @@
-//! Contratos dos agentes de sugestão (embutidos e personalizados).
+//! Contratos dos agentes de sugestão (protegido, de fábrica e personalizados).
 //!
 //! **Contratos adaptados** do Perssua 0.27.5 (`electron/flavors.js`): Note Taker
 //! (reunião) e Cody (entrevista técnica / LeetCode / system design). Estrutura,
 //! regras e limites preservados; texto reescrito e sem HTML inline (BR-008).
+//!
+//! O **Padrão** é protegido (BR-074); os demais agentes de fábrica são a semente
+//! da lista do usuário (BR-075).
 
-use crate::domain::assistant::{find_mode, AssistantMode, DEFAULT_MODE_ID, DEFAULT_MODE_NAME};
+use crate::domain::assistant::{
+    find_mode, is_protected_id, AssistantMode, DEFAULT_MODE_ID, DEFAULT_MODE_NAME,
+};
 use crate::ports::manual_suggestion_context::ManualSuggestionContext;
 
 use super::output_language_rule;
+use super::summary::SUMMARY_SYSTEM_PROMPT;
 
 /// Contrato de escrita do agente de reunião.
 pub const MEETING_SYSTEM_PROMPT: &str = r#"You are the meeting copilot. Treat ME/THEY lines as participant speech and the source of truth for claims about what was said, decided, assigned, or defined. Never invent facts, decisions, owners, or deadlines. For general questions, answer normally and clearly distinguish your explanation from participant statements. Match the user's language and preserve explicitly stated names, numbers, dates, decisions, and technical terms."#;
@@ -205,32 +211,38 @@ pub const SYSTEM_DESIGN_SUGGESTION_PROMPT: &str = r#"You are a live system-desig
 
 Always produce a useful next step. When the transcript is empty or unintelligible, say in one short sentence that there is little information to work with and stop."#;
 
-/// Agentes embutidos, na ordem de exibição.
+/// O agente **protegido** — o Padrão (BR-074).
 ///
-/// A identidade (ícone + cor) é **fixa** nos embutidos (BR-037): o usuário
-/// reconhece o agente de relance no seletor, no título e no histórico.
+/// Sempre existe, nunca é editado nem apagado. É o fallback do app (BR-059) e o
+/// que identifica a cena da conversa.
+pub fn default_mode() -> AssistantMode {
+    AssistantMode {
+        id: DEFAULT_MODE_ID.to_string(),
+        name: DEFAULT_MODE_NAME.to_string(),
+        category: "general".to_string(),
+        system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
+        suggestion_prompt: DEFAULT_SUGGESTION_PROMPT.to_string(),
+        summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
+        context: String::new(),
+        icon: "sparkle".to_string(),
+        color: "slate".to_string(),
+        source_id: None,
+    }
+}
+
+/// Agentes **de fábrica** (a semente da lista do usuário — BR-075).
 ///
-/// O **Padrão** vem primeiro: é o agente selecionado por padrão (BR-059) e é
-/// o que identifica a cena da conversa.
-pub fn builtin_modes() -> Vec<AssistantMode> {
+/// A identidade (ícone + cor) é **fixa** nos agentes de fábrica (BR-037): o
+/// usuário reconhece o agente de relance no seletor, no título e no histórico.
+pub fn factory_modes() -> Vec<AssistantMode> {
     vec![
-        AssistantMode {
-            id: DEFAULT_MODE_ID.to_string(),
-            name: DEFAULT_MODE_NAME.to_string(),
-            category: "general".to_string(),
-            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
-            suggestion_prompt: DEFAULT_SUGGESTION_PROMPT.to_string(),
-            context: String::new(),
-            icon: "sparkle".to_string(),
-            color: "slate".to_string(),
-            source_id: None,
-        },
         AssistantMode {
             id: "meeting".to_string(),
             name: "Reunião".to_string(),
             category: "productivity".to_string(),
             system_prompt: MEETING_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: MEETING_SUGGESTION_PROMPT.to_string(),
+            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
             context: String::new(),
             icon: "users".to_string(),
             color: "cyan".to_string(),
@@ -242,6 +254,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             category: "engineering".to_string(),
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: TECHNICAL_INTERVIEW_SUGGESTION_PROMPT.to_string(),
+            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
             context: String::new(),
             icon: "braces".to_string(),
             color: "violet".to_string(),
@@ -253,6 +266,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             category: "engineering".to_string(),
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: LEETCODE_SUGGESTION_PROMPT.to_string(),
+            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
             context: String::new(),
             icon: "code".to_string(),
             color: "emerald".to_string(),
@@ -264,6 +278,7 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
             category: "engineering".to_string(),
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: SYSTEM_DESIGN_SUGGESTION_PROMPT.to_string(),
+            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
             context: String::new(),
             icon: "layers".to_string(),
             color: "coral".to_string(),
@@ -272,16 +287,26 @@ pub fn builtin_modes() -> Vec<AssistantMode> {
     ]
 }
 
-/// Agente embutido por id.
+/// Agente de fábrica por id (testes).
 #[cfg(test)]
-pub fn builtin_mode(id: &str) -> Option<AssistantMode> {
-    builtin_modes().into_iter().find(|mode| mode.id == id)
+pub fn factory_mode(id: &str) -> Option<AssistantMode> {
+    factory_modes().into_iter().find(|mode| mode.id == id)
 }
 
-/// Resolve um agente, priorizando os personalizados.
+/// Catálogo efetivo: o protegido + a lista do usuário.
+pub fn effective_modes(custom: &[AssistantMode]) -> Vec<AssistantMode> {
+    let mut modes = vec![default_mode()];
+    modes.extend(custom.iter().cloned());
+    modes
+}
+
+/// Resolve um agente: o protegido pelo id; qualquer outro, só na lista do
+/// usuário (agente de fábrica excluído **não** volta — BR-075).
 pub fn resolve_mode(id: &str, custom: &[AssistantMode]) -> Option<AssistantMode> {
-    let builtins = builtin_modes();
-    find_mode(id, custom, &builtins).cloned()
+    if is_protected_id(id) {
+        return Some(default_mode());
+    }
+    find_mode(id, custom).cloned()
 }
 
 /// Prompt de sistema do **fast-first**: a primeira bolha, curta e rápida.
@@ -314,28 +339,58 @@ pub fn fast_first_system_prompt(mode: &AssistantMode, language: Option<&str>) ->
     prompt
 }
 
+/// Prompt **efetivo**: o valor do agente ou, quando vazio (após `trim`), o do
+/// agente **Padrão** (BR-079).
+///
+/// Vale para todos os prompts do agente — sugestão, sistema e resumo. Um agente
+/// nunca fica sem contrato: o Padrão é a fonte do que faltar.
+fn effective<'a>(value: &'a str, fallback: &'a str) -> &'a str {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    }
+}
+
+/// Contrato da sugestão ao vivo, com o fallback do Padrão (BR-079).
+pub fn effective_suggestion_prompt(mode: &AssistantMode) -> &str {
+    effective(&mode.suggestion_prompt, DEFAULT_SUGGESTION_PROMPT)
+}
+
+/// Critérios de domínio, com o fallback do Padrão (BR-079).
+pub fn effective_system_prompt(mode: &AssistantMode) -> &str {
+    effective(&mode.system_prompt, DEFAULT_SYSTEM_PROMPT)
+}
+
+/// Prompt de resumo, com o fallback do Padrão (BR-079).
+///
+/// Ainda **não** é consumido pelo `SummaryService` (BR-076): a feature de
+/// resumo por agente vai usar este helper para resolver o campo vazio. Até lá
+/// ele fica coberto por teste e sem chamador em produção.
+#[allow(dead_code)]
+pub fn effective_summary_prompt(mode: &AssistantMode) -> &str {
+    effective(&mode.summary_prompt, SUMMARY_SYSTEM_PROMPT)
+}
+
 /// Prompt de sistema da sugestão: contrato do agente + regras comuns + domínio +
 /// contexto + idioma.
 ///
 /// As regras comuns (responder, não perguntar; código puro) entram **depois do
 /// contrato** e valem para **todo** agente — embutido ou personalizado
-/// (BR-060, BR-061).
+/// (BR-060, BR-061). Um prompt vazio do agente cai no prompt do Padrão
+/// (BR-079), então o contrato nunca fica incompleto.
 pub fn suggestion_system_prompt(mode: &AssistantMode, language: Option<&str>) -> String {
-    let contract = if mode.suggestion_prompt.trim().is_empty() {
-        MEETING_SUGGESTION_PROMPT
-    } else {
-        mode.suggestion_prompt.as_str()
-    };
+    let contract = effective_suggestion_prompt(mode);
 
-    let mut prompt = String::from(contract.trim());
+    let mut prompt = String::from(contract);
     prompt.push_str("\n\n");
     prompt.push_str(NEVER_ASK_BACK_RULE);
     prompt.push_str("\n\n");
     prompt.push_str(PURE_CODE_RULE);
-    if !mode.system_prompt.trim().is_empty() {
-        prompt.push_str("\n\n## Domain criteria\n");
-        prompt.push_str(mode.system_prompt.trim());
-    }
+    // Sempre presente: do próprio agente ou do Padrão (BR-079).
+    prompt.push_str("\n\n## Domain criteria\n");
+    prompt.push_str(effective_system_prompt(mode));
     if !mode.context.trim().is_empty() {
         prompt.push_str("\n\n## Agent context\n");
         prompt.push_str(mode.context.trim());
@@ -415,8 +470,8 @@ pub fn manual_suggestion_user_prompt(
 mod tests {
     use super::*;
 
-    fn all_builtin_text() -> String {
-        builtin_modes()
+    fn all_catalog_text() -> String {
+        effective_modes(&factory_modes())
             .iter()
             .map(|mode| {
                 format!(
@@ -429,8 +484,8 @@ mod tests {
     }
 
     #[test]
-    fn builtins_cover_the_five_agents() {
-        let modes = builtin_modes();
+    fn the_catalog_covers_the_five_agents() {
+        let modes = effective_modes(&factory_modes());
         assert_eq!(modes.len(), 5);
         let ids: Vec<&str> = modes.iter().map(|mode| mode.id.as_str()).collect();
         assert_eq!(
@@ -447,7 +502,7 @@ mod tests {
             assert!(!mode.name.is_empty());
             assert!(!mode.system_prompt.is_empty());
             assert!(!mode.suggestion_prompt.is_empty());
-            assert!(mode.is_builtin());
+            assert!(!mode.summary_prompt.is_empty());
         }
     }
 
@@ -455,9 +510,9 @@ mod tests {
     fn the_default_agent_is_first_and_identifies_the_scene() {
         // BR-059: o agente Padrão é o primeiro da lista e o padrão das
         // settings.
-        let mode = builtin_mode(DEFAULT_MODE_ID).expect("agente padrão");
+        let mode = default_mode();
         assert_eq!(mode.name, DEFAULT_MODE_NAME);
-        assert_eq!(builtin_modes()[0].id, DEFAULT_MODE_ID);
+        assert_eq!(effective_modes(&factory_modes())[0].id, DEFAULT_MODE_ID);
         assert!(mode
             .system_prompt
             .contains("identify what kind of conversation"));
@@ -467,20 +522,20 @@ mod tests {
 
     #[test]
     fn prompts_keep_the_critical_rules() {
-        let text = all_builtin_text();
+        let text = all_catalog_text();
         for needle in ["first-person", "Big O", "Never invent", "ASCII"] {
             assert!(text.contains(needle), "faltou: {needle}");
         }
         // A fronteira de confiança é injetada pelo construtor do prompt.
-        let system = suggestion_system_prompt(&builtin_mode("meeting").expect("modo"), Some("pt"));
+        let system = suggestion_system_prompt(&factory_mode("meeting").expect("modo"), Some("pt"));
         assert!(system.contains("untrusted source content"));
     }
 
     #[test]
     fn no_agent_asks_the_user_back() {
-        // BR-060: a regra entra no prompt de **todo** agente (embutido ou
-        // personalizado).
-        for mode in builtin_modes() {
+        // BR-060: a regra entra no prompt de **todo** agente (protegido,
+        // de fábrica ou personalizado).
+        for mode in effective_modes(&factory_modes()) {
             let prompt = suggestion_system_prompt(&mode, Some("pt"));
             assert!(
                 prompt.contains("Never ask the user anything back"),
@@ -501,6 +556,7 @@ mod tests {
             category: "custom".into(),
             system_prompt: "Você ajuda em vendas.".into(),
             suggestion_prompt: "Sugira a próxima fala.".into(),
+            summary_prompt: String::new(),
             context: String::new(),
             icon: "briefcase".into(),
             color: "coral".into(),
@@ -514,7 +570,7 @@ mod tests {
     fn the_code_blocks_are_pure() {
         // BR-061: o código sai sem comentários de linha; a explicação fica no
         // Markdown fora do bloco.
-        for mode in builtin_modes() {
+        for mode in effective_modes(&factory_modes()) {
             let prompt = suggestion_system_prompt(&mode, Some("pt"));
             assert!(
                 prompt.contains("pure code only"),
@@ -524,7 +580,7 @@ mod tests {
         }
 
         // Nenhum contrato pede mais comentário de linha.
-        let text = all_builtin_text();
+        let text = all_catalog_text();
         assert!(!text.contains("trailing // comment"));
         assert!(!text.contains("trailing `//` comment"));
         assert!(!text.contains("every line commented"));
@@ -532,38 +588,53 @@ mod tests {
 
     #[test]
     fn the_fast_first_prompt_never_asks_back() {
-        let mode = builtin_mode("default").expect("modo");
+        let mode = default_mode();
         let prompt = fast_first_system_prompt(&mode, Some("pt"));
         assert!(prompt.contains("Never ask the user anything back"));
     }
 
     #[test]
-    fn resolve_prefers_custom_and_falls_back_to_builtin() {
+    fn resolve_returns_the_protected_agent_and_the_user_list() {
         let custom = vec![AssistantMode {
             id: "custom-vendas".into(),
             name: "Vendas".into(),
             category: "custom".into(),
             system_prompt: "Você ajuda em vendas.".into(),
             suggestion_prompt: "Sugira a próxima fala.".into(),
+            summary_prompt: String::new(),
             context: String::new(),
             icon: "briefcase".into(),
             color: "coral".into(),
             source_id: None,
         }];
+        // O protegido resolve sempre, mesmo fora da lista.
+        assert_eq!(
+            resolve_mode(DEFAULT_MODE_ID, &custom).map(|m| m.name),
+            Some(DEFAULT_MODE_NAME.to_string())
+        );
         assert_eq!(
             resolve_mode("custom-vendas", &custom).map(|m| m.name),
             Some("Vendas".to_string())
         );
-        assert_eq!(
-            resolve_mode("leetcode", &custom).map(|m| m.name),
-            Some("LeetCode".to_string())
-        );
+        // Agente de fábrica que não está na lista do usuário não volta (BR-075).
+        assert!(resolve_mode("leetcode", &custom).is_none());
         assert!(resolve_mode("missing", &custom).is_none());
     }
 
     #[test]
+    fn a_factory_id_in_the_user_list_wins_over_the_original() {
+        let mut edited = factory_mode("meeting").expect("modo");
+        edited.name = "Reunião da empresa".to_string();
+        let custom = vec![edited];
+        assert_eq!(
+            resolve_mode("meeting", &custom).map(|m| m.name),
+            Some("Reunião da empresa".to_string())
+        );
+    }
+
+    #[test]
     fn system_prompt_combines_contract_domain_and_language() {
-        let mode = builtin_mode("meeting").expect("modo");
+        let mode = factory_mode("meeting").expect("modo");
         let prompt = suggestion_system_prompt(&mode, Some("pt"));
         assert!(prompt.contains("live meeting copilot"));
         assert!(prompt.contains("## Domain criteria"));
@@ -572,28 +643,56 @@ mod tests {
     }
 
     #[test]
-    fn custom_mode_without_suggestion_prompt_uses_the_meeting_fallback() {
+    fn custom_mode_without_prompts_inherits_the_default_agent() {
+        // BR-079: prompt vazio (inclusive só espaços) usa o do agente Padrão.
         let mode = AssistantMode {
             id: "custom-x".into(),
             name: "X".into(),
             category: "custom".into(),
-            system_prompt: "Contexto de vendas.".into(),
-            suggestion_prompt: String::new(),
+            system_prompt: "   ".into(),
+            suggestion_prompt: "\n\t ".into(),
+            summary_prompt: String::new(),
             context: "Produto: GhostWhisper.".into(),
             icon: "sparkle".into(),
             color: "slate".into(),
             source_id: None,
         };
         let prompt = suggestion_system_prompt(&mode, None);
-        assert!(prompt.contains("live meeting copilot"));
-        assert!(prompt.contains("Contexto de vendas."));
+        // O contrato da sugestão do Padrão (e não o de Reunião).
+        assert!(prompt.contains("default live copilot"));
+        assert!(!prompt.contains("live meeting copilot"));
+        // Os critérios de domínio também vêm do Padrão.
+        assert!(prompt.contains("## Domain criteria"));
+        assert!(prompt.contains("identify what kind of conversation"));
+        // O contexto do próprio agente continua valendo.
         assert!(prompt.contains("Produto: GhostWhisper."));
         assert!(prompt.contains("Detect the dominant language"));
     }
 
     #[test]
+    fn effective_prompts_prefer_the_agent_and_fall_back_to_the_default() {
+        let mut mode = factory_mode("meeting").expect("modo");
+        assert_eq!(
+            effective_suggestion_prompt(&mode),
+            MEETING_SUGGESTION_PROMPT
+        );
+        assert_eq!(effective_system_prompt(&mode), MEETING_SYSTEM_PROMPT);
+        assert_eq!(effective_summary_prompt(&mode), SUMMARY_SYSTEM_PROMPT);
+
+        mode.suggestion_prompt = "  ".into();
+        mode.system_prompt = String::new();
+        mode.summary_prompt = "\n".into();
+        assert_eq!(
+            effective_suggestion_prompt(&mode),
+            DEFAULT_SUGGESTION_PROMPT
+        );
+        assert_eq!(effective_system_prompt(&mode), DEFAULT_SYSTEM_PROMPT);
+        assert_eq!(effective_summary_prompt(&mode), SUMMARY_SYSTEM_PROMPT);
+    }
+
+    #[test]
     fn fast_first_prompt_is_compact_and_keeps_language_and_safety() {
-        let mode = builtin_mode("meeting").expect("modo");
+        let mode = factory_mode("meeting").expect("modo");
         let prompt = fast_first_system_prompt(&mode, Some("pt"));
         assert!(prompt.contains("ONLY the first useful suggestion"));
         assert!(prompt.contains("at most three short lines"));

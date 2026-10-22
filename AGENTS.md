@@ -32,7 +32,7 @@ VAD Silero + ASR `whisper-rs` · LLM via HTTP (BYO key) · SQLite (`rusqlite`, F
 ```
 src-tauri/src/{domain,application,ports,adapters,ipc,lib.rs,state.rs}
 src/{core,adapters,features}
-prds/{business-rules.md, mvp/{prd.md,memory.md,issues.md,architecture,tasks}}
+prds/{business-rules.md, <prd>/{prd.md,memory.md,issues.md,architecture,tasks}}
 ```
 
 ## Fluxo de trabalho (spec-driven)

@@ -19,6 +19,9 @@ pub const MODE_NAME_MAX_CHARS: usize = 120;
 /// (BR-059).
 pub const DEFAULT_MODE_ID: &str = "default";
 
+/// Id do agente **protegido**: o Padrão nunca é editado nem apagado (BR-074).
+pub const PROTECTED_MODE_ID: &str = DEFAULT_MODE_ID;
+
 /// Nome exibido do agente Padrão.
 pub const DEFAULT_MODE_NAME: &str = "Padrão";
 
@@ -28,7 +31,10 @@ pub const DEFAULT_MODE_NAME: &str = "Padrão";
 /// o agente Padrão — que também cobre reuniões.
 pub const LEGACY_DEFAULT_MODE_ID: &str = "meeting";
 
-/// IDs dos agentes embutidos (reservados).
+/// IDs dos agentes **de fábrica** (a semente da lista do usuário — BR-075).
+///
+/// Só o `default` é reservado (`PROTECTED_MODE_ID`); os demais podem ser
+/// editados e excluídos pelo usuário.
 pub const BUILTIN_MODE_IDS: [&str; 5] = [
     DEFAULT_MODE_ID,
     "meeting",
@@ -99,6 +105,9 @@ pub struct AssistantMode {
     /// Contrato da sugestão ao vivo (o que a janela mostra).
     #[serde(default)]
     pub suggestion_prompt: String,
+    /// Prompt do resumo (persistido; o consumo é de uma feature futura — BR-076).
+    #[serde(default)]
+    pub summary_prompt: String,
     /// Contexto fixo do agente (texto suplementar).
     #[serde(default)]
     pub context: String,
@@ -117,12 +126,6 @@ pub struct AssistantMode {
 }
 
 impl AssistantMode {
-    /// `true` quando o id pertence a um agente embutido.
-    #[cfg(test)]
-    pub fn is_builtin(&self) -> bool {
-        is_builtin_id(&self.id)
-    }
-
     /// Normaliza a identidade (ícone/cor) para valores do catálogo.
     ///
     /// Usado ao carregar settings antigas ou edited à mão: um ícone
@@ -138,7 +141,12 @@ impl AssistantMode {
     }
 }
 
-/// Indica se `id` é um dos agentes embutidos.
+/// Indica se `id` é o agente **protegido** (o Padrão).
+pub fn is_protected_id(id: &str) -> bool {
+    id == PROTECTED_MODE_ID
+}
+
+/// Indica se `id` pertence ao catálogo de **fábrica**.
 pub fn is_builtin_id(id: &str) -> bool {
     BUILTIN_MODE_IDS.contains(&id)
 }
@@ -150,9 +158,9 @@ pub fn validate_mode(mode: &AssistantMode) -> Result<()> {
             "agente precisa de um id".to_string(),
         ));
     }
-    if is_builtin_id(&mode.id) {
+    if is_protected_id(&mode.id) {
         return Err(GhostWhisperError::Config(format!(
-            "id de agente embutido é reservado: {}",
+            "id de agente protegido é reservado: {}",
             mode.id
         )));
     }
@@ -175,6 +183,7 @@ pub fn validate_mode(mode: &AssistantMode) -> Result<()> {
     for (field, value) in [
         ("prompt de sistema", &mode.system_prompt),
         ("prompt de sugestão", &mode.suggestion_prompt),
+        ("prompt de resumo", &mode.summary_prompt),
         ("contexto", &mode.context),
     ] {
         if value.chars().count() > MODE_PROMPT_MAX_CHARS {
@@ -185,6 +194,7 @@ pub fn validate_mode(mode: &AssistantMode) -> Result<()> {
     }
     if mode.system_prompt.trim().is_empty()
         && mode.suggestion_prompt.trim().is_empty()
+        && mode.summary_prompt.trim().is_empty()
         && mode.context.trim().is_empty()
     {
         return Err(GhostWhisperError::Config(
@@ -221,16 +231,12 @@ pub fn validate_custom_modes(modes: &[AssistantMode]) -> Result<()> {
     Ok(())
 }
 
-/// Procura um agente por id, priorizando os personalizados.
-pub fn find_mode<'a>(
-    id: &str,
-    custom: &'a [AssistantMode],
-    builtins: &'a [AssistantMode],
-) -> Option<&'a AssistantMode> {
-    custom
-        .iter()
-        .chain(builtins.iter())
-        .find(|mode| mode.id == id)
+/// Procura um agente por id **na lista do usuário**.
+///
+/// O agente protegido (Padrão) é resolvido à parte, na camada de aplicação
+/// (BR-074); aqui só a lista do usuário.
+pub fn find_mode<'a>(id: &str, custom: &'a [AssistantMode]) -> Option<&'a AssistantMode> {
+    custom.iter().find(|mode| mode.id == id)
 }
 
 #[cfg(test)]
@@ -244,6 +250,7 @@ mod tests {
             category: "custom".to_string(),
             system_prompt: "Você é um agente de vendas.".to_string(),
             suggestion_prompt: "Sugira a próxima fala.".to_string(),
+            summary_prompt: String::new(),
             context: String::new(),
             icon: default_agent_icon(),
             color: default_agent_color(),
@@ -252,13 +259,38 @@ mod tests {
     }
 
     #[test]
-    fn builtin_ids_are_reserved() {
-        for id in BUILTIN_MODE_IDS {
-            assert!(is_builtin_id(id));
-            let mode = custom(id, "x");
-            assert!(validate_mode(&mode).is_err());
+    fn only_the_protected_id_is_reserved() {
+        let protected = custom(PROTECTED_MODE_ID, "Padrão");
+        assert!(validate_mode(&protected).is_err());
+
+        // Os ids de fábrica são agentes do usuário (BR-075): válidos.
+        for id in [
+            "meeting",
+            "technical_interview",
+            "leetcode",
+            "system_design",
+        ] {
+            assert!(
+                validate_mode(&custom(id, "De fábrica")).is_ok(),
+                "id de fábrica recusado: {id}"
+            );
         }
-        assert!(!is_builtin_id("custom-vendas"));
+    }
+
+    #[test]
+    fn accepts_a_mode_with_only_a_summary_prompt() {
+        let mut mode = custom("custom-resumo", "Resumo");
+        mode.system_prompt.clear();
+        mode.suggestion_prompt.clear();
+        mode.summary_prompt = "Resuma a reunião.".to_string();
+        assert!(validate_mode(&mode).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_summary_prompt_over_the_limit() {
+        let mut mode = custom("custom-resumo", "Resumo");
+        mode.summary_prompt = "x".repeat(MODE_PROMPT_MAX_CHARS + 1);
+        assert!(validate_mode(&mode).is_err());
     }
 
     #[test]
@@ -274,6 +306,7 @@ mod tests {
         mode = custom("custom-x", "X");
         mode.system_prompt.clear();
         mode.suggestion_prompt.clear();
+        mode.summary_prompt.clear();
         mode.context.clear();
         assert!(validate_mode(&mode).is_err());
     }
@@ -285,18 +318,13 @@ mod tests {
     }
 
     #[test]
-    fn finds_custom_before_builtin() {
-        let custom_modes = vec![custom("custom-a", "A")];
-        let builtins = vec![custom("meeting", "Reunião")];
+    fn finds_a_mode_in_the_user_list() {
+        let modes = vec![custom("custom-a", "A")];
         assert_eq!(
-            find_mode("meeting", &custom_modes, &builtins).map(|mode| mode.name.as_str()),
-            Some("Reunião")
-        );
-        assert_eq!(
-            find_mode("custom-a", &custom_modes, &builtins).map(|mode| mode.name.as_str()),
+            find_mode("custom-a", &modes).map(|mode| mode.name.as_str()),
             Some("A")
         );
-        assert!(find_mode("missing", &custom_modes, &builtins).is_none());
+        assert!(find_mode("missing", &modes).is_none());
     }
 
     #[test]
@@ -307,6 +335,7 @@ mod tests {
         assert_eq!(json["category"], "custom");
         assert!(json["system_prompt"].is_string());
         assert!(json["suggestion_prompt"].is_string());
+        assert!(json["summary_prompt"].is_string());
         assert!(json["context"].is_string());
         assert_eq!(json["icon"], DEFAULT_AGENT_ICON);
         assert_eq!(json["color"], DEFAULT_AGENT_COLOR);

@@ -18,6 +18,22 @@ export const closeSettings = (): Promise<void | undefined> =>
 export const getSettings = (): Promise<Settings | undefined> =>
   invokeSafe<Settings>("settings_get");
 
+/**
+ * Defaults do app, com os **agentes de fábrica** já materializados (BR-075).
+ *
+ * Vem do core: o frontend não reproduz os contratos dos agentes.
+ */
+export const settingsDefaults = (): Promise<Settings | undefined> =>
+  invokeSafe<Settings>("settings_defaults");
+
+/**
+ * Troca o agente ativo (seletor global do overlay — BR-080).
+ *
+ * Grava só o campo: não envia um snapshot das settings.
+ */
+export const setAssistantMode = (modeId: string): Promise<void | undefined> =>
+  invokeSafe<void>("settings_set_assistant_mode", { modeId });
+
 /** Persiste as configurações; devolve conflitos de atalho encontrados. */
 export const saveSettings = (
   settings: Settings,

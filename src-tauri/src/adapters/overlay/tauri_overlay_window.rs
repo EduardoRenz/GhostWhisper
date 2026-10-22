@@ -6,7 +6,9 @@ use std::sync::Arc;
 use tauri::{LogicalSize, PhysicalPosition, WebviewWindow};
 
 use crate::domain::geometry::{Point, Rect};
-use crate::domain::hud_layout::{anchor_position, HudDensity, NotchAnchor, HUD_MARGIN};
+use crate::domain::hud_layout::{
+    anchor_position, HudDensity, NotchAnchor, AGENT_SELECTOR_BAND, HUD_MARGIN,
+};
 use crate::ports::overlay_window::{OverlayWindowController, Surface};
 
 /// Largura lógica inicial da barra (antes da medição do conteúdo).
@@ -65,9 +67,9 @@ impl TauriOverlayWindow {
         self.popover_extra.load(Ordering::Relaxed) as f64
     }
 
-    /// Altura total da janela: barra (densidade) + popover aberto.
+    /// Altura total da janela: seletor de agentes + barra (densidade) + popover.
     fn window_height(&self) -> f64 {
-        self.density().window_height() + self.popover_extra()
+        AGENT_SELECTOR_BAND + self.density().window_height() + self.popover_extra()
     }
 
     /// Aplica largura/altura atuais à janela.

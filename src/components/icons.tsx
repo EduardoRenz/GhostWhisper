@@ -597,6 +597,78 @@ export function TrashIcon({ className, size = 18 }: IconProps) {
   );
 }
 
+/** Lápis: editar as propriedades de um agente. */
+export function PencilIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4.4 19.6 5.3 16 15.8 5.5a1.9 1.9 0 0 1 2.7 0l.1.1a1.9 1.9 0 0 1 0 2.7L8 18.7z" />
+        <path d="M14.4 6.9l2.7 2.7" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Estrela: o agente Padrão (protegido). */
+export function StarIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 3.7l2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Mais: criar um novo agente. */
+export function PlusIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 5.2v13.6" />
+        <path d="M5.2 12h13.6" />
+      </g>
+    </Icon>
+  );
+}
+
+/** Informação: círculo com "i" — gatilho dos tooltips de ajuda. */
+export function InfoIcon({ className, size = 18 }: IconProps) {
+  return (
+    <Icon className={className} size={size}>
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="8.4" />
+        <path d="M12 11v5.2" />
+        <path d="M12 7.9h.01" />
+      </g>
+    </Icon>
+  );
+}
+
 /** Monitor: gravar a tela inteira. */
 export function MonitorIcon({ className, size = 18 }: IconProps) {
   return (

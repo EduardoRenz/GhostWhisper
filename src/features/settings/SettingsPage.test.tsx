@@ -1,6 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
+import { defaultSettings } from "../../core/domain/settings";
+import type { AssistantMode } from "../../core/domain/assistant";
+
+const eventsIpc = vi.hoisted(() => ({
+  subscribe: vi.fn(
+    async (_event?: string, _handler?: unknown) => () => {},
+  ),
+}));
 
 const settingsIpc = vi.hoisted(() => ({
   closeSettings: vi.fn(async () => undefined),
@@ -17,8 +25,13 @@ const settingsIpc = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings: unknown) => [] as unknown[]),
   setOverlayOpacity: vi.fn(async () => undefined),
   secretsPersistent: vi.fn(async () => true),
+  settingsDefaults: vi.fn(async () => undefined),
   validateKey: vi.fn(async () => "ok"),
   providerLabel: vi.fn(async () => "OpenAI · gpt-4o-mini"),
+}));
+
+const suggestionsIpc = vi.hoisted(() => ({
+  assistantModesList: vi.fn(async () => []),
 }));
 
 const aiSourcesIpc = vi.hoisted(() => ({
@@ -59,6 +72,8 @@ vi.mock("../../adapters/ipc/aiSources", () => aiSourcesIpc);
 vi.mock("../../adapters/ipc/shortcuts", () => shortcutsIpc);
 vi.mock("../../adapters/ipc/audio", () => audioIpc);
 vi.mock("../../adapters/ipc/panels", () => panelsIpc);
+vi.mock("../../adapters/ipc/suggestions", () => suggestionsIpc);
+vi.mock("../../adapters/ipc/events", () => eventsIpc);
 
 describe("SettingsPage", () => {
   beforeEach(() => {
@@ -87,7 +102,7 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tab", { name: /Fontes de IA/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Transcrição & Áudio/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Gravação/ })).toBeDefined();
-    expect(screen.getByRole("tab", { name: /Assistente/ })).toBeDefined();
+    expect(screen.getByRole("tab", { name: /Assistentes/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Geral & HUD/ })).toBeDefined();
     expect(screen.getByRole("tab", { name: /Atalhos/ })).toBeDefined();
   });
@@ -160,6 +175,113 @@ describe("SettingsPage", () => {
     // Cancelou: nada foi salvo.
     expect(settingsIpc.saveSettings).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
+  });
+
+  it("restaura os padrões do core, com os agentes de fábrica", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    settingsIpc.settingsDefaults.mockResolvedValue({
+      ...defaultSettings(),
+      custom_assistant_modes: [
+        {
+          id: "meeting",
+          name: "Reunião",
+          category: "productivity",
+          system_prompt: "s",
+          suggestion_prompt: "s",
+          summary_prompt: "r",
+          context: "",
+          icon: "users",
+          color: "cyan",
+        },
+      ],
+      assistant_modes_seeded: true,
+    } as never);
+
+    render(<SettingsPage />);
+    const restore = await screen.findByRole("button", {
+      name: "Restaurar Padrões",
+    });
+    await act(async () => {
+      fireEvent.click(restore);
+    });
+
+    await waitFor(() => expect(settingsIpc.settingsDefaults).toHaveBeenCalled());
+    expect(
+      screen.getByText(/Padrões restaurados/),
+    ).toBeDefined();
+    confirmSpy.mockRestore();
+  });
+
+  it("mostra o painel de Assistentes com o agente Padrão", async () => {
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: /Assistentes/ }).click();
+    });
+
+    expect(
+      await screen.findByRole("article", { name: "Assistente Padrão" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /Criar Novo Assistente de IA/ }),
+    ).toBeDefined();
+    expect(screen.getByText("Agentes configurados (0)")).toBeDefined();
+  });
+
+  it("mostra cadências e perguntas prontas na aba Geral & HUD", async () => {
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: /Geral & HUD/ }).click();
+    });
+
+    expect(await screen.findByText("Cadências & Perguntas Prontas")).toBeDefined();
+    expect(screen.getByText("Perguntas prontas")).toBeDefined();
+  });
+
+  it("sincroniza o agente ativo trocado em outra janela (BR-080)", async () => {
+    const leetcode: AssistantMode = {
+      id: "leetcode",
+      name: "LeetCode",
+      category: "engineering",
+      system_prompt: "s",
+      suggestion_prompt: "s",
+      summary_prompt: "r",
+      context: "",
+      icon: "code",
+      color: "emerald",
+    };
+    const base = {
+      ...defaultSettings(),
+      custom_assistant_modes: [leetcode],
+    };
+    settingsIpc.getSettings.mockResolvedValue(base as never);
+
+    let handler: (() => void) | undefined;
+    eventsIpc.subscribe.mockImplementation(
+      async (_event?: string, callback?: unknown) => {
+        handler = callback as (() => void) | undefined;
+        return () => {};
+      },
+    );
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(handler).toBeDefined());
+
+    // O seletor global do notch troca o agente em outra janela.
+    settingsIpc.getSettings.mockResolvedValue({
+      ...base,
+      assistant_mode_id: "leetcode",
+    } as never);
+    await act(async () => {
+      handler?.();
+    });
+
+    await act(async () => {
+      screen.getByRole("tab", { name: /Assistentes/ }).click();
+    });
+    const card = await screen.findByRole("article", { name: "Agente LeetCode" });
+    expect(card.textContent).toContain("Ativo");
   });
 
   it("aplica a opacidade em tempo real e salva automaticamente", async () => {

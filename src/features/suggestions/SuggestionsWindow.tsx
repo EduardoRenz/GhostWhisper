@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { copyText } from "../../core/application/clipboard";
-import { useAssistantModes } from "../../core/application/useAssistantModes";
 import { useLlmSource } from "../../core/application/useLlmSource";
-import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useSuggestions } from "../../core/application/useSuggestions";
@@ -14,30 +12,28 @@ import { openSettingsWindow } from "../../adapters/ipc/overlay";
 import { SlidersIcon, SparkleIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import { StatusPill } from "../../components/StatusPill";
-import { AgentSelector } from "./AgentSelector";
 import { AutoSuggestControl } from "./AutoSuggestControl";
 import { ManualContextCard } from "./ManualContextCard";
 import { SuggestionCard } from "./SuggestionCard";
 import { SuggestionHistory } from "./SuggestionHistory";
 import { PanelFrame } from "../panels/PanelFrame";
 
-/** Janela de sugestões com seleção de agente. */
+/**
+ * Janela de sugestões.
+ *
+ * O agente ativo vem do **seletor global do notch** (BR-080): esta janela só
+ * consome `settings.assistant_mode_id` e reage ao `settings_changed`.
+ */
 export function SuggestionsWindow() {
-  const opened = usePanelOpen("suggestions");
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
-  const { modes } = useAssistantModes(opened);
   const cadence = useSuggestionCadence();
-  const [modeId, setModeId] = useState(settings.assistant_mode_id);
+  const modeId = settings.assistant_mode_id;
   const [extraContext, setExtraContext] = useState("");
   /** O contexto extra fica recolhido por padrão (abre pelo ícone do header). */
   const [extraOpen, setExtraOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const auto = settings.suggestion_auto_refresh;
-
-  useEffect(() => {
-    setModeId(settings.assistant_mode_id);
-  }, [settings.assistant_mode_id]);
 
   const manual = useManualSuggestionContext({ sessionId: state.session_id });
 
@@ -65,13 +61,6 @@ export function SuggestionsWindow() {
     extraContext,
     manualContext: manual.context,
   });
-
-  const selectMode = (id: string) => {
-    setModeId(id);
-    void saveSettings({ ...settings, assistant_mode_id: id }).then(() =>
-      reload(),
-    );
-  };
 
   // O automático vive no core (reage a fala nova, com a janela aberta);
   // aqui só ligamos/desligamos.
@@ -174,7 +163,6 @@ export function SuggestionsWindow() {
       titleExtra={liveBadge}
       actions={actions}
     >
-      <AgentSelector modes={modes} modeId={modeId} onSelect={selectMode} />
       {extraOpen && (
         <label className="panel__extra">
           <span className="panel__extra-label">Contexto extra (opcional)</span>

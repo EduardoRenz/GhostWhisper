@@ -1,36 +1,63 @@
+/**
+ * Seletor **global** de agentes, flutuando acima da barra do notch (BR-080).
+ *
+ * É compacto e discreto: mostra o ícone (na cor do agente), o nome e o convite
+ * "Alternar agente". O popover lista o catálogo efetivo (Padrão + agentes do
+ * usuário) e grava a escolha nas settings — a mudança vale na hora em todas as
+ * janelas (`settings_changed`).
+ *
+ * Só o que tem `data-interactive` captura o mouse no overlay; o resto continua
+ * click-through.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
+  DEFAULT_AGENT_COLOR,
+  DEFAULT_AGENT_ICON,
+  PROTECTED_MODE_ID,
+  PROTECTED_MODE_NAME,
   agentColorToken,
   agentIconId,
   type AssistantMode,
 } from "../../core/domain/assistant";
 import { AgentIcon } from "../../components/AgentIcon";
 import { CheckIcon, ChevronDownIcon } from "../../components/icons";
-import { Pill } from "../../components/Pill";
 
-interface AgentSelectorProps {
-  /** Agentes disponíveis (embutidos + personalizados). */
+export interface AgentSwitcherProps {
+  /** Catálogo efetivo (protegido + lista do usuário). */
   modes: AssistantMode[];
-  /** Agente selecionado. */
+  /** Agente ativo (`settings.assistant_mode_id`). */
   modeId: string;
   /** Troca o agente (persiste nas settings). */
   onSelect: (id: string) => void;
+  /** Avisa o overlay para reservar altura enquanto o menu está aberto. */
+  onOpenChange?: (open: boolean) => void;
 }
 
-/**
- * Seletor de agente: botão de **largura total** + popover (BR-037).
- *
- * O botão mostra o ícone (na cor do agente), o nome e a pill **ATIVO**; o
- * popover lista todos os agentes com ícone e cor. O teclado navega com as
- * setas, `Enter` escolhe e `Escape` fecha.
- */
-export function AgentSelector({ modes, modeId, onSelect }: AgentSelectorProps) {
+/** Seletor de agente flutuante do notch. */
+export function AgentSwitcher({
+  modes,
+  modeId,
+  onSelect,
+  onOpenChange,
+}: AgentSwitcherProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const selected = modes.find((mode) => mode.id === modeId) ?? modes[0];
+  // Fallback fora do catálogo (boot/janela do navegador): o Padrão é sempre
+  // conhecido pelas constantes do domínio.
+  const name =
+    selected?.name ??
+    (modeId === PROTECTED_MODE_ID ? PROTECTED_MODE_NAME : "Agente");
+  const icon = selected ? agentIconId(selected) : DEFAULT_AGENT_ICON;
+  const color = selected ? agentColorToken(selected) : DEFAULT_AGENT_COLOR;
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   // Fecha ao clicar fora ou apertar Escape.
   useEffect(() => {
@@ -86,46 +113,44 @@ export function AgentSelector({ modes, modeId, onSelect }: AgentSelectorProps) {
     setOpen(false);
   };
 
-  const selectedStyle = {
-    "--agent-color": `var(--oh-agent-${agentColorToken(selected)})`,
+  const style = {
+    "--agent-color": `var(--oh-agent-${color})`,
   } as CSSProperties;
 
   return (
-    <div className="agent-selector" ref={rootRef} data-interactive>
+    <div className="agent-switcher" ref={rootRef} style={style} data-interactive>
       <button
         type="button"
-        className="agent-selector__button"
-        style={selectedStyle}
+        className="agent-switcher__button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Agente: ${selected?.name ?? "—"}`}
+        aria-label={`Agente: ${name}`}
+        title={`Agente: ${name}`}
         onClick={() => setOpen((previous) => !previous)}
       >
-        <span className="agent-selector__icon">
-          <AgentIcon icon={agentIconId(selected)} size={15} />
+        <span className="agent-switcher__icon">
+          <AgentIcon icon={icon} size={14} />
         </span>
-        <span className="agent-selector__name">{selected?.name ?? "—"}</span>
-        <Pill className="agent-selector__pill" tone="accent" mono>
-          ATIVO
-        </Pill>
-        <span className="agent-selector__hint">Alternar agente</span>
-        <ChevronDownIcon size={14} />
+        <span className="agent-switcher__name">{name}</span>
+        <span className="agent-switcher__divider" aria-hidden="true" />
+        <span className="agent-switcher__hint">Alternar agente</span>
+        <ChevronDownIcon size={13} />
       </button>
 
       {open && (
         <div
-          className="agent-selector__popover"
+          className="agent-switcher__popover"
           role="menu"
           aria-label="Agentes"
           data-interactive
           onKeyDown={onMenuKeyDown}
         >
           {modes.length === 0 && (
-            <span className="agent-selector__empty">Nenhum agente</span>
+            <span className="agent-switcher__empty">Nenhum agente</span>
           )}
           {modes.map((mode, index) => {
             const on = mode.id === selected?.id;
-            const style = {
+            const itemStyle = {
               "--agent-color": `var(--oh-agent-${agentColorToken(mode)})`,
             } as CSSProperties;
             return (
@@ -137,16 +162,16 @@ export function AgentSelector({ modes, modeId, onSelect }: AgentSelectorProps) {
                 ref={(element) => {
                   itemRefs.current[index] = element;
                 }}
-                className={`agent-selector__item${
-                  on ? " agent-selector__item--on" : ""
+                className={`agent-switcher__item${
+                  on ? " agent-switcher__item--on" : ""
                 }`}
-                style={style}
+                style={itemStyle}
                 onClick={() => choose(mode.id)}
               >
-                <span className="agent-selector__icon">
+                <span className="agent-switcher__icon">
                   <AgentIcon icon={agentIconId(mode)} size={15} />
                 </span>
-                <span className="agent-selector__item-name">{mode.name}</span>
+                <span className="agent-switcher__item-name">{mode.name}</span>
                 {on && <CheckIcon size={14} />}
               </button>
             );

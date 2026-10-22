@@ -58,12 +58,6 @@ vi.mock("../../core/application/useSettings", () => ({
   }),
 }));
 
-vi.mock("../../core/application/useAssistantModes", () => ({
-  useAssistantModes: () => ({
-    modes: [{ id: "meeting", name: "Reunião" }],
-  }),
-}));
-
 vi.mock("../../core/application/useSuggestions", () => ({
   useSuggestions: () => state.value,
 }));
@@ -167,6 +161,15 @@ describe("SuggestionsWindow — feedback da geração", () => {
     manual.value.clear = vi.fn();
     manual.value.refresh = vi.fn();
     cadence.value.generating = false;
+  });
+
+  it("não mostra mais o seletor de agente (ele vive no notch — BR-080)", () => {
+    render(<SuggestionsWindow />);
+
+    expect(screen.queryByText("Alternar agente")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Agente:/ }),
+    ).toBeNull();
   });
 
   it("mostra o pill DENTRO do bloco da sugestão ao gerar uma nova", () => {

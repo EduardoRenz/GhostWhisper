@@ -55,6 +55,15 @@ pub fn settings_get(state: State<'_, AppState>) -> Result<Settings> {
     state.settings.load()
 }
 
+/// Defaults do app (para o "Restaurar Padrões").
+///
+/// Vem do core porque os **agentes de fábrica** (com os contratos completos)
+/// vivem na camada de aplicação — o frontend não os reproduz (BR-075).
+#[tauri::command]
+pub fn settings_defaults() -> Result<Settings> {
+    Ok(crate::application::assistant_catalog::default_settings())
+}
+
 /// Persiste as configurações (validadas antes de gravar).
 ///
 /// Reaplica atalhos e, quando mudam, stealth/layout do HUD; devolve os conflitos
@@ -143,6 +152,25 @@ pub fn settings_set_overlay_opacity(
     settings.validate()?;
     state.settings.save(&settings)?;
     let _ = app.emit("hud_opacity_preview", settings.overlay_opacity);
+    let _ = app.emit("settings_changed", ());
+    Ok(())
+}
+
+/// Troca o agente ativo (seletor global do overlay — BR-080).
+///
+/// Grava **só** esse campo: o seletor vive no overlay e está sempre montado, e
+/// um snapshot completo das settings poderia sobrescrever uma edição feita em
+/// outra janela enquanto ela ainda não recarregou.
+#[tauri::command(async)]
+pub fn settings_set_assistant_mode(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    mode_id: String,
+) -> Result<()> {
+    let mut settings = state.settings.load()?;
+    settings.assistant_mode_id = mode_id;
+    settings.validate()?;
+    state.settings.save(&settings)?;
     let _ = app.emit("settings_changed", ());
     Ok(())
 }

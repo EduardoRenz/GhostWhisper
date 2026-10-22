@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { subscribe } from "../../adapters/ipc/events";
 import {
   closeSettings,
   getProviders,
@@ -8,6 +9,7 @@ import {
   saveSettings,
   secretsPersistent,
   setOverlayOpacity,
+  settingsDefaults,
   type GpuInfo,
 } from "../../adapters/ipc/settings";
 import {
@@ -26,7 +28,8 @@ import { ResizeHandles } from "../panels/ResizeHandles";
 import { WindowHeader } from "../../components/WindowHeader";
 import { applyHudOpacity } from "../../core/application/useHudOpacity";
 import { AudioTestPanel } from "./AudioTestPanel";
-import { AssistantSettings } from "./AssistantSettings";
+import { AssistantsSettings } from "./AssistantsSettings";
+import { CadenceSettings } from "./CadenceSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
 import { HudSettings } from "./HudSettings";
@@ -66,7 +69,7 @@ const TABS = [
   { id: "sources", label: "Fontes de IA", Icon: BoltIcon },
   { id: "transcription", label: "Transcrição & Áudio", Icon: WaveformIcon },
   { id: "recording", label: "Gravação", Icon: VideoCameraIcon },
-  { id: "assistant", label: "Assistente", Icon: UsersIcon },
+  { id: "assistant", label: "Assistentes", Icon: UsersIcon },
   { id: "general", label: "Geral & HUD", Icon: SlidersIcon },
   { id: "shortcuts", label: "Atalhos", Icon: KeyboardIcon },
 ] as const;
@@ -131,10 +134,33 @@ export function SettingsPage() {
     })();
   }, []);
 
-  // `Esc` fecha a janela (mesmo atalho do botão `✕`).
+  // Outra janela salvou (ex.: o seletor global de agentes do notch — BR-080):
+  // mantém a badge "Ativo" em tempo real. Só o agente é sincronizado; o resto
+  // do rascunho fica intocado (não atrapalha edição/autosave da opacidade).
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    void subscribe<null>("settings_changed", () => {
+      void getSettings().then((loaded) => {
+        if (!loaded) {
+          return;
+        }
+        setDraft((previous) =>
+          previous.assistant_mode_id === loaded.assistant_mode_id
+            ? previous
+            : { ...previous, assistant_mode_id: loaded.assistant_mode_id },
+        );
+      });
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop?.();
+  }, []);
+
+  // `Esc` fecha a janela (mesmo atalho do botão `✕`). Com um modal aberto, o
+  // `Dialog` consome o evento antes (o modal fecha, a janela fica).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.defaultPrevented) {
         void closeSettings();
       }
     };
@@ -247,14 +273,22 @@ export function SettingsPage() {
       typeof window === "undefined" ||
       typeof window.confirm !== "function" ||
       window.confirm(
-        "Restaurar os padrões? Isto zera modelos, atalhos, agentes e as fontes de IA (as chaves no keyring não são apagadas).",
+        "Restaurar os padrões? Isto repõe modelos, atalhos, fontes de IA e os agentes de fábrica (as chaves no keyring não são apagadas).",
       );
     if (!confirmed) return;
-    setDraft({ ...defaultSettings(), shortcuts: defaultBindings() });
-    setHasUnsavedChanges(true);
-    setStatus({
-      kind: "info",
-      text: "Padrões restaurados — clique em “Salvar Alterações” para confirmar.",
+    void run(async () => {
+      // Os agentes de fábrica (com os contratos completos) vêm do core: o
+      // frontend não os reproduz (BR-075).
+      const defaults = await settingsDefaults();
+      setDraft({
+        ...(defaults ?? defaultSettings()),
+        shortcuts: defaultBindings(),
+      });
+      setHasUnsavedChanges(true);
+      setStatus({
+        kind: "info",
+        text: "Padrões restaurados — clique em “Salvar Alterações” para confirmar.",
+      });
     });
   };
 
@@ -522,19 +556,14 @@ export function SettingsPage() {
         )}
 
         {tab === "assistant" && (
-          <section className="settings__card">
-            <header className="settings__card-header">
-              <h2 className="settings__card-title">Assistente</h2>
-              <span className="settings__card-note">
-                Agentes, cadências e personalização
-              </span>
-            </header>
-            <AssistantSettings settings={draft} update={update} />
-          </section>
+          <AssistantsSettings settings={draft} update={update} />
         )}
 
         {tab === "general" && (
-          <HudSettings settings={draft} update={update} />
+          <>
+            <HudSettings settings={draft} update={update} />
+            <CadenceSettings settings={draft} update={update} />
+          </>
         )}
 
         {tab === "shortcuts" && (

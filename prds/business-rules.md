@@ -1604,3 +1604,182 @@ uma nota de revisão.
 - **Detalhes:** [`session/issues.md`](session/issues.md) ISS-056,
   [`session/tasks/13-task.md`](session/tasks/13-task.md).
 - **Data:** 2026-10-21 · **Status:** Ativa
+
+## BR-074 — Painel "Assistentes": o Padrão no topo, os agentes configurados abaixo
+
+- **Decisão:** as Configurações têm uma aba **"Assistentes"** que é um **painel
+  de cards**, não um formulário. A ordem é: (1) o **agente Padrão** num card
+  **informativo** no topo, com a badge "Primário" e **sem** ação de edição ou
+  exclusão; (2) a seção **"AGENTES CONFIGURADOS (n)"**, com a contagem real,
+  e um card por agente (ícone na cor do agente, nome, badge "Ativo", as ações
+  e a leitura dos prompts de sugestão e de resumo); (3) o CTA **"Criar Novo
+  Assistente de IA"**. O painel **não** escolhe o agente ativo — a badge
+  "Ativo" é informativa e a troca continua na tela de sugestões. As
+  **cadências** (resumo/sugestões automáticas) e as **perguntas prontas** saem
+  dessa aba e viram uma **seção nova na aba "Geral & HUD"**.
+- **Motivo:** pedido do usuário (mockup de 2026-10-21) — "mudar de lugar e
+  melhorar a questão dos agentes". Hoje os prompts dos agentes não aparecem em
+  lugar nenhum, o editor é um bloco inline que empurra a lista, e o agente
+  Padrão é indistinguível dos outros.
+- **Consequência:** `AssistantSettings` sai; entram `AssistantsSettings`,
+  `AgentCard`, `AgentEditorDialog` e `CadenceSettings`; a aba 4 da barra é
+  renomeada ("Assistente" → "Assistentes", id `assistant` preservado); nada
+  muda na persistência (os agentes seguem em `settings.json`, com o salvamento
+  global — BR-047).
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §4/§5/§8,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §1/§2,
+  [`assistants/tasks/05-task.md`](assistants/tasks/05-task.md),
+  [`assistants/tasks/07-task.md`](assistants/tasks/07-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-075 — Os agentes de fábrica viram agentes do usuário (semeadura única)
+
+- **Decisão:** tirando o agente **Padrão** (protegido: sempre existe, nunca é
+  editado nem apagado), **todos os outros agentes vêm "Padrão de fábrica"** e
+  passam a ser **do usuário**: editáveis e **excluídos de vez** (a exclusão é
+  definitiva — o agente não volta). Na prática, os 4 agentes de fábrica
+  (Reunião, Entrevista Técnica, LeetCode, System Design) são **materializados
+  uma única vez** na lista do usuário (`settings.custom_assistant_modes`), que
+  passa a ser a fonte da verdade do painel; o agente Padrão continua no core e
+  é resolvido pelo id `default`.
+- **Motivo:** pedido do usuário (2026-10-21) — "todo o resto vem Padrão de
+  fábrica, user pode editar e excluir permanentemente se preferir". Hoje esses
+  agentes são imutáveis (só duplicáveis), o que impede ajustar um contrato de
+  fábrica ou dispensar um agente que a empresa não usa.
+- **Consequência:** `validate_mode` deixa de rejeitar os ids de fábrica e passa
+  a rejeitar **só** o id protegido; a resolução (`resolve_mode`) deixa de ter
+  fallback para os builtins (agente excluído **não** volta); uma migração de
+  boot semeia os 4 agentes uma única vez (marca `assistant_modes_seeded`),
+  preservando o id (a seleção ativa continua válida); "Restaurar Padrões"
+  volta os agentes de fábrica.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.2/§7.3,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3/§10,
+  [`assistants/tasks/01-task.md`](assistants/tasks/01-task.md),
+  [`assistants/tasks/02-task.md`](assistants/tasks/02-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-076 — Prompt de resumo por agente (persistido, ainda não consumido)
+
+- **Decisão:** todo agente tem um **prompt de resumo** próprio
+  (`AssistantMode.summary_prompt`), gravado e editável no painel de
+  Assistentes. **Nesta entrega o campo é persistido, mas não é consumido**: o
+  `SummaryService` continua usando o contrato global de resumo. O campo
+  entra na validação como um dos prompts do agente (limite de 16 384
+  caracteres) e é semeado nos agentes de fábrica com o contrato de resumo já
+  existente.
+- **Motivo:** pedido do usuário (2026-10-21) — o agente passa a ter "os prompts
+  ou pré prompts usados em algumas telas"; o resumo por agente é a próxima
+  feature e precisa do dado pronto.
+- **Consequência:** `AssistantMode` ganha `summary_prompt` (`serde(default)`,
+  então `settings.json` antigo continua válido) nos dois lados (Rust + TS); a
+  tela de Resumo **não** muda nesta entrega.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.1,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.1,
+  [`assistants/tasks/01-task.md`](assistants/tasks/01-task.md),
+  [`assistants/tasks/06-task.md`](assistants/tasks/06-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-077 — Modal único de agente (criar e editar)
+
+- **Decisão:** criar e **editar** agente acontecem no **mesmo modal** (um
+  primitivo `Dialog` in-page), com os mesmos campos nos dois casos: **nome**,
+  **ícone**, **cor**, **prompt de sugestão** e **prompt de resumo**; os
+  campos que já existiam no modelo — categoria, prompt de sistema e contexto
+  fixo — ficam num bloco "avançado". O modal grava no rascunho das
+  Configurações; quem persiste é o "Salvar Alterações" global (BR-047).
+- **Motivo:** pedido do usuário (2026-10-21) — "o botão editar abre um modal
+  onde é permitido editar as propriedades do agente, usa os mesmos campos
+  abaixo da criação de novo agente". O editor inline atual empurra a lista
+  inteira e o app não tinha modal.
+- **Consequência:** entra `src/components/Dialog.tsx` (primeiro modal in-page do
+  app — `Esc`/backdrop fecham, o foco fica preso dentro) e o
+  `AgentEditorDialog`; a validação (nome obrigatório + ao menos um prompt) é a
+  mesma do core.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §8.2/§8.3,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §2.1/§8,
+  [`assistants/tasks/04-task.md`](assistants/tasks/04-task.md),
+  [`assistants/tasks/06-task.md`](assistants/tasks/06-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-078 — Barra de abas das Configurações em pílulas
+
+- **Decisão:** a barra de abas das Configurações usa **pílulas**: a aba ativa
+  tem borda e texto ciano, as inativas são texto neutro, e o sublinhado
+  ativo sai. A marcação (`role="tablist"` / `role="tab"` / `aria-selected`) e
+  a ordem das abas não mudam.
+- **Motivo:** pedido do usuário (2026-10-21) — o mockup mostra a barra em
+  pílulas, e o pedido foi seguir o mockup "de maneira quase fiel, principalmente
+  aos estilos".
+- **Consequência:** só CSS (`.settings__tabs` / `.settings__tab` /
+  `.settings__tab--active`); vale para todas as abas da janela.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §4.1/§5,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §7.1,
+  [`assistants/tasks/08-task.md`](assistants/tasks/08-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-079 — Prompt vazio herda o do agente Padrão
+
+- **Decisão:** em **qualquer** prompt de um agente — `system_prompt`,
+  `suggestion_prompt` e `summary_prompt` —, o valor **vazio depois do `trim`**
+  usa o prompt correspondente do **agente Padrão**. Não existe "prompt em
+  branco" em runtime: o Padrão é a fonte do que faltar. O `context` é contexto,
+  não prompt: um contexto vazio continua não acrescentando nada.
+- **Motivo:** pedido do usuário (2026-10-22) — um agente personalizado com um
+  campo em branco ficava sem contrato: a sugestão caía no contrato de "Reunião"
+  (o antigo fallback) e o `system_prompt` simplesmente sumia do prompt.
+- **Consequência:** `application::prompts::assistant` ganha os helpers
+  `effective_suggestion_prompt` / `effective_system_prompt` /
+  `effective_summary_prompt` (todos com `trim`); o fallback do contrato de
+  sugestão deixa de ser o de Reunião e passa a ser o do Padrão; o bloco
+  `## Domain criteria` passa a ser **sempre** incluído (do agente ou do Padrão);
+  o card da aba "Assistentes" exibe o prompt herdado com a nota "Herdado do
+  agente Padrão". O prompt de resumo continua **não consumido** (BR-076): o
+  helper já está pronto para a feature futura.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.4,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.2,
+  [`assistants/tasks/10-task.md`](assistants/tasks/10-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-080 — Seletor de agentes global, flutuando acima do notch
+
+- **Decisão:** o agente ativo é escolhido por um **seletor compacto** que
+  flutua **acima** da barra do notch, sempre visível com o overlay. Ele mostra
+  o ícone (na cor do agente), o nome e o convite "Alternar agente"; o popover
+  lista o catálogo efetivo (Padrão + agentes do usuário). A troca é **global e
+  em tempo real**: grava `assistant_mode_id` e emite `settings_changed`, então
+  Sugestões, Configurações e demais janelas refletem a escolha sem reabrir. O
+  seletor **sai** da janela de Sugestões.
+- **Motivo:** pedido do usuário (2026-10-22) — o agente é uma escolha global da
+  sessão, não uma configuração da janela de sugestões; no notch, a troca fica a
+  um clique em qualquer momento.
+- **Consequência:** a janela do overlay reserva uma faixa de **34 px** acima da
+  barra (`AGENT_SELECTOR_BAND`) — a barra deixa de encostar no topo da tela e a
+  janela cresce para baixo; o seletor é `[data-interactive]` (o resto continua
+  click-through); o menu reserva altura extra abaixo, como o menu de canais (o
+  maior popover vence); entra o comando `settings_set_assistant_mode` (grava
+  **só** o campo, sem snapshot das settings) e sai o `AgentSelector` da janela
+  de Sugestões.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §12,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §11,
+  [`assistants/tasks/11-task.md`](assistants/tasks/11-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-081 — Ajuda nos campos de prompt (tooltip)
+
+- **Decisão:** cada campo de prompt do agente — **Prompt de Sugestão**,
+  **Prompt de Resumo**, **Prompt de sistema (critérios de domínio)** e
+  **Contexto fixo** — e a **Categoria** têm um **tooltip de ajuda** na UI: no
+  modal de edição e, para os dois prompts, também no card da aba
+  "Assistentes". O gatilho é um ícone "i" focável (aparece no hover **e** no
+  foco de teclado), com o texto ligado por `aria-describedby`.
+- **Motivo:** pedido do usuário (2026-10-22) — os campos "avançados" não
+  deixavam claro o que faziam, onde eram usados e o que acontece quando ficam
+  vazios.
+- **Consequência:** entram o componente `InfoTooltip` (primeiro tooltip do
+  design system) e o ícone `InfoIcon`; os textos explicam **onde** cada prompt
+  é usado hoje — em especial, o Prompt de Resumo diz que ainda **não** é
+  consumido (BR-076).
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §12,
+  [`assistants/tasks/12-task.md`](assistants/tasks/12-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)

@@ -105,7 +105,9 @@ pub fn run() {
             ipc::settings_commands::settings_close,
             ipc::settings_commands::settings_providers,
             ipc::settings_commands::settings_get,
+            ipc::settings_commands::settings_defaults,
             ipc::settings_commands::settings_set,
+            ipc::settings_commands::settings_set_assistant_mode,
             ipc::settings_commands::settings_preview_overlay_opacity,
             ipc::settings_commands::settings_set_overlay_opacity,
             ipc::settings_commands::settings_validate_key,
@@ -480,6 +482,24 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             }
         }
         Err(error) => tracing::warn!("falha ao migrar o agente padrão: {error}"),
+    }
+
+    // Semeadura única dos agentes de fábrica (BR-075): os quatro viram agentes
+    // do usuário (editáveis e excluíveis); o Padrão continua protegido.
+    match application::assistant_catalog_migration::AssistantCatalogMigration::new(Arc::clone(
+        &settings,
+    ))
+    .seed()
+    {
+        Ok(outcome) => {
+            if !outcome.added.is_empty() {
+                tracing::info!(
+                    agents = ?outcome.added,
+                    "agentes de fábrica materializados na lista do usuário"
+                );
+            }
+        }
+        Err(error) => tracing::warn!("falha ao semear os agentes de fábrica: {error}"),
     }
 
     // Preset novo das perguntas prontas (BR-054): entra uma vez em quem já

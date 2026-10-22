@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::ai_route::{validate_routes, AiRoute};
 use crate::domain::ai_source::{validate_sources, AiSource};
-use crate::domain::assistant::{is_builtin_id, validate_custom_modes, AssistantMode};
+use crate::domain::assistant::{
+    is_builtin_id, is_protected_id, validate_custom_modes, AssistantMode,
+};
 use crate::domain::shortcuts::ShortcutBinding;
 use crate::error::{GhostWhisperError, Result};
 
@@ -200,9 +202,17 @@ pub struct Settings {
     /// "Reunião").
     #[serde(default)]
     pub assistant_mode_migrated: bool,
-    /// Agentes personalizados criados pelo usuário.
+    /// Agentes do usuário (a lista "AGENTES CONFIGURADOS" — BR-074).
+    ///
+    /// Começa vazia e é semeada com os agentes de fábrica no boot (BR-075).
     #[serde(default)]
     pub custom_assistant_modes: Vec<AssistantMode>,
+    /// Agentes de fábrica já materializados na lista do usuário (BR-075).
+    ///
+    /// Garante a semeadura **única**: depois de ligada, um agente excluído pelo
+    /// usuário não volta no próximo boot.
+    #[serde(default)]
+    pub assistant_modes_seeded: bool,
     /// Atualização automática do resumo enquanto a janela está aberta.
     #[serde(default = "default_enabled")]
     pub summary_auto_refresh: bool,
@@ -412,6 +422,7 @@ impl Default for Settings {
             assistant_mode_id: default_assistant_mode(),
             assistant_mode_migrated: false,
             custom_assistant_modes: Vec::new(),
+            assistant_modes_seeded: false,
             summary_auto_refresh: true,
             summary_interval_secs: default_summary_interval(),
             suggestion_auto_refresh: true,
@@ -684,13 +695,19 @@ impl Settings {
         Ok(())
     }
 
-    /// Indica se o agente selecionado existe (embutido ou personalizado).
+    /// Indica se o agente selecionado existe (o protegido ou um da lista).
+    ///
+    /// Antes da semeadura (BR-075) um id de fábrica ainda vale: o boot vai
+    /// materializá-lo na lista. Sem isso, a primeira carga depois da
+    /// atualização zeraria a escolha de quem tinha um agente de fábrica
+    /// selecionado (o `sanitized` roda antes da migração).
     pub fn selected_mode_exists(&self) -> bool {
-        is_builtin_id(&self.assistant_mode_id)
+        is_protected_id(&self.assistant_mode_id)
             || self
                 .custom_assistant_modes
                 .iter()
                 .any(|mode| mode.id == self.assistant_mode_id)
+            || (!self.assistant_modes_seeded && is_builtin_id(&self.assistant_mode_id))
     }
 
     /// Corrige valores fora do contrato (ex.: settings antigas com idioma livre).
@@ -1100,6 +1117,8 @@ mod tests {
         assert_eq!(settings.summary_interval_secs, 30);
         assert_eq!(settings.suggestion_interval_secs, 20);
         assert!(settings.custom_assistant_modes.is_empty());
+        // O domínio nasce puro: quem semeia os agentes é a aplicação (BR-075).
+        assert!(!settings.assistant_modes_seeded);
         assert!(settings.validate().is_ok());
     }
 
@@ -1110,6 +1129,7 @@ mod tests {
             .replace("\"assistant_mode_id\":\"default\",", "")
             .replace("\"assistant_mode_migrated\":false,", "")
             .replace("\"custom_assistant_modes\":[],", "")
+            .replace("\"assistant_modes_seeded\":false,", "")
             .replace("\"summary_auto_refresh\":true,", "")
             .replace("\"summary_interval_secs\":30,", "")
             .replace("\"suggestion_auto_refresh\":true,", "")
@@ -1132,6 +1152,32 @@ mod tests {
         .sanitized();
         assert_eq!(dirty.assistant_mode_id, "default");
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_keeps_a_factory_agent_selected_before_the_seed() {
+        // O `sanitized` roda antes da semeadura: um id de fábrica ainda vale
+        // (BR-075) — o boot materializa o agente na lista.
+        let settings = Settings {
+            assistant_mode_id: "meeting".into(),
+            ..Settings::default()
+        };
+        assert!(!settings.assistant_modes_seeded);
+        assert!(settings.selected_mode_exists());
+        assert_eq!(settings.sanitized().assistant_mode_id, "meeting");
+    }
+
+    #[test]
+    fn sanitized_drops_a_factory_agent_deleted_after_the_seed() {
+        // Depois da semeadura, a lista é a fonte da verdade: o agente que o
+        // usuário excluiu não volta e a seleção cai no Padrão.
+        let settings = Settings {
+            assistant_mode_id: "meeting".into(),
+            assistant_modes_seeded: true,
+            ..Settings::default()
+        };
+        assert!(!settings.selected_mode_exists());
+        assert_eq!(settings.sanitized().assistant_mode_id, "default");
     }
 
     #[test]
@@ -1566,6 +1612,7 @@ mod tests {
                 category: String::new(),
                 system_prompt: "p".into(),
                 suggestion_prompt: String::new(),
+                summary_prompt: String::new(),
                 context: String::new(),
                 icon: "sparkle".into(),
                 color: "slate".into(),
@@ -1594,6 +1641,7 @@ mod tests {
                 category: "custom".into(),
                 system_prompt: "Você ajuda em vendas.".into(),
                 suggestion_prompt: "Sugira a próxima fala.".into(),
+                summary_prompt: String::new(),
                 context: String::new(),
                 icon: "sparkle".into(),
                 color: "slate".into(),
@@ -1617,6 +1665,7 @@ mod tests {
                 category: "custom".into(),
                 system_prompt: "Você ajuda em vendas.".into(),
                 suggestion_prompt: "Sugira a próxima fala.".into(),
+                summary_prompt: String::new(),
                 context: String::new(),
                 icon: "rocket".into(),
                 color: "#00f2fe".into(),

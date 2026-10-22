@@ -14,10 +14,12 @@ import {
   startDrag as startDragIpc,
 } from "../../adapters/ipc/overlay";
 import { panelHide, panelOpen, panelOpenTab } from "../../adapters/ipc/panels";
+import { setAssistantMode } from "../../adapters/ipc/settings";
 import { askOpen } from "../../adapters/ipc/ask";
 import { recordingPickerOpen } from "../../adapters/ipc/recording";
 import { sessionEndOpen } from "../../adapters/ipc/sessionEnd";
 import { useAsrStatus } from "../../core/application/useAsrStatus";
+import { useAssistantModes } from "../../core/application/useAssistantModes";
 import { useInteractiveRegions } from "../../core/application/useInteractiveRegions";
 import { usePanelOpen } from "../../core/application/usePanelOpen";
 import { useRecording } from "../../core/application/useRecording";
@@ -26,10 +28,14 @@ import { useSettings } from "../../core/application/useSettings";
 import { defaultBindings } from "../../core/domain/shortcuts";
 import { DwellProvider } from "../../components/dwell/DwellProvider";
 import { ActionBar } from "./ActionBar";
+import { AgentSwitcher } from "./AgentSwitcher";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 
 /** Altura extra (px lógicos) reservada abaixo da barra para o menu de canais. */
 const CHANNEL_MENU_EXTRA_HEIGHT = 180;
+
+/** Altura extra (px lógicos) reservada para o menu do seletor de agentes. */
+const AGENT_MENU_EXTRA_HEIGHT = 240;
 
 /**
  * Casca do overlay: apenas a barra de ações (e o aviso de status do ASR). O
@@ -42,7 +48,9 @@ const CHANNEL_MENU_EXTRA_HEIGHT = 180;
 export function Overlay() {
   const [stealth, setStealth] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const barRef = useRef<HTMLDivElement>(null);
+  const [channelMenuOpen, setChannelMenuOpen] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const stackRef = useRef<HTMLDivElement>(null);
   const { state, busy, error, start, pause, resume, stop, setChannels } =
     useSessionState();
   const {
@@ -53,15 +61,31 @@ export function Overlay() {
   } = useRecording();
   const asrStatus = useAsrStatus();
   const { settings } = useSettings();
+  // O catálogo do seletor só recarrega quando os **agentes** mudam (o overlay
+  // também recebe `settings_changed` da opacidade; recarregar a lista com os
+  // prompts a cada autosave seria desperdício de IPC).
+  const modesKey = settings.custom_assistant_modes
+    .map((mode) => `${mode.id}:${mode.name}:${mode.icon}:${mode.color}`)
+    .join("|");
+  const { modes } = useAssistantModes(modesKey);
   const suggestionsOpen = usePanelOpen("suggestions");
   const historyOpen = usePanelOpen("history");
   useInteractiveRegions();
 
-  // Notch dinâmico: mede a barra e pede ao core a largura exata. A janela
-  // acompanha os itens (cresce/contrai) sem sobra fixa; o core reancora em
-  // topo-centro/direita e preserva a posição em modo livre.
+  // A janela do notch nunca rola (ISS-061): sem barras de rolagem, nada
+  // "esconde" a barra quando o conteúdo cresce. A janela acompanha a pilha.
+  useEffect(() => {
+    document.documentElement.classList.add("overlay-window");
+    return () => {
+      document.documentElement.classList.remove("overlay-window");
+    };
+  }, []);
+
+  // Notch dinâmico: mede a pilha (seletor + barra) e pede ao core a largura
+  // exata. A janela acompanha os itens (cresce/contrai) sem sobra fixa; o core
+  // reancora em topo-centro/direita e preserva a posição em modo livre.
   useLayoutEffect(() => {
-    const node = barRef.current;
+    const node = stackRef.current;
     if (!node || typeof ResizeObserver === "undefined") {
       return;
     }
@@ -86,8 +110,22 @@ export function Overlay() {
     };
   }, []);
 
-  const channelMenuOpenChange = useCallback((open: boolean) => {
-    void setPopoverExtraHeightIpc(open ? CHANNEL_MENU_EXTRA_HEIGHT : 0);
+  // Popovers abertos pedem altura extra ao core (o maior vence): o menu de
+  // canais abre abaixo da barra e o de agentes, abaixo do seletor.
+  useEffect(() => {
+    const extra = Math.max(
+      channelMenuOpen ? CHANNEL_MENU_EXTRA_HEIGHT : 0,
+      agentMenuOpen ? AGENT_MENU_EXTRA_HEIGHT : 0,
+    );
+    void setPopoverExtraHeightIpc(extra);
+  }, [channelMenuOpen, agentMenuOpen]);
+
+  /** Troca o agente ativo no core (global e em tempo real — BR-080). */
+  const selectAgent = useCallback((id: string) => {
+    setSettingsError(null);
+    void setAssistantMode(id).catch((caught) =>
+      setSettingsError(String(caught)),
+    );
   }, []);
 
   // Sincroniza o stealth com as settings persistidas.
@@ -161,45 +199,54 @@ export function Overlay() {
   // no root do documento (`useHudOpacity`) e vale para todas as janelas.
   return (
     <div className="overlay" data-density={settings.hud_density}>
-      <div className="overlay__bar-wrap" ref={barRef}>
-        <DwellProvider
-          enabled={settings.dwell_enabled}
-          durationMs={settings.dwell_ms}
-          active={state.listening}
-        >
-          <ActionBar
-            listening={state.listening}
-            paused={state.paused}
-            channels={state.channels}
-            startedAtMs={state.started_at_ms}
-            busy={busy}
-            onStart={(channels) => void start(channels)}
-            onPause={() => void pause()}
-            onResume={() => void resume()}
-            onStop={() => void stopSession()}
-            onChannelsChange={(channels) => void setChannels(channels)}
-            onChannelMenuOpenChange={channelMenuOpenChange}
-            onStartDrag={() => void startDragIpc()}
-            startAccelerator={startAccelerator}
-            askAccelerator={askAccelerator}
-            stealth={stealth}
-            onToggleStealth={toggleStealth}
-            onOpenSettings={() => void openSettings()}
-            onOpenTranscription={openTranscription}
-            onOpenSummary={openSummary}
-            onOpenAsk={openAsk}
-            suggestionsOpen={suggestionsOpen}
-            onToggleSuggestions={toggleSuggestions}
-            historyOpen={historyOpen}
-            onToggleHistory={toggleHistory}
-            onHide={hideOverlay}
-            recording={recording}
-            recordingBusy={recordingBusy}
-            recordingCapabilities={recordingCapabilities}
-            onToggleRecording={() => void toggleRecording()}
-            onPickRecordingTarget={() => void recordingPickerOpen()}
-          />
-        </DwellProvider>
+      <div className="overlay__stack" ref={stackRef}>
+        <AgentSwitcher
+          modes={modes}
+          modeId={settings.assistant_mode_id}
+          onSelect={selectAgent}
+          onOpenChange={setAgentMenuOpen}
+        />
+
+        <div className="overlay__bar-wrap">
+          <DwellProvider
+            enabled={settings.dwell_enabled}
+            durationMs={settings.dwell_ms}
+            active={state.listening}
+          >
+            <ActionBar
+              listening={state.listening}
+              paused={state.paused}
+              channels={state.channels}
+              startedAtMs={state.started_at_ms}
+              busy={busy}
+              onStart={(channels) => void start(channels)}
+              onPause={() => void pause()}
+              onResume={() => void resume()}
+              onStop={() => void stopSession()}
+              onChannelsChange={(channels) => void setChannels(channels)}
+              onChannelMenuOpenChange={setChannelMenuOpen}
+              onStartDrag={() => void startDragIpc()}
+              startAccelerator={startAccelerator}
+              askAccelerator={askAccelerator}
+              stealth={stealth}
+              onToggleStealth={toggleStealth}
+              onOpenSettings={() => void openSettings()}
+              onOpenTranscription={openTranscription}
+              onOpenSummary={openSummary}
+              onOpenAsk={openAsk}
+              suggestionsOpen={suggestionsOpen}
+              onToggleSuggestions={toggleSuggestions}
+              historyOpen={historyOpen}
+              onToggleHistory={toggleHistory}
+              onHide={hideOverlay}
+              recording={recording}
+              recordingBusy={recordingBusy}
+              recordingCapabilities={recordingCapabilities}
+              onToggleRecording={() => void toggleRecording()}
+              onPickRecordingTarget={() => void recordingPickerOpen()}
+            />
+          </DwellProvider>
+        </div>
       </div>
 
       <AsrStatusBanner status={asrStatus} />

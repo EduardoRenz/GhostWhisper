@@ -98,9 +98,12 @@ mod tests {
 
     #[test]
     fn the_choice_of_the_user_is_respected_after_the_migration() {
-        // Depois da migração, escolher a "Reunião" de novo **fica**.
+        // Depois da migração, escolher a "Reunião" de novo **fica**. Com a
+        // semeadura (BR-075) a "Reunião" é um agente do usuário.
         let settings = Settings {
             assistant_mode_id: LEGACY_DEFAULT_MODE_ID.to_string(),
+            custom_assistant_modes: crate::application::prompts::assistant::factory_modes(),
+            assistant_modes_seeded: true,
             ..Settings::default()
         };
         let store = Arc::new(InMemorySettingsStore::with_settings(settings));
@@ -130,6 +133,7 @@ mod tests {
                 category: "custom".into(),
                 system_prompt: "Você ajuda em vendas.".into(),
                 suggestion_prompt: "Sugira a próxima fala.".into(),
+                summary_prompt: String::new(),
                 context: String::new(),
                 icon: "briefcase".into(),
                 color: "coral".into(),
@@ -149,15 +153,16 @@ mod tests {
     fn the_migration_is_written_to_the_settings_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("settings.json");
+
+        // Um arquivo antigo (pré-BR-059): a "Reunião" era o padrão e a lista de
+        // agentes do usuário ainda não existia.
+        let mut legacy =
+            serde_json::to_value(crate::domain::settings::Settings::default()).expect("json");
+        legacy["assistant_mode_id"] = serde_json::json!(LEGACY_DEFAULT_MODE_ID);
+        legacy["assistant_mode_migrated"] = serde_json::json!(false);
+        std::fs::write(&path, serde_json::to_string(&legacy).expect("json")).expect("escreve");
+
         let store = Arc::new(FileSettingsStore::new(path.clone()));
-
-        // Um arquivo antigo: a "Reunião" era o padrão.
-        let legacy = crate::domain::settings::Settings {
-            assistant_mode_id: LEGACY_DEFAULT_MODE_ID.to_string(),
-            ..crate::domain::settings::Settings::default()
-        };
-        store.save(&legacy).expect("salva");
-
         AssistantModeMigration::new(store.clone())
             .migrate()
             .expect("migra");

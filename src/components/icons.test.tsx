@@ -8,8 +8,12 @@ import {
   GearIcon,
   GripIcon,
   HistoryIcon,
+  InfoIcon,
   LanguageIcon,
+  PencilIcon,
+  PlusIcon,
   SparkleIcon,
+  StarIcon,
   SummaryIcon,
   MonitorIcon,
   TranscriptIcon,
@@ -33,6 +37,10 @@ const ALL_ICONS = {
   VideoCameraIcon,
   MonitorIcon,
   WindowIcon,
+  PencilIcon,
+  StarIcon,
+  PlusIcon,
+  InfoIcon,
 };
 
 describe("ícones", () => {
