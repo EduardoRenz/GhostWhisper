@@ -1,349 +1,229 @@
-# GhostWhisper
+<p align="center">
+  <img src="assets/icons/icon-source.png" width="144" alt="GhostWhisper logo" />
+</p>
 
-> Copiloto de reunião em tempo real, **open-source**, **Linux-first** e **local-only**.
-> Ouve o áudio da reunião, transcreve, traduz e sugere respostas — numa janela
-> overlay discreta que roda separada da reunião.
+<h1 align="center">GhostWhisper</h1>
 
-GhostWhisper é uma reimplementação independente inspirada no comportamento do Perssua,
-construída do zero para funcionar bem no Linux. Não usa conta, não envia telemetria
-e não exige assinatura: você traz sua própria chave de API (BYO key) ou roda modelos
-locais.
+<p align="center">
+  <strong>Open-source, Linux-first, local-only meeting copilot.</strong><br />
+  Listens to your meeting, transcribes, translates and suggests replies — in a discreet overlay.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/Platform-Linux-0078D6?style=flat-square&logo=linux&logoColor=white" alt="Platform: Linux" />
+  <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?style=flat-square&logo=tauri&logoColor=white" alt="Tauri v2" />
+  <img src="https://img.shields.io/badge/Rust-1.77%2B-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust 1.77+" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=06111F" alt="React 19" />
+  <img src="https://img.shields.io/badge/Whisper-Vulkan%20%2F%20CPU-A41E22?style=flat-square&logo=vulkan&logoColor=white" alt="Whisper: Vulkan or CPU" />
+  <img src="https://img.shields.io/badge/Local--only-no%20telemetry-0F766E?style=flat-square" alt="Local-only, no telemetry" />
+</p>
 
 ---
 
-## Por que existe
+GhostWhisper is an open-source meeting copilot built from scratch to work well
+on Linux. No account, no telemetry and no subscription: bring your own API key
+(BYO key) or run local models.
 
-O app original é problemático no Linux: captura de áudio do sistema instável,
-dependência de XWayland, problemas de janela/permissão e recursos "premium"
-(como ficar invisível no compartilhamento de tela) bloqueados. O GhostWhisper mira
-resolver o núcleo com qualidade no Linux e ser totalmente aberto.
+## Why it exists
 
-## Stack
+Most similar apps offer poor Linux support: unstable system-audio capture, a
+hard dependency on XWayland, window/permission quirks and key features locked
+behind a paywall. GhostWhisper focuses on getting the core experience right on
+Linux and staying fully open.
 
-| Camada        | Tecnologia |
-|---------------|------------|
-| App shell     | **Tauri v2** (Rust) |
-| Frontend      | React + Vite + TypeScript |
-| Áudio (mic)   | `cpal` (ALSA/PulseAudio/PipeWire) |
-| Áudio (sistema)| PipeWire / PulseAudio monitor de sink |
-| VAD + ASR     | `whisper-rs` (whisper.cpp) + Silero VAD |
-| LLM           | HTTP direto (OpenAI / Gemini / OpenRouter / custom) ou `llama.cpp` local |
-| Persistência  | SQLite (`rusqlite`, FTS5) |
-| Segredos      | Secret Service (libsecret) via `keyring` |
-| Overlay       | Janela transparente Tauri; X11/XWayland (click-through por cursor) |
+## Key features
 
-## Estado
+- **Real-time transcription** — microphone and/or system audio (PipeWire /
+  PulseAudio sink monitor), with independent Whisper contexts per channel.
+- **Local speech-to-text** — `whisper.cpp` through `whisper-rs`, Silero VAD,
+  Vulkan GPU acceleration with automatic CPU fallback.
+- **Translation and AI suggestions** — direct LLM calls (BYO key) with multiple
+  prioritized sources, automatic fallback and per-source circuit breaker.
+- **Agents and insights** — Default, Meeting, Technical Interview, LeetCode and
+  System Design presets, plus custom agents and saved prompts.
+- **Sessions and history** — local SQLite storage (FTS5 search), live session
+  journal, incremental summaries and Markdown export.
+- **Session recording** — record the meeting window or the full screen together
+  with session audio (microphone + system) into a compact MP4; recording belongs
+  to the session and can be paused, resumed and discarded.
+- **Discreet overlay** — transparent HUD, tray icon, configurable global
+  shortcuts and a stealth mode that hides the window from the taskbar.
+- **Local-only** — audio, transcripts and settings never leave your machine;
+  only the LLM requests you configure go out.
 
-**MVP concluído** (tarefas 00–10 em
-[`prds/mvp/tasks/_tasks.md`](prds/mvp/tasks/_tasks.md)). Fluxo completo:
-captura (mic/sistema) → VAD + Whisper local → transcrição ao vivo → tradução e
-insights (BYO key) → persistência e busca. O MVP está descrito em
-[`prds/mvp/prd.md`](prds/mvp/prd.md); a decisão sobre Wayland está no
-[`wayland-spike.md`](prds/mvp/architecture/wayland-spike.md).
+## Tech stack
 
-**Fontes de IA múltiplas** (tarefas 01–09 em
-[`prds/ai-sources/tasks/_tasks.md`](prds/ai-sources/tasks/_tasks.md)): várias
-fontes de IA ordenadas (a primeira é a primária), chave por fonte, fallback
-automático com circuit breaker, DeepSeek como provedor de primeira classe e a
-tela de Configurações repaginada com salvamento global. Detalhes em
-[`prds/ai-sources/prd.md`](prds/ai-sources/prd.md).
+| Layer | Technology |
+|-------|------------|
+| App shell | **Tauri v2** (Rust 1.77+) |
+| Frontend | React 19 + Vite 6 + TypeScript 5 |
+| Audio | `cpal` 0.15 (ALSA/PulseAudio/PipeWire) + `libpulse-binding` 2 |
+| System audio | PipeWire / PulseAudio sink monitor |
+| VAD + ASR | `whisper-rs` 0.16 (whisper.cpp) + Silero VAD |
+| Acceleration | Vulkan backend (default release), CPU fallback |
+| LLM | HTTP (OpenAI, Gemini, OpenRouter, DeepSeek, custom OpenAI-compatible) |
+| Persistence | SQLite via `rusqlite` 0.32 (bundled, FTS5) |
+| Recording | X11 window/screen capture + FFmpeg (H.264 via x264 or VAAPI) |
+| Secrets | Secret Service (libsecret) via `keyring` 3 |
+| Overlay | Transparent Tauri window; X11/XWayland click-through |
 
-**Sessão (planejado)** — a terceira aba do painel será o **diário de
-perguntas** da sessão, com a feature **Busca** (perguntar com o contexto da
-sessão, anexar print de tela e salvar perguntas prontas). Spec em
-[`prds/session/prd.md`](prds/session/prd.md).
+## Requirements
 
-## Requisitos
+- Linux with X11 or XWayland (Wayland native is not supported yet).
+- Rust stable (1.77+) and `cargo`.
+- Node.js 20+ and `pnpm` (or `npm`).
+- Tauri v2 system dependencies:
+  - Debian/Ubuntu:
+    `libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libpulse-dev libvulkan-dev glslc`
+  - Fedora:
+    `webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-libs-devel vulkan-loader-devel glslc`
+- PipeWire or PulseAudio with a sink monitor for system audio.
 
-- Rust (stable) + `cargo`
-- Node.js 20+ e `pnpm` (ou `npm`)
-- Dependências de sistema Tauri v2 (Linux):
-  - Debian/Ubuntu: `libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libpulse-dev`
-  - Fedora: `webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-libs-devel`
-- Para áudio do sistema: PipeWire ou PulseAudio com monitor de sink disponível.
-
-## Instalação (usuário final)
-
-Alvos de distribuição do MVP: **`.deb`** e **AppImage** (X11/XWayland).
-
-```bash
-# .deb (Ubuntu/Debian) — instala e roda sem sudo no uso diário
-sudo apt install ./GhostWhisper_0.1.0_amd64.deb
-# ou:
-sudo dpkg -i GhostWhisper_0.1.0_amd64.deb && sudo apt-get -f install
-
-# AppImage — sem instalar
-chmod +x GhostWhisper_0.1.0_amd64.AppImage
-./GhostWhisper_0.1.0_amd64.AppImage
-```
-
-Dependências de runtime declaradas pelo `.deb`: `libwebkit2gtk-4.1-0`,
-`libgtk-3-0`, `libasound2t64 | libasound2` (ALSA/`cpal`) e `libpulse0`.
-
-> **Wayland:** o MVP roda em **X11/XWayland** (BR-007). Wayland nativo é
-> **no-go** por ora (sem click-through por cursor, atalhos globais e ancoragem
-> sem `gtk-layer-shell`); veja o
-> [spike](prds/mvp/architecture/wayland-spike.md).
-
-## Desenvolvimento
+## Getting started
 
 ```bash
+git clone https://github.com/EduardoRenz/GhostWhisper.git
+cd GhostWhisper
 pnpm install
-pnpm tauri dev      # abre o overlay em modo desenvolvimento
-pnpm test           # testes do frontend (vitest)
-cargo test --manifest-path src-tauri/Cargo.toml   # testes do core
+pnpm tauri dev
 ```
 
-> **Terminal do VS Code via snap:** o ambiente exporta `GTK_PATH`/`GIO_MODULE_DIR`/
-> `LOCPATH`/`XDG_DATA_DIRS` apontando para `/snap/code` e `/snap/core20`, e o
-> binário quebra ao carregar libs do snap
-> (`undefined symbol: __libc_pthread_init, version GLIBC_PRIVATE`). Use
-> `pnpm tauri:dev:clean` (ou rode de um terminal nativo, sem o sandbox do snap).
+On first launch, open **Settings** (gear icon) and add an AI source with your own
+API key. Keys are stored in the system keyring, never in plain text. The Whisper
+model is downloaded only on the first session that uses it.
 
-### Log de debug das chamadas de IA
+> **VS Code snap terminal:** the snap environment exports `GTK_PATH`,
+> `GIO_MODULE_DIR`, `LOCPATH` and `XDG_DATA_DIRS` pointing into `/snap`, which
+> breaks the app with `undefined symbol: __libc_pthread_init`. Use
+> `pnpm tauri:dev:clean` or run from a native terminal.
 
-Com várias fontes e fallback, é preciso saber **qual** modelo respondeu cada
-tarefa. O app **mostra na tela** (pill no card da sugestão e na linha do
-resumo); para o detalhe, suba com `RUST_LOG=ghostwhisper_lib=debug`:
+## Build and packaging
 
 ```bash
-RUST_LOG=ghostwhisper_lib=debug pnpm tauri dev
-# ou o binário já compilado:
-RUST_LOG=ghostwhisper_lib=debug ./src-tauri/target-vulkan/release/ghostwhisper
+pnpm tauri:build        # release with Vulkan (default) + embedded loader
+pnpm tauri:build:cpu    # release, CPU only (escape hatch)
+scripts/package-linux.sh        # .deb + AppImage
+scripts/package-linux.sh deb    # only .deb
 ```
 
-> Use `ghostwhisper_lib=debug` e **não** `debug` global: com o global, o crate
-> `keyring` despeja os atributos das credenciais e o log fica ilegível.
+Artifacts are written to `src-tauri/target/release/bundle/{deb,appimage}/`.
 
-```
-DEBUG ghostwhisper_lib: llm: resposta concluída
-  scope=agent:meeting source=DeepSeek provider=deepseek model=deepseek-reasoner
-  is_fallback=false max_tokens=420 temperature=0 latency_ms=1420
-  prompt_tokens=1180 completion_tokens=260 total_tokens=1440
-  reasoning_tokens=96 reasoning="reasoning (tokens reportados)"
-```
+- The Vulkan binary picks a GPU at runtime and falls back to CPU by itself when
+  no Vulkan device is available — one build works everywhere.
+- `libvulkan.so.1` is embedded in the AppImage, so it runs even without the
+  loader installed; GPU drivers/ICDs still come from the host.
+- `scripts/vulkan-env.sh` assembles the SDK from the system (`libvulkan-dev`,
+  `glslc`) or extracts downloaded `.deb` files into `.vulkan-sdk/` — no sudo.
+- After three consecutive GPU crashes the next launch disables GPU acceleration
+  automatically. The choice is also available in **Settings → Transcription &
+  Audio → Acceleration** (`auto` / `CPU` / `GPU`).
 
-O `scope` diz a tarefa (`agent:<id>`, `capability:<resumo|sugestões|tradução>`
-ou `default`), o `model` é o modelo **real** usado e o `reasoning` é o nível de
-raciocínio (quando o provider reporta tokens de raciocínio ou o modelo é de
-raciocínio).
-
-### Aceleração por GPU (Vulkan)
-
-O Whisper roda no **backend Vulkan** do `whisper.cpp` (flash attention), e o
-**pacote de release já vem com ele** — um binário só:
+Install a release:
 
 ```bash
-pnpm tauri:build           # release com Vulkan (padrão) + loader embutido
-pnpm tauri:build:cpu       # release CPU-only (escape hatch)
-pnpm tauri:dev:vulkan      # dev com GPU
-pnpm tauri:dev             # dev em CPU (build mais rápido)
+sudo apt install ./GhostWhisper_0.1.0_amd64.deb
+# or
+chmod +x GhostWhisper_0.1.0_amd64.AppImage && ./GhostWhisper_0.1.0_amd64.AppImage
 ```
 
-- O binário com Vulkan **escolhe a GPU em runtime** e **cai para CPU sozinho**
-  quando não há dispositivo Vulkan — a mesma build serve para todos.
-- O **loader** `libvulkan.so.1` é embutido no AppImage (`scripts/ensure-libvulkan.sh`),
-  então o app abre mesmo sem o loader no sistema; os drivers/ICDs continuam vindo
-  da máquina. No `.deb`, `libvulkan1` é dependência.
-- `scripts/vulkan-env.sh` monta o SDK de build: usa `libvulkan-dev`/`glslc` do
-  sistema (`sudo apt install libvulkan-dev glslc`) ou baixa os `.deb` e extrai em
-  `.vulkan-sdk/` — **sem sudo**.
-- Nas **Configurações → Transcrição & Áudio** há o seletor **Aceleração**
-  (`auto`/`CPU`/`GPU`). Se um driver instável derrubar o app com a GPU ativa, o
-  próximo boot **desliga a GPU** por conta própria (marca de crash, como o Perssua).
-- Modelo sugerido com GPU: **`small`** (o `large-v3-turbo` funciona, mas pede GPU
-  mais forte).
-- Os artefatos saem em `src-tauri/target/release/bundle/{appimage,deb}/` — o build
-  de GPU compila em `target-vulkan/` e o script publica no caminho de sempre.
+## Available scripts
 
-### Empacotamento
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Vite dev server only |
+| `pnpm tauri dev` | Full app in development (CPU build) |
+| `pnpm tauri:dev:vulkan` | Development with Vulkan GPU acceleration |
+| `pnpm tauri:dev:clean` | Dev launcher that strips snap environment variables |
+| `pnpm tauri:build` | Release build with Vulkan + bundles |
+| `pnpm tauri:build:cpu` | Release build without GPU |
+| `pnpm test` | Frontend tests (Vitest) |
+| `scripts/package-linux.sh` | Linux packaging (`.deb` / AppImage) |
 
-```bash
-scripts/package-linux.sh            # .deb + AppImage (release)
-scripts/package-linux.sh deb        # apenas .deb (não baixa AppImage tools)
-```
-
-Artefatos em `src-tauri/target/release/bundle/{deb,appimage}/`.
-
-### Estrutura do repositório
+## Project structure
 
 ```
 GhostWhisper/
-├── README.md
-├── prds/                     # especificação (spec-driven)
-│   ├── business-rules.md
-│   ├── memory.md
-│   └── mvp/
-│       ├── prd.md
-│       ├── architecture/
-│       └── tasks/
-├── src/                      # frontend React (overlay, settings, sessão)
-├── src-tauri/                # core Rust (áudio, ASR, LLM, DB, overlay)
-└── assets/                   # modelo Silero VAD, ícones
+├── assets/icons/             # App icon source (also used by the README)
+├── prds/                     # Spec-driven documentation and decisions
+├── scripts/                  # Build, packaging and Vulkan helpers
+├── src/                      # React frontend
+│   ├── core/                 # Domain, l10n and adapters
+│   ├── components/           # Shared UI
+│   └── features/             # Overlay, settings, session, history, journal…
+├── src-tauri/
+│   └── src/
+│       ├── domain/           # Pure domain types and rules
+│       ├── application/      # Use cases
+│       ├── ports/            # Traits (audio, ASR, LLM, repositories)
+│       ├── adapters/         # Implementations (cpal, whisper, HTTP, SQLite)
+│       └── ipc/              # Tauri commands
+└── README.md
 ```
 
-## Configuração
+The Rust core follows a clean/hexagonal architecture: `domain` and `application`
+never depend on adapters, and every port has a test double.
 
-A configuração é feita na tela **Settings** do app e persistida localmente:
+## Configuration
 
-- **Fontes de IA:** você pode cadastrar **várias** fontes (OpenAI, Gemini,
-  OpenRouter, DeepSeek ou endpoint custom OpenAI-compatível), cada uma com seu
-  modelo e sua **própria chave**. A **ordem da lista é a ordem de prioridade**:
-  a primeira é a que responde. Arraste a alça para reordenar ou use
-  "Tornar primário".
-- **O modelo é digitado por você:** não há lista de modelos sugerida (envelhece
-  rápido e prende num modelo antigo) — digite o nome (`gpt-6`,
-  `deepseek-chat`, …).
-- **O modelo usado aparece na tela:** o card da sugestão e a linha do resumo
-  mostram qual fonte/modelo respondeu (com a marca de *fallback* quando a
-  primária falhou).
-- **Fallback automático:** se a fonte primária falhar (429, chave expirada,
-  timeout), a próxima fonte da lista assume sozinha. Cada fonte tem um
-  **circuit breaker**: depois de 3 falhas seguidas ela é pulada por 60 s (não
-  gasta timeout) e volta a ser tentada sozinha — o cartão mostra "Conectada ·
-  Latência N ms", "Fallback ativo" ou "Falhou".
-- **API key:** guardada no keyring do sistema (Secret Service), nunca em texto
-  puro; a tela só mostra a versão mascarada (`••••••••·abcd`).
-- **Transcrição:** modelo whisper.cpp local (tiny/base/small/medium) ou cloud.
-  O modelo escolhido é **baixado só na primeira sessão** que o usa (nada é
-  baixado de antemão).
-- **Idiomas:** origem e destino em **Auto / Português / English**. Fixar a origem
-  melhora o reconhecimento; **Auto** deixa o Whisper detectar. Destino **Auto**
-  (ou igual à origem) **não traduz**.
-- **Áudio:** microfone e/ou monitor de saída do sistema (sink).
-- **Atalhos globais** para mostrar/ocultar o overlay.
+Everything is configured in the app and persisted locally:
 
-As alterações são feitas num **rascunho** e salvas de uma vez no botão
-**"Salvar Alterações"** (rodapé da tela). "Restaurar Padrões" volta tudo ao
-padrão de fábrica (as chaves no keyring **não** são apagadas).
+| Setting | Description |
+|---------|-------------|
+| AI sources | Multiple providers with their own key and model; list order is priority order, with automatic fallback |
+| Transcription | Local `whisper.cpp` model (`tiny`, `base`, `small`, `medium`) or cloud |
+| Languages | Source and target: Auto, Portuguese, English; target Auto does not translate |
+| Audio | Microphone, system sink monitor, or both |
+| Shortcuts | Global shortcuts for overlay, session, stealth and suggestions |
 
-Nada é enviado para servidores do GhostWhisper — não existe backend próprio.
+Default shortcuts:
 
-### Atalhos globais (padrões)
+| Action | Shortcut |
+|--------|----------|
+| Show/hide overlay | `Ctrl+Shift+O` |
+| Start/end session | `Ctrl+Shift+S` |
+| Toggle stealth | `Ctrl+Shift+H` |
+| Ask for a suggestion | `Ctrl+Shift+I` |
 
-| Ação | Atalho |
-|------|--------|
-| Mostrar/ocultar overlay | `Ctrl+Shift+O` |
-| Iniciar/encerrar sessão | `Ctrl+Shift+S` |
-| Alternar stealth | `Ctrl+Shift+H` |
-| Pedir sugestão | `Ctrl+Shift+I` |
+## Testing
 
-Remapeáveis na tela de configurações; conflitos são reportados sem derrubar o app.
+```bash
+pnpm test                                         # frontend (Vitest)
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust core
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+```
 
-### Overlay
+The test suite uses in-memory repositories and fake providers; no network,
+microphone or audio device is required.
 
-- **Arraste:** use o "⋮⋮" na barra para mover o overlay; a posição é lembrada.
-- **Bandeja:** ícone sempre visível (Mostrar/ocultar, Sessão, Configurações, Sair).
-  No GNOME é necessária a extensão **AppIndicator**.
-- **Captura dupla:** inicie em **"Ambos"** para transcrever microfone (`Você`) e
-  áudio do sistema (`Interlocutor`) ao mesmo tempo, cada um com seu próprio
-  motor Whisper (contextos independentes).
-- **Click-through:** regiões interativas capturam o mouse; o resto atravessa
-  (input-shape por região no X11).
-- **Teste de áudio:** na tela de configurações, teste microfone/áudio do sistema
-  e veja o nível em tempo real antes de iniciar uma sessão.
-- **Notch em dois estados:** sem sessão, a barra fica **limpa** — marca, a
-  **engrenagem** (Configurações) e o botão **"Começar a ouvir"** (esmeralda, com o
-  atalho em badges, ex.: `Ctrl` `Shift` `S`), além de Histórico e ocultar. Com a
-  sessão gravando, aparece o **switcher** — **Transcrição** (destacada, com
-  **waveform** que reage ao áudio) · **play/pause** contextual · **Histórico** ·
-  **Resumo** —, o **timer** `HH:MM:SS`, os **canais** (popover) e os ícones de
-  Sugestões e stealth. A **engrenagem** fica sempre no fim, como último botão.
-  O **Histórico** também está disponível no repouso — dá para abrir sessões
-  anteriores sem iniciar uma sessão.
-- **Conversa em aba própria:** as falas aparecem como uma conversa — `Você` à
-  direita (azul) e `Interlocutor` à esquerda, **intercaladas pelo tempo da sessão**.
-  O que ainda está sendo transcrito
-  aparece no fim como bolha "em andamento" (com `…`) e, ao fechar o turno, entra na
-  posição certa da conversa. A aba é **só transcrição**: não gera sugestões no chat
-  (a janela **Sugestões** é o lugar da feature). A conversa vive na aba
-  **Transcrição** do painel da sessão (ícone de Transcrição no overlay, que
-  esconde/mostra o painel): movível, redimensionável e com posição/tamanho **e a aba
-  ativa** lembrados.
-- **Idioma na hora:** a **barra inferior** da aba Transcrição tem o seletor de
-  **idioma de origem** (com *Auto*). Trocar o idioma vale **imediatamente** para a
-  próxima fala — **sem reiniciar a sessão e sem recarregar o modelo** — e fica salvo
-  para as próximas. O idioma de destino da tradução continua nas Configurações.
-- **Controles:** **play/pause** contextual ao lado de *Transcrição* (gravando mostra
-  ⏸; pausado mostra ▶), a pílula de **tempo da sessão** (`HH:MM:SS`) e a bolinha de
-  status (esmeralda pulsando = gravando, outline = pausado). O **encerrar** é só a
-  pílula de tempo, com confirmação (**"Encerrar sessão? Sim / Não"**).
-- **Pausar / Retomar:** o toggle suspende a captura **sem encerrar a sessão** — as
-  falas ficam na tela e o relógio continua de onde parou. "Nova sessão" encerra e
-  começa outra (na hora); a **pílula de sessão** encerra depois de confirmar (para
-  voltar numa sessão encerrada, use *Histórico → Continuar sessão*).
-- **Trocar de canal:** o botão de **canais** (ícone de microfone) abre um popover
-  com **Ambos / Microfone / Sistema** e **Nova sessão**. Funciona **sempre**,
-  inclusive com a sessão gravando ou pausada — a troca não encerra a sessão nem
-  perde a linha temporal.
-- **Ouvir minha voz:** no teste de áudio (configurações), o toggle reproduz o
-  microfone com ~0,4 s de atraso — use **fone de ouvido** (com caixa de som o
-  retorno realimenta o microfone). Você ouve exatamente o que o ASR recebe.
-- **Linha temporal:** cada fala e cada sugestão da IA mostram o tempo desde o
-  início da sessão (`mm:ss`) — inclusive no histórico e no export.
-- **Histórico:** a janela **Histórico** (ícone de Histórico no overlay) lista as
-  sessões anteriores (com título, data e duração). Dá para **continuar** uma sessão,
-  renomear, excluir, abrir a conversa completa (falas + sugestões em bolhas) e
-  **exportar em Markdown** — pelo diálogo nativo "salvar como" ou copiando para a
-  área de transferência. Ela também é movível e redimensionável.
+## Troubleshooting
 
-### Abas do painel e assistentes
+**Wayland** — the app runs on X11/XWayland. Native Wayland lacks cursor
+click-through, global shortcuts and window anchoring without
+`gtk-layer-shell`. Force XWayland if needed.
 
-O **painel da sessão** (janela `chat`, aberta pelo ícone de **Transcrição**) tem
-duas abas — **Transcrição** e **Resumo** — e complementa o overlay:
+**Screen-share invisibility** — no X11/Wayland API can hide a window from a
+screen capture. Stealth mode removes the overlay from the taskbar and alt-tab
+but not from a shared screen. Share a single window instead of the whole screen,
+or move the overlay to another monitor.
 
-- **Aba Resumo** (ícone/documento na aba, ou *Resumo* no tray): resume a conversa em
-  Markdown e se atualiza **a cada 30 s** enquanto
-  a aba estiver visível — sempre de forma **incremental**, sem chamar a IA quando não
-  há fala nova. “Atualizar” regenera do zero e “Copiar” leva o Markdown. Enquanto
-  gera, um pill mostra **“Gerando resumo completo…”** (ou **“Processando o
-  restante…”** quando há trechos pendentes); o **título** aparece acima do texto,
-  para não confundir o panorama com o resumo inteiro. A aba guarda
-  um **histórico de versões** (hora + título do tópico): clique numa anterior para ler
-  **congelado** e use “Voltar ao atual” para retomar o ao vivo. O resumo também
-  aparece no histórico e no export da sessão.
-- **Sugestões** (ícone de faísca no overlay, ou botão *Sugestões* na Transcrição): olha
-  os **últimos momentos**
-  da conversa e sugere a próxima fala, no **agente** escolhido — **Padrão** (o
-  padrão: identifica a cena e age como o especialista correspondente),
-  **Reunião**, **Entrevista Técnica**, **LeetCode** e **System Design**, além dos
-  seus
-  **agentes personalizados**. A atualização automática (20 s, configurável) só
-  chama a IA quando há fala nova; **Sugerir agora** força uma nova análise e
-  **Fixar** grava a sugestão na conversa/export. A caixa **Contexto extra** aceita
-  um enunciado ou trecho de código (útil no modo LeetCode, já que o app é
-  áudio-only).
-- **Os agentes respondem, não perguntam:** nenhum agente devolve uma pergunta
-  para você — com a informação disponível ele responde e, quando falta contexto,
-  diz em uma frase curta que há pouca informação na conversa. O **código sai
-  puro** (sem comentário de linha): a explicação fica no Markdown fora do bloco.
-- **Código e Markdown:** as respostas são renderizadas com títulos, listas,
-  tabelas e **código colorido** (com botão copiar); HTML bruto não é executado.
-- **Janelas:** o painel (Transcrição/Resumo), o **Histórico** e as **Sugestões** são
-  **sem moldura e arrastáveis** pelo cabeçalho. Redimensione pelas bordas/cantos
-  (alças próprias) e o **tamanho e a posição** (e a **aba ativa** do painel) são
-  lembrados entre reinícios. Em **Wayland nativo** o redimensionamento por alça pode
-  não funcionar (em X11/XWayland funciona); veja a limitação em
-  [`prds/assistant/architecture/assistant-windows.md`](prds/assistant/architecture/assistant-windows.md).
-- **Custo:** o automático do resumo só roda com a **aba Resumo visível** e a sessão
-  gravando; o das sugestões roda a cada fala nova. Dá para pausar cada janela no
-  cabeçalho e ajustar a cadência em *Configurações → Assistente*. Os agentes
-  personalizados (nome, prompts e contexto) também ficam nessa aba.
+**Debug logging** — set `RUST_LOG=ghostwhisper_lib=debug` (not global `debug`,
+which makes `keyring` dump credential attributes). Each LLM call logs the task
+scope, provider, real model, fallback flag, latency and token usage.
 
-## Privacidade
+## Privacy
 
-- Sem login, sem telemetria, sem conta.
-- Áudio e transcrições ficam no seu disco (SQLite).
-- Chamadas de LLM vão direto do seu computador ao provider que você configurou.
+- No account, no login, no telemetry, no backend.
+- Audio and transcripts stay on your disk (SQLite).
+- LLM requests go directly from your machine to the provider you configured.
 
-> **Limitação conhecida (Linux):** a exclusão de janela do compartilhamento de tela
-> não é garantida pelo protocolo gráfico (BR-006). O **modo stealth** sai da barra
-> de tarefas e do alt-tab, mas **não esconde o overlay de uma captura de tela**: não
-> existe API para isso no X11/Wayland. Em reuniões, compartilhe **uma janela** em vez
-> da tela inteira, ou deixe o overlay em outro monitor. Veja a análise e a decisão em
-> [`prds/mvp/architecture/wayland-spike.md`](prds/mvp/architecture/wayland-spike.md).
+## Contributing
 
-## Licença
+1. Read [`AGENTS.md`](AGENTS.md) and the PRDs in [`prds/`](prds/).
+2. Describe the change in the relevant PRD before writing code.
+3. Keep the architecture boundaries and add tests for every port.
+4. Run `pnpm test` and `cargo test` before opening a pull request.
 
-A definir (candidato: MIT/Apache-2.0). GhostWhisper é um projeto independente e não é
-afiliado ao Perssua.
+## License
+
+MIT — see [LICENSE](LICENSE).

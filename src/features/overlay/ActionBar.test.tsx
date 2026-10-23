@@ -72,6 +72,11 @@ describe("ActionBar — notch em dois estados", () => {
     // O atalho da lupa aparece em badges (Ctrl K).
     const lupa = button("Perguntar ao GhostWhisper");
     expect(lupa.textContent).toContain("K");
+
+    // A marca do notch exibe a logo do app.
+    expect(
+      container.querySelector(".overlay__brand-logo")?.getAttribute("src"),
+    ).toBeTruthy();
   });
 
   it("repouso: o microfone inicia com os canais padrão", () => {

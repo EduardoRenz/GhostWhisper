@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import logoUrl from "../../assets/logo.png";
 import type {
   RecordingCapabilities,
   RecordingState,
@@ -133,12 +134,20 @@ export function ActionBar({
       />
 
       <span className="overlay__brand-core">
-        <span
-          className={`overlay__brand-dot${
-            listening && !paused ? " overlay__brand-dot--live" : ""
-          }`}
-          aria-hidden="true"
-        />
+        <span className="overlay__brand-mark">
+          <img
+            className="overlay__brand-logo"
+            src={logoUrl}
+            alt=""
+            aria-hidden="true"
+          />
+          <span
+            className={`overlay__brand-dot${
+              listening && !paused ? " overlay__brand-dot--live" : ""
+            }`}
+            aria-hidden="true"
+          />
+        </span>
         <span className="overlay__brand">GhostWhisper</span>
       </span>
 

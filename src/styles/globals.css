@@ -4048,13 +4048,33 @@ body,
   gap: 8px;
 }
 
+/* Marca do notch: logo + bolinha de status (canto inferior direito). */
+.overlay__brand-mark {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.overlay__brand-logo {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 5px rgba(0, 242, 254, 0.35));
+}
+
 .overlay__brand-dot {
-  width: 8px;
-  height: 8px;
+  position: absolute;
+  right: -1px;
+  bottom: 0;
+  width: 7px;
+  height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--oh-accent);
-  box-shadow: 0 0 10px rgba(0, 242, 254, 0.55);
+  box-shadow:
+    0 0 0 1.5px var(--oh-surface-container),
+    0 0 10px rgba(0, 242, 254, 0.55);
 }
 
 .overlay__brand-dot--live {
