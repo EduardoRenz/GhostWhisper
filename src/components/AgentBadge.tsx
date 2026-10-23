@@ -7,6 +7,7 @@
 
 import type { CSSProperties } from "react";
 import { agentColorToken, agentIconId } from "../core/domain/assistant";
+import { useTranslation } from "../core/l10n";
 import { AgentIcon } from "./AgentIcon";
 
 export interface AgentBadgeProps {
@@ -24,8 +25,9 @@ export function AgentBadge({
   mode,
   size = 13,
   className,
-  fallback = "Agente",
+  fallback,
 }: AgentBadgeProps) {
+  const { t } = useTranslation();
   const token = agentColorToken(mode);
   const style = {
     "--agent-color": `var(--oh-agent-${token})`,
@@ -37,7 +39,9 @@ export function AgentBadge({
       title={mode?.name}
     >
       <AgentIcon icon={agentIconId(mode)} size={size} />
-      <span className="agent-badge__name">{mode?.name ?? fallback}</span>
+      <span className="agent-badge__name">
+        {mode?.name ?? fallback ?? t("common_agent")}
+      </span>
     </span>
   );
 }

@@ -11,6 +11,7 @@ import {
 import { isTauriRuntime } from "../../adapters/ipc/client";
 import { subscribe } from "../../adapters/ipc/events";
 import { useSettings } from "../../core/application/useSettings";
+import { useTranslation } from "../../core/l10n";
 import { defaultBindings } from "../../core/domain/shortcuts";
 import { DEFAULT_SAVED_QUESTIONS } from "../../core/domain/settings";
 import { AskBar } from "../overlay/AskBar";
@@ -24,6 +25,7 @@ import { AskBar } from "../overlay/AskBar";
  * quando existe; sem transcrição, a pergunta funciona igual.
  */
 export function AskWindow() {
+  const { t } = useTranslation();
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +84,9 @@ export function AskWindow() {
     try {
       const shot = await screenCapture();
       if (!shot) {
-        setError("Captura de tela indisponível — cole a imagem com Ctrl+V.");
+        setError(
+          t("ask_screen_capture_unavailable_paste_image_ctrl"),
+        );
         return;
       }
       setAttached(true);
@@ -94,7 +98,7 @@ export function AskWindow() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [t]);
 
   // O anexo pode ser removido na prévia (×): acompanha o estado do core.
   useEffect(() => {

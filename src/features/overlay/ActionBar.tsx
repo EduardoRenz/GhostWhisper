@@ -16,6 +16,7 @@ import {
 import { DragHandle } from "../../components/DragHandle";
 import { ShortcutBadges } from "../../components/ShortcutBadges";
 import { PlayIcon } from "../../components/TransportIcons";
+import { useTranslation } from "../../core/l10n";
 import { SessionPill } from "../session/SessionPill";
 import { ChannelMenu } from "./ChannelMenu";
 import { NotchTabs } from "./NotchTabs";
@@ -109,6 +110,7 @@ export function ActionBar({
   onToggleRecording,
   onPickRecordingTarget,
 }: ActionBarProps) {
+  const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
 
   // Sessão encerrada (por qualquer caminho): a confirmação não fica pendurada.
@@ -126,7 +128,7 @@ export function ActionBar({
     >
       <DragHandle
         className="overlay__drag"
-        label="Mover overlay"
+        label={t("action_bar_move_overlay")}
         onStartDrag={onStartDrag}
       />
 
@@ -146,8 +148,10 @@ export function ActionBar({
         className="overlay__search"
         data-interactive
         disabled={busy}
-        title={`Perguntar ao GhostWhisper sobre a tela ou áudio (${askAccelerator})`}
-        aria-label="Perguntar ao GhostWhisper"
+        title={t("action_bar_ask_ghostwhisper_about_screen_audio_accelerator", {
+          accelerator: askAccelerator,
+        })}
+        aria-label={t("action_bar_ask_ghostwhisper")}
         onClick={onOpenAsk}
       >
         <SearchIcon className="overlay__search-icon" size={16} />
@@ -160,11 +164,11 @@ export function ActionBar({
           className="overlay__start"
           data-interactive
           disabled={busy}
-          title="Começa a captura com microfone e áudio do sistema"
+          title={t("action_bar_starts_capturing_microphone_system_audio")}
           onClick={() => onStart(ALL_CHANNELS)}
         >
           <PlayIcon className="overlay__start-icon" />
-          <span className="overlay__start-label">Começar a ouvir</span>
+          <span className="overlay__start-label">{t("action_bar_start_listening")}</span>
           <ShortcutBadges accelerator={startAccelerator} />
         </button>
       ) : (
@@ -207,10 +211,11 @@ export function ActionBar({
           />
 
           <IconButton
-            label={stealth ? "Stealth ligado" : "Stealth desligado"}
+            label={stealth ? t("action_bar_stealth") : t("action_bar_stealth_off")}
             pressed={stealth}
             active={stealth}
-            title="Modo stealth: sai da barra de tarefas. Não esconde o overlay do compartilhamento de tela (limite do Linux)."
+            title={t("action_bar_stealth_mode_hides_taskbar_not_hide",
+            )}
             onClick={onToggleStealth}
           >
             {stealth ? <EyeIcon /> : <EyeOffIcon />}
@@ -220,22 +225,22 @@ export function ActionBar({
 
       <div className="overlay__group overlay__group--end" data-interactive>
         <IconButton
-          label="Ocultar overlay"
-          title="Esconde o overlay (atalho: mostrar/ocultar)"
+          label={t("action_bar_hide_overlay")}
+          title={t("action_bar_hides_overlay_shortcut_show_hide")}
           onClick={onHide}
         >
           <CollapseIcon />
         </IconButton>
         <IconButton
-          label="Histórico"
-          title="Mostra ou esconde o histórico de sessões"
+          label={t("action_bar_history")}
+          title={t("action_bar_shows_hides_session_history")}
           active={historyOpen}
           pressed={historyOpen}
           onClick={onToggleHistory}
         >
           <HistoryIcon />
         </IconButton>
-        <IconButton label="Configurações" onClick={onOpenSettings}>
+        <IconButton label={t("action_bar_settings")} onClick={onOpenSettings}>
           <GearIcon />
         </IconButton>
       </div>

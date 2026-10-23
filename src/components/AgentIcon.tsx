@@ -134,18 +134,6 @@ const GLYPHS: Record<string, Glyph> = {
   ),
 };
 
-/** Rótulo legível de cada ícone do catálogo (tooltip e seletor). */
-export const AGENT_ICON_LABELS: Record<string, string> = {
-  sparkle: "Faísca",
-  users: "Pessoas",
-  braces: "Chavetas",
-  code: "Código",
-  layers: "Camadas",
-  book: "Livro",
-  briefcase: "Pasta",
-  terminal: "Terminal",
-};
-
 /** Ícone do agente — herda a cor do chamador (`currentColor`). */
 export function AgentIcon({ icon, className, size = 18 }: AgentIconProps) {
   const id = agentIconId({ icon });

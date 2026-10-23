@@ -9,6 +9,7 @@ import { useSuggestionCadence } from "../../core/application/useSuggestionCadenc
 import type { Suggestion } from "../../core/domain/assistant";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
+import { useTranslation } from "../../core/l10n";
 import { SlidersIcon, SparkleIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import { StatusPill } from "../../components/StatusPill";
@@ -25,6 +26,7 @@ import { PanelFrame } from "../panels/PanelFrame";
  * consome `settings.assistant_mode_id` e reage ao `settings_changed`.
  */
 export function SuggestionsWindow() {
+  const { t } = useTranslation();
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
   const cadence = useSuggestionCadence();
@@ -81,10 +83,10 @@ export function SuggestionsWindow() {
   };
 
   const status = !state.listening
-    ? "Sem sessão"
+    ? t("suggestions_no_session")
     : state.paused
-      ? "Pausado"
-      : "Gravando";
+      ? t("suggestions_paused")
+      : t("suggestions_recording");
 
   /** Feedback imediato do auto (o LLM pode demorar até o primeiro evento). */
   const autoGenerating = cadence.running && cadence.generating && auto;
@@ -97,19 +99,19 @@ export function SuggestionsWindow() {
     }
     if (autoGenerating) {
       return manual.context
-        ? "Sugestão automática em andamento — vai para o histórico"
-        : "Gerando sugestão automática…";
+        ? t("suggestions_automatic_suggestion_progress_goes_history")
+        : t("suggestions_generating_automatic_suggestion");
     }
     if (!current && !quick) {
-      return "Gerando sugestão…";
+      return t("suggestions_generating_suggestion");
     }
     if (streamingTrigger === "manual") {
-      return "Gerando sugestão manual…";
+      return t("suggestions_generating_manual_suggestion");
     }
     if (manual.context && loading) {
-      return "Aguardando a sugestão em andamento…";
+      return t("suggestions_waiting_current_suggestion");
     }
-    return "Gerando uma nova sugestão…";
+    return t("suggestions_generating_new_suggestion");
   })();
 
   // Cabeçalho: faísca + título + badge de estado (BR-039).
@@ -121,7 +123,7 @@ export function SuggestionsWindow() {
       title={status}
     >
       <span className="live-badge__dot" />
-      {state.paused ? "PAUSADO" : "LIVE"}
+      {state.paused ? t("suggestions_live_badge_paused") : t("suggestions_live_badge_live")}
     </Pill>
   ) : null;
 
@@ -132,8 +134,8 @@ export function SuggestionsWindow() {
         className={`icon-button${extraOpen ? " icon-button--on" : ""}`}
         onClick={() => setExtraOpen((previous) => !previous)}
         aria-expanded={extraOpen}
-        title="Contexto extra (opcional)"
-        aria-label="Contexto extra (opcional)"
+        title={t("suggestions_extra_context_optional")}
+        aria-label={t("suggestions_extra_context_optional")}
       >
         <SlidersIcon size={16} />
       </button>
@@ -147,10 +149,12 @@ export function SuggestionsWindow() {
         className="suggest-now"
         disabled={generatingNow || !state.session_id}
         onClick={() => void suggestNow()}
-        title="Gerar uma sugestão agora"
+        title={t("suggestions_generate_now")}
       >
         <SparkleIcon size={12} />
-        {generatingNow ? "Aguardando…" : "Sugerir agora"}
+        {generatingNow
+          ? t("suggestions_waiting_ellipsis")
+          : t("suggestions_suggest_now")}
       </button>
     </>
   );
@@ -158,17 +162,19 @@ export function SuggestionsWindow() {
   return (
     <PanelFrame
       label="suggestions"
-      title="Sugestões"
+      title={t("common_suggestions")}
       icon={<SparkleIcon size={16} />}
       titleExtra={liveBadge}
       actions={actions}
     >
       {extraOpen && (
         <label className="panel__extra">
-          <span className="panel__extra-label">Contexto extra (opcional)</span>
+          <span className="panel__extra-label">
+            {t("suggestions_extra_context_optional")}
+          </span>
           <textarea
             className="panel__textarea"
-            placeholder="Cole aqui o enunciado ou trecho de código para dar mais contexto ao agente."
+            placeholder={t("suggestions_extra_context_placeholder")}
             value={extraContext}
             onChange={(event) => setExtraContext(event.target.value)}
           />
@@ -198,7 +204,7 @@ export function SuggestionsWindow() {
               className="panel__button"
               onClick={() => void openSettingsWindow()}
             >
-              Abrir configurações
+              {t("panel_open_settings")}
             </button>
           </div>
         ) : !state.session_id ? (
@@ -206,9 +212,11 @@ export function SuggestionsWindow() {
             <span className="suggestion-empty__icon">
               <SparkleIcon size={18} />
             </span>
-            <p className="suggestion-empty__title">Nenhuma escuta ativa</p>
+            <p className="suggestion-empty__title">
+              {t("suggestions_no_active_listening")}
+            </p>
             <p className="suggestion-empty__hint">
-              Inicie uma escuta no notch para receber sugestões.
+              {t("suggestions_start_listening_hint")}
             </p>
           </div>
         ) : current || quick ? (
@@ -216,7 +224,7 @@ export function SuggestionsWindow() {
             {generatingLabel && (
               <StatusPill
                 label={generatingLabel}
-                title="A sugestão atual continua na tela até a nova ficar pronta; a anterior vai para o histórico"
+                title={t("suggestions_current_stays_title")}
               />
             )}
             <SuggestionCard
@@ -231,22 +239,30 @@ export function SuggestionsWindow() {
               onPin={() => void pin()}
             />
             {skipped && (
-              <p className="panel__hint">Aguardando nova fala…</p>
+              <p className="panel__hint">
+                {t("suggestions_waiting_new_speech")}
+              </p>
             )}
           </>
         ) : loading || autoGenerating ? (
           <>
-            <StatusPill label={generatingLabel ?? "Gerando sugestão…"} />
-            <p className="panel__empty">Analisando a conversa…</p>
+            <StatusPill
+              label={generatingLabel ?? t("suggestions_generating_suggestion")}
+            />
+            <p className="panel__empty">
+              {t("suggestions_analyzing_conversation")}
+            </p>
           </>
         ) : (
           <div className="suggestion-empty">
             <span className="suggestion-empty__icon">
               <SparkleIcon size={18} />
             </span>
-            <p className="suggestion-empty__title">Ainda sem sugestão</p>
+            <p className="suggestion-empty__title">
+              {t("suggestions_no_suggestion_yet")}
+            </p>
             <p className="suggestion-empty__hint">
-              Fale na reunião ou use “Sugerir agora”: a janela não gera ao abrir.
+              {t("suggestions_empty_hint")}
             </p>
           </div>
         )}

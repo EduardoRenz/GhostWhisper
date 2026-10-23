@@ -2,26 +2,31 @@ import { useState } from "react";
 import { BoltIcon, CheckIcon, GripIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import {
-  MODEL_PLACEHOLDER,
-  PROVIDER_SHORT_LABELS,
   type AiSource,
   type AiSourceHealth,
 } from "../../core/domain/settings";
+import { useTranslation, type TranslationKey, type TranslationParams } from "../../core/l10n";
+import { providerShortLabelKey } from "../../core/l10n/labels";
 
 /** Rótulo do estado de saúde (traduzido para a UI). */
-function healthLabel(health: AiSourceHealth | undefined): string {
-  if (!health) return "Nunca usada";
+function healthLabel(
+  health: AiSourceHealth | undefined,
+  t: (key: TranslationKey, params?: TranslationParams) => string,
+): string {
+  if (!health) return t("sources_never_used");
   switch (health.state) {
     case "ready":
       return health.latency_ms !== null
-        ? `Conectada · Latência ${health.latency_ms} ms`
-        : "Conectada";
+        ? t("sources_connected_latency_latency_ms", {
+            latency: health.latency_ms,
+          })
+        : t("sources_connected");
     case "degraded":
-      return "Instável";
+      return t("sources_unstable");
     case "failed":
-      return "Falhou";
+      return t("sources_failed");
     default:
-      return "Nunca usada";
+      return t("sources_never_used");
   }
 }
 
@@ -90,6 +95,7 @@ export function ProviderCard({
   onDrop,
   isDropTarget,
 }: ProviderCardProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [model, setModel] = useState(source.model);
   const [baseUrl, setBaseUrl] = useState(source.base_url ?? "");
@@ -134,21 +140,30 @@ export function ProviderCard({
       data-testid={`source-${source.id}`}
     >
       <header className="settings__source-header">
-        <span className="settings__source-grip" aria-hidden="true" title="Arraste para reordenar">
+        <span
+          className="settings__source-grip"
+          aria-hidden="true"
+          title={t("sources_drag_reorder")}
+        >
           <GripIcon size={16} />
         </span>
         <span className="settings__source-icon" aria-hidden="true">
           <BoltIcon size={16} />
         </span>
         <div className="settings__source-title">
-          <strong>{source.label || PROVIDER_SHORT_LABELS[source.kind]}</strong>
+          <strong>
+            {source.label || t(providerShortLabelKey(source.kind))}
+          </strong>
           <span className="settings__source-sub">
-            {PROVIDER_SHORT_LABELS[source.kind]} · {source.model || "sem modelo"}
+            {t(providerShortLabelKey(source.kind))} ·{" "}
+            {source.model || t("sources_no_model")}
           </span>
         </div>
         <div className="settings__source-badges">
-          {isPrimary && <Pill tone="accent">Primário</Pill>}
-          {health?.is_fallback && <Pill tone="accent">Fallback ativo</Pill>}
+          {isPrimary && <Pill tone="accent">{t("sources_primary")}</Pill>}
+          {health?.is_fallback && (
+            <Pill tone="accent">{t("sources_fallback_active")}</Pill>
+          )}
           <Pill
             tone={
               health?.state === "ready"
@@ -160,7 +175,7 @@ export function ProviderCard({
             title={health?.last_error ?? undefined}
             className={`settings__badge--${health?.state ?? "unknown"}`}
           >
-            {healthLabel(health)}
+            {healthLabel(health, t)}
           </Pill>
         </div>
       </header>
@@ -168,11 +183,11 @@ export function ProviderCard({
       {editing ? (
         <div className="settings__source-edit">
           <label className="settings__field">
-            <span>Modelo</span>
+            <span>{t("sources_model")}</span>
             <input
               type="text"
               value={model}
-              placeholder={MODEL_PLACEHOLDER}
+              placeholder={t("model_placeholder")}
               spellCheck={false}
               autoComplete="off"
               onChange={(event) => setModel(event.target.value)}
@@ -180,7 +195,7 @@ export function ProviderCard({
           </label>
           {source.kind === "custom" && (
             <label className="settings__field">
-              <span>Base URL (formato OpenAI)</span>
+              <span>{t("sources_base_url_openai_format")}</span>
               <input
                 type="url"
                 value={baseUrl}
@@ -195,7 +210,7 @@ export function ProviderCard({
               className="settings__button settings__button--primary"
               onClick={submitEdit}
             >
-              Salvar
+              {t("sources_save")}
             </button>
             <button
               type="button"
@@ -206,7 +221,7 @@ export function ProviderCard({
                 setEditing(false);
               }}
             >
-              Cancelar
+              {t("sources_cancel")}
             </button>
           </div>
         </div>
@@ -214,11 +229,13 @@ export function ProviderCard({
         <>
           <div className="settings__source-key">
             <span className="settings__source-key-label">
-              {hasKey ? keyPreview || "••••••••" : "Sem chave configurada"}
+              {hasKey
+                ? keyPreview || "••••••••"
+                : t("sources_no_key_configured")}
             </span>
             {hasKey && (
               <span className="settings__source-key-store">
-                Keyring do sistema
+                {t("sources_system_keyring")}
               </span>
             )}
           </div>
@@ -231,7 +248,7 @@ export function ProviderCard({
                 disabled={busy}
                 onClick={onMakePrimary}
               >
-                Tornar primário
+                {t("sources_make_primary")}
               </button>
             )}
             <button
@@ -240,7 +257,7 @@ export function ProviderCard({
               disabled={busy || !hasKey}
               onClick={onValidate}
             >
-              Validar chave
+              {t("sources_validate_key")}
             </button>
             <button
               type="button"
@@ -248,7 +265,7 @@ export function ProviderCard({
               disabled={busy}
               onClick={() => setKeyEditing((value) => !value)}
             >
-              {hasKey ? "Trocar chave" : "Adicionar chave"}
+              {hasKey ? t("sources_change_key") : t("sources_add_key")}
             </button>
             {hasKey && (
               <button
@@ -257,7 +274,7 @@ export function ProviderCard({
                 disabled={busy}
                 onClick={onClearKey}
               >
-                Remover chave
+                {t("sources_remove_key")}
               </button>
             )}
             <button
@@ -266,7 +283,7 @@ export function ProviderCard({
               disabled={busy}
               onClick={() => setEditing((value) => !value)}
             >
-              Editar
+              {t("sources_edit")}
             </button>
             {canRemove && (
               <button
@@ -275,7 +292,7 @@ export function ProviderCard({
                 disabled={busy}
                 onClick={onRemove}
               >
-                Excluir fonte
+                {t("sources_delete_source")}
               </button>
             )}
           </div>
@@ -295,7 +312,7 @@ export function ProviderCard({
                 disabled={busy || keyInput.trim() === ""}
                 onClick={submitKey}
               >
-                <CheckIcon size={14} /> Salvar chave
+                <CheckIcon size={14} /> {t("sources_save_key")}
               </button>
             </div>
           )}

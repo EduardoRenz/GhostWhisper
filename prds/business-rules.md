@@ -83,8 +83,11 @@ uma nota de revisão.
 ## BR-010 — Idioma e i18n
 - **Decisão:** UI e documentação primárias em Português; tradução de conteúdo é
   função do produto (não confundir com idioma da interface).
-- **Data:** 2026-10-17
-- **Status:** Ativa
+- **Revisão (2026-10-22):** a interface agora é **localizável** (pt/en), com a
+  escolha do usuário em Geral & HUD (BR-085) e todo texto de frontend passando
+  pelo catálogo l10n (BR-086). Português continua sendo o idioma de origem e o
+  fallback.
+- **Data:** 2026-10-17 · **Status:** Ativa (revisada em 2026-10-22)
 
 ## BR-011 — Arquitetura hexagonal com inversão de dependência
 - **Decisão:** o core segue `domain → application → ports → adapters`, com portas
@@ -1876,3 +1879,38 @@ uma nota de revisão.
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.6,
   [`assistants/tasks/15-task.md`](assistants/tasks/15-task.md).
 - **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+
+## BR-085 — Idioma da interface: escolha do usuário, detecção única
+
+- **Decisão:** a interface suporta **português e inglês** (`ui_language`). Na
+  **primeira inicialização** (campo ausente), o core lê o locale do sistema
+  (`pt*` → pt; qualquer outro → en) e persiste a escolha uma única vez. Depois
+  disso, o idioma é propriedade do usuário: nenhum boot, migração ou
+  "Restaurar Padrões" o troca automaticamente. A escolha fica na aba **Geral &
+  HUD**, que passa a ser a **primeira** aba de Configurações.
+- **Motivo:** pedido do usuário (2026-10-22) — permitir escolher o idioma sem
+  que a detecção do SO continue sobrescrevendo a escolha a cada atualização.
+- **Consequência:** `Settings.ui_language: Option<String>` (`None` só antes da
+  resolução); `UiLanguageMigration` roda no composition root com a porta
+  `LocaleSource`; o frontend alimenta o store global de idioma pelas settings e
+  reage ao `settings_changed`. A aba inicial de Configurações é `general`.
+- **Detalhes:** [`l10n/prd.md`](l10n/prd.md),
+  [`l10n/architecture/l10n.md`](l10n/architecture/l10n.md),
+  [`l10n/tasks/01-task.md`](l10n/tasks/01-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa
+
+## BR-086 — Todo texto de frontend passa por l10n
+
+- **Decisão:** é **proibido** hardcodar texto visível ao usuário no frontend.
+  Todo rótulo, título, hint, placeholder, `aria-label`, `title` e mensagem de
+  status usa `t("chave_em_snake_case")` (ou um helper que devolve uma chave) e
+  tem entrada em **pt** e **en**. Chaves são semânticas e em **snake_case**;
+  texto português solto em JSX/atributo não é aceito em revisão. Dados do
+  usuário/LLM (nomes de agentes, transcrições, respostas, títulos de sessão)
+  não são traduzidos.
+- **Motivo:** evitar regressão para uma UI monolíngue a cada nova tela e manter
+  a paridade entre os idiomas auditável.
+- **Detalhes:** [`l10n/architecture/l10n.md`](l10n/architecture/l10n.md) §4,
+  [`l10n/tasks/01-task.md`](l10n/tasks/01-task.md) (CA-04),
+  [`.agents/rules.md`](../.agents/rules.md) §5.1.
+- **Data:** 2026-10-22 · **Status:** Ativa

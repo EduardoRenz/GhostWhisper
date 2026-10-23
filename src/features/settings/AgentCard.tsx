@@ -18,6 +18,7 @@ import { AgentIcon } from "../../components/AgentIcon";
 import { IconButton } from "../../components/IconButton";
 import { InfoTooltip } from "../../components/InfoTooltip";
 import { Pill } from "../../components/Pill";
+import { useTranslation, type TranslationKey } from "../../core/l10n";
 import {
   BoltIcon,
   CopyIcon,
@@ -42,10 +43,10 @@ export interface AgentCardProps {
 
 interface PromptPanelProps {
   icon: ReactNode;
-  title: string;
+  titleKey: TranslationKey;
   text: string;
-  /** Texto exibido quando nem o agente nem o Padrão têm o prompt. */
-  empty: string;
+  /** Chave exibida quando nem o agente nem o Padrão têm o prompt. */
+  emptyKey: TranslationKey;
   /** `true` quando o prompt exibido veio do agente Padrão (BR-079). */
   inherited?: boolean;
   /** Explicação do painel (tooltip — BR-081). */
@@ -55,12 +56,14 @@ interface PromptPanelProps {
 /** Painel de leitura de um prompt (texto truncado pelo CSS). */
 function PromptPanel({
   icon,
-  title,
+  titleKey,
   text,
-  empty,
+  emptyKey,
   inherited,
   hint,
 }: PromptPanelProps) {
+  const { t } = useTranslation();
+  const title = t(titleKey);
   return (
     <section className="prompt-panel" aria-label={title}>
       <header className="prompt-panel__head">
@@ -78,11 +81,11 @@ function PromptPanel({
         }
         title={text || undefined}
       >
-        {text || empty}
+        {text || t(emptyKey)}
       </p>
       {inherited ? (
         <span className="prompt-panel__inherited">
-          Herdado do agente Padrão
+          {t("agent_card_inherited_default_agent")}
         </span>
       ) : null}
     </section>
@@ -98,6 +101,7 @@ export function AgentCard({
   onDuplicate,
   onDelete,
 }: AgentCardProps) {
+  const { t } = useTranslation();
   const style = {
     "--agent-color": `var(--oh-agent-${agentColorToken(mode)})`,
   } as CSSProperties;
@@ -116,7 +120,7 @@ export function AgentCard({
     <article
       className={active ? "agent-card agent-card--active" : "agent-card"}
       style={style}
-      aria-label={`Agente ${mode.name}`}
+      aria-label={t("agent_card_agent_name", { name: mode.name })}
     >
       <header className="agent-card__head">
         <span className="agent-card__tile" aria-hidden="true">
@@ -126,7 +130,7 @@ export function AgentCard({
           <h3 className="agent-card__name">{mode.name}</h3>
           {active ? (
             <Pill tone="accent" mono>
-              Ativo
+              {t("agent_card_active")}
             </Pill>
           ) : null}
         </div>
@@ -134,22 +138,22 @@ export function AgentCard({
           <button
             type="button"
             className="settings__button settings__button--small agent-card__edit"
-            aria-label={`Editar agente ${mode.name}`}
+            aria-label={t("agent_card_edit_agent_name", { name: mode.name })}
             onClick={onEdit}
           >
             <PencilIcon size={13} />
-            <span>Editar</span>
+            <span>{t("agent_card_edit")}</span>
           </button>
           <IconButton
-            label={`Duplicar agente ${mode.name}`}
-            title="Duplicar"
+            label={t("agent_card_duplicate_agent_name", { name: mode.name })}
+            title={t("agent_card_duplicate")}
             onClick={onDuplicate}
           >
             <CopyIcon size={15} />
           </IconButton>
           <IconButton
-            label={`Excluir agente ${mode.name}`}
-            title="Excluir"
+            label={t("agent_card_delete_agent_name", { name: mode.name })}
+            title={t("agent_card_delete")}
             onClick={onDelete}
           >
             <TrashIcon size={15} />
@@ -160,19 +164,19 @@ export function AgentCard({
       <div className="agent-card__prompts">
         <PromptPanel
           icon={<BoltIcon size={13} />}
-          title="Prompt de Sugestão"
+          titleKey="agent_editor_suggestion_prompt"
           text={suggestion}
-          empty="Sem prompt de sugestão."
+          emptyKey="agent_editor_no_suggestion_prompt"
           inherited={suggestionInherited}
-          hint="Usado hoje: é a base do prompt de sistema da sugestão ao vivo; o contrato comum de transcrição (ME/THEY, ASR) é aplicado por cima."
+          hint={t("agent_card_used_today_basis_live_suggestion_system")}
         />
         <PromptPanel
           icon={<SummaryIcon size={13} />}
-          title="Prompt de Resumo"
+          titleKey="agent_editor_summary_prompt"
           text={summary}
-          empty="Sem prompt de resumo."
+          emptyKey="agent_editor_no_summary_prompt"
           inherited={summaryInherited}
-          hint="Usado pelo resumo quando este agente está ativo; vazio = herda o do agente Padrão."
+          hint={t("agent_card_used_summary_agent_active_empty_inherits")}
         />
       </div>
     </article>

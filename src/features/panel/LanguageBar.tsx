@@ -5,9 +5,10 @@ import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import {
   LANGUAGES,
-  SOURCE_LANGUAGE_LABELS,
   type Language,
 } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
+import { sourceLanguageKey } from "../../core/l10n/labels";
 
 /**
  * Barra inferior da aba **Transcrição**: o seletor de **idioma de origem** e o
@@ -19,6 +20,7 @@ import {
  * transporte vive no notch (BR-022).
  */
 export function LanguageBar() {
+  const { t } = useTranslation();
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
   const [value, setValue] = useState<Language>(settings.source_language);
@@ -42,26 +44,27 @@ export function LanguageBar() {
   };
 
   const engineStatus = !state.listening
-    ? "Sem sessão"
+    ? t("panel_no_session")
     : state.paused
-      ? "Pausado"
-      : "Gravando";
+      ? t("panel_paused")
+      : t("panel_recording");
 
   return (
     <div className="language-bar" data-interactive>
       <LanguageIcon className="language-bar__icon" size={16} />
       <label className="language-bar__field">
-        <span className="language-bar__label">Idioma de Entrada:</span>
+        <span className="language-bar__label">{t("panel_input_language")}</span>
         <select
           className="language-bar__select"
-          aria-label="Idioma da transcrição"
-          title="Idioma de origem da transcrição — muda na hora, sem reiniciar a sessão"
+          aria-label={t("panel_transcription_language")}
+          title={t("panel_transcription_source_language_changes_immediately_without",
+          )}
           value={value}
           onChange={(event) => void onChange(event.target.value as Language)}
         >
           {LANGUAGES.map((language) => (
             <option key={language} value={language}>
-              {SOURCE_LANGUAGE_LABELS[language]}
+              {t(sourceLanguageKey(language))}
             </option>
           ))}
         </select>

@@ -11,6 +11,7 @@ import { subscribe } from "../../adapters/ipc/events";
 import { onWindowFocus } from "../../adapters/ipc/client";
 import { secretsPersistent } from "../../adapters/ipc/settings";
 import type { AiSource, AiSourceHealth, ProviderKind } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
 import { AddProviderForm } from "./AddProviderForm";
 import { ProviderCard } from "./ProviderCard";
 
@@ -46,6 +47,7 @@ export function AiSourcesSettings({
   onChange,
   onStatus,
 }: AiSourcesSettingsProps) {
+  const { t } = useTranslation();
   const [health, setHealth] = useState<AiSourceHealth[]>([]);
   const [keyState, setKeyState] = useState<Record<string, { has: boolean; preview: string }>>(
     {},
@@ -176,7 +178,10 @@ export function AiSourcesSettings({
         await refreshHealth();
         onStatus({
           kind: "ok",
-          text: `Conexão validada com ${source.label}: ${reply ?? "(sem resposta)"}`,
+          text: t("sources_connection_validated_label_reply", {
+            label: source.label,
+            reply: reply ?? t("sources_no_response"),
+          }),
         });
       } catch (error) {
         await refreshHealth();
@@ -189,7 +194,7 @@ export function AiSourcesSettings({
       try {
         await setSourceKey(source.id, key);
         await refreshKeys(sources);
-        onStatus({ kind: "ok", text: `Chave de ${source.label} salva no keyring.` });
+        onStatus({ kind: "ok", text: t("sources_key_label_saved_keyring", { label: source.label }) });
       } catch (error) {
         onStatus({ kind: "error", text: String(error) });
       }
@@ -200,7 +205,7 @@ export function AiSourcesSettings({
       try {
         await clearSourceKey(source.id);
         await refreshKeys(sources);
-        onStatus({ kind: "info", text: `Chave de ${source.label} removida.` });
+        onStatus({ kind: "info", text: t("sources_key_label_removed", { label: source.label }) });
       } catch (error) {
         onStatus({ kind: "error", text: String(error) });
       }
@@ -210,17 +215,19 @@ export function AiSourcesSettings({
     <>
       <section className="settings__card">
         <header className="settings__card-header">
-          <h2 className="settings__card-title">Provedores de IA Ativos</h2>
+          <h2 className="settings__card-title">
+            {t("sources_active_ai_providers")}
+          </h2>
           <span className="settings__card-note">
-            {sources.length} {sources.length === 1 ? "fonte cadastrada" : "fontes cadastradas"} ·
-            {" "}
-            {persistent ? "Keyring Seguro Ativo" : "Chaves só nesta sessão"}
+            {sources.length === 1
+              ? t("sources_1_source_configured")
+              : t("sources_count_sources_configured", { count: sources.length })}{" "}
+            · {persistent ? t("sources_secure_keyring_active") : t("sources_keys_only_session")}
           </span>
         </header>
         <p className="settings__hint">
-          A <strong>primeira</strong> fonte da lista é a que responde. Se ela
-          falhar, a próxima assume automaticamente (com circuit breaker).
-          Arraste a alça para reordenar.
+          {t("sources_first_source_list_answers_fails_next",
+          )}
         </p>
 
         <div className="settings__sources">

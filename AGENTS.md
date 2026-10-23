@@ -32,6 +32,7 @@ VAD Silero + ASR `whisper-rs` · LLM via HTTP (BYO key) · SQLite (`rusqlite`, F
 ```
 src-tauri/src/{domain,application,ports,adapters,ipc,lib.rs,state.rs}
 src/{core,adapters,features}
+src/core/l10n/{locales,labels.ts,catalog.ts}   # pt/en, chaves snake_case
 prds/{business-rules.md, <prd>/{prd.md,memory.md,issues.md,architecture,tasks}}
 ```
 
@@ -68,5 +69,11 @@ pnpm test             # testes do frontend
   (R16/R17).
 - **Documentação é fonte única:** cite arquivos e IDs (`BR-015`, `ISS-011`,
   `12-task`) em vez de duplicar conteúdo (R14, BR-016).
+- **Frontend sempre via l10n:** nenhum texto visível hardcoded. Use
+  `t("chave_em_snake_case")` (`src/core/l10n`) com entrada em **pt** e **en**;
+  dados do usuário/LLM não são traduzidos (R18–R22, BR-086).
+- **Idioma da interface:** escolha do usuário em Configurações → Geral & HUD
+  (primeira aba). A detecção do sistema roda **uma vez** na primeira
+  inicialização e nunca sobrescreve a escolha (BR-085, R21).
 - **Histórico por PRD:** `memory.md` vive em `prds/<prd>/memory.md`; entradas
   `## YYYY-MM-DD — Título` cronológicas com linha `IDs:` (R15, BR-017).

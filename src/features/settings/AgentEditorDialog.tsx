@@ -18,9 +18,11 @@ import {
   MODE_PROMPT_MAX_CHARS,
   type AssistantMode,
 } from "../../core/domain/assistant";
-import { AgentIcon, AGENT_ICON_LABELS } from "../../components/AgentIcon";
+import { AgentIcon } from "../../components/AgentIcon";
 import { Dialog } from "../../components/Dialog";
 import { InfoTooltip } from "../../components/InfoTooltip";
+import { useTranslation, type TranslationKey } from "../../core/l10n";
+import { agentIconKey } from "../../core/l10n/labels";
 
 export interface AgentEditorDialogProps {
   open: boolean;
@@ -68,13 +70,15 @@ export function hasAnyPrompt(mode: AssistantMode): boolean {
 
 interface HelpLabelProps {
   htmlFor: string;
-  label: string;
+  labelKey: TranslationKey;
   /** Explicação do campo (tooltip — BR-081). */
   hint: string;
 }
 
 /** Rótulo do campo com o ícone de ajuda. */
-function HelpLabel({ htmlFor, label, hint }: HelpLabelProps) {
+function HelpLabel({ htmlFor, labelKey, hint }: HelpLabelProps) {
+  const { t } = useTranslation();
+  const label = t(labelKey);
   return (
     <div className="settings__field-label">
       <label htmlFor={htmlFor}>{label}</label>
@@ -91,6 +95,7 @@ export function AgentEditorDialog({
   onCancel,
   onSave,
 }: AgentEditorDialogProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<AssistantMode>(
     () => initial ?? blankAgent(),
   );
@@ -104,22 +109,22 @@ export function AgentEditorDialog({
   const submit = () => {
     const name = draft.name.trim();
     if (!name) {
-      setError("Dê um nome ao agente.");
+      setError(t("agent_editor_give_agent_name"));
       return;
     }
     if (!hasAnyPrompt(draft)) {
-      setError("Preencha ao menos um prompt ou o contexto.");
+      setError(t("agent_editor_fill_least_one_prompt_context"));
       return;
     }
     setError(null);
     onSave({ ...draft, name, category: draft.category.trim() });
   };
 
-  const title = kind === "edit" ? "Editar agente" : "Novo assistente de IA";
+  const title = kind === "edit" ? t("agent_editor_edit_agent") : t("agent_editor_new_ai_assistant");
   const subtitle =
     kind === "edit"
-      ? "Altere as propriedades deste agente."
-      : "Configure uma persona sob medida para as suas reuniões.";
+      ? t("agent_editor_change_properties_agent")
+      : t("agent_editor_configure_custom_persona_meetings");
 
   return (
     <Dialog
@@ -134,14 +139,14 @@ export function AgentEditorDialog({
             className="settings__button"
             onClick={onCancel}
           >
-            Cancelar
+            {t("agent_editor_cancel")}
           </button>
           <button
             type="submit"
             form="agent-editor-form"
             className="settings__button settings__button--primary"
           >
-            Salvar agente
+            {t("agent_editor_save_agent")}
           </button>
         </>
       }
@@ -155,23 +160,23 @@ export function AgentEditorDialog({
         }}
       >
         <label className="settings__field">
-          <span>Nome</span>
+          <span>{t("agent_editor_name")}</span>
           <input
             type="text"
             autoFocus
             maxLength={MODE_NAME_MAX_CHARS}
-            placeholder="Ex.: Vendas B2B"
+            placeholder={t("agent_editor_e_g_b2b_sales")}
             value={draft.name}
             onChange={(event) => patch("name", event.target.value)}
           />
         </label>
 
         <div className="settings__field">
-          <span>Ícone</span>
+          <span>{t("agent_editor_icon")}</span>
           <div
             className="settings__icons"
             role="radiogroup"
-            aria-label="Ícone do agente"
+            aria-label={t("agent_editor_agent_icon")}
           >
             {AGENT_ICON_IDS.map((icon) => (
               <button
@@ -179,8 +184,8 @@ export function AgentEditorDialog({
                 type="button"
                 role="radio"
                 aria-checked={draft.icon === icon}
-                aria-label={AGENT_ICON_LABELS[icon] ?? icon}
-                title={AGENT_ICON_LABELS[icon] ?? icon}
+                aria-label={t(agentIconKey(icon))}
+                title={t(agentIconKey(icon))}
                 className={`settings__icon${
                   draft.icon === icon ? " settings__icon--on" : ""
                 }`}
@@ -193,11 +198,11 @@ export function AgentEditorDialog({
         </div>
 
         <div className="settings__field">
-          <span>Cor</span>
+          <span>{t("agent_editor_color")}</span>
           <div
             className="settings__colors"
             role="radiogroup"
-            aria-label="Cor do agente"
+            aria-label={t("agent_editor_agent_color")}
           >
             {AGENT_COLOR_TOKENS.map((color) => (
               <button
@@ -205,7 +210,7 @@ export function AgentEditorDialog({
                 type="button"
                 role="radio"
                 aria-checked={draft.color === color}
-                aria-label={`Cor ${color}`}
+                aria-label={t("agent_editor_color_color", { color })}
                 title={color}
                 className={`settings__color settings__color--${color}${
                   draft.color === color ? " settings__color--on" : ""
@@ -221,14 +226,18 @@ export function AgentEditorDialog({
         <div className="settings__field">
           <HelpLabel
             htmlFor="agent-suggestion-prompt"
-            label="Prompt de Sugestão"
-            hint="Contrato da sugestão ao vivo: é a base do prompt de sistema quando a IA sugere a próxima fala. O contrato comum de leitura da transcrição (ME/THEY, erros de ASR) é aplicado automaticamente. Vazio = usa o prompt do agente Padrão."
+            labelKey="agent_editor_suggestion_prompt"
+            hint={t(
+              "agent_editor_live_suggestion_contract_basis_system_prompt",
+            )}
           />
           <textarea
             id="agent-suggestion-prompt"
             rows={5}
             maxLength={MODE_PROMPT_MAX_CHARS}
-            placeholder="O contrato da sugestão ao vivo (o que a janela mostra)."
+            placeholder={t(
+              "agent_editor_live_suggestion_contract_what_window_shows",
+            )}
             value={draft.suggestion_prompt}
             onChange={(event) =>
               patch("suggestion_prompt", event.target.value)
@@ -239,32 +248,34 @@ export function AgentEditorDialog({
         <div className="settings__field">
           <HelpLabel
             htmlFor="agent-summary-prompt"
-            label="Prompt de Resumo"
-            hint="Contrato de resumo deste agente. É usado quando este agente está ativo; as atualizações incrementais preservam a estrutura. Vazio = usa o do agente Padrão."
+            labelKey="agent_editor_summary_prompt"
+            hint={t("agent_editor_agent_s_summary_contract_used_agent")}
           />
           <textarea
             id="agent-summary-prompt"
             rows={4}
             maxLength={MODE_PROMPT_MAX_CHARS}
-            placeholder="O contrato do resumo deste agente (usado por uma feature futura)."
+            placeholder={t(
+              "agent_editor_agent_s_summary_contract_used_future",
+            )}
             value={draft.summary_prompt}
             onChange={(event) => patch("summary_prompt", event.target.value)}
           />
         </div>
 
         <details className="settings__advanced">
-          <summary>Campos avançados</summary>
+          <summary>{t("agent_editor_advanced_fields")}</summary>
           <div className="settings__field">
             <HelpLabel
               htmlFor="agent-category"
-              label="Categoria"
-              hint="Rótulo livre para organizar o agente (ex.: engineering, productivity). Não influencia o comportamento da IA."
+              labelKey="agent_editor_category"
+              hint={t("agent_editor_free_form_label_organize_agent_e")}
             />
             <input
               id="agent-category"
               type="text"
               maxLength={60}
-              placeholder="Ex.: engineering"
+              placeholder={t("agent_editor_e_g_engineering")}
               value={draft.category}
               onChange={(event) => patch("category", event.target.value)}
             />
@@ -272,8 +283,8 @@ export function AgentEditorDialog({
           <div className="settings__field">
             <HelpLabel
               htmlFor="agent-system-prompt"
-              label="Prompt de sistema (critérios de domínio)"
-              hint="Critérios de domínio que entram em “Domain criteria” no prompt da sugestão: papel, tom e regras. Não é usado pelo resumo nem pela Busca. Vazio = usa o do agente Padrão."
+              labelKey="agent_editor_system_prompt"
+              hint={t("agent_editor_domain_criteria_go_into_domain_criteria")}
             />
             <textarea
               id="agent-system-prompt"
@@ -286,8 +297,8 @@ export function AgentEditorDialog({
           <div className="settings__field">
             <HelpLabel
               htmlFor="agent-context"
-              label="Contexto fixo do agente"
-              hint="Fatos estáveis que entram em “Agent context” nos dois passes da sugestão (rápido e completo): produto, empresa e vocabulário. Vazio = nenhum contexto extra."
+              labelKey="agent_editor_context"
+              hint={t("agent_editor_stable_facts_go_into_agent_context")}
             />
             <textarea
               id="agent-context"

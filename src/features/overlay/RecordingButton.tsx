@@ -1,4 +1,5 @@
 import { VideoCameraIcon } from "../../components/icons";
+import { useTranslation } from "../../core/l10n";
 import type {
   RecordingCapabilities,
   RecordingState,
@@ -26,6 +27,7 @@ export function RecordingButton({
   onToggle,
   onPick,
 }: RecordingButtonProps) {
+  const { t } = useTranslation();
   const recording = state.status === "recording";
   const paused = state.status === "paused";
   const finalizing = state.status === "finalizing";
@@ -33,14 +35,19 @@ export function RecordingButton({
   const disabled = busy || unavailable || finalizing;
 
   const title = unavailable
-    ? (capabilities?.reason ?? "Gravação indisponível")
+    ? (capabilities?.reason ?? t("recording_button_recording_unavailable"))
     : finalizing
-      ? "Finalizando a gravação…"
+      ? t("recording_button_finalizing_recording")
       : recording
-        ? "Pausar gravação"
+        ? t("recording_button_pause_recording")
         : paused
-          ? "Retomar gravação"
-          : `Gravar esta sessão${state.target_label ? ` (${state.target_label})` : ""} · clique direito para escolher a janela`;
+          ? t("recording_button_resume_recording")
+          : state.target_label
+            ? t("recording_button_record_session_target_right_click_choose",
+                { target: state.target_label },
+              )
+            : `${t("recording_button_record_session")} · ${t("recording_button_right_click_choose_window",
+              )}`;
 
   const classes = [
     "notch-tabs__recording",

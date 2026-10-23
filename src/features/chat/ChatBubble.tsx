@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { SparkIcon, TranslateIcon } from "../../components/TransportIcons";
 import { MarkdownView } from "../../components/MarkdownView";
+import { useTranslation } from "../../core/l10n";
+import { languageCodeKey } from "../../core/l10n/labels";
 
 /** Acima disto a bolha de sugestão começa colapsada (≈3 linhas). */
 const CLAMP_THRESHOLD_CHARS = 160;
@@ -73,6 +75,7 @@ export function ChatBubble({
   onAskAi,
   askingAi = false,
 }: ChatBubbleProps) {
+  const { t } = useTranslation();
   const collapsible = markdown && text.trim().length > CLAMP_THRESHOLD_CHARS;
   const [expanded, setExpanded] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
@@ -90,6 +93,17 @@ export function ChatBubble({
     translation && normalize(translation) !== normalize(text)
       ? translation.trim()
       : "";
+  const targetKey = translationTarget
+    ? languageCodeKey(translationTarget)
+    : null;
+  const translationTargetLabel = targetKey
+    ? t(targetKey)
+    : translationTarget;
+  const translateTitle = showTranslation
+    ? t("chat_hide_translation")
+    : translationTargetLabel
+      ? t("chat_translate_language", { language: translationTargetLabel })
+      : t("chat_translate");
 
   const toggleTranslation = () => {
     if (usableTranslation) {
@@ -107,16 +121,8 @@ export function ChatBubble({
       className={`chat__translate${showTranslation ? " chat__translate--on" : ""}`}
       data-interactive
       disabled={translating}
-      aria-label={
-        showTranslation
-          ? "Ocultar tradução"
-          : `Traduzir${translationTarget ? ` para ${translationTarget}` : ""}`
-      }
-      title={
-        showTranslation
-          ? "Ocultar tradução"
-          : `Traduzir${translationTarget ? ` para ${translationTarget}` : ""}`
-      }
+      aria-label={translateTitle}
+      title={translateTitle}
       onClick={() => void toggleTranslation()}
     >
       {translating ? (
@@ -137,7 +143,11 @@ export function ChatBubble({
       data-kind={side}
       data-pending={pending ? "true" : undefined}
       data-continues={continues ? "true" : undefined}
-      title={pending ? "transcrevendo — o texto ainda pode mudar" : undefined}
+      title={
+        pending
+          ? t("chat_transcribing_text_may_still_change")
+          : undefined
+      }
     >
       <div className="chat__bubble">
         {showHeader && (
@@ -148,11 +158,11 @@ export function ChatBubble({
                 <span className="chat__speaker">{label}</span>
                 {pending && (
                   <span className="chat__now" aria-hidden="true">
-                    Falando agora…
+                    {t("chat_speaking_now")}
                   </span>
                 )}
                 {timeLabel && !pending && (
-                  <span className="chat__time" title="hora da mensagem">
+                  <span className="chat__time" title={t("chat_message_time")}>
                     {timeLabel}
                   </span>
                 )}
@@ -170,7 +180,7 @@ export function ChatBubble({
                 {streaming && (
                   <span className="chat__streaming" aria-hidden="true">
                     <span className="chat__streaming-dot" />
-                    Streaming
+                    {t("chat_streaming")}
                   </span>
                 )}
               </div>
@@ -184,8 +194,9 @@ export function ChatBubble({
                       className="chat__ai"
                       data-interactive
                       disabled={askingAi}
-                      aria-label="Sugerir com IA a partir desta mensagem"
-                      title="Sugerir com IA a partir desta mensagem"
+                      aria-label={t("chat_suggest_ai_message",
+                      )}
+                      title={t("chat_suggest_ai_message")}
                       onClick={onAskAi}
                     >
                       <SparkIcon size={14} />
@@ -224,7 +235,7 @@ export function ChatBubble({
             aria-expanded={expanded}
             onClick={() => setExpanded((previous) => !previous)}
           >
-            {expanded ? "mostrar menos" : "mostrar mais"}
+            {expanded ? t("chat_show_less") : t("chat_show_more")}
           </button>
         )}
 
@@ -234,10 +245,10 @@ export function ChatBubble({
               type="button"
               className="chat__copy"
               data-interactive
-              aria-label={`Copiar ${label}`}
+              aria-label={t("chat_copy_label", { label })}
               onClick={onCopy}
             >
-              {copied ? "Copiado" : "Copiar"}
+              {copied ? t("chat_copied") : t("chat_copy")}
             </button>
           </div>
         )}

@@ -12,6 +12,7 @@ import {
 } from "../../adapters/ipc/recording";
 import { WindowHeader } from "../../components/WindowHeader";
 import { MonitorIcon, VideoCameraIcon, WindowIcon } from "../../components/icons";
+import { useTranslation } from "../../core/l10n";
 import type { RecordingTarget } from "../../core/domain/recording";
 
 /**
@@ -22,6 +23,7 @@ import type { RecordingTarget } from "../../core/domain/recording";
  * andamento, **troca o alvo** (fecha um segmento e abre outro no mesmo arquivo).
  */
 export function RecordingPickerWindow() {
+  const { t } = useTranslation();
   const [targets, setTargets] = useState<RecordingTarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -105,31 +107,33 @@ export function RecordingPickerWindow() {
       <div className="recording-picker__card">
         <WindowHeader
           className="recording-picker__header"
-          title="Gravar janela"
+          title={t("recording_picker_record_window")}
           subtitle={
             active
-              ? "Trocar o alvo da gravação"
-              : "O GhostWhisper não entra na captura da janela"
+              ? t("recording_picker_change_recording_target")
+              : t("recording_picker_ghostwhisper_not_included_window_capture")
           }
           icon={<VideoCameraIcon size={18} />}
           onStartDrag={startDrag}
           onClose={close}
-          closeLabel="Fechar seletor"
-          dragLabel="Mover seletor"
+          closeLabel={t("recording_picker_close_picker")}
+          dragLabel={t("recording_picker_move_picker")}
         />
 
         {active ? (
           <p className="recording-picker__notice">
-            A gravação continua no mesmo arquivo; o trecho novo entra com
-            recorte.
+            {t("recording_picker_recording_continues_same_file_new_section",
+            )}
           </p>
         ) : null}
 
         {loading ? (
-          <p className="recording-picker__loading">Procurando janelas…</p>
+          <p className="recording-picker__loading">
+            {t("recording_picker_looking_windows")}
+          </p>
         ) : targets.length === 0 ? (
           <p className="recording-picker__loading">
-            Nenhuma janela disponível. A captura exige X11/XWayland.
+            {t("recording_picker_no_windows_available_capture_requires_x11")}
           </p>
         ) : (
           <ul className="recording-picker__list">
@@ -152,7 +156,9 @@ export function RecordingPickerWindow() {
                       )}
                     </span>
                     <span className="recording-picker__item-label">
-                      {target.label}
+                      {target.kind === "screen"
+                        ? t("recording_picker_entire_screen")
+                        : target.label}
                     </span>
                     {target.width > 0 && target.height > 0 ? (
                       <span className="recording-picker__item-size">
@@ -170,10 +176,12 @@ export function RecordingPickerWindow() {
 
         <footer className="recording-picker__footer">
           <span>
-            {active ? "Clique para trocar o alvo" : "Clique para iniciar a gravação"}
+            {active
+              ? t("recording_picker_click_change_target")
+              : t("recording_picker_click_start_recording")}
           </span>
           <button type="button" className="recording-picker__cancel" onClick={close}>
-            Cancelar
+            {t("recording_picker_cancel")}
           </button>
         </footer>
       </div>

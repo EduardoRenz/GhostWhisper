@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CameraIcon, SendIcon } from "../../components/icons";
+import { useTranslation } from "../../core/l10n";
 
 interface AskComposerProps {
   /** Perguntas prontas (chips). */
@@ -34,6 +35,7 @@ export function AskComposer({
   onCapture,
   onRemoveAttachment,
 }: AskComposerProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState("");
 
   const send = (text: string, source: "search" | "preset" = "search") => {
@@ -54,10 +56,11 @@ export function AskComposer({
           className="composer__button composer__button--camera"
           title={
             attachment
-              ? "Já há um print anexado — confirme a pergunta para enviá-lo"
-              : "Captura a tela e anexa à pergunta (Alt+C)"
+              ? t("journal_screenshot_already_attached_confirm_question_send",
+                )
+              : t("journal_captures_screen_attaches_question_alt_c")
           }
-          aria-label="Capturar a tela"
+          aria-label={t("journal_capture_screen")}
           disabled={busy || attachment !== null}
           onClick={onCapture}
         >
@@ -68,8 +71,8 @@ export function AskComposer({
           className="composer__input"
           type="text"
           value={value}
-          placeholder="Pergunte sobre a reunião ou a tela…"
-          aria-label="Pergunta para a IA"
+          placeholder={t("journal_ask_about_meeting_screen")}
+          aria-label={t("journal_question_ai")}
           disabled={busy}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
@@ -83,8 +86,8 @@ export function AskComposer({
         <button
           type="button"
           className="composer__button composer__button--send"
-          title="Perguntar"
-          aria-label="Perguntar"
+          title={t("journal_ask")}
+          aria-label={t("journal_ask")}
           disabled={busy || (value.trim() === "" && attachment === null)}
           onClick={() => send(value)}
         >
@@ -97,19 +100,19 @@ export function AskComposer({
           <img
             className="composer__thumb"
             src={attachment}
-            alt="Print anexado"
+            alt={t("journal_screenshot_attached")}
           />
           <button
             type="button"
             className="composer__remove"
-            aria-label="Remover print"
-            title="Remover print"
+            aria-label={t("journal_remove_screenshot")}
+            title={t("journal_remove_screenshot")}
             onClick={onRemoveAttachment}
           >
             ×
           </button>
           <span className="composer__hint">
-            Print anexado — o texto é opcional
+            {t("journal_screenshot_attached_text_optional")}
           </span>
         </div>
       )}

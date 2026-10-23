@@ -15,6 +15,8 @@ import {
 } from "../../core/domain/transcript";
 import { ChatView } from "../chat/ChatView";
 import { MarkdownView } from "../../components/MarkdownView";
+import { useTranslation } from "../../core/l10n";
+import { sessionTitleText } from "../../core/l10n/labels";
 
 interface HistoryPanelProps {
   /** Sessão em andamento (para marcar a lista). */
@@ -45,6 +47,7 @@ function fileNameFor(session: SessionSummary): string {
  * linha temporal (falas + sugestões da IA com o tempo), com export Markdown.
  */
 export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps) {
+  const { t } = useTranslation();
   const { sessions, loading, error, refresh, rename, remove } =
     useSessionHistory(activeSessionId);
   const [selected, setSelected] = useState<string | null>(null);
@@ -80,7 +83,9 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
     }
     const saved = await saveSessionMarkdown(session.id, path);
     setNotice(
-      saved ? `Exportado: ${saved}` : "Exportação indisponível fora do app.",
+      saved
+        ? t("history_exported_path", { path: saved })
+        : t("history_export_unavailable_outside_app"),
     );
   };
 
@@ -88,7 +93,9 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
     setNotice(null);
     const markdown = await exportSessionMarkdown(session.id);
     const copied = markdown ? await copyText(markdown) : false;
-    setNotice(copied ? "Markdown copiado." : "Não foi possível copiar.");
+    setNotice(
+      copied ? t("history_markdown_copied") : t("history_could_not_copy"),
+    );
   };
 
   if (selected && current) {
@@ -104,14 +111,14 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               setNotice(null);
             }}
           >
-            ← Voltar
+            ← {t("history_back")}
           </button>
           {editing ? (
             <>
               <input
                 className="history__title-input"
                 value={title}
-                aria-label="Título da sessão"
+                aria-label={t("history_session_title")}
                 onChange={(event) => setTitle(event.target.value)}
               />
               <button
@@ -119,26 +126,29 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
                 className="overlay__button"
                 onClick={() => void saveRename()}
               >
-                Salvar
+                {t("history_save")}
               </button>
             </>
           ) : (
             <>
-              <span className="history__detail-title">{sessionTitle(current)}</span>
+              <span className="history__detail-title">
+                {sessionTitleText(current, t)}
+              </span>
               <button
                 type="button"
                 className="overlay__button"
                 onClick={() => startRename(current)}
               >
-                Renomear
+                {t("history_rename")}
               </button>
             </>
           )}
         </div>
 
         <p className="settings__hint">
-          {formatDateTime(current.started_at_ms)} · duração{" "}
-          {sessionDuration(current)} · {entries.length} item(ns)
+          {formatDateTime(current.started_at_ms)} · {t("history_duration")}{" "}
+          {sessionDuration(current)} ·{" "}
+          {t("history_count_item_s", { count: entries.length })}
         </p>
 
         <div className="history__actions">
@@ -148,17 +158,17 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               className="overlay__button overlay__button--start"
               onClick={() => onContinue(current.id)}
             >
-              Continuar sessão
+              {t("history_continue_session")}
             </button>
           )}
           {current.recording_path ? (
             <button
               type="button"
               className="overlay__button"
-              title="Abre a pasta da gravação"
+              title={t("history_opens_recording_folder")}
               onClick={() => void revealItemInDir(current.recording_path!)}
             >
-              Abrir gravação
+              {t("history_open_recording")}
             </button>
           ) : null}
           <button
@@ -166,21 +176,21 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
             className="overlay__button"
             onClick={() => void onExport(current)}
           >
-            Exportar .md
+            {t("history_export_md")}
           </button>
           <button
             type="button"
             className="overlay__button"
             onClick={() => void onCopy(current)}
           >
-            Copiar Markdown
+            {t("history_copy_markdown")}
           </button>
           <button
             type="button"
             className="overlay__button overlay__button--stop"
             onClick={() => void remove(current.id)}
           >
-            Excluir
+            {t("history_delete")}
           </button>
         </div>
 
@@ -189,7 +199,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
 
         {current.overview && current.overview.trim() !== "" && (
           <details className="history__summary" open>
-            <summary>Resumo da sessão</summary>
+            <summary>{t("history_session_summary")}</summary>
             <div className="history__summary-body">
               <MarkdownView markdown={current.overview} />
             </div>
@@ -197,9 +207,9 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
         )}
 
         {loadingTimeline ? (
-          <p className="chat__empty">Carregando…</p>
+          <p className="chat__empty">{t("history_loading")}</p>
         ) : entries.length === 0 ? (
-          <p className="chat__empty">Nada registrado nesta sessão.</p>
+          <p className="chat__empty">{t("history_nothing_recorded_session")}</p>
         ) : (
           <ChatView
             bubbles={bubbles}
@@ -219,7 +229,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
           disabled={loading}
           onClick={() => void refresh()}
         >
-          {loading ? "Carregando…" : "Atualizar"}
+          {loading ? t("history_loading") : t("history_refresh")}
         </button>
       </div>
 
@@ -228,7 +238,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
       <div className="history__list">
         {!loading && sessions.length === 0 && (
           <p className="overlay__empty">
-            Nenhuma sessão ainda. Inicie a escuta para criar a primeira.
+            {t("history_no_sessions_yet_start_listening_create")}
           </p>
         )}
         {sessions.map((session) => (
@@ -241,10 +251,12 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
             <button
               type="button"
               className="history__open"
-              title="Ver a linha temporal"
+              title={t("history_view_timeline")}
               onClick={() => setSelected(session.id)}
             >
-              <span className="history__row-title">{sessionTitle(session)}</span>
+              <span className="history__row-title">
+                {sessionTitleText(session, t)}
+              </span>
               <span className="history__row-meta">
                 {formatDateTime(session.started_at_ms)} ·{" "}
                 {sessionDuration(session)}
@@ -252,20 +264,23 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
                   <>
                     {" · "}
                     <span className="history__recording-badge">
-                      {session.recording_kind === "audio" ? "Áudio" : "Vídeo"}
+                      {session.recording_kind === "audio"
+                        ? t("history_audio")
+                        : t("history_video")}
                     </span>
                   </>
                 ) : null}
-                {session.id === activeSessionId ? " · gravando" : ""}
+                {session.id === activeSessionId ? ` · ${t("history_recording")}` : ""}
               </span>
             </button>
             <button
               type="button"
               className="overlay__button"
-              title="Encerra a atual (se houver) e volta a capturar nesta sessão"
+              title={t("history_ends_current_session_any_resumes_capturing",
+              )}
               onClick={() => onContinue(session.id)}
             >
-              Continuar
+              {t("history_continue")}
             </button>
           </div>
         ))}

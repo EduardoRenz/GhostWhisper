@@ -1,4 +1,5 @@
 import { GripIcon } from "./icons";
+import { useTranslation } from "../core/l10n";
 
 interface DragHandleProps {
   /** Inicia o arraste da janela. */
@@ -18,14 +19,16 @@ interface DragHandleProps {
  */
 export function DragHandle({
   onStartDrag,
-  label = "Mover janela",
+  label,
   className,
 }: DragHandleProps) {
+  const { t } = useTranslation();
+  const resolvedLabel = label ?? t("common_move_window");
   return (
     <span
       className={["drag-handle", className ?? ""].filter(Boolean).join(" ")}
-      title={label}
-      aria-label={label}
+      title={resolvedLabel}
+      aria-label={resolvedLabel}
       onPointerDown={(event) => {
         event.preventDefault();
         onStartDrag();

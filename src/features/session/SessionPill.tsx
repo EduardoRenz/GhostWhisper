@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatClockLong } from "../../core/domain/transcript";
+import { useTranslation } from "../../core/l10n";
 
 interface SessionPillProps {
   /** Início da sessão (relógio de parede, ms); `null` = sem sessão. */
@@ -31,6 +32,7 @@ export function SessionPill({
   onCancelStop,
   onStop,
 }: SessionPillProps) {
+  const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -49,14 +51,14 @@ export function SessionPill({
   if (confirming) {
     return (
       <span className="session-pill session-pill--confirming" data-interactive>
-        <span className="session-pill__text">Encerrar sessão?</span>
+        <span className="session-pill__text">{t("session_end_session")}</span>
         <button
           type="button"
           className="session-pill__button"
           disabled={busy}
           onClick={onStop}
         >
-          Sim
+          {t("session_yes")}
         </button>
         <button
           type="button"
@@ -64,7 +66,7 @@ export function SessionPill({
           disabled={busy}
           onClick={onCancelStop}
         >
-          Não
+          {t("session_no")}
         </button>
       </span>
     );
@@ -75,8 +77,10 @@ export function SessionPill({
       type="button"
       className="session-pill"
       data-interactive
-      title="Tempo de sessão — clique para encerrar"
-      aria-label={`Sessão em andamento há ${formatClockLong(now - startedAtMs)}; clique para encerrar`}
+      title={t("session_session_time_click_end")}
+      aria-label={t("session_session_running_duration_click_end", {
+        duration: formatClockLong(now - startedAtMs),
+      })}
       onClick={onRequestStop}
     >
       <span className="session-pill__dot" aria-hidden="true" />

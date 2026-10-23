@@ -1,7 +1,8 @@
 import { memo } from "react";
 import { useAudioLevel } from "../../core/application/useAudioLevel";
+import { useTranslation } from "../../core/l10n";
+import { channelLabelKey } from "../../core/l10n/labels";
 import {
-  channelLabel,
   levelPercent,
   type SessionChannel,
 } from "../../core/domain/transcript";
@@ -22,13 +23,14 @@ export const LevelMeters = memo(function LevelMeters({
   channels,
   listening,
 }: LevelMetersProps) {
+  const { t } = useTranslation();
   const levels = useAudioLevel();
 
   if (channels.length === 0) {
     return (
       <div className="levels-group" data-interactive>
         <div className="levels">
-          <span className="levels__label">Inativo</span>
+          <span className="levels__label">{t("level_meters_inactive")}</span>
           <div className="levels__bar">
             <div className="levels__fill" style={{ width: "0%" }} />
           </div>
@@ -43,7 +45,7 @@ export const LevelMeters = memo(function LevelMeters({
         const percent = listening ? levelPercent(levels[channel]) : 0;
         return (
           <div className="levels" key={channel}>
-            <span className="levels__label">{channelLabel(channel)}</span>
+            <span className="levels__label">{t(channelLabelKey(channel))}</span>
             <div className="levels__bar">
               <div className="levels__fill" style={{ width: `${percent}%` }} />
             </div>

@@ -30,6 +30,7 @@ import { applyHudOpacity } from "../../core/application/useHudOpacity";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantsSettings } from "./AssistantsSettings";
 import { CadenceSettings } from "./CadenceSettings";
+import { LanguageSettings } from "./LanguageSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
 import { HudSettings } from "./HudSettings";
@@ -43,14 +44,11 @@ import {
   WaveformIcon,
 } from "../../components/icons";
 import {
-  ACCELERATION_LABELS,
   ACCELERATION_MODES,
   DEFAULT_MIC_GAIN,
   LANGUAGES,
   MAX_MIC_GAIN,
   MIN_MIC_GAIN,
-  SOURCE_LANGUAGE_LABELS,
-  TARGET_LANGUAGE_LABELS,
   WHISPER_GPU_MODELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
@@ -61,20 +59,43 @@ import {
   type ProviderKind,
   type Settings,
 } from "../../core/domain/settings";
+import {
+  getUiLanguage,
+  setUiLanguage,
+  useTranslation,
+  type TranslationKey,
+} from "../../core/l10n";
+import {
+  accelerationKey,
+  shortcutActionKey,
+  sourceLanguageKey,
+  targetLanguageKey,
+} from "../../core/l10n/labels";
 
 type Status = { kind: "info" | "ok" | "error"; text: string } | null;
 
-/** Abas da janela de configurações (as 5 seções do produto). */
-const TABS = [
-  { id: "sources", label: "Fontes de IA", Icon: BoltIcon },
-  { id: "transcription", label: "Transcrição & Áudio", Icon: WaveformIcon },
-  { id: "recording", label: "Gravação", Icon: VideoCameraIcon },
-  { id: "assistant", label: "Assistentes", Icon: UsersIcon },
-  { id: "general", label: "Geral & HUD", Icon: SlidersIcon },
-  { id: "shortcuts", label: "Atalhos", Icon: KeyboardIcon },
-] as const;
+/**
+ * Abas da janela de configurações (as seções do produto).
+ *
+ * **Geral & HUD é a primeira** (decisão de produto): idioma da interface,
+ * comportamento do HUD e cadências são o que o usuário procura primeiro.
+ */
+const TABS: { id: TabId; label: TranslationKey; Icon: typeof SlidersIcon }[] = [
+  { id: "general", label: "settings_tab_general", Icon: SlidersIcon },
+  { id: "sources", label: "settings_tab_sources", Icon: BoltIcon },
+  { id: "transcription", label: "settings_tab_transcription", Icon: WaveformIcon },
+  { id: "recording", label: "settings_tab_recording", Icon: VideoCameraIcon },
+  { id: "assistant", label: "settings_tab_assistant", Icon: UsersIcon },
+  { id: "shortcuts", label: "settings_tab_shortcuts", Icon: KeyboardIcon },
+];
 
-type TabId = (typeof TABS)[number]["id"];
+type TabId =
+  | "general"
+  | "sources"
+  | "transcription"
+  | "recording"
+  | "assistant"
+  | "shortcuts";
 
 /** Aba inicial pela URL (`?tab=…`) — atalho de desenvolvimento. */
 function initialTab(): TabId {
@@ -85,7 +106,7 @@ function initialTab(): TabId {
   } catch {
     // Sem DOM (SSR/testes): começa na primeira aba.
   }
-  return "sources";
+  return "general";
 }
 
 /**
@@ -96,6 +117,7 @@ function initialTab(): TabId {
  * antes — a lista de fontes de IA é a primeira delas.
  */
 export function SettingsPage() {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<Settings>(defaultSettings());
   const [providers, setProviders] = useState<ProviderKind[]>([]);
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -115,6 +137,8 @@ export function SettingsPage() {
       const loaded = await getSettings();
       if (loaded) {
         latestOpacity.current = loaded.overlay_opacity;
+        // Configurações monta direto (testes/rota): alimenta o store de idioma.
+        setUiLanguage(loaded.ui_language);
         setDraft(
           loaded.shortcuts.length === 0
             ? { ...loaded, shortcuts: defaultBindings() }
@@ -144,10 +168,16 @@ export function SettingsPage() {
         if (!loaded) {
           return;
         }
+        setUiLanguage(loaded.ui_language);
         setDraft((previous) =>
-          previous.assistant_mode_id === loaded.assistant_mode_id
+          previous.assistant_mode_id === loaded.assistant_mode_id &&
+          previous.ui_language === loaded.ui_language
             ? previous
-            : { ...previous, assistant_mode_id: loaded.assistant_mode_id },
+            : {
+                ...previous,
+                assistant_mode_id: loaded.assistant_mode_id,
+                ui_language: loaded.ui_language,
+              },
         );
       });
     }).then((unlisten) => {
@@ -169,16 +199,21 @@ export function SettingsPage() {
   }, []);
 
   /** Persiste só a opacidade, sem reaplicar atalhos/geometria. */
-  const persistOpacity = useCallback(async (value: number) => {
-    try {
-      await setOverlayOpacity(value);
-    } catch (error) {
-      setStatus({
-        kind: "error",
-        text: `Falha ao salvar a opacidade: ${String(error)}`,
-      });
-    }
-  }, []);
+  const persistOpacity = useCallback(
+    async (value: number) => {
+      try {
+        await setOverlayOpacity(value);
+      } catch (error) {
+        setStatus({
+          kind: "error",
+          text: t("settings_failed_save_opacity_error", {
+            error: String(error),
+          }),
+        });
+      }
+    },
+    [t],
+  );
 
   const update = useCallback(
     <K extends keyof Settings>(field: K, value: Settings[K]) => {
@@ -259,7 +294,8 @@ export function SettingsPage() {
         });
         setConflicts(result ?? []);
         setHasUnsavedChanges(false);
-        setStatus({ kind: "ok", text: "Configurações salvas." });
+        setUiLanguage(draft.ui_language);
+        setStatus({ kind: "ok", text: t("settings_settings_saved") });
       } catch (error) {
         // Se o save completo falhar, a opacidade (autosave) ainda é gravada
         // pelo seu próprio comando.
@@ -273,7 +309,8 @@ export function SettingsPage() {
       typeof window === "undefined" ||
       typeof window.confirm !== "function" ||
       window.confirm(
-        "Restaurar os padrões? Isto repõe modelos, atalhos, fontes de IA e os agentes de fábrica (as chaves no keyring não são apagadas).",
+        t("settings_restore_defaults_resets_models_shortcuts_ai",
+        ),
       );
     if (!confirmed) return;
     void run(async () => {
@@ -282,12 +319,15 @@ export function SettingsPage() {
       const defaults = await settingsDefaults();
       setDraft({
         ...(defaults ?? defaultSettings()),
+        // O idioma é escolha do usuário: restaurar padrões não o troca.
+        ui_language: draft.ui_language ?? getUiLanguage(),
         shortcuts: defaultBindings(),
       });
       setHasUnsavedChanges(true);
       setStatus({
         kind: "info",
-        text: "Padrões restaurados — clique em “Salvar Alterações” para confirmar.",
+        text: t("settings_defaults_restored_click_save_changes_confirm",
+        ),
       });
     });
   };
@@ -300,8 +340,8 @@ export function SettingsPage() {
       setStatus({
         kind: hasConflict ? "error" : "ok",
         text: hasConflict
-          ? "Alguns atalhos não puderam ser registrados."
-          : "Atalhos registrados no sistema.",
+          ? t("settings_some_shortcuts_could_not_registered")
+          : t("settings_shortcuts_registered_system"),
       });
     });
 
@@ -311,364 +351,392 @@ export function SettingsPage() {
       <div className="settings">
         <WindowHeader
           className="settings__header"
-          title="Configurações"
-          subtitle="Personalize captura de áudio, IA local, privacidade e atalhos do GhostWhisper"
+          title={t("settings_settings")}
+          subtitle={t("settings_customize_audio_capture_local_ai_privacy",
+          )}
           icon={<TranscriptIcon size={18} />}
           hint={<kbd className="window-header__hint">Esc</kbd>}
           onStartDrag={() => void panelStartDrag()}
           onClose={() => void closeSettings()}
-          closeLabel="Fechar configurações"
-          dragLabel="Mover configurações"
+          closeLabel={t("settings_close_settings")}
+          dragLabel={t("settings_move_settings")}
           headingLevel="h1"
         />
 
-        <nav className="settings__tabs" role="tablist" aria-label="Seções">
-        {TABS.map((entry) => {
-          const Icon = entry.Icon;
-          return (
-            <button
-              key={entry.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === entry.id}
-              className={
-                tab === entry.id
-                  ? "settings__tab settings__tab--active"
-                  : "settings__tab"
-              }
-              onClick={() => setTab(entry.id)}
-            >
-              <Icon size={16} />
-              <span>{entry.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="settings__body">
-        {tab === "sources" && (
-          <AiSourcesSettings
-            sources={draft.ai_sources}
-            providers={providers}
-            onChange={(sources) => update("ai_sources", sources)}
-            onStatus={setStatus}
-          />
-        )}
-
-        {tab === "transcription" && (
-          <section className="settings__card">
-            <header className="settings__card-header">
-              <h2 className="settings__card-title">Transcrição & Áudio</h2>
-              <span className="settings__card-note">
-                Modelo local, aceleração e níveis de entrada
-              </span>
-            </header>
-
-            <label className="settings__field">
-              <span>Modelo whisper (local)</span>
-              <select
-                value={draft.whisper_model}
-                onChange={(event) =>
-                  update("whisper_model", event.target.value)
+        <nav
+          className="settings__tabs"
+          role="tablist"
+          aria-label={t("settings_sections")}
+        >
+          {TABS.map((entry) => {
+            const Icon = entry.Icon;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === entry.id}
+                className={
+                  tab === entry.id
+                    ? "settings__tab settings__tab--active"
+                    : "settings__tab"
                 }
+                onClick={() => setTab(entry.id)}
               >
-                {WHISPER_MODELS.map((model) => (
-                  <option key={model} value={model}>
-                    {model} ({WHISPER_MODEL_SIZES[model] ?? "?"})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="settings__hint">
-              O modelo é baixado apenas ao iniciar a primeira sessão com ele.
-            </p>
+                <Icon size={16} />
+                <span>{t(entry.label)}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-            {gpu && (
-              <p className="settings__hint" data-testid="gpu-hint">
-                {gpu.available
-                  ? `GPU detectada: ${gpu.detail}. ${
-                      gpu.acceleration_enabled
-                        ? `Modelo sugerido: ${gpu.recommended_model}.`
-                        : "Este build ainda transcreve em CPU; a aceleração por GPU chega em uma próxima entrega."
-                    }`
-                  : "Nenhuma GPU detectada: a transcrição roda em CPU (use tiny/small)."}
+        <div className="settings__body">
+          {tab === "sources" && (
+            <AiSourcesSettings
+              sources={draft.ai_sources}
+              providers={providers}
+              onChange={(sources) => update("ai_sources", sources)}
+              onStatus={setStatus}
+            />
+          )}
+
+          {tab === "transcription" && (
+            <section className="settings__card">
+              <header className="settings__card-header">
+                <h2 className="settings__card-title">
+                  {t("settings_transcription_audio")}
+                </h2>
+                <span className="settings__card-note">
+                  {t("settings_local_model_acceleration_input_levels")}
+                </span>
+              </header>
+
+              <label className="settings__field">
+                <span>{t("settings_whisper_model_local")}</span>
+                <select
+                  value={draft.whisper_model}
+                  onChange={(event) =>
+                    update("whisper_model", event.target.value)
+                  }
+                >
+                  {WHISPER_MODELS.map((model) => (
+                    <option key={model} value={model}>
+                      {model} ({WHISPER_MODEL_SIZES[model] ?? "?"})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="settings__hint">
+                {t("settings_model_downloaded_only_start_first_session",
+                )}
               </p>
-            )}
 
-            {gpu &&
-              gpu.available &&
-              gpu.acceleration_enabled &&
-              draft.whisper_model !== gpu.recommended_model && (
-                <div className="settings__actions">
-                  <button
-                    type="button"
-                    className="settings__button"
-                    onClick={() => update("whisper_model", gpu.recommended_model)}
-                  >
-                    Usar {gpu.recommended_model} (recomendado para a sua GPU)
-                  </button>
-                </div>
-              )}
-
-            {gpu &&
-              !gpu.acceleration_enabled &&
-              WHISPER_GPU_MODELS.includes(draft.whisper_model) && (
-                <p className="settings__hint">
-                  {draft.whisper_model} exige GPU para acompanhar a fala em
-                  tempo real; em CPU a transcrição fica lenta.
+              {gpu && (
+                <p className="settings__hint" data-testid="gpu-hint">
+                  {gpu.available
+                    ? `${t("settings_gpu_detected_detail_suggested_model_model", {
+                        detail: gpu.detail,
+                        model: gpu.recommended_model,
+                      })}${
+                        gpu.acceleration_enabled
+                          ? ""
+                          : ` ${t("settings_build_still_transcribes_cpu_gpu_acceleration",
+                            )}`
+                      }`
+                    : t("settings_no_gpu_detected_transcription_runs_cpu",
+                      )}
                 </p>
               )}
 
-            <label className="settings__field">
-              <span>Aceleração</span>
-              <select
-                value={draft.acceleration}
-                onChange={(event) =>
-                  update("acceleration", event.target.value as AccelerationMode)
-                }
-              >
-                {ACCELERATION_MODES.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {ACCELERATION_LABELS[mode]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="settings__hint">
-              {gpu?.acceleration_enabled
-                ? gpu.available
-                  ? "Este build acelera por GPU (Vulkan). “Auto” usa a GPU quando ela está disponível."
-                  : "Este build acelera por GPU, mas nenhuma GPU foi detectada: a transcrição roda em CPU."
-                : "Este build não inclui aceleração por GPU — a transcrição roda em CPU."}
-            </p>
+              {gpu &&
+                gpu.available &&
+                gpu.acceleration_enabled &&
+                draft.whisper_model !== gpu.recommended_model && (
+                  <div className="settings__actions">
+                    <button
+                      type="button"
+                      className="settings__button"
+                      onClick={() =>
+                        update("whisper_model", gpu.recommended_model)
+                      }
+                    >
+                      {t("settings_use_model_recommended_gpu", {
+                        model: gpu.recommended_model,
+                      })}
+                    </button>
+                  </div>
+                )}
 
-            <label className="settings__field">
-              <span>Contexto da transcrição (opcional)</span>
-              <textarea
-                rows={3}
-                placeholder="Ex.: Grafana, Kubernetes, nomes da equipe"
-                value={draft.whisper_prompt}
-                onChange={(event) => update("whisper_prompt", event.target.value)}
-              />
-            </label>
-            <p className="settings__hint">
-              Use com cautela e apenas para <strong>contexto</strong>: nomes,
-              siglas e jargões que costumam aparecer. <strong>Não escreva
-              instruções</strong> como “não invente” ou “transcreva só o que
-              estiver claro”: o Whisper trata este texto como fala anterior e
-              pode repeti-lo quando o áudio está incerto, atrapalhando a
-              transcrição. O recomendado é deixar vazio.
-            </p>
+              {gpu &&
+                !gpu.acceleration_enabled &&
+                WHISPER_GPU_MODELS.includes(draft.whisper_model) && (
+                  <p className="settings__hint">
+                    {t("settings_model_requires_gpu_keep_up_speech",
+                      { model: draft.whisper_model },
+                    )}
+                  </p>
+                )}
 
-            <label className="settings__field settings__field--row">
-              <input
-                type="checkbox"
-                checked={draft.aec_enabled}
-                onChange={(event) => update("aec_enabled", event.target.checked)}
-              />
-              <span>Cancelar eco (AEC)</span>
-            </label>
-            <p className="settings__hint">
-              Subtrai do microfone o áudio que sai pelo alto-falante (o outro
-              lado da chamada), usando o áudio do sistema como referência. Vale a
-              partir da próxima captura; com fones não faz diferença.
-            </p>
-
-            <div className="settings__field">
-              <span>Sensibilidade do microfone</span>
-              <input
-                type="range"
-                aria-label="Sensibilidade do microfone"
-                min={MIN_MIC_GAIN}
-                max={MAX_MIC_GAIN}
-                step={0.5}
-                value={draft.mic_gain}
-                onChange={(event) =>
-                  update("mic_gain", Number(event.target.value))
-                }
-              />
-              <span className="settings__value">
-                {draft.mic_gain === DEFAULT_MIC_GAIN
-                  ? `${draft.mic_gain.toFixed(1)}× (padrão)`
-                  : `${draft.mic_gain.toFixed(1)}×`}
-              </span>
-            </div>
-            <p className="settings__hint">
-              Amplifica o microfone antes da transcrição — o áudio do sistema não
-              é alterado. Se a fala quase não aparece, aumente; se disparar com
-              ruído de fundo, diminua. Vale a partir da próxima captura: use o
-              “Teste de áudio” abaixo para conferir o nível.
-            </p>
-
-            <label className="settings__field">
-              <span>Idioma de origem</span>
-              <select
-                value={draft.source_language}
-                onChange={(event) =>
-                  update("source_language", event.target.value as Language)
-                }
-              >
-                {LANGUAGES.map((language) => (
-                  <option key={language} value={language}>
-                    {SOURCE_LANGUAGE_LABELS[language]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="settings__field">
-              <span>Idioma de destino</span>
-              <select
-                value={draft.target_language}
-                onChange={(event) =>
-                  update("target_language", event.target.value as Language)
-                }
-              >
-                {LANGUAGES.map((language) => (
-                  <option key={language} value={language}>
-                    {TARGET_LANGUAGE_LABELS[language]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="settings__hint">
-              Escolher um idioma de origem fixa o reconhecimento; "Auto" deixa o
-              Whisper detectar. Destino "Auto" (ou igual à origem) não traduz.
-            </p>
-
-            <label className="settings__field settings__field--row">
-              <input
-                type="checkbox"
-                checked={draft.translation_enabled}
-                onChange={(event) =>
-                  update("translation_enabled", event.target.checked)
-                }
-              />
-              <span>Tradução ao vivo</span>
-            </label>
-
-            <AudioTestPanel micGain={draft.mic_gain} />
-          </section>
-        )}
-
-        {tab === "recording" && (
-          <RecordingSettings settings={draft} update={update} />
-        )}
-
-        {tab === "assistant" && (
-          <AssistantsSettings settings={draft} update={update} />
-        )}
-
-        {tab === "general" && (
-          <>
-            <HudSettings settings={draft} update={update} />
-            <CadenceSettings settings={draft} update={update} />
-          </>
-        )}
-
-        {tab === "shortcuts" && (
-          <section className="settings__card">
-            <header className="settings__card-header">
-              <h2 className="settings__card-title">Atalhos Globais</h2>
-              <span className="settings__card-note">
-                Atalho de teclado do sistema operacional
-              </span>
-            </header>
-            <p className="settings__hint">
-              O botão abaixo <strong>registra</strong> os atalhos no sistema. O
-              valor do atalho é salvo junto com o resto (botão “Salvar
-              Alterações”).
-            </p>
-            {SHORTCUT_ACTIONS.map((action) => {
-              const info = catalog.find((entry) => entry.action === action);
-              const binding = draft.shortcuts.find(
-                (entry) => entry.action === action,
-              );
-              return (
-                <label
-                  key={action}
-                  className="settings__field settings__field--row settings__shortcut"
+              <label className="settings__field">
+                <span>{t("settings_acceleration")}</span>
+                <select
+                  value={draft.acceleration}
+                  onChange={(event) =>
+                    update(
+                      "acceleration",
+                      event.target.value as AccelerationMode,
+                    )
+                  }
                 >
-                  <span className="settings__shortcut-label">
-                    {info?.label ?? action}
-                  </span>
-                  <input
-                    type="text"
-                    value={binding?.accelerator ?? ""}
-                    placeholder={info?.default_accelerator ?? ""}
-                    onChange={(event) =>
-                      updateAccelerator(action, event.target.value)
-                    }
-                  />
-                </label>
-              );
-            })}
-            <div className="settings__actions">
-              <button
-                type="button"
-                className="settings__button settings__button--primary"
-                disabled={busy}
-                onClick={onSaveShortcuts}
-              >
-                Aplicar atalhos
-              </button>
-            </div>
-            {conflicts.length > 0 && (
-              <ul className="settings__conflicts">
-                {conflicts.map((conflict) => (
-                  <li key={`${conflict.action}-${conflict.accelerator}`}>
-                    {conflict.accelerator}: {conflict.reason}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+                  {ACCELERATION_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {t(accelerationKey(mode))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="settings__hint">
+                {gpu?.acceleration_enabled
+                  ? gpu.available
+                    ? t("settings_build_accelerates_gpu_vulkan_auto_uses",
+                      )
+                    : t("settings_build_supports_gpu_acceleration_but_no",
+                      )
+                  : t("settings_build_not_include_gpu_acceleration_transcription",
+                    )}
+              </p>
 
-        {status && (
-          <p className={`settings__status settings__status--${status.kind}`}>
-            {status.text}
-          </p>
-        )}
-      </div>
+              <label className="settings__field">
+                <span>{t("settings_transcription_context_optional")}</span>
+                <textarea
+                  rows={3}
+                  placeholder={t("settings_e_g_grafana_kubernetes_team_names")}
+                  value={draft.whisper_prompt}
+                  onChange={(event) =>
+                    update("whisper_prompt", event.target.value)
+                  }
+                />
+              </label>
+              <p className="settings__hint">
+                {t("settings_use_carefully_only_context_names_acronyms",
+                )}
+              </p>
 
-      <footer className="settings__footer">
-        <span className="settings__footer-note">
-          <span
-            className={`settings__footer-dot${
-              hasUnsavedChanges ? " settings__footer-dot--dirty" : ""
-            }`}
-            aria-hidden="true"
-          />
-          <span>
-            {hasUnsavedChanges
-              ? "Alterações não salvas"
-              : "Todas as alterações são sincronizadas localmente"}
-          </span>
-          {" · "}
-          <span>
-            {persistent ? "Chaves no keyring do sistema" : "Chaves só nesta sessão"}
-          </span>
-        </span>
-        <div className="settings__footer-actions">
-          <button
-            type="button"
-            className="settings__button"
-            disabled={busy}
-            onClick={onRestoreDefaults}
-          >
-            Restaurar Padrões
-          </button>
-          <button
-            type="button"
-            className="settings__button settings__button--primary"
-            disabled={busy}
-            onClick={onSave}
-          >
-            Salvar Alterações
-          </button>
+              <label className="settings__field settings__field--row">
+                <input
+                  type="checkbox"
+                  checked={draft.aec_enabled}
+                  onChange={(event) =>
+                    update("aec_enabled", event.target.checked)
+                  }
+                />
+                <span>{t("settings_cancel_echo_aec")}</span>
+              </label>
+              <p className="settings__hint">
+                {t("settings_subtracts_speaker_audio_other_side_call",
+                )}
+              </p>
+
+              <div className="settings__field">
+                <span>{t("settings_microphone_sensitivity")}</span>
+                <input
+                  type="range"
+                  aria-label={t("settings_microphone_sensitivity")}
+                  min={MIN_MIC_GAIN}
+                  max={MAX_MIC_GAIN}
+                  step={0.5}
+                  value={draft.mic_gain}
+                  onChange={(event) =>
+                    update("mic_gain", Number(event.target.value))
+                  }
+                />
+                <span className="settings__value">
+                  {draft.mic_gain === DEFAULT_MIC_GAIN
+                    ? t("settings_value_default", {
+                        value: draft.mic_gain.toFixed(1),
+                      })
+                    : t("settings_value", { value: draft.mic_gain.toFixed(1) })}
+                </span>
+              </div>
+              <p className="settings__hint">
+                {t("settings_amplifies_microphone_before_transcription_system_audio",
+                )}
+              </p>
+
+              <label className="settings__field">
+                <span>{t("settings_source_language")}</span>
+                <select
+                  value={draft.source_language}
+                  onChange={(event) =>
+                    update("source_language", event.target.value as Language)
+                  }
+                >
+                  {LANGUAGES.map((language) => (
+                    <option key={language} value={language}>
+                      {t(sourceLanguageKey(language))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="settings__field">
+                <span>{t("settings_target_language")}</span>
+                <select
+                  value={draft.target_language}
+                  onChange={(event) =>
+                    update("target_language", event.target.value as Language)
+                  }
+                >
+                  {LANGUAGES.map((language) => (
+                    <option key={language} value={language}>
+                      {t(targetLanguageKey(language))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="settings__hint">
+                {t("settings_choose_source_language_note")}
+              </p>
+
+              <label className="settings__field settings__field--row">
+                <input
+                  type="checkbox"
+                  checked={draft.translation_enabled}
+                  onChange={(event) =>
+                    update("translation_enabled", event.target.checked)
+                  }
+                />
+                <span>{t("settings_live_translation")}</span>
+              </label>
+
+              <AudioTestPanel micGain={draft.mic_gain} />
+            </section>
+          )}
+
+          {tab === "recording" && (
+            <RecordingSettings settings={draft} update={update} />
+          )}
+
+          {tab === "assistant" && (
+            <AssistantsSettings settings={draft} update={update} />
+          )}
+
+          {tab === "general" && (
+            <>
+              <LanguageSettings settings={draft} update={update} />
+              <HudSettings settings={draft} update={update} />
+              <CadenceSettings settings={draft} update={update} />
+            </>
+          )}
+
+          {tab === "shortcuts" && (
+            <section className="settings__card">
+              <header className="settings__card-header">
+                <h2 className="settings__card-title">
+                  {t("settings_global_shortcuts")}
+                </h2>
+                <span className="settings__card-note">
+                  {t("settings_operating_system_keyboard_shortcut")}
+                </span>
+              </header>
+              <p className="settings__hint">
+                {t("settings_button_below_registers_shortcuts_system_shortcut",
+                )}
+              </p>
+              {SHORTCUT_ACTIONS.map((action) => {
+                const info = catalog.find(
+                  (entry) => entry.action === action,
+                );
+                const binding = draft.shortcuts.find(
+                  (entry) => entry.action === action,
+                );
+                return (
+                  <label
+                    key={action}
+                    className="settings__field settings__field--row settings__shortcut"
+                  >
+                    <span className="settings__shortcut-label">
+                      {t(shortcutActionKey(action))}
+                    </span>
+                    <input
+                      type="text"
+                      value={binding?.accelerator ?? ""}
+                      placeholder={info?.default_accelerator ?? ""}
+                      onChange={(event) =>
+                        updateAccelerator(action, event.target.value)
+                      }
+                    />
+                  </label>
+                );
+              })}
+              <div className="settings__actions">
+                <button
+                  type="button"
+                  className="settings__button settings__button--primary"
+                  disabled={busy}
+                  onClick={onSaveShortcuts}
+                >
+                  {t("settings_apply_shortcuts")}
+                </button>
+              </div>
+              {conflicts.length > 0 && (
+                <ul className="settings__conflicts">
+                  {conflicts.map((conflict) => (
+                    <li key={`${conflict.action}-${conflict.accelerator}`}>
+                      {conflict.accelerator}: {conflict.reason}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          {status && (
+            <p className={`settings__status settings__status--${status.kind}`}>
+              {status.text}
+            </p>
+          )}
         </div>
-      </footer>
+
+        <footer className="settings__footer">
+          <span className="settings__footer-note">
+            <span
+              className={`settings__footer-dot${
+                hasUnsavedChanges ? " settings__footer-dot--dirty" : ""
+              }`}
+              aria-hidden="true"
+            />
+            <span>
+              {hasUnsavedChanges
+                ? t("settings_unsaved_changes")
+                : t("settings_all_changes_synced_locally")}
+            </span>
+            {" · "}
+            <span>
+              {persistent
+                ? t("settings_keys_system_keyring")
+                : t("settings_keys_only_session")}
+            </span>
+          </span>
+          <div className="settings__footer-actions">
+            <button
+              type="button"
+              className="settings__button"
+              disabled={busy}
+              onClick={onRestoreDefaults}
+            >
+              {t("settings_restore_defaults")}
+            </button>
+            <button
+              type="button"
+              className="settings__button settings__button--primary"
+              disabled={busy}
+              onClick={onSave}
+            >
+              {t("settings_save_changes")}
+            </button>
+          </div>
+        </footer>
       </div>
     </main>
   );

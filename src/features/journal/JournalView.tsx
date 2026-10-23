@@ -14,6 +14,7 @@ import { useSessionState } from "../../core/application/useSessionState";
 import { usePendingCapture } from "../../core/application/usePendingCapture";
 import { useSettings } from "../../core/application/useSettings";
 import { DEFAULT_SAVED_QUESTIONS } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
 import { SparkleIcon } from "../../components/icons";
 import type { JournalEntry } from "../../core/domain/journal";
 import { AskComposer } from "./AskComposer";
@@ -37,6 +38,7 @@ function exportFileName(): string {
  * perguntas prontas + print sem texto).
  */
 export function JournalView() {
+  const { t } = useTranslation();
   const { state } = useSessionState();
   const { entries, count, loading, error, busy, ask } = useJournal(state.session_id);
   const { settings } = useSettings();
@@ -140,9 +142,11 @@ export function JournalView() {
     }
     const saved = await saveSessionMarkdown(id, path);
     setNotice(
-      saved ? `Exportado: ${saved}` : "Exportação indisponível fora do app.",
+      saved
+        ? t("journal_exported_path", { path: saved })
+        : t("journal_export_unavailable_outside_app"),
     );
-  }, [state.session_id]);
+  }, [state.session_id, t]);
 
   const hasEntries = entries.length > 0;
 
@@ -160,7 +164,7 @@ export function JournalView() {
 
       <div className="journal__list" aria-live="polite">
         {loading && !hasEntries && (
-          <p className="chat__empty">Carregando…</p>
+          <p className="chat__empty">{t("journal_loading")}</p>
         )}
 
         {!loading && !hasEntries && (
@@ -169,11 +173,11 @@ export function JournalView() {
               <SparkleIcon size={22} />
             </span>
             <p className="journal__empty-title">
-              Nenhuma interação nesta sessão ainda
+              {t("journal_no_interactions_session_yet")}
             </p>
             <p className="journal__empty-hint">
-              Pergunte no campo acima (ou pela lupa do notch, <strong>Ctrl K</strong>)
-              e capture a tela com <strong>Alt C</strong>.
+              {t("journal_ask_field_above_notch_magnifier_ctrl",
+              )}
             </p>
           </div>
         )}
@@ -197,18 +201,18 @@ export function JournalView() {
         <span className="journal__count">
           <span className="journal__count-dot" aria-hidden="true" />
           {count === 1
-            ? "1 interação registrada nesta sessão"
-            : `${count} interações registradas nesta sessão`}
+            ? t("journal_1_interaction_recorded_session")
+            : t("journal_count_interactions_recorded_session", { count })}
         </span>
-        <span className="journal__sync">Sync local · SQLite</span>
+        <span className="journal__sync">{t("journal_local_sync_sqlite")}</span>
         <button
           type="button"
           className="journal__export"
-          title="Exportar a sessão em Markdown"
+          title={t("journal_export_session_markdown")}
           disabled={!state.session_id}
           onClick={() => void exportMarkdown()}
         >
-          ⬇ Exportar MD
+          {t("journal_export_md")}
         </button>
       </footer>
     </div>

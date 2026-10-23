@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { DragHandle } from "../../components/DragHandle";
 import { ShortcutBadges } from "../../components/ShortcutBadges";
 import { CameraIcon, SearchIcon } from "../../components/icons";
+import { useTranslation } from "../../core/l10n";
 
 interface AskBarProps {
   /** Texto da pergunta. */
@@ -51,6 +52,7 @@ export function AskBar({
   presets = [],
   onPreset,
 }: AskBarProps) {
+  const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
 
   // O atalho global pede o foco (evento `focus_ask`).
@@ -71,7 +73,7 @@ export function AskBar({
         {onStartDrag && (
           <DragHandle
             className="askbar__drag"
-            label="Mover a barra de pesquisa"
+            label={t("ask_bar_move_search_bar")}
             onStartDrag={onStartDrag}
           />
         )}
@@ -85,8 +87,8 @@ export function AskBar({
           className="askbar__input"
           type="text"
           value={value}
-          placeholder="Perguntar ao GhostWhisper sobre a tela ou áudio…"
-          aria-label="Perguntar ao GhostWhisper"
+          placeholder={t("ask_bar_ask_ghostwhisper_about_screen_audio")}
+          aria-label={t("ask_bar_ask_ghostwhisper")}
           disabled={busy}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
@@ -108,10 +110,12 @@ export function AskBar({
           className={`askbar__capture${attached ? " askbar__capture--attached" : ""}`}
           title={
             attached
-              ? "Já há um print anexado — confirme a pergunta para enviá-lo"
-              : "Captura o monitor sob o cursor e anexa à pergunta (Alt+C)"
+              ? t("ask_bar_screenshot_already_attached_confirm_question_send",
+                )
+              : t("ask_bar_captures_monitor_under_cursor_attaches_question",
+                )
           }
-          aria-label="Capturar Tela"
+          aria-label={t("ask_bar_capture_screen")}
           disabled={busy || attached}
           onClick={onCapture}
         >
@@ -119,7 +123,7 @@ export function AskBar({
             <CameraIcon size={16} />
           </span>
           <span className="askbar__capture-label">
-            {attached ? "Print anexado" : "Capturar Tela"}
+            {attached ? t("ask_bar_screenshot_attached") : t("ask_bar_capture_screen")}
           </span>
           <span className="askbar__keys askbar__keys--subtle">
             <ShortcutBadges accelerator={captureAccelerator} />

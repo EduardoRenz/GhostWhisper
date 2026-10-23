@@ -28,3 +28,4 @@ pub mod test_support;
 pub mod transcription_pipeline;
 pub mod translation_service;
 pub mod turn_scheduler;
+pub mod ui_language_migration;

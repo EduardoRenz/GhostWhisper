@@ -15,11 +15,11 @@ import { useState } from "react";
 import { useAssistantModes } from "../../core/application/useAssistantModes";
 import {
   PROTECTED_MODE_ID,
-  PROTECTED_MODE_NAME,
   isProtectedMode,
   type AssistantMode,
 } from "../../core/domain/assistant";
 import type { Settings } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
 import { Pill } from "../../components/Pill";
 import { PlusIcon, StarIcon } from "../../components/icons";
 import { AgentCard } from "./AgentCard";
@@ -40,12 +40,14 @@ export function AssistantsSettings({
   settings,
   update,
 }: AssistantsSettingsProps) {
+  const { t } = useTranslation();
   const { modes: catalog } = useAssistantModes();
   const [editor, setEditor] = useState<EditorState | null>(null);
 
   const agents = settings.custom_assistant_modes;
   const protectedMode = catalog.find((mode) => isProtectedMode(mode.id));
-  const protectedName = protectedMode?.name ?? PROTECTED_MODE_NAME;
+  const protectedName =
+    protectedMode?.name ?? t("assistants_default_agent");
   const protectedActive = isProtectedMode(settings.assistant_mode_id);
 
   const startNew = () => setEditor({ kind: "create", mode: blankAgent() });
@@ -56,7 +58,11 @@ export function AssistantsSettings({
   const duplicate = (mode: AssistantMode) =>
     setEditor({
       kind: "create",
-      mode: { ...mode, id: newAgentId(), name: `${mode.name} (cópia)` },
+      mode: {
+        ...mode,
+        id: newAgentId(),
+        name: `${mode.name} ${t("assistants_copy")}`,
+      },
     });
 
   const save = (mode: AssistantMode) => {
@@ -83,32 +89,32 @@ export function AssistantsSettings({
 
   return (
     <section className="settings__agents">
-      <article className="agent-default" aria-label="Assistente Padrão">
+      <article className="agent-default" aria-label={t("assistants_default_assistant")}>
         <header className="agent-default__head">
           <span className="agent-default__icon" aria-hidden="true">
             <StarIcon size={18} />
           </span>
           <h3 className="agent-default__name">{protectedName}</h3>
-          <Pill mono>Primário</Pill>
+          <Pill mono>{t("assistants_primary")}</Pill>
           {protectedActive ? (
             <Pill tone="accent" mono>
-              Ativo
+              {t("assistants_active")}
             </Pill>
           ) : null}
         </header>
         <p className="agent-default__description">
-          Padrão do sistema, tenta automaticamente se adaptar e entender o
-          contexto.
+          {t("assistants_system_default_automatically_adapts_tries_understand",
+          )}
         </p>
       </article>
 
       <h2 className="settings__agents-title">
-        Agentes configurados ({agents.length})
+        {t("assistants_configured_agents_count", { count: agents.length })}
       </h2>
 
       {agents.length === 0 ? (
         <p className="settings__hint">
-          Nenhum agente configurado ainda — crie um assistente abaixo.
+          {t("assistants_no_agents_configured_yet_create_assistant")}
         </p>
       ) : (
         <ul className="settings__agents-list">
@@ -136,10 +142,10 @@ export function AssistantsSettings({
           <span className="agent-cta__plus" aria-hidden="true">
             <PlusIcon size={16} />
           </span>
-          <span>Criar Novo Assistente de IA</span>
+          <span>{t("assistants_create_new_ai_assistant")}</span>
         </button>
         <span className="agent-cta__note">
-          Configure personas sob medida para suas reuniões
+          {t("assistants_configure_custom_personas_meetings")}
         </span>
       </div>
 

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MicIcon, MicOffIcon } from "../../components/icons";
+import { useTranslation, type TranslationKey } from "../../core/l10n";
 import type { SessionChannel } from "../../core/domain/transcript";
 
 type ChannelChoice = "both" | SessionChannel;
 
-const CHOICES: { value: ChannelChoice; label: string }[] = [
-  { value: "both", label: "Ambos" },
-  { value: "microphone", label: "Microfone" },
-  { value: "system", label: "Sistema" },
-];
+const CHOICES: ChannelChoice[] = ["both", "microphone", "system"];
+
+const CHOICE_KEYS: Record<ChannelChoice, TranslationKey> = {
+  both: "common_both",
+  microphone: "common_microphone",
+  system: "common_system",
+};
 
 /** Converte a lista de canais na opção do seletor. */
 const choiceOf = (channels: SessionChannel[]): ChannelChoice => {
@@ -47,6 +50,7 @@ export function ChannelMenu({
   onNewSession,
   onOpenChange,
 }: ChannelMenuProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const choice = choiceOf(channels);
@@ -95,7 +99,7 @@ export function ChannelMenu({
       <button
         type="button"
         className="icon-button"
-        aria-label="Canais de áudio"
+        aria-label={t("channel_menu_audio_channels")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => changeOpen(!open)}
@@ -105,19 +109,19 @@ export function ChannelMenu({
 
       {open && (
         <div className="channel-menu__popover" role="menu" data-interactive>
-          <span className="channel-menu__title">Canais</span>
-          {CHOICES.map((option) => (
+          <span className="channel-menu__title">{t("channel_menu_channels")}</span>
+          {CHOICES.map((value) => (
             <button
-              key={option.value}
+              key={value}
               type="button"
               role="menuitemradio"
-              aria-checked={choice === option.value}
+              aria-checked={choice === value}
               className={`channel-menu__item${
-                choice === option.value ? " channel-menu__item--on" : ""
+                choice === value ? " channel-menu__item--on" : ""
               }`}
-              onClick={() => select(option.value)}
+              onClick={() => select(value)}
             >
-              {option.label}
+              {t(CHOICE_KEYS[value])}
             </button>
           ))}
           <div className="channel-menu__divider" />
@@ -131,7 +135,7 @@ export function ChannelMenu({
               changeOpen(false);
             }}
           >
-            Começar a capturar
+            {t("channel_menu_start_capturing")}
           </button>
         </div>
       )}

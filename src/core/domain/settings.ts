@@ -2,6 +2,7 @@
 
 import { defaultBindings, type ShortcutBinding } from "./shortcuts";
 import type { AssistantMode } from "./assistant";
+import type { UiLanguage } from "../l10n";
 
 /** Provedores de LLM suportados (BYO key). */
 export type ProviderKind =
@@ -98,6 +99,13 @@ export interface Settings {
   ai_sources: AiSource[];
   /** Vínculos de fonte por escopo — BR-048. */
   ai_routes: AiRoute[];
+  /**
+   * Idioma da interface (`pt` | `en`).
+   *
+   * `null` só antes da primeira inicialização: o core detecta o padrão do
+   * sistema uma única vez e persiste. Depois disso, a escolha do usuário manda.
+   */
+  ui_language: UiLanguage | null;
   source_language: Language;
   target_language: Language;
   translation_enabled: boolean;
@@ -399,6 +407,7 @@ export const defaultSource = (): AiSource => ({
 export const defaultSettings = (): Settings => ({
   ai_sources: [defaultSource()],
   ai_routes: [],
+  ui_language: null,
   source_language: "auto",
   target_language: "pt",
   translation_enabled: false,

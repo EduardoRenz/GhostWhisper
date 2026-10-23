@@ -7,17 +7,18 @@ import {
 } from "../../components/icons";
 import type { PanelTab } from "../../core/domain/settings";
 import type { TranscriptActivity } from "../../core/application/useTranscriptActivity";
+import { useTranslation, type TranslationKey, type TranslationParams } from "../../core/l10n";
 
 interface TabDefinition {
   id: PanelTab;
-  label: string;
+  label: TranslationKey;
   Icon: (props: IconProps) => ReactElement;
 }
 
 const TABS: TabDefinition[] = [
-  { id: "transcription", label: "Transcrição", Icon: MicIcon },
-  { id: "summary", label: "Resumo", Icon: SummaryIcon },
-  { id: "session", label: "Sessão", Icon: JournalIcon },
+  { id: "transcription", label: "panel_tab_transcription", Icon: MicIcon },
+  { id: "summary", label: "panel_tab_summary", Icon: SummaryIcon },
+  { id: "session", label: "panel_tab_session", Icon: JournalIcon },
 ];
 
 interface PanelTabsProps {
@@ -30,17 +31,20 @@ interface PanelTabsProps {
 const IDLE: TranscriptActivity = { microphone: false, system: false };
 
 /** Texto do tooltip/status da aba Transcrição. */
-function activityLabel(activity: TranscriptActivity): string {
+function activityLabel(
+  activity: TranscriptActivity,
+  t: (key: TranslationKey, params?: TranslationParams) => string,
+): string {
   if (activity.microphone && activity.system) {
-    return "Transcrição processando microfone e Outros";
+    return t("panel_transcription_processing_microphone_others");
   }
   if (activity.microphone) {
-    return "Transcrição processando microfone";
+    return t("panel_transcription_processing_microphone");
   }
   if (activity.system) {
-    return "Transcrição processando Outros";
+    return t("panel_transcription_processing_others");
   }
-  return "Transcrição em silêncio";
+  return t("panel_transcription_silent");
 }
 
 /**
@@ -55,6 +59,7 @@ export function PanelTabs({
   onChange,
   transcriptionActivity = IDLE,
 }: PanelTabsProps) {
+  const { t } = useTranslation();
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = TABS.findIndex((tab) => tab.id === active);
     const selectAt = (target: number) => {
@@ -75,13 +80,13 @@ export function PanelTabs({
     }
   };
 
-  const activity = activityLabel(transcriptionActivity);
+  const activity = activityLabel(transcriptionActivity, t);
 
   return (
     <div
       className="panel-tabs"
       role="tablist"
-      aria-label="Painel da sessão"
+      aria-label={t("panel_session_panel")}
       data-interactive
       onKeyDown={move}
     >
@@ -116,7 +121,7 @@ export function PanelTabs({
               <span className="panel-tabs__status-dot" aria-hidden="true" />
             )}
             <Icon className="panel-tabs__icon" size={16} />
-            <span>{label}</span>
+            <span>{t(label)}</span>
           </button>
         );
       })}

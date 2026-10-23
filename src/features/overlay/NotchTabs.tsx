@@ -5,6 +5,7 @@ import {
 } from "../../components/icons";
 import { DwellButton } from "../../components/dwell/DwellButton";
 import { PauseIcon, PlayIcon } from "../../components/TransportIcons";
+import { useTranslation } from "../../core/l10n";
 import type {
   RecordingCapabilities,
   RecordingState,
@@ -64,25 +65,26 @@ export function NotchTabs({
   onToggleRecording,
   onPickRecordingTarget,
 }: NotchTabsProps) {
+  const { t } = useTranslation();
   return (
-    <nav className="notch-tabs" aria-label="Modos do HUD" data-interactive>
+    <nav className="notch-tabs" aria-label={t("notch_tabs_hud_modes")} data-interactive>
       <button
         type="button"
         className={`notch-tabs__item${listening ? " notch-tabs__item--active" : ""}`}
         aria-current={listening ? "page" : undefined}
-        title="Transcrição ao vivo"
+        title={t("notch_tabs_live_transcription")}
         onClick={onOpenTranscription}
       >
         <MicIcon className="notch-tabs__icon" size={15} />
-        <span className="notch-tabs__label">Transcrição</span>
+        <span className="notch-tabs__label">{t("notch_tabs_transcription")}</span>
         <NotchWaveform active={listening} paused={paused} />
       </button>
 
       <button
         type="button"
         className="notch-tabs__transport"
-        aria-label={paused ? "Retomar" : "Pausar"}
-        title={paused ? "Retomar a captura" : "Pausar a captura"}
+        aria-label={paused ? t("notch_tabs_resume") : t("notch_tabs_pause")}
+        title={paused ? t("notch_tabs_resume_capture") : t("notch_tabs_pause_capture")}
         disabled={busy}
         onClick={paused ? onResume : onPause}
       >
@@ -95,21 +97,21 @@ export function NotchTabs({
 
       <DwellButton
         className="notch-tabs__item"
-        title="Resumo da sessão"
+        title={t("notch_tabs_session_summary")}
         onActivate={onOpenSummary}
       >
         <SummaryIcon className="notch-tabs__icon" size={15} />
-        <span className="notch-tabs__label">Resumo</span>
+        <span className="notch-tabs__label">{t("notch_tabs_summary")}</span>
       </DwellButton>
 
       <DwellButton
         className={`notch-tabs__item${suggestionsOpen ? " notch-tabs__item--active" : ""}`}
         pressed={suggestionsOpen}
-        title="Sugestões da IA"
+        title={t("notch_tabs_ai_suggestions")}
         onActivate={onToggleSuggestions}
       >
         <SparkleIcon className="notch-tabs__icon" size={15} />
-        <span className="notch-tabs__label">Sugestões</span>
+        <span className="notch-tabs__label">{t("notch_tabs_suggestions")}</span>
       </DwellButton>
 
       <span className="notch-tabs__divider" aria-hidden="true" />

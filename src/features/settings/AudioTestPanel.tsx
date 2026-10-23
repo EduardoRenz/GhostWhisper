@@ -13,8 +13,9 @@ import {
 } from "../../adapters/ipc/audio";
 import { useAudioLevel } from "../../core/application/useAudioLevel";
 import { useSessionState } from "../../core/application/useSessionState";
+import { useTranslation } from "../../core/l10n";
+import { channelLabelKey } from "../../core/l10n/labels";
 import {
-  channelLabel,
   levelPercent,
   type SessionChannel,
 } from "../../core/domain/transcript";
@@ -28,6 +29,7 @@ import {
  * **noise gate** (BR-018), ou seja, é o que o ASR vai receber.
  */
 export function AudioTestPanel({ micGain }: { micGain?: number }) {
+  const { t } = useTranslation();
   const [channel, setChannel] = useState<SessionChannel>("microphone");
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -146,14 +148,14 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
 
   return (
     <section className="settings__group">
-      <span className="settings__group-title">Teste de áudio</span>
+      <span className="settings__group-title">{t("audio_test_audio_test")}</span>
       <p className="settings__hint">
-        Confira o microfone (ou o áudio do sistema) antes de iniciar uma sessão.
-        Fale e veja a barra reagir.
+        {t("audio_test_check_microphone_system_audio_before_starting",
+        )}
       </p>
 
       <label className="settings__field">
-        <span>Canal</span>
+        <span>{t("audio_test_channel")}</span>
         <select
           value={channel}
           disabled={running}
@@ -161,23 +163,25 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
             setChannel(event.target.value as SessionChannel)
           }
         >
-          <option value="microphone">Microfone</option>
-          <option value="system">Áudio do sistema</option>
+          <option value="microphone">{t("audio_test_microphone")}</option>
+          <option value="system">{t("audio_test_system_audio")}</option>
         </select>
       </label>
 
       <label className="settings__field">
-        <span>Dispositivo</span>
+        <span>{t("audio_test_device")}</span>
         <select
           value={deviceId ?? ""}
           disabled={running || devices.length === 0}
           onChange={(event) => setDeviceId(event.target.value || null)}
         >
-          {devices.length === 0 && <option value="">(nenhum encontrado)</option>}
+          {devices.length === 0 && (
+            <option value="">{t("audio_test_none_found")}</option>
+          )}
           {devices.map((device) => (
             <option key={device.id} value={device.id}>
               {device.name}
-              {device.is_default ? " (padrão)" : ""}
+              {device.is_default ? ` ${t("audio_test_default")}` : ""}
             </option>
           ))}
         </select>
@@ -185,24 +189,29 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
 
       <div className="audio-test">
         <div className="levels">
-          <span className="levels__label">{channelLabel(channel)}</span>
+          <span className="levels__label">{t(channelLabelKey(channel))}</span>
           <div className="levels__bar">
             <div className="levels__fill" style={{ width: `${percent}%` }} />
           </div>
           <span className="audio-test__value">{percent}%</span>
         </div>
         <p className="settings__hint">
-          RMS {level.rms.toFixed(3)} · pico {level.peak.toFixed(3)}
+          {t("audio_test_rms_rms_peak_peak", {
+            rms: level.rms.toFixed(3),
+            peak: level.peak.toFixed(3),
+          })}
           {channel === "microphone" && micGain !== undefined && (
-            <> · ganho {micGain.toFixed(1)}× (aplica-se ao reiniciar o teste)</>
+            <>
+              {t("audio_test_gain_gain_applies_test_restarts", {
+                gain: micGain.toFixed(1),
+              })}
+            </>
           )}
         </p>
         {silent && (
           <p className="settings__hint">
-            Sem sinal: fale mais perto, aumente a “Sensibilidade do microfone”
-            acima ou o volume de entrada do sistema. O ruído de fundo abaixo da
-            sensibilidade é silenciado de propósito para não virar transcrição
-            falsa.
+            {t("audio_test_no_signal_speak_closer_increase_microphone",
+            )}
           </p>
         )}
 
@@ -216,16 +225,16 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
                 onChange={() => void onToggleMonitor()}
               />
               <span>
-                Ouvir minha voz
-                {monitorDelay !== null &&
-                  ` (com ${(monitorDelay / 1000).toFixed(1)} s de atraso)`}
+                {monitorDelay !== null
+                  ? t("audio_test_hear_my_voice_delay_s_delay", {
+                      delay: (monitorDelay / 1000).toFixed(1),
+                    })
+                  : t("audio_test_hear_my_voice")}
               </span>
             </label>
             <p className="settings__hint">
-              Use <strong>fone de ouvido</strong>: com caixa de som o retorno
-              realimenta o microfone (microfonia). Você ouve exatamente o que o
-              ASR recebe — ganho e sensibilidade incluídos. Só funciona com o
-              teste em execução.
+              {t("audio_test_use_headphones_speakers_feedback_loops_back",
+              )}
             </p>
           </div>
         )}
@@ -238,7 +247,7 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
             className="settings__button"
             onClick={() => void onStop()}
           >
-            Parar teste
+            {t("audio_test_stop_test")}
           </button>
         ) : (
           <button
@@ -247,14 +256,14 @@ export function AudioTestPanel({ micGain }: { micGain?: number }) {
             disabled={sessionActive}
             onClick={() => void onStart()}
           >
-            Iniciar teste
+            {t("audio_test_start_test")}
           </button>
         )}
       </div>
 
       {sessionActive && (
         <p className="settings__hint">
-          Há uma sessão ativa — encerre-a para testar o áudio.
+          {t("audio_test_session_active_end_test_audio")}
         </p>
       )}
       {error && (

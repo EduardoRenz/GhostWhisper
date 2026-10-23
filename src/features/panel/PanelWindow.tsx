@@ -6,6 +6,7 @@ import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useTranscriptActivity } from "../../core/application/useTranscriptActivity";
 import type { PanelTab } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
 import { JournalIcon, SummaryIcon, WaveformIcon } from "../../components/icons";
 import { PanelFrame } from "../panels/PanelFrame";
 import { PanelTabs } from "./PanelTabs";
@@ -25,6 +26,7 @@ const PANEL_TAB_EVENT = "panel_tab";
  * para trocar de aba sem reiniciar transcrição/rolagem.
  */
 export function PanelWindow() {
+  const { t } = useTranslation();
   const opened = usePanelOpen("chat");
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
@@ -77,10 +79,10 @@ export function PanelWindow() {
         : WaveformIcon;
   const title =
     tab === "summary"
-      ? "Resumo"
+      ? t("panel_summary")
       : tab === "session"
-        ? "Sessão"
-        : "Transcrição ao Vivo";
+        ? t("panel_session")
+        : t("panel_live_transcription");
 
   return (
     <PanelFrame

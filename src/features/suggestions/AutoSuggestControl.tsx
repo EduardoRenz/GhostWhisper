@@ -1,4 +1,5 @@
 import type { SuggestionCadence } from "../../core/application/useSuggestionCadence";
+import { useTranslation } from "../../core/l10n";
 import { Pill } from "../../components/Pill";
 
 interface AutoSuggestControlProps {
@@ -27,6 +28,7 @@ export function AutoSuggestControl({
   onToggle,
   paused,
 }: AutoSuggestControlProps) {
+  const { t } = useTranslation();
   const fraction =
     cadence.window_ms > 0
       ? Math.min(1, Math.max(0, cadence.remaining_ms / cadence.window_ms))
@@ -37,13 +39,13 @@ export function AutoSuggestControl({
   const noSession = !paused && !cadence.running;
   const waiting = !paused && cadence.running && cadence.awaiting_speech;
   const count = paused
-    ? "Pausado"
+    ? t("suggestions_paused")
     : noSession
-      ? "Sem escuta"
+      ? t("suggestions_not_listening")
       : generating
-        ? "Gerando"
+        ? t("suggestions_generating")
         : waiting
-          ? "Aguardando"
+          ? t("suggestions_waiting")
           : `${seconds}s`;
   // Enquanto gera, o anel vira um arco girando (progresso indeterminado).
   const dashArray = generating
@@ -52,14 +54,16 @@ export function AutoSuggestControl({
 
   const intervalSeconds = Math.max(1, Math.round(cadence.window_ms / 1000));
   const title = paused
-    ? "Sugestões automáticas pausadas — clique para retomar"
+    ? t("suggestions_automatic_suggestions_paused_click_resume")
     : noSession
-      ? "Sem sessão de escuta — inicie uma escuta no notch"
+      ? t("suggestions_no_listening_session_start_one_notch")
       : generating
-        ? "Gerando sugestão automática agora"
+        ? t("suggestions_generating_automatic_suggestion_now")
         : waiting
-          ? "Aguardando nova fala para sugerir"
-          : `Sugestões automáticas a cada ${intervalSeconds}s — clique para pausar`;
+          ? t("suggestions_waiting_new_speech_suggest")
+          : t("suggestions_automatic_suggestions_every_seconds_s_click", {
+              seconds: intervalSeconds,
+            });
 
   return (
     <button
@@ -95,7 +99,7 @@ export function AutoSuggestControl({
           transform="rotate(-90 12 12)"
         />
       </svg>
-      <span className="auto-control__label">Auto-sugerir</span>
+      <span className="auto-control__label">{t("suggestions_auto_suggest")}</span>
       <Pill
         className="auto-control__count"
         tone={paused || noSession || waiting || generating ? "neutral" : "accent"}

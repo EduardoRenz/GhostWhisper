@@ -15,6 +15,7 @@ import {
   type SavedQuestion,
   type Settings,
 } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
 
 interface CadenceSettingsProps {
   settings: Settings;
@@ -23,6 +24,7 @@ interface CadenceSettingsProps {
 
 /** Cadências automáticas + perguntas prontas. */
 export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
+  const { t } = useTranslation();
   const savedQuestions = settings.saved_questions ?? DEFAULT_SAVED_QUESTIONS;
   const setSavedQuestions = (questions: SavedQuestion[]) =>
     update("saved_questions", questions);
@@ -31,21 +33,23 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
     <section className="settings__section">
       <header className="settings__section-header">
         <h2 className="settings__section-title">
-          Cadências &amp; Perguntas Prontas
+          {t("cadence_cadence_saved_questions")}
         </h2>
         <span className="settings__section-note">
-          Atualizações automáticas e chips da busca
+          {t("cadence_automatic_updates_search_chips")}
         </span>
       </header>
 
       <div className="settings__grid">
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Resumo automático</h3>
+            <h3 className="settings__card-title">
+              {t("cadence_automatic_summary")}
+            </h3>
             <label className="settings__toggle">
               <input
                 type="checkbox"
-                aria-label="Resumo automático"
+                aria-label={t("cadence_automatic_summary")}
                 checked={settings.summary_auto_refresh}
                 onChange={(event) =>
                   update("summary_auto_refresh", event.target.checked)
@@ -55,10 +59,11 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
             </label>
           </header>
           <p className="settings__card-description">
-            Atualiza o resumo vivo da sessão enquanto a janela está aberta.
+            {t("cadence_updates_live_session_summary_while_window",
+            )}
           </p>
           <label className="settings__field">
-            <span>Intervalo do resumo</span>
+            <span>{t("cadence_summary_interval")}</span>
             <select
               value={settings.summary_interval_secs}
               disabled={!settings.summary_auto_refresh}
@@ -77,11 +82,13 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
 
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Sugestões automáticas</h3>
+            <h3 className="settings__card-title">
+              {t("cadence_automatic_suggestions")}
+            </h3>
             <label className="settings__toggle">
               <input
                 type="checkbox"
-                aria-label="Sugestões automáticas"
+                aria-label={t("cadence_automatic_suggestions")}
                 checked={settings.suggestion_auto_refresh}
                 onChange={(event) =>
                   update("suggestion_auto_refresh", event.target.checked)
@@ -91,10 +98,10 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
             </label>
           </header>
           <p className="settings__card-description">
-            Gera uma nova sugestão a cada intervalo, sem esperar o clique.
+            {t("cadence_generates_new_suggestion_every_interval_without")}
           </p>
           <label className="settings__field">
-            <span>Intervalo das sugestões</span>
+            <span>{t("cadence_suggestion_interval")}</span>
             <select
               value={settings.suggestion_interval_secs}
               disabled={!settings.suggestion_auto_refresh}
@@ -114,27 +121,27 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
 
       <article className="settings__card settings__card--hud">
         <header className="settings__card-header">
-          <h3 className="settings__card-title">Perguntas prontas</h3>
+          <h3 className="settings__card-title">{t("cadence_saved_questions")}</h3>
           <span className="settings__badge">
             {savedQuestions.length}/{MAX_SAVED_QUESTIONS}
           </span>
         </header>
         <p className="settings__card-description">
-          Elas aparecem como chips na barra de pesquisa (Ctrl K).
+          {t("cadence_they_appear_chips_search_bar_ctrl")}
         </p>
         <ul className="settings__modes">
           {savedQuestions.length === 0 ? (
-            <li className="settings__hint">Nenhuma pergunta pronta.</li>
+            <li className="settings__hint">{t("cadence_no_saved_questions")}</li>
           ) : null}
           {savedQuestions.map((question) => (
             <li key={question.id} className="settings__mode">
               <input
                 className="settings__input"
                 type="text"
-                aria-label="Pergunta pronta"
+                aria-label={t("cadence_saved_question")}
                 maxLength={MAX_SAVED_QUESTION_CHARS}
                 value={question.text}
-                placeholder="Ex.: Como otimizar esta consulta?"
+                placeholder={t("cadence_e_g_how_can_i_optimize")}
                 onChange={(event) =>
                   setSavedQuestions(
                     savedQuestions.map((item) =>
@@ -148,14 +155,14 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
               <button
                 type="button"
                 className="settings__button settings__button--small"
-                aria-label="Remover pergunta pronta"
+                aria-label={t("cadence_remove_saved_question")}
                 onClick={() =>
                   setSavedQuestions(
                     savedQuestions.filter((item) => item.id !== question.id),
                   )
                 }
               >
-                Excluir
+                {t("cadence_delete")}
               </button>
             </li>
           ))}
@@ -172,7 +179,7 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
               ])
             }
           >
-            Nova pergunta pronta
+            {t("cadence_new_saved_question")}
           </button>
         </div>
       </article>

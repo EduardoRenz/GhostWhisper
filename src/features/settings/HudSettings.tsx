@@ -1,18 +1,22 @@
 import {
   DWELL_STEP_MS,
   HUD_DENSITIES,
-  HUD_DENSITY_LABELS,
   MAX_DWELL_MS,
   MAX_OVERLAY_OPACITY,
   MIN_DWELL_MS,
   MIN_OVERLAY_OPACITY,
   NOTCH_ANCHORS,
-  NOTCH_ANCHOR_LABELS,
   OPACITY_LEGEND,
   type HudDensity,
   type NotchAnchor,
   type Settings,
 } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
+import {
+  hudDensityKey,
+  notchAnchorKey,
+  opacityLegendKey,
+} from "../../core/l10n/labels";
 
 interface HudSettingsProps {
   settings: Settings;
@@ -31,29 +35,36 @@ const OPACITY_STEP = 5;
  * privacidade.
  */
 export function HudSettings({ settings, update }: HudSettingsProps) {
+  const { t } = useTranslation();
   const opacityPercent = Math.round(settings.overlay_opacity * 100);
-  const anchored = NOTCH_ANCHOR_LABELS[settings.notch_anchor];
+  const anchored = t(notchAnchorKey(settings.notch_anchor));
 
   return (
     <section className="settings__hud">
       <header className="settings__section-header">
-        <h2 className="settings__section-title">Comportamento do HUD &amp; Janela</h2>
-        <span className="settings__section-note">HUD Anchor: {anchored}</span>
+        <h2 className="settings__section-title">
+          {t("hud_hud_window_behavior")}
+        </h2>
+        <span className="settings__section-note">
+          {t("hud_hud_anchor_anchor", { anchor: anchored })}
+        </span>
       </header>
 
       <div className="settings__grid">
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Opacidade das Janelas</h3>
+            <h3 className="settings__card-title">
+              {t("hud_window_opacity")}
+            </h3>
             <span className="settings__badge">{opacityPercent}%</span>
           </header>
           <p className="settings__card-description">
-            Transparência das superfícies de todas as janelas. Aplicada em tempo
-            real e salva automaticamente.
+            {t("hud_transparency_all_window_surfaces_applied_real",
+            )}
           </p>
           <input
             type="range"
-            aria-label="Opacidade das janelas"
+            aria-label={t("hud_opacity_slider_label")}
             min={MIN_OVERLAY_OPACITY * 100}
             max={MAX_OVERLAY_OPACITY * 100}
             step={OPACITY_STEP}
@@ -64,22 +75,25 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
           />
           <div className="settings__range-labels">
             {OPACITY_LEGEND.map((entry) => (
-              <span key={entry.label}>{entry.label}</span>
+              <span key={entry.label}>{t(opacityLegendKey(entry.label))}</span>
             ))}
           </div>
         </article>
 
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Posição de Ancoragem do Notch</h3>
+            <h3 className="settings__card-title">
+              {t("hud_notch_anchor_position")}
+            </h3>
           </header>
           <p className="settings__card-description">
-            Ponto de fixação e orientação do HUD na área de trabalho primária.
+            {t("hud_anchor_point_orientation_hud_primary_workspace",
+            )}
           </p>
           <div
             className="settings__segmented"
             role="group"
-            aria-label="Posição de ancoragem do notch"
+            aria-label={t("hud_notch_anchor_group_label")}
           >
             {NOTCH_ANCHORS.map((anchor: NotchAnchor) => (
               <button
@@ -93,7 +107,7 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
                 }
                 onClick={() => update("notch_anchor", anchor)}
               >
-                {NOTCH_ANCHOR_LABELS[anchor]}
+                {t(notchAnchorKey(anchor))}
               </button>
             ))}
           </div>
@@ -101,11 +115,13 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
 
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Expandir Notch por Dwell (Hover)</h3>
+            <h3 className="settings__card-title">
+              {t("hud_expand_notch_dwell_hover")}
+            </h3>
             <label className="settings__toggle">
               <input
                 type="checkbox"
-                aria-label="Expandir notch por dwell"
+                aria-label={t("hud_expand_notch_dwell")}
                 checked={settings.dwell_enabled}
                 onChange={(event) =>
                   update("dwell_enabled", event.target.checked)
@@ -115,18 +131,18 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
             </label>
           </header>
           <p className="settings__card-description">
-            Abre visualização rápida de transcrição ao pairar o mouse no topo da
-            tela.
+            {t("hud_opens_quick_transcription_view_hovering_top",
+            )}
           </p>
 
           <div className="settings__hud-field">
             <span className="settings__hud-field-label">
-              Tempo de Dwell
+              {t("hud_dwell_time")}
               <span className="settings__badge">{settings.dwell_ms}ms</span>
             </span>
             <input
               type="range"
-              aria-label="Tempo de dwell em milissegundos"
+              aria-label={t("hud_dwell_time_milliseconds")}
               min={MIN_DWELL_MS}
               max={MAX_DWELL_MS}
               step={DWELL_STEP_MS}
@@ -138,22 +154,25 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
             />
           </div>
           <div className="settings__range-labels">
-            <span>100ms (Rápido)</span>
-            <span>1,5s (Longo)</span>
+            <span>{t("hud_100ms_fast")}</span>
+            <span>{t("hud_1_5s_long")}</span>
           </div>
         </article>
 
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Tamanho / Densidade do Notch</h3>
+            <h3 className="settings__card-title">
+              {t("hud_notch_size_density")}
+            </h3>
           </header>
           <p className="settings__card-description">
-            Define o espaçamento interno e a espessura da barra flutuante.
+            {t("hud_defines_internal_spacing_thickness_floating_bar",
+            )}
           </p>
           <div
             className="settings__segmented"
             role="group"
-            aria-label="Densidade do notch"
+            aria-label={t("hud_notch_density")}
           >
             {HUD_DENSITIES.map((density: HudDensity) => (
               <button
@@ -167,7 +186,7 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
                 }
                 onClick={() => update("hud_density", density)}
               >
-                {HUD_DENSITY_LABELS[density]}
+                {t(hudDensityKey(density))}
               </button>
             ))}
           </div>
@@ -176,11 +195,11 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
 
       <article className="settings__card settings__card--hud">
         <header className="settings__card-header">
-          <h3 className="settings__card-title">Privacidade</h3>
+          <h3 className="settings__card-title">{t("hud_privacy")}</h3>
           <label className="settings__toggle">
             <input
               type="checkbox"
-              aria-label="Modo stealth"
+              aria-label={t("hud_stealth_mode")}
               checked={settings.stealth}
               onChange={(event) => update("stealth", event.target.checked)}
             />
@@ -188,13 +207,11 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
           </label>
         </header>
         <p className="settings__card-description">
-          Modo stealth: fora da barra de tarefas e sem título na janela.
+          {t("hud_stealth_mode_hidden_taskbar_no_window")}
         </p>
         <p className="settings__hint">
-          <strong>Ele não o esconde do compartilhamento de tela</strong>: no Linux
-          não existe API para excluir uma janela de captura (BR-006). Para
-          reuniões, compartilhe <em>uma janela</em> em vez da tela inteira ou
-          deixe o overlay em outro monitor.
+          {t("hud_not_hide_screen_sharing_linux_no",
+          )}
         </p>
       </article>
     </section>

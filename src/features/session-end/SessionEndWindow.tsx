@@ -10,10 +10,11 @@ import {
   TrashIcon,
 } from "../../components/icons";
 import { useSessionEnd } from "../../core/application/useSessionEnd";
+import { useTranslation } from "../../core/l10n";
 import {
-  formatDuration,
-  mediaLabel,
-} from "../../core/domain/recording";
+  formatDurationText,
+  mediaLabelText,
+} from "../../core/l10n/labels";
 
 /**
  * Modal "Sessão Finalizada" (BR-068).
@@ -23,6 +24,7 @@ import {
  * finalização aparece no cartão de mídia.
  */
 export function SessionEndWindow() {
+  const { t } = useTranslation();
   const {
     data,
     loading,
@@ -68,38 +70,38 @@ export function SessionEndWindow() {
       <div className="session-end__card">
         <WindowHeader
           className="session-end__header"
-          title="Sessão Finalizada"
+          title={t("session_end_session_ended")}
           icon={<CheckIcon size={18} />}
           onStartDrag={startDrag}
           onClose={() => void close()}
-          closeLabel="Fechar resumo"
-          dragLabel="Mover resumo"
+          closeLabel={t("session_end_close_summary")}
+          dragLabel={t("session_end_move_summary")}
         />
 
         {loading ? (
-          <p className="session-end__loading">Carregando sessão…</p>
+          <p className="session-end__loading">{t("session_end_loading_session")}</p>
         ) : !data ? (
-          <p className="session-end__loading">Carregando sessão…</p>
+          <p className="session-end__loading">{t("session_end_loading_session")}</p>
         ) : (
           <>
             <div className="session-end__stats">
               <article className="session-end__stat">
                 <span className="session-end__stat-label">
                   <span className="session-end__dot" aria-hidden="true" />
-                  Duração total
+                  {t("session_end_total_duration")}
                 </span>
                 <strong className="session-end__stat-value">
-                  {formatDuration(data.duration_ms)}
+                  {formatDurationText(data.duration_ms, t)}
                 </strong>
               </article>
 
               <article className="session-end__stat">
                 <span className="session-end__stat-label">
                   <span className="session-end__dot" aria-hidden="true" />
-                  Mídia
+                  {t("session_end_media")}
                 </span>
                 <strong className="session-end__stat-value">
-                  {mediaLabel(data.recording)}
+                  {mediaLabelText(data.recording, t)}
                 </strong>
                 {finalizing ? (
                   <div className="session-end__progress" role="status">
@@ -113,7 +115,7 @@ export function SessionEndWindow() {
                       />
                     </div>
                     <span className="session-end__progress-label">
-                      Finalizando gravação… {percent}%
+                      {t("session_end_finalizing_recording_percent", { percent })}
                     </span>
                   </div>
                 ) : null}
@@ -123,10 +125,13 @@ export function SessionEndWindow() {
             <div className="session-end__items">
               <span className="session-end__items-label">
                 <span className="session-end__dot" aria-hidden="true" />
-                Itens processados
+                {t("session_end_processed_items")}
               </span>
               <span className="session-end__items-value">
-                {data.transcriptions} falas · {data.suggestions} sugestões IA
+                {t("session_end_transcriptions_utterances_suggestions_ai_suggestions", {
+                  transcriptions: data.transcriptions,
+                  suggestions: data.suggestions,
+                })}
               </span>
             </div>
 
@@ -137,13 +142,13 @@ export function SessionEndWindow() {
                 disabled={!hasRecording || busy}
                 title={
                   hasRecording
-                    ? "Abrir a pasta da gravação"
-                    : "Esta sessão não tem gravação"
+                    ? t("session_end_open_recording_folder")
+                    : t("session_end_session_no_recording")
                 }
                 onClick={() => void openFolder()}
               >
                 <FolderIcon size={16} />
-                Abrir local
+                {t("session_end_open_location")}
               </button>
               <button
                 type="button"
@@ -152,7 +157,7 @@ export function SessionEndWindow() {
                 onClick={() => void download()}
               >
                 <DownloadIcon size={16} />
-                Baixar Sessão
+                {t("session_end_download_session")}
               </button>
             </div>
 
@@ -161,7 +166,7 @@ export function SessionEndWindow() {
             ) : null}
             {error || failed ? (
               <p className="session-end__error">
-                {error ?? progress?.error ?? "Falha na gravação."}
+                {error ?? progress?.error ?? t("session_end_recording_failed")}
               </p>
             ) : null}
 
@@ -180,7 +185,9 @@ export function SessionEndWindow() {
                 }}
               >
                 <TrashIcon size={14} />
-                {confirmDiscard ? "Confirmar descarte?" : "Descartar gravação"}
+                {confirmDiscard
+                  ? t("session_end_confirm_discard")
+                  : t("session_end_discard_recording")}
               </button>
               <button
                 type="button"
@@ -188,7 +195,7 @@ export function SessionEndWindow() {
                 disabled={busy}
                 onClick={() => void newSession()}
               >
-                Nova Sessão
+                {t("session_end_new_session")}
               </button>
             </footer>
           </>

@@ -7,11 +7,12 @@ import {
 } from "../../core/domain/chat";
 import {
   formatMessageClock,
-  speakerLabel,
   type Speaker,
   type TranscriptSegment,
 } from "../../core/domain/transcript";
 import type { TranslationMap } from "../../core/application/useTranslation";
+import { useTranslation } from "../../core/l10n";
+import { speakerLabelKey } from "../../core/l10n/labels";
 import { ChatBubble as Bubble } from "./ChatBubble";
 
 /** Dados de uma fala entregues à ação de IA (BR-041). */
@@ -62,7 +63,7 @@ const NEAR_BOTTOM_PX = 40;
 export const ChatView = memo(function ChatView({
   bubbles,
   pending = [],
-  emptyLabel = "Nenhuma fala ainda…",
+  emptyLabel,
   sessionStartedAtMs,
   onAskAi,
   askingAiId,
@@ -72,6 +73,7 @@ export const ChatView = memo(function ChatView({
   translationTarget,
   onTranslate,
 }: ChatViewProps) {
+  const { t } = useTranslation();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const [copied, setCopied] = useState<string | null>(null);
@@ -110,13 +112,13 @@ export const ChatView = memo(function ChatView({
   return (
     <div className="chat" data-interactive>
       <div className="chat__list" ref={scrollerRef} onScroll={onScroll}>
-        {empty && <p className="chat__empty">{emptyLabel}</p>}
+        {empty && <p className="chat__empty">{emptyLabel ?? t("chat_no_speech_yet")}</p>}
         {visible.map((bubble) =>
           bubble.kind === "speech" ? (
             <Bubble
               key={`speech-${bubble.id}`}
               text={bubble.text}
-              label={speakerLabel(bubble.speaker)}
+              label={t(speakerLabelKey(bubble.speaker))}
               side={bubble.speaker === "ME" ? "me" : "they"}
               timeLabel={
                 bubble.continues
@@ -153,7 +155,11 @@ export const ChatView = memo(function ChatView({
             <Bubble
               key={`suggestion-${bubble.id}`}
               text={bubble.text}
-              label={bubble.mode_name ? `Sugestão · ${bubble.mode_name}` : "Sugestão da IA"}
+              label={
+                bubble.mode_name
+                  ? t("chat_suggestion_mode", { mode: bubble.mode_name })
+                  : t("chat_ai_suggestion")
+              }
               side="ai"
               timeLabel={formatMessageClock(bubble.at_ms, sessionStartedAtMs)}
               markdown
@@ -170,7 +176,7 @@ export const ChatView = memo(function ChatView({
             <Bubble
               key={`pending-${segment.id}#${index}`}
               text={part}
-              label={speakerLabel(segment.speaker)}
+              label={t(speakerLabelKey(segment.speaker))}
               side={segment.speaker === "ME" ? "me" : "they"}
               pending
               streaming={index === parts.length - 1}

@@ -94,6 +94,28 @@ Convenções específicas:
   produção (permitido em testes/build).
 - Nunca logar segredos/áudio. Chaves vivem só na porta `SecretStore`.
 
+## 5.1 Localização (l10n) do frontend
+
+- **R18. Texto visível é sempre traduzido.** É proibido hardcodar copy de UI em
+  JSX, atributos (`title`, `aria-label`, `placeholder`, `alt`) ou mensagens de
+  status. Use `t("chave_em_snake_case")` do `src/core/l10n` (ou um helper que
+  devolva `TranslationKey`, ex.: `speakerLabelKey`).
+- **R19. Chaves semânticas em `snake_case`.** A chave descreve o papel da
+  mensagem (`settings_save_changes`, `overlay_start_listening`), nunca o texto
+  nem um número. Toda chave existe em **pt** e **en**, com os mesmos
+  placeholders (`{count}`, `{name}`); o teste de catálogo valida paridade.
+- **R20. Dois idiomas, um store.** O idioma vem de `Settings.ui_language`
+  (BR-085) e é aplicado pelo store global (`useTranslation`); não crie estado de
+  idioma local por componente. Texto de dados (nomes de agentes, transcrições,
+  respostas do LLM, títulos de sessão) **não** passa por `t`.
+- **R21. Detecção só na primeira inicialização.** O frontend não detecta idioma
+  sozinho: o core resolve o locale do sistema uma vez (`UiLanguageMigration`) e
+  persiste. Depois disso, só a escolha explícita do usuário troca o idioma.
+- **R22. Teste de regressão de UI.** Componente novo/alterado com copy deve ter
+  teste no idioma de origem e, quando o fluxo for global, um caso em inglês
+  provando que a troca re-renderiza. Nunca deixe texto solto "passar" no teste
+  só porque o português coincide com o fallback (R16).
+
 ## 6. Processo (spec-driven)
 
 - Toda mudança relevante começa em `prds/`: PRD → arquitetura → task.

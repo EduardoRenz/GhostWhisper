@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getSettings } from "../../adapters/ipc/settings";
 import { subscribe } from "../../adapters/ipc/events";
 import { defaultSettings, type Settings } from "../domain/settings";
+import { setUiLanguage } from "../l10n";
 
 /** Carrega as configurações (para idiomas/flag de tradução). */
 export function useSettings(): {
@@ -14,6 +15,8 @@ export function useSettings(): {
     const loaded = await getSettings();
     if (loaded) {
       setSettings(loaded);
+      // Cada janela é um webview: o idioma persistido alimenta o store local.
+      setUiLanguage(loaded.ui_language);
     }
   }, []);
 

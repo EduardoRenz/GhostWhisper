@@ -191,7 +191,7 @@ describe("ChatView", () => {
     };
     const { rerender } = render(<ChatView {...props} translations={{}} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Traduzir para en" }));
+    fireEvent.click(screen.getByRole("button", { name: "Traduzir para Inglês" }));
     expect(onTranslate).toHaveBeenCalledWith({ id: "a", text: "bom dia" });
 
     rerender(<ChatView {...props} translations={{ a: "good morning" }} />);

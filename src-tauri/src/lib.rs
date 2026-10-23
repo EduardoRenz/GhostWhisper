@@ -279,6 +279,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     };
     use adapters::speech::whisper_model_store::FileModelStore;
     use adapters::speech::whisper_speech_engine_factory::WhisperSpeechEngineFactory;
+    use adapters::system::env_locale_source::EnvLocaleSource;
     use adapters::system::system_clock::SystemClock;
     use adapters::system::vulkan_gpu_probe::VulkanGpuProbe;
     use adapters::system::x11_pointer_source::{NullPointerSource, X11PointerSource};
@@ -300,6 +301,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::journal_repository::JournalRepository;
     use ports::llm_controller::LlmController;
     use ports::llm_provider_factory::ChatBotProviderFactory;
+    use ports::locale_source::LocaleSource;
     use ports::manual_suggestion_context::ManualSuggestionContextStore;
     use ports::meeting_summaries_repository::MeetingSummariesRepository;
     use ports::model_store::ModelStore;
@@ -374,6 +376,26 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     // Configurações primeiro: o estágio de ganho do microfone as lê na captura.
     let settings: Arc<dyn SettingsStore> =
         Arc::new(FileSettingsStore::new(data_dir.join("settings.json")));
+
+    // Idioma da interface (BR-085): resolve o padrão do sistema **uma vez** e
+    // persiste. Depois disso, a escolha do usuário nunca é sobrescrita.
+    let locales: Arc<dyn LocaleSource> = Arc::new(EnvLocaleSource);
+    match application::ui_language_migration::UiLanguageMigration::new(
+        Arc::clone(&settings),
+        locales,
+    )
+    .migrate()
+    {
+        Ok(outcome) => {
+            if outcome.resolved {
+                tracing::info!(
+                    language = outcome.language.as_deref().unwrap_or("?"),
+                    "idioma da interface resolvido pelo sistema"
+                );
+            }
+        }
+        Err(error) => tracing::warn!("falha ao resolver o idioma da interface: {error}"),
+    }
 
     // Captura: o microfone passa pelo estágio de ganho (BR-018) e por um ponto
     // de escuta para o monitor atrasado (task 15); o áudio do sistema (loopback)

@@ -1,8 +1,9 @@
 import type { ManualSuggestionContext } from "../../core/domain/assistant";
 import {
   formatMessageClock,
-  speakerLabel,
 } from "../../core/domain/transcript";
+import { useTranslation } from "../../core/l10n";
+import { speakerLabelKey } from "../../core/l10n/labels";
 import { SparkleIcon } from "../../components/icons";
 
 interface ManualContextCardProps {
@@ -31,19 +32,20 @@ export function ManualContextCard({
   onGenerate,
   onClear,
 }: ManualContextCardProps) {
+  const { t } = useTranslation();
   return (
     <section className="manual-context" data-interactive>
       <div className="manual-context__head">
         <span className="manual-context__tag">
           <SparkleIcon size={11} />
-          Contexto manual
+          {t("suggestions_manual_context")}
         </span>
         <button
           type="button"
           className="manual-context__clear"
           onClick={onClear}
-          title="Remover contexto"
-          aria-label="Remover contexto manual"
+          title={t("suggestions_remove_context")}
+          aria-label={t("suggestions_remove_manual_context")}
         >
           ✕
         </button>
@@ -53,7 +55,7 @@ export function ManualContextCard({
         <span
           className={`manual-context__speaker manual-context__speaker--${context.speaker.toLowerCase()}`}
         >
-          {speakerLabel(context.speaker)}
+          {t(speakerLabelKey(context.speaker))}
         </span>
         <span className="manual-context__time">
           {formatMessageClock(context.at_ms, startedAtMs)}
@@ -63,8 +65,8 @@ export function ManualContextCard({
       <blockquote className="manual-context__quote">{context.text}</blockquote>
 
       <p className="manual-context__hint">
-        A sugestão manual tem prioridade; as automáticas vão para o histórico
-        enquanto este contexto estiver ativo.
+        {t("suggestions_manual_suggestion_priority_automatic_ones_go",
+        )}
       </p>
 
       <button
@@ -72,15 +74,17 @@ export function ManualContextCard({
         className="manual-context__generate"
         disabled={generating}
         onClick={onGenerate}
-        title="Gerar uma sugestão a partir desta mensagem"
+        title={t("suggestions_generate_suggestion_message")}
       >
         <SparkleIcon size={12} />
-        {generating ? "Aguardando a sugestão em andamento…" : "Gerar sugestão manual"}
+        {generating
+          ? t("suggestions_waiting_current_suggestion")
+          : t("suggestions_generate_manual_suggestion")}
       </button>
 
       {generated && (
         <p className="manual-context__done" role="status">
-          Sugestão manual gerada.
+          {t("suggestions_manual_suggestion_generated")}
         </p>
       )}
     </section>

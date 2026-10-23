@@ -7,21 +7,24 @@ import { estimateSizePerHour } from "../../core/domain/recording";
 import type { RecordingCapabilities } from "../../core/domain/recording";
 import {
   RECORDING_AUDIO_KBPS_STEPS,
-  RECORDING_CONTAINER_LABELS,
   RECORDING_CONTAINERS,
-  RECORDING_ENCODER_LABELS,
   RECORDING_ENCODERS,
   RECORDING_FPS_STEPS,
-  RECORDING_MODE_LABELS,
   RECORDING_MODES,
   RECORDING_QUALITIES,
-  RECORDING_QUALITY_LABELS,
-  RECORDING_RESOLUTION_LABELS,
   RECORDING_RESOLUTIONS,
-  RECORDING_TARGET_LABELS,
   RECORDING_TARGETS,
   type Settings,
 } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
+import {
+  recordingContainerKey,
+  recordingEncoderKey,
+  recordingModeKey,
+  recordingQualityKey,
+  recordingResolutionKey,
+  recordingTargetKey,
+} from "../../core/l10n/labels";
 
 interface RecordingSettingsProps {
   settings: Settings;
@@ -35,6 +38,7 @@ interface RecordingSettingsProps {
  * padrões vêm da máquina de referência: 1080p nativo · 8 fps · CRF 27.
  */
 export function RecordingSettings({ settings, update }: RecordingSettingsProps) {
+  const { t } = useTranslation();
   const [capabilities, setCapabilities] =
     useState<RecordingCapabilities | null>(null);
 
@@ -58,10 +62,12 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
   const estimate = estimateSizePerHour(settings);
   const isVideo = settings.recording_mode === "video";
   const encoderLabel = capabilities
-    ? RECORDING_ENCODER_LABELS[
-        capabilities.encoder === "vaapi" ? "vaapi" : "x264"
-      ]
-    : "detectando…";
+    ? t(
+        recordingEncoderKey(
+          capabilities.encoder === "vaapi" ? "vaapi" : "x264",
+        ),
+      )
+    : t("recording_settings_detecting");
   // Pediu VAAPI, mas o build/dispositivo não tem: cai para x264.
   const encoderFallback =
     settings.recording_encoder === "vaapi" && capabilities?.encoder === "x264";
@@ -79,25 +85,28 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
   return (
     <section className="settings__recording">
       <header className="settings__section-header">
-        <h2 className="settings__section-title">Gravação da sessão</h2>
+        <h2 className="settings__section-title">
+          {t("recording_settings_session_recording")}
+        </h2>
         <span className="settings__section-note">
-          Aplica-se à próxima sessão
+          {t("recording_settings_applies_next_session")}
         </span>
       </header>
 
       <div className="settings__grid">
         <article className="settings__card">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">O que gravar</h3>
+            <h3 className="settings__card-title">{t("recording_settings_what_record")}</h3>
           </header>
           <p className="settings__card-description">
-            A gravação acompanha a sessão: pausa e retoma junto com ela.
+            {t("recording_settings_recording_follows_session_pauses_resumes",
+            )}
           </p>
 
           <div
             className="settings__segmented"
             role="group"
-            aria-label="O que gravar"
+            aria-label={t("recording_settings_what_record")}
           >
             {RECORDING_MODES.map((mode) => (
               <button
@@ -107,17 +116,17 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
                 aria-pressed={settings.recording_mode === mode}
                 onClick={() => update("recording_mode", mode)}
               >
-                {RECORDING_MODE_LABELS[mode]}
+                {t(recordingModeKey(mode))}
               </button>
             ))}
           </div>
 
           <div className="settings__field settings__field--row">
-            <span>Gravar ao iniciar a sessão</span>
+            <span>{t("recording_settings_record_session_starts")}</span>
             <label className="settings__toggle">
               <input
                 type="checkbox"
-                aria-label="Gravar ao iniciar a sessão"
+                aria-label={t("recording_settings_record_session_starts")}
                 checked={settings.recording_auto_start}
                 onChange={(event) =>
                   update("recording_auto_start", event.target.checked)
@@ -130,19 +139,19 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
 
         <article className="settings__card">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Alvo da captura</h3>
+            <h3 className="settings__card-title">{t("recording_settings_capture_target")}</h3>
             <span className="settings__badge">
-              {RECORDING_TARGET_LABELS[settings.recording_target]}
+              {t(recordingTargetKey(settings.recording_target))}
             </span>
           </header>
           <p className="settings__card-description">
-            A janela da reunião não inclui o overlay do GhostWhisper. A tela
-            inteira inclui.
+            {t("recording_settings_meeting_window_not_include_ghostwhisper_overlay",
+            )}
           </p>
           <div
             className="settings__segmented"
             role="group"
-            aria-label="Alvo da captura"
+            aria-label={t("recording_settings_capture_target")}
           >
             {RECORDING_TARGETS.map((target) => (
               <button
@@ -152,17 +161,17 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
                 aria-pressed={settings.recording_target === target}
                 onClick={() => update("recording_target", target)}
               >
-                {RECORDING_TARGET_LABELS[target]}
+                {t(recordingTargetKey(target))}
               </button>
             ))}
           </div>
 
           <div className="settings__field settings__field--row">
-            <span>Seguir a janela ativa</span>
+            <span>{t("recording_settings_follow_active_window")}</span>
             <label className="settings__toggle">
               <input
                 type="checkbox"
-                aria-label="Seguir a janela ativa durante a gravação"
+                aria-label={t("recording_settings_follow_active_window_while_recording")}
                 checked={settings.recording_follow_active}
                 onChange={(event) =>
                   update("recording_follow_active", event.target.checked)
@@ -172,35 +181,46 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
             </label>
           </div>
           <p className="settings__card-description">
-            Troca o alvo quando você muda o foco (1 s de espera). O vídeo pode
-            ter recortes entre janelas de tamanhos diferentes.
+            {t("recording_settings_switches_target_focus_changes_1_s",
+            )}
           </p>
         </article>
 
         {isVideo ? (
           <article className="settings__card">
             <header className="settings__card-header">
-              <h3 className="settings__card-title">Vídeo</h3>
+              <h3 className="settings__card-title">{t("recording_settings_video")}</h3>
               <span className="settings__badge">
-                {RECORDING_RESOLUTION_LABELS[settings.recording_resolution]}
+                {t(recordingResolutionKey(settings.recording_resolution))}
               </span>
             </header>
             <p className="settings__card-description">
-              Resolução nativa preserva a leitura de texto; o FPS define o custo.
+              {t("recording_settings_native_resolution_preserves_text_legibility_fps",
+              )}
             </p>
 
             <div className="settings__recording-field">
-              <span className="settings__recording-label">Resolução</span>
-              <div className="settings__segmented" role="group" aria-label="Resolução">
+              <span className="settings__recording-label">
+                {t("recording_settings_resolution")}
+              </span>
+              <div
+                className="settings__segmented"
+                role="group"
+                aria-label={t("recording_settings_resolution")}
+              >
                 {RECORDING_RESOLUTIONS.map((resolution) => (
                   <button
                     key={resolution}
                     type="button"
-                    className={segmentClass(settings.recording_resolution === resolution)}
-                    aria-pressed={settings.recording_resolution === resolution}
+                    className={segmentClass(
+                      settings.recording_resolution === resolution,
+                    )}
+                    aria-pressed={
+                      settings.recording_resolution === resolution
+                    }
                     onClick={() => update("recording_resolution", resolution)}
                   >
-                    {RECORDING_RESOLUTION_LABELS[resolution]}
+                    {t(recordingResolutionKey(resolution))}
                   </button>
                 ))}
               </div>
@@ -208,9 +228,14 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
 
             <div className="settings__recording-field">
               <span className="settings__recording-label">
-                FPS <span className="settings__badge">{settings.recording_fps}</span>
+                {t("recording_fps_label")}{" "}
+                <span className="settings__badge">{settings.recording_fps}</span>
               </span>
-              <div className="settings__segmented" role="group" aria-label="FPS">
+              <div
+                className="settings__segmented"
+                role="group"
+                aria-label={t("recording_fps_label")}
+              >
                 {RECORDING_FPS_STEPS.map((fps) => (
                   <button
                     key={fps}
@@ -226,34 +251,50 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
             </div>
 
             <div className="settings__recording-field">
-              <span className="settings__recording-label">Qualidade</span>
-              <div className="settings__segmented" role="group" aria-label="Qualidade">
+              <span className="settings__recording-label">
+                {t("recording_settings_quality")}
+              </span>
+              <div
+                className="settings__segmented"
+                role="group"
+                aria-label={t("recording_settings_quality")}
+              >
                 {RECORDING_QUALITIES.map((quality) => (
                   <button
                     key={quality}
                     type="button"
-                    className={segmentClass(settings.recording_quality === quality)}
+                    className={segmentClass(
+                      settings.recording_quality === quality,
+                    )}
                     aria-pressed={settings.recording_quality === quality}
                     onClick={() => update("recording_quality", quality)}
                   >
-                    {RECORDING_QUALITY_LABELS[quality]}
+                    {t(recordingQualityKey(quality))}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="settings__recording-field">
-              <span className="settings__recording-label">Encoder</span>
-              <div className="settings__segmented" role="group" aria-label="Encoder">
+              <span className="settings__recording-label">
+                {t("recording_encoder_label")}
+              </span>
+              <div
+                className="settings__segmented"
+                role="group"
+                aria-label={t("recording_encoder_label")}
+              >
                 {RECORDING_ENCODERS.map((encoder) => (
                   <button
                     key={encoder}
                     type="button"
-                    className={segmentClass(settings.recording_encoder === encoder)}
+                    className={segmentClass(
+                      settings.recording_encoder === encoder,
+                    )}
                     aria-pressed={settings.recording_encoder === encoder}
                     onClick={() => update("recording_encoder", encoder)}
                   >
-                    {RECORDING_ENCODER_LABELS[encoder]}
+                    {t(recordingEncoderKey(encoder))}
                   </button>
                 ))}
               </div>
@@ -263,22 +304,31 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
 
         <article className="settings__card">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Áudio</h3>
+            <h3 className="settings__card-title">{t("recording_settings_audio")}</h3>
             <span className="settings__badge">
-              {isVideo ? `${settings.recording_audio_kbps} kbps` : "FLAC"}
+              {isVideo
+                ? `${settings.recording_audio_kbps} kbps`
+                : t("media_flac_label")}
             </span>
           </header>
           <p className="settings__card-description">
-            Microfone e áudio do sistema mixados; sem o ganho/gate do ASR.
+            {t("recording_settings_microphone_system_audio_mixed_without_asr",
+            )}
           </p>
 
           {isVideo ? (
-            <div className="settings__segmented" role="group" aria-label="Bitrate do áudio">
+            <div
+              className="settings__segmented"
+              role="group"
+              aria-label={t("recording_settings_audio_bitrate")}
+            >
               {RECORDING_AUDIO_KBPS_STEPS.map((kbps) => (
                 <button
                   key={kbps}
                   type="button"
-                  className={segmentClass(settings.recording_audio_kbps === kbps)}
+                  className={segmentClass(
+                    settings.recording_audio_kbps === kbps,
+                  )}
                   aria-pressed={settings.recording_audio_kbps === kbps}
                   onClick={() => update("recording_audio_kbps", kbps)}
                 >
@@ -288,39 +338,45 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
             </div>
           ) : (
             <p className="settings__card-description">
-              FLAC sem perda, mono 48 kHz (≈ 117 MB por hora).
+              {t("recording_settings_lossless_flac_mono_48_khz_117")}
             </p>
           )}
         </article>
 
         <article className="settings__card">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Arquivo</h3>
+            <h3 className="settings__card-title">{t("recording_settings_file")}</h3>
             <span className="settings__badge">
-              {RECORDING_CONTAINER_LABELS[settings.recording_container]}
+              {t(recordingContainerKey(settings.recording_container))}
             </span>
           </header>
 
-          <div className="settings__segmented" role="group" aria-label="Container">
+          <div
+            className="settings__segmented"
+            role="group"
+            aria-label={t("recording_container_label")}
+          >
             {RECORDING_CONTAINERS.map((container) => (
               <button
                 key={container}
                 type="button"
-                className={segmentClass(settings.recording_container === container)}
+                className={segmentClass(
+                  settings.recording_container === container,
+                )}
                 aria-pressed={settings.recording_container === container}
                 onClick={() => update("recording_container", container)}
               >
-                {RECORDING_CONTAINER_LABELS[container]}
+                {t(recordingContainerKey(container))}
               </button>
             ))}
           </div>
 
           <label className="settings__field">
-            Pasta de destino
+            {t("recording_settings_destination_folder")}
             <input
               type="text"
               value={settings.recording_dir ?? ""}
-              placeholder="Padrão: ~/Vídeos/GhostWhisper"
+              placeholder={t("recording_settings_default_videos_ghostwhisper")}
               onChange={(event) =>
                 update(
                   "recording_dir",
@@ -334,15 +390,15 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
             className="settings__segment"
             onClick={() => void pickFolder()}
           >
-            Escolher pasta…
+            {t("recording_settings_choose_folder")}
           </button>
 
           <div className="settings__field settings__field--row">
-            <span>Manter os segmentos</span>
+            <span>{t("recording_settings_keep_segments")}</span>
             <label className="settings__toggle">
               <input
                 type="checkbox"
-                aria-label="Manter os segmentos"
+                aria-label={t("recording_settings_keep_segments")}
                 checked={settings.recording_keep_segments}
                 onChange={(event) =>
                   update("recording_keep_segments", event.target.checked)
@@ -355,22 +411,23 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
 
         <article className="settings__card settings__card--hud">
           <header className="settings__card-header">
-            <h3 className="settings__card-title">Custo estimado</h3>
+            <h3 className="settings__card-title">{t("recording_settings_estimated_cost")}</h3>
             <span className="settings__badge">
               {estimate.min}–{estimate.max} MB/h
             </span>
           </header>
           <p className="settings__card-description">
-            Encoder detectado: <strong>{encoderLabel}</strong>.
+            {t("recording_settings_detected_encoder_encoder", { encoder: encoderLabel })}
           </p>
           {encoderFallback ? (
             <p className="settings__card-description settings__card-description--warn">
-              VAAPI indisponível neste ambiente; a gravação usará x264.
+              {t("recording_settings_vaapi_unavailable_environment_recording_use_x264")}
             </p>
           ) : null}
           {capabilities && !capabilities.available ? (
             <p className="settings__card-description settings__card-description--warn">
-              {capabilities.reason ?? "Gravação indisponível neste ambiente."}
+              {capabilities.reason ??
+                t("recording_settings_recording_unavailable_environment")}
             </p>
           ) : null}
         </article>

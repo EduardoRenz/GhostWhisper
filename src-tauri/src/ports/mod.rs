@@ -20,6 +20,7 @@ pub mod gpu_probe;
 pub mod journal_repository;
 pub mod llm_controller;
 pub mod llm_provider_factory;
+pub mod locale_source;
 pub mod manual_suggestion_context;
 pub mod meeting_summaries_repository;
 pub mod model_store;

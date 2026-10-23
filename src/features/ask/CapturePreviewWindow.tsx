@@ -3,6 +3,7 @@ import { invokeSafe } from "../../adapters/ipc/client";
 import { captureClear, capturePending } from "../../adapters/ipc/screen";
 import { subscribe } from "../../adapters/ipc/events";
 import { CloseIcon } from "../../components/icons";
+import { useTranslation } from "../../core/l10n";
 
 /**
  * Prévia do print capturado (janela `capture`, BR-055).
@@ -12,6 +13,7 @@ import { CloseIcon } from "../../components/icons";
  * anexado até o usuário confirmar a pergunta na barra de pesquisa.
  */
 export function CapturePreviewWindow() {
+  const { t } = useTranslation();
   const [preview, setPreview] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -64,18 +66,22 @@ export function CapturePreviewWindow() {
   return (
     <div className="capture-preview" data-interactive>
       <div className="capture-preview__card">
-        <img className="capture-preview__image" src={preview} alt="Print capturado" />
+        <img
+          className="capture-preview__image"
+          src={preview}
+          alt={t("capture_captured_screenshot")}
+        />
         <button
           type="button"
           className="capture-preview__remove"
-          title="Remover o print"
-          aria-label="Remover o print"
+          title={t("capture_remove_screenshot")}
+          aria-label={t("capture_remove_screenshot")}
           onClick={() => void captureClear()}
         >
           <CloseIcon size={14} />
         </button>
       </div>
-      <p className="capture-preview__hint">Anexado à pergunta</p>
+      <p className="capture-preview__hint">{t("capture_attached_question")}</p>
     </div>
   );
 }

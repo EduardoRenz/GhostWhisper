@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { DragHandle } from "./DragHandle";
 import { CloseIcon } from "./icons";
+import { useTranslation } from "../core/l10n";
 
 interface WindowHeaderProps {
   /** Título exibido no cabeçalho. */
@@ -43,12 +44,15 @@ export function WindowHeader({
   hint,
   onStartDrag,
   onClose,
-  closeLabel = "Fechar",
-  dragLabel = "Mover janela",
+  closeLabel,
+  dragLabel,
   headingLevel = "h2",
   className,
 }: WindowHeaderProps) {
+  const { t } = useTranslation();
   const Heading = headingLevel;
+  const resolvedCloseLabel = closeLabel ?? t("common_close");
+  const resolvedDragLabel = dragLabel ?? t("common_move_window");
 
   return (
     <header
@@ -56,7 +60,7 @@ export function WindowHeader({
     >
       <DragHandle
         className="window-header__drag"
-        label={dragLabel}
+        label={resolvedDragLabel}
         onStartDrag={onStartDrag}
       />
 
@@ -82,8 +86,8 @@ export function WindowHeader({
       <button
         type="button"
         className="window-header__close"
-        aria-label={closeLabel}
-        title={closeLabel}
+        aria-label={resolvedCloseLabel}
+        title={resolvedCloseLabel}
         onClick={onClose}
       >
         <CloseIcon size={16} />

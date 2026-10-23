@@ -9,11 +9,12 @@ import { summaryTopic } from "../../core/domain/assistant";
 import { formatClock } from "../../core/domain/transcript";
 import { MarkdownView } from "../../components/MarkdownView";
 import { StatusPill } from "../../components/StatusPill";
+import { useTranslation } from "../../core/l10n";
 
 /** Formata o relógio de parede de uma versão do resumo. */
-function formatUpdatedAt(ms: number): string {
+function formatUpdatedAt(ms: number, locale: string): string {
   try {
-    return new Date(ms).toLocaleTimeString("pt-BR");
+    return new Date(ms).toLocaleTimeString(locale);
   } catch {
     return "";
   }
@@ -34,6 +35,7 @@ interface SummaryViewProps {
  * (CA-05.2); "Atualizar agora" funciona em qualquer aba.
  */
 export function SummaryView({ opened, active }: SummaryViewProps) {
+  const { t, locale } = useTranslation();
   const { state } = useSessionState();
   const { settings } = useSettings();
   const [auto, setAuto] = useState(true);
@@ -100,17 +102,19 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
           className="panel__button"
           disabled={loading || !state.session_id}
           onClick={() => void regenerate()}
-          title="Regera o resumo do zero"
+          title={t("panel_regenerates_summary_scratch")}
         >
-          {loading ? "Gerando…" : "Atualizar"}
+          {loading ? t("panel_generating") : t("panel_refresh")}
         </button>
         <button
           type="button"
           className={`panel__toggle${auto ? " panel__toggle--on" : ""}`}
           onClick={() => setAuto((previous) => !previous)}
-          title="Resumo automático enquanto a aba estiver visível"
+          title={t("panel_automatic_summary_while_tab_visible")}
         >
-          {auto ? `Auto ${settings.summary_interval_secs}s` : "Auto off"}
+          {auto
+            ? t("panel_auto_seconds_s", { seconds: settings.summary_interval_secs })
+            : t("panel_auto_off")}
         </button>
         <button
           type="button"
@@ -118,7 +122,7 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
           disabled={!displayed}
           onClick={() => void onCopy()}
         >
-          {copied ? "Copiado" : "Copiar"}
+          {copied ? t("panel_copied") : t("panel_copy")}
         </button>
       </div>
 
@@ -126,21 +130,25 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
         <StatusPill
           label={
             loading
-              ? "Gerando resumo completo…"
-              : "Processando o restante do resumo…"
+              ? t("panel_generating_full_summary")
+              : t("panel_processing_rest_summary")
           }
         />
       )}
 
       {viewing && (
         <div className="summary-view__banner">
-          <span>Vendo versão de {formatUpdatedAt(viewing.updated_at_ms)}</span>
+          <span>
+            {t("panel_viewing_version_time", {
+              time: formatUpdatedAt(viewing.updated_at_ms, locale),
+            })}
+          </span>
           <button
             type="button"
             className="panel__button panel__button--small"
             onClick={showLatest}
           >
-            Voltar ao atual
+            {t("panel_back_current")}
           </button>
         </div>
       )}
@@ -162,12 +170,12 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
               className="panel__button"
               onClick={() => void openSettingsWindow()}
             >
-              Abrir configurações
+              {t("panel_open_settings")}
             </button>
           </div>
         ) : !state.session_id ? (
           <p className="panel__empty">
-            Inicie uma escuta para gerar o resumo da conversa.
+            {t("panel_start_listening_generate_conversation_summary")}
           </p>
         ) : displayed ? (
           <>
@@ -179,7 +187,11 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
             <MarkdownView markdown={displayed.markdown} />
             {history.length > 1 && (
               <details className="panel__history">
-                <summary>Resumos anteriores ({history.length - 1})</summary>
+                <summary>
+                  {t("panel_previous_summaries_count", {
+                    count: history.length - 1,
+                  })}
+                </summary>
                 <ul>
                   {history.slice(1).map((version) => (
                     <li key={version.updated_at_ms}>
@@ -193,13 +205,17 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
                         onClick={() => select(version)}
                       >
                         <span className="panel__history-time">
-                          {formatUpdatedAt(version.updated_at_ms)}
+                          {formatUpdatedAt(version.updated_at_ms, locale)}
                         </span>
                         <span className="panel__history-text">
-                          {summaryTopic(version)}
+                          {summaryTopic(version) === "Resumo sem título"
+                            ? t("summary_untitled")
+                            : summaryTopic(version)}
                         </span>
                         <span className="panel__history-meta">
-                          cobre até {formatClock(version.summarized_until_ms)}
+                          {t("panel_covers_up_time", {
+                            time: formatClock(version.summarized_until_ms),
+                          })}
                         </span>
                       </button>
                     </li>
@@ -210,28 +226,30 @@ export function SummaryView({ opened, active }: SummaryViewProps) {
           </>
         ) : loading ? (
           <p className="panel__empty">
-            O texto completo está sendo gerado e aparece aqui assim que ficar
-            pronto.
+            {t("panel_full_text_being_generated_appear_here",
+            )}
           </p>
         ) : (
           <p className="panel__empty">
-            Ainda não há fala suficiente para resumir.
+            {t("panel_there_not_enough_speech_summarize_yet")}
           </p>
         )}
       </div>
 
       {!viewing && summary && (
         <div className="summary-view__meta">
-          {hasMore ? "Resumo parcial" : "Resumo completo"} · atualizado às{" "}
-          {formatUpdatedAt(summary.updated_at_ms)}
+          {hasMore ? t("panel_partial_summary") : t("panel_full_summary")} ·{" "}
+          {t("panel_updated_time", {
+            time: formatUpdatedAt(summary.updated_at_ms, locale),
+          })}
           {summary.summarized_from_ms > 0
-            ? " · resumo a partir do meio da sessão"
+            ? t("panel_summary_middle_session")
             : ""}
           {llmSource && (
             <>
               {" · "}
               {llmSource.label} · {llmSource.model}
-              {llmSource.is_fallback ? " (fallback)" : ""}
+              {llmSource.is_fallback ? ` ${t("panel_fallback")}` : ""}
             </>
           )}
         </div>

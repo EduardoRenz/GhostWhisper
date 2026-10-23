@@ -15,9 +15,45 @@ use crate::error::{GhostWhisperError, Result};
 /// `auto` na origem = detecção; `auto` no destino = **não traduzir**.
 pub const SUPPORTED_LANGUAGES: [&str; 3] = ["auto", "pt", "en"];
 
+/// Idiomas da **interface** (l10n) — não confundir com os idiomas de
+/// transcrição/tradução acima.
+pub const UI_LANGUAGES: [&str; 2] = ["pt", "en"];
+
+/// Idioma de interface padrão quando não há informação de sistema.
+///
+/// O produto nasceu em pt-BR, mas um locale desconhecido cai no inglês para não
+/// expor português a quem não fala a língua.
+pub const DEFAULT_UI_LANGUAGE: &str = "en";
+
 /// Indica se o código de idioma é suportado.
 pub fn is_supported_language(code: &str) -> bool {
     SUPPORTED_LANGUAGES.contains(&code.trim())
+}
+
+/// Indica se o código é um idioma de interface suportado.
+pub fn is_supported_ui_language(code: &str) -> bool {
+    UI_LANGUAGES.contains(&code.trim())
+}
+
+/// Converte um locale do sistema em um idioma de interface.
+///
+/// `pt_BR.UTF-8`/`pt-PT` → `pt`; qualquer outro locale (inclusive desconhecido)
+/// → `en`. A decisão roda **uma vez** na primeira inicialização
+/// (`UiLanguageMigration`); depois vale a escolha persistida.
+pub fn ui_language_from_locale(locale: Option<&str>) -> &'static str {
+    let language = locale
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .split(['.', '_', '@', '-'])
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    if language == "pt" {
+        "pt"
+    } else {
+        DEFAULT_UI_LANGUAGE
+    }
 }
 
 /// Nome legível do idioma, usado nos prompts do LLM.
@@ -138,6 +174,13 @@ pub struct Settings {
     /// Vínculos de fonte por escopo (agente/capacidade) — BR-048.
     #[serde(default)]
     pub ai_routes: Vec<AiRoute>,
+    /// Idioma da interface (`pt` | `en`) — BR-085.
+    ///
+    /// `None` só antes da primeira inicialização: o boot detecta o locale do
+    /// sistema e persiste. Depois disso, a escolha do usuário nunca é
+    /// sobrescrita automaticamente.
+    #[serde(default)]
+    pub ui_language: Option<String>,
     /// Provider legado (configurações anteriores às fontes) — só de leitura.
     ///
     /// É lido uma vez na migração e **nunca** serializado de novo.
@@ -411,6 +454,7 @@ impl Default for Settings {
         Self {
             ai_sources: vec![default_source()],
             ai_routes: Vec::new(),
+            ui_language: None,
             legacy_provider: None,
             legacy_model: None,
             legacy_base_url: None,
@@ -654,6 +698,13 @@ impl Settings {
                 self.target_language
             )));
         }
+        if let Some(language) = self.ui_language.as_deref() {
+            if !is_supported_ui_language(language) {
+                return Err(GhostWhisperError::Config(format!(
+                    "idioma da interface não suportado: {language} (use pt ou en)"
+                )));
+            }
+        }
         validate_custom_modes(&self.custom_assistant_modes)?;
         if !self.selected_mode_exists() {
             return Err(GhostWhisperError::Config(format!(
@@ -741,6 +792,15 @@ impl Settings {
         }
         if !is_supported_language(&self.target_language) {
             self.target_language = "pt".to_string();
+        }
+        // Idioma da interface: valor desconhecido de um arquivo antigo/manual
+        // volta a `None` — o boot detecta o locale do sistema uma vez.
+        if self
+            .ui_language
+            .as_deref()
+            .is_some_and(|language| !is_supported_ui_language(language))
+        {
+            self.ui_language = None;
         }
         self.mic_gain = crate::domain::audio::clamp_mic_gain(self.mic_gain);
         // Prompt de decodificação: sem NUL (o `whisper-rs` entra em pânico) e no teto.
@@ -1115,6 +1175,52 @@ mod tests {
         assert_eq!(dirty.source_language, "auto");
         assert_eq!(dirty.target_language, "pt");
         assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn ui_language_starts_unresolved_and_accepts_pt_en() {
+        let settings = Settings::default();
+        assert_eq!(settings.ui_language, None, "boot resolve uma vez");
+
+        for language in UI_LANGUAGES {
+            let candidate = Settings {
+                ui_language: Some(language.into()),
+                ..Settings::default()
+            };
+            assert!(candidate.validate().is_ok());
+        }
+
+        let invalid = Settings {
+            ui_language: Some("fr".into()),
+            ..Settings::default()
+        };
+        assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn sanitized_clears_an_unknown_ui_language() {
+        let dirty = Settings {
+            ui_language: Some("es".into()),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            dirty.ui_language, None,
+            "valor inválido volta a ser resolvido no boot"
+        );
+        assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
+    fn ui_language_from_locale_maps_supported_locales() {
+        // Português (com região/encoding) vira pt; o resto cai no inglês.
+        for locale in ["pt", "pt-BR", "pt_BR.UTF-8", "pt_PT@euro"] {
+            assert_eq!(ui_language_from_locale(Some(locale)), "pt", "{locale}");
+        }
+        for locale in ["en", "en-US", "es_ES.UTF-8", "fr", "C", "C.UTF-8", ""] {
+            assert_eq!(ui_language_from_locale(Some(locale)), "en", "{locale}");
+        }
+        assert_eq!(ui_language_from_locale(None), "en");
     }
 
     #[test]

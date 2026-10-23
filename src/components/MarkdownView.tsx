@@ -6,6 +6,7 @@ import rehypeHighlight from "rehype-highlight";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isTauriRuntime } from "../adapters/ipc/client";
 import { copyText } from "../core/application/clipboard";
+import { useTranslation } from "../core/l10n";
 import {
   parseSuggestionMeta,
   type SuggestionMeta,
@@ -44,6 +45,7 @@ function CodeBlock({
   meta: SuggestionMeta;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const onCopy = useCallback(async () => {
@@ -68,7 +70,7 @@ function CodeBlock({
           className="md-code__copy"
           onClick={() => void onCopy()}
         >
-          {copied ? "Copiado" : "Copiar"}
+          {copied ? t("common_copied") : t("common_copy")}
         </button>
       </div>
       <pre className="md-code__pre">

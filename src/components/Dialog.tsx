@@ -15,6 +15,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CloseIcon } from "./icons";
+import { useTranslation } from "../core/l10n";
 
 export interface DialogProps {
   /** Abre/fecha o modal (controlado). */
@@ -50,6 +51,7 @@ export function Dialog({
   children,
   footer,
 }: DialogProps) {
+  const { t } = useTranslation();
   const titleId = useId();
   const cardRef = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
@@ -136,8 +138,8 @@ export function Dialog({
           <button
             type="button"
             className="icon-button"
-            aria-label="Fechar"
-            title="Fechar"
+            aria-label={t("common_close")}
+            title={t("common_close")}
             onClick={() => onCloseRef.current()}
           >
             <CloseIcon size={16} />

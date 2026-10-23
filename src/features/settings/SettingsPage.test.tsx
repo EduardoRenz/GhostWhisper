@@ -107,6 +107,15 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tab", { name: /Atalhos/ })).toBeDefined();
   });
 
+  it("abre na aba Geral & HUD (primeira) com o idioma da interface", async () => {
+    render(<SettingsPage />);
+
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(tabs[0]?.textContent).toContain("Geral & HUD");
+    expect(await screen.findByLabelText("Idioma da interface")).toBeDefined();
+  });
+
   it("tem cabeçalho e rodapé com salvamento global", async () => {
     render(<SettingsPage />);
 

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Suggestion } from "../../core/domain/assistant";
-import { formatMessageClock, speakerLabel } from "../../core/domain/transcript";
+import { formatMessageClock } from "../../core/domain/transcript";
 import { suggestionTitle } from "../../core/domain/suggestion";
 import { AgentBadge } from "../../components/AgentBadge";
 import { AgentIcon } from "../../components/AgentIcon";
 import { CopyIcon, HistoryIcon, PinIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import { MarkdownView } from "../../components/MarkdownView";
+import { useTranslation } from "../../core/l10n";
+import { speakerLabelKey } from "../../core/l10n/labels";
 
 interface SuggestionHistoryProps {
   /** Sugestões anteriores (a atual fica no topo). */
@@ -40,6 +42,7 @@ export function SuggestionHistory({
   pinnedId,
   startedAtMs,
 }: SuggestionHistoryProps) {
+  const { t } = useTranslation();
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const expandedRef = useRef<HTMLDivElement>(null);
@@ -67,9 +70,13 @@ export function SuggestionHistory({
         <span className="history__icon">
           <HistoryIcon size={15} />
         </span>
-        <span className="history__title">Histórico de Sugestões da Sessão</span>
+        <span className="history__title">
+          {t("suggestions_session_suggestion_history")}
+        </span>
         <Pill className="history__count">
-          {items.length === 1 ? "1 anterior" : `${items.length} anteriores`}
+          {items.length === 1
+            ? t("suggestions_1_previous")
+            : t("suggestions_count_previous", { count: items.length })}
         </Pill>
         <span className="history__chevron" aria-hidden="true">
           {sectionOpen ? "⌃" : "⌄"}
@@ -102,7 +109,7 @@ export function SuggestionHistory({
                     {item.title?.trim() || suggestionTitle(item.text)}
                   </span>
                   {item.trigger === "manual" && (
-                    <Pill className="history__item-manual">Manual</Pill>
+                    <Pill className="history__item-manual">{t("suggestions_manual")}</Pill>
                   )}
                   <AgentBadge
                     mode={{
@@ -120,8 +127,13 @@ export function SuggestionHistory({
                   <div className="history__item-body" ref={expandedRef}>
                     {item.source && (
                       <p className="suggestion-card__source">
-                        Manual · {speakerLabel(item.source.speaker)}{" "}
-                        {formatMessageClock(item.source.at_ms, startedAtMs)}
+                        {t("suggestions_manual_speaker_time", {
+                          speaker: t(speakerLabelKey(item.source.speaker)),
+                          time: formatMessageClock(
+                            item.source.at_ms,
+                            startedAtMs,
+                          ),
+                        })}
                       </p>
                     )}
                     <MarkdownView markdown={item.text} />
@@ -130,8 +142,8 @@ export function SuggestionHistory({
                         type="button"
                         className="icon-button"
                         onClick={() => onPin(item)}
-                        title="Fixar na conversa"
-                        aria-label="Fixar na conversa"
+                        title={t("suggestions_pin_conversation")}
+                        aria-label={t("suggestions_pin_conversation")}
                       >
                         <PinIcon size={14} />
                       </button>
@@ -139,13 +151,13 @@ export function SuggestionHistory({
                         type="button"
                         className="icon-button"
                         onClick={() => onCopy(item)}
-                        title="Copiar"
-                        aria-label="Copiar"
+                        title={t("suggestions_copy")}
+                        aria-label={t("suggestions_copy")}
                       >
                         <CopyIcon size={14} />
                       </button>
                       {pinnedId && pinnedId === item.message_id && (
-                        <span className="history__pinned">Fixada</span>
+                        <span className="history__pinned">{t("suggestions_pinned")}</span>
                       )}
                     </div>
                   </div>

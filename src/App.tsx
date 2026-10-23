@@ -10,6 +10,8 @@ import { CapturePreviewWindow } from "./features/ask/CapturePreviewWindow";
 import { RecordingPickerWindow } from "./features/recording/RecordingPickerWindow";
 import { SessionEndWindow } from "./features/session-end/SessionEndWindow";
 import { useHudOpacity } from "./core/application/useHudOpacity";
+import { useUiLanguage } from "./core/application/useUiLanguage";
+import { useTranslation } from "./core/l10n";
 
 /** Rotas de janela suportadas pelo GhostWhisper. */
 export type Route =
@@ -65,6 +67,9 @@ export function App() {
   // Opacidade global (BR-062): vale para todas as janelas, inclusive as
   // ocultas, e recebe preview em tempo real do slider de Configurações.
   useHudOpacity();
+  // Idioma da interface (l10n): cada webview carrega o `ui_language` salvo.
+  useUiLanguage();
+  const { t } = useTranslation();
 
   // Resolve já na primeira renderização: janelas ocultas não montam o overlay
   // (e não publicam regiões interativas) antes de trocar de rota.
@@ -113,7 +118,7 @@ export function App() {
   return (
     <main className="app" data-route={route}>
       <h1 className="app__title">GhostWhisper</h1>
-      <p className="app__subtitle">Rota: {route}</p>
+      <p className="app__subtitle">{t("app_route_route", { route })}</p>
     </main>
   );
 }

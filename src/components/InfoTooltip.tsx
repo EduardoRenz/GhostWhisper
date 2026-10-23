@@ -21,6 +21,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { tooltipPosition } from "../core/domain/tooltip";
+import { useTranslation } from "../core/l10n";
 import { InfoIcon } from "./icons";
 
 export interface InfoTooltipProps {
@@ -38,6 +39,7 @@ interface Position {
 
 /** Ícone "i" com um balão de ajuda inteligente. */
 export function InfoTooltip({ label, text, className }: InfoTooltipProps) {
+  const { t } = useTranslation();
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const bubbleRef = useRef<HTMLSpanElement>(null);
@@ -120,7 +122,7 @@ export function InfoTooltip({ label, text, className }: InfoTooltipProps) {
       <button
         type="button"
         className="info-tooltip__button"
-        aria-label={`Ajuda: ${label}`}
+        aria-label={t("common_help_label", { label })}
         aria-describedby={id}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}

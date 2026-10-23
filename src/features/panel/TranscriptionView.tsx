@@ -5,6 +5,7 @@ import { useLiveTranscription } from "../../core/application/useLiveTranscriptio
 import { useSessionState } from "../../core/application/useSessionState";
 import { useSettings } from "../../core/application/useSettings";
 import { useTranslation } from "../../core/application/useTranslation";
+import { useTranslation as useUiTranslation } from "../../core/l10n";
 import { buildChatTimeline } from "../../core/domain/chat";
 import { ChatView, type AskAiInput } from "../chat/ChatView";
 import { LanguageBar } from "./LanguageBar";
@@ -17,6 +18,7 @@ import { LanguageBar } from "./LanguageBar";
  * waveform e o atalho vivem no notch (BR-032/BR-033).
  */
 export function TranscriptionView() {
+  const { t } = useUiTranslation();
   const { state } = useSessionState();
   const { segments } = useLiveTranscription(state.session_id);
   const { settings } = useSettings();
@@ -78,8 +80,8 @@ export function TranscriptionView() {
         askingAiId={askingAiId}
         emptyLabel={
           state.session_id
-            ? "Nenhuma fala ainda…"
-            : "Inicie uma escuta para ver a conversa aqui."
+            ? t("panel_no_speech_yet")
+            : t("panel_start_listening_see_conversation_here")
         }
         translationEnabled={translationEnabled}
         translations={translations}

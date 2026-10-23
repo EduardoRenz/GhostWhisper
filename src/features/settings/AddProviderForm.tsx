@@ -1,14 +1,14 @@
 import { useState } from "react";
 import {
-  MODEL_PLACEHOLDER,
   PROVIDER_DEFAULT_BASE_URLS,
-  PROVIDER_LABELS,
   PROVIDERS,
   newSourceId,
   providerRequiresBaseUrl,
   type AiSource,
   type ProviderKind,
 } from "../../core/domain/settings";
+import { useTranslation } from "../../core/l10n";
+import { providerLabelKey } from "../../core/l10n/labels";
 
 interface AddProviderFormProps {
   /** Provedores suportados (vindos do core). */
@@ -25,6 +25,7 @@ interface AddProviderFormProps {
  * rascunho** e só é persistida pelo "Salvar Alterações".
  */
 export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
+  const { t } = useTranslation();
   const [kind, setKind] = useState<ProviderKind>("openai");
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -44,7 +45,7 @@ export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
     onAdd({
       id: newSourceId(),
       kind,
-      label: PROVIDER_LABELS[kind],
+      label: t(providerLabelKey(kind)),
       model: model.trim(),
       base_url:
         kind === "custom" ? baseUrl.trim() : (PROVIDER_DEFAULT_BASE_URLS[kind] ?? null),
@@ -55,13 +56,17 @@ export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
   return (
     <section className="settings__card settings__card--add">
       <header className="settings__card-header">
-        <h2 className="settings__card-title">Adicionar Nova Fonte de IA</h2>
-        <span className="settings__card-note">Armazenamento seguro no keyring do sistema</span>
+        <h2 className="settings__card-title">
+          {t("sources_add_new_ai_source")}
+        </h2>
+        <span className="settings__card-note">
+          {t("sources_secure_storage_system_keyring")}
+        </span>
       </header>
 
       <div className="settings__source-add">
         <label className="settings__field">
-          <span>Selecionar Provedor</span>
+          <span>{t("sources_select_provider")}</span>
           <select
             value={kind}
             onChange={(event) => changeKind(event.target.value as ProviderKind)}
@@ -69,13 +74,13 @@ export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
             {providers.length > 0 ? (
               providers.map((provider) => (
                 <option key={provider} value={provider}>
-                  {PROVIDER_LABELS[provider]}
+                  {t(providerLabelKey(provider))}
                 </option>
               ))
             ) : (
               PROVIDERS.map((provider) => (
                 <option key={provider} value={provider}>
-                  {PROVIDER_LABELS[provider]}
+                  {t(providerLabelKey(provider))}
                 </option>
               ))
             )}
@@ -83,11 +88,11 @@ export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
         </label>
 
         <label className="settings__field">
-          <span>Modelo</span>
+          <span>{t("sources_model")}</span>
           <input
             type="text"
             value={model}
-            placeholder={MODEL_PLACEHOLDER}
+            placeholder={t("model_placeholder")}
             spellCheck={false}
             autoComplete="off"
             onChange={(event) => setModel(event.target.value)}
@@ -96,7 +101,7 @@ export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
 
         {providerRequiresBaseUrl(kind) && (
           <label className="settings__field">
-            <span>Base URL (formato OpenAI)</span>
+            <span>{t("sources_base_url_openai_format")}</span>
             <input
               type="url"
               value={baseUrl}
@@ -112,12 +117,12 @@ export function AddProviderForm({ providers, onAdd }: AddProviderFormProps) {
           disabled={!canAdd}
           onClick={submit}
         >
-          Adicionar
+          {t("sources_add")}
         </button>
       </div>
       <p className="settings__hint">
-        O nome do modelo é digitado por você — a lista de modelos de cada
-        provedor envelhece rápido e deixaria você preso num modelo antigo.
+        {t("sources_type_model_name_each_provider_s",
+        )}
       </p>
     </section>
   );

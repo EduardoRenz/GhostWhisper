@@ -16,13 +16,13 @@ import {
   DEFAULT_AGENT_COLOR,
   DEFAULT_AGENT_ICON,
   PROTECTED_MODE_ID,
-  PROTECTED_MODE_NAME,
   agentColorToken,
   agentIconId,
   type AssistantMode,
 } from "../../core/domain/assistant";
 import { AgentIcon } from "../../components/AgentIcon";
 import { CheckIcon, ChevronDownIcon } from "../../components/icons";
+import { useTranslation } from "../../core/l10n";
 
 export interface AgentSwitcherProps {
   /** Catálogo efetivo (protegido + lista do usuário). */
@@ -42,6 +42,7 @@ export function AgentSwitcher({
   onSelect,
   onOpenChange,
 }: AgentSwitcherProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -51,7 +52,9 @@ export function AgentSwitcher({
   // conhecido pelas constantes do domínio.
   const name =
     selected?.name ??
-    (modeId === PROTECTED_MODE_ID ? PROTECTED_MODE_NAME : "Agente");
+    (modeId === PROTECTED_MODE_ID
+      ? t("assistants_default_agent")
+      : t("agent_switcher_agent"));
   const icon = selected ? agentIconId(selected) : DEFAULT_AGENT_ICON;
   const color = selected ? agentColorToken(selected) : DEFAULT_AGENT_COLOR;
 
@@ -124,8 +127,8 @@ export function AgentSwitcher({
         className="agent-switcher__button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Agente: ${name}`}
-        title={`Agente: ${name}`}
+        aria-label={t("agent_switcher_agent_name", { name })}
+        title={t("agent_switcher_agent_name", { name })}
         onClick={() => setOpen((previous) => !previous)}
       >
         <span className="agent-switcher__icon">
@@ -133,7 +136,7 @@ export function AgentSwitcher({
         </span>
         <span className="agent-switcher__name">{name}</span>
         <span className="agent-switcher__divider" aria-hidden="true" />
-        <span className="agent-switcher__hint">Alternar agente</span>
+        <span className="agent-switcher__hint">{t("agent_switcher_switch_agent")}</span>
         <ChevronDownIcon size={13} />
       </button>
 
@@ -141,12 +144,12 @@ export function AgentSwitcher({
         <div
           className="agent-switcher__popover"
           role="menu"
-          aria-label="Agentes"
+          aria-label={t("agent_switcher_agents")}
           data-interactive
           onKeyDown={onMenuKeyDown}
         >
           {modes.length === 0 && (
-            <span className="agent-switcher__empty">Nenhum agente</span>
+            <span className="agent-switcher__empty">{t("agent_switcher_no_agents")}</span>
           )}
           {modes.map((mode, index) => {
             const on = mode.id === selected?.id;

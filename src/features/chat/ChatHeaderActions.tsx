@@ -1,4 +1,5 @@
 import { panelOpen } from "../../adapters/ipc/panels";
+import { useTranslation } from "../../core/l10n";
 
 /**
  * Ações do cabeçalho da Transcrição.
@@ -9,16 +10,17 @@ import { panelOpen } from "../../adapters/ipc/panels";
  * 2026-10-19). Resta o atalho para a janela de Sugestões.
  */
 export function ChatHeaderActions() {
+  const { t } = useTranslation();
   return (
     <div className="chat__head-actions">
       <button
         type="button"
         className="overlay__button"
         data-interactive
-        title="Abre a janela de sugestões por agente"
+        title={t("chat_opens_per_agent_suggestions_window")}
         onClick={() => void panelOpen("suggestions")}
       >
-        Sugestões
+        {t("chat_suggestions")}
       </button>
     </div>
   );

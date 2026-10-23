@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Suggestion } from "../../core/domain/assistant";
-import { formatMessageClock, speakerLabel } from "../../core/domain/transcript";
+import { formatMessageClock } from "../../core/domain/transcript";
 import {
   NO_SUGGESTION_TITLE,
   parseSuggestionMeta,
@@ -14,6 +14,11 @@ import { CopyIcon, PinIcon, SparkleIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import { MarkdownView } from "../../components/MarkdownView";
 import type { LlmSourceUsage } from "../../core/application/useLlmSource";
+import { useTranslation, type TranslationKey, type TranslationParams } from "../../core/l10n";
+import {
+  speakerLabelKey,
+  suggestionKindKey,
+} from "../../core/l10n/labels";
 
 interface SuggestionCardProps {
   /** Sugestão completa (Markdown). */
@@ -39,16 +44,19 @@ interface SuggestionCardProps {
 }
 
 /** Tempo relativo curto (“Há 12s”, “Há 2min”). */
-function relativeTime(ms: number): string {
+function relativeTime(
+  ms: number,
+  t: (key: TranslationKey, params?: TranslationParams) => string,
+): string {
   const seconds = Math.max(0, Math.round(ms / 1000));
   if (seconds < 60) {
-    return `Há ${seconds}s`;
+    return t("suggestions_seconds_s_ago", { seconds });
   }
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
-    return `Há ${minutes}min`;
+    return t("suggestions_minutes_min_ago", { minutes });
   }
-  return `Há ${Math.round(minutes / 60)}h`;
+  return t("suggestions_hours_h_ago", { hours: Math.round(minutes / 60) });
 }
 
 /**
@@ -70,6 +78,7 @@ export function SuggestionCard({
   children,
   llmSource,
 }: SuggestionCardProps) {
+  const { t } = useTranslation();
   const [receivedAt, setReceivedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -99,6 +108,10 @@ export function SuggestionCard({
   const derivedTitle =
     fullTitle !== NO_SUGGESTION_TITLE ? fullTitle : quickTitle;
   const title = aiTitle || derivedTitle || NO_SUGGESTION_TITLE;
+  const displayTitle =
+    title === NO_SUGGESTION_TITLE
+      ? t("suggestions_default_title")
+      : title;
   // Com bloco de código, os metadados vão para o caption: some do corpo.
   const hasCode = Boolean(current?.text.includes("```"));
   const body = current && hasCode ? stripSuggestionMeta(current.text) : current?.text;
@@ -116,10 +129,10 @@ export function SuggestionCard({
       <div className="suggestion-card__head">
         <span className="suggestion-card__tag">
           <SparkleIcon size={11} />
-          {manual ? "Sugestão Manual" : "Sugestão Atual"}
+          {manual ? t("suggestions_manual_suggestion") : t("suggestions_current_suggestion")}
           {receivedAt !== null && (
             <span className="suggestion-card__age">
-              · {relativeTime(now - receivedAt)}
+              · {relativeTime(now - receivedAt, t)}
             </span>
           )}
         </span>
@@ -129,12 +142,14 @@ export function SuggestionCard({
         </div>
       </div>
 
-      <h2 className="suggestion-card__title">{title}</h2>
+      <h2 className="suggestion-card__title">{displayTitle}</h2>
 
       {origin && (
         <p className="suggestion-card__source">
-          Manual · {speakerLabel(origin.speaker)}{" "}
-          {formatMessageClock(origin.at_ms, startedAtMs)}
+          {t("suggestions_manual_speaker_time", {
+            speaker: t(speakerLabelKey(origin.speaker)),
+            time: formatMessageClock(origin.at_ms, startedAtMs),
+          })}
         </p>
       )}
 
@@ -142,7 +157,7 @@ export function SuggestionCard({
 
       {quick && (
         <section className="suggestion-block suggestion-block--quick">
-          <span className="suggestion-block__label">Resposta rápida</span>
+          <span className="suggestion-block__label">{t("suggestions_quick_response")}</span>
           <p className="suggestion-block__text">{quick.text}</p>
         </section>
       )}
@@ -150,16 +165,18 @@ export function SuggestionCard({
       {quick && !current && awaitingFull && (
         <p className="suggestion-block__pending" role="status">
           <span className="suggestion-block__dot" aria-hidden="true" />
-          Gerando resposta completa…
+          {t("suggestions_generating_full_response")}
         </p>
       )}
 
       {current && (
         <section className="suggestion-block suggestion-block--full">
           <div className="suggestion-block__head">
-            <span className="suggestion-block__label">Resposta completa</span>
+            <span className="suggestion-block__label">{t("suggestions_full_response")}</span>
             <Pill className="suggestion-chip">
-              Markdown · {suggestionKind(current.text)}
+              {t("suggestions_markdown_kind", {
+                kind: t(suggestionKindKey(suggestionKind(current.text))),
+              })}
             </Pill>
           </div>
           <MarkdownView markdown={body ?? ""} meta={meta} />
@@ -172,8 +189,8 @@ export function SuggestionCard({
           className="icon-button"
           onClick={onPin}
           disabled={!current}
-          title={pinned ? "Sugestão fixada" : "Fixar na conversa"}
-          aria-label={pinned ? "Sugestão fixada" : "Fixar na conversa"}
+          title={pinned ? t("suggestions_suggestion_pinned") : t("suggestions_pin_conversation")}
+          aria-label={pinned ? t("suggestions_suggestion_pinned") : t("suggestions_pin_conversation")}
         >
           <PinIcon size={15} />
         </button>
@@ -182,8 +199,8 @@ export function SuggestionCard({
           className="icon-button"
           onClick={onCopy}
           disabled={!current}
-          title={copied ? "Copiado" : "Copiar"}
-          aria-label={copied ? "Copiado" : "Copiar"}
+          title={copied ? t("suggestions_copied") : t("suggestions_copy")}
+          aria-label={copied ? t("suggestions_copied") : t("suggestions_copy")}
         >
           <CopyIcon size={15} />
         </button>
