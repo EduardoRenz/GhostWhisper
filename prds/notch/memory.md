@@ -652,3 +652,60 @@ diretamente**.
 - Rust **614 ✓** (10 ignorados) · clippy `-D warnings` ✓.
 - AppImage (21:41) validado: hover em Resumo executa ao completar, sem janela
   `dwell`/popup; sair antes não executa; clique imediato.
+
+## 2026-10-23 — Menus em janela própria: notch imóvel e clicável (ISS-062, task 20)
+
+- **IDs:** BR-072 (revisão), BR-080, ISS-062, T20 · **Rules:** R16/R17
+- **Refs:** [`tasks/20-task.md`](tasks/20-task.md),
+  [`issues.md`](issues.md) ISS-062,
+  [`../business-rules.md`](../business-rules.md) BR-072,
+  [`architecture/notch-ui.md`](architecture/notch-ui.md) §2
+
+### Relato/decisão
+Com o notch embaixo, abrir os menus ainda fazia o notch pular e, depois de mover
+o notch para baixo, ele **parava de responder a cliques**. Duas tentativas de
+manter o menu dentro da janela do notch falharam: crescer na abertura (padding
+sincronizado por IPC) e reservar altura fixa trocando o lado no arraste. A
+segunda ainda deixava as regiões de clique do X11 no lugar antigo (notch
+morto). Decisão: o menu passa a ser uma **janela própria**; o notch nunca muda
+de tamanho/posição por menu.
+
+### Entregue
+- Janela `menu` (Tauri), largura 300 (agentes) / 200 (canais), **altura
+  dinâmica** medida pelo conteúdo (64–360, cache por tipo), ancorada **fora do
+  notch** (abaixo da barra / acima do pill, 6 px) por `menu_placement`.
+- Porta `MenuWindowController` + `TauriMenuWindow`; IPC
+  `menu_open`/`menu_close`/`menu_state`; evento `menu_show`.
+- Rota `menu` com `AgentMenu` (catálogo, teclado, `settings_set_assistant_mode`)
+  e `ChannelMenu` (troca ao vivo + nova sessão).
+- `AgentSwitcher`/`ChannelMenu` do notch viraram só gatilhos (enviam o
+  `DOMRect`); fechamento por item, `Escape`, clique no notch, no gatilho
+  (alterna) e perda de foco.
+- Removidos `POPOVER_RESERVE`, `reserve_up`, `overlay_reserve_state`,
+  `overlay_reserve_changed`, `useOverlayReserve`, `data-reserve` e
+  `--popover-reserve`; a janela volta à altura natural e `overlay_position` ao
+  topo da janela.
+
+### Verificação
+- Frontend **462 ✓** (73 arquivos) · `tsc --noEmit` ✓.
+- Rust **665 ✓** (10 ignorados) · clippy `-D warnings` ✓.
+- Anti-regressão: `menu_placement` (abaixo/acima/clamp), `AgentMenu` (escolha e
+  teclado), `ChannelMenu` (troca/nova sessão), `MenuWindow` (evento, Escape,
+  foco).
+- Xvfb/AppImage: overlay `692x106+700+300` → abrir agentes **idêntico**
+  (popup `300x183` colado abaixo da barra); escolher "Reunião" atualiza o pill
+  e fecha; mover para `700,900` **sem pulo** (salvo `[700,900]`); popup
+  `300x183` acima do pill (6 px); barra ativa `1001x106+700+900` com canais de
+  largura 200/altura dinâmica acima; "Sistema" aplica e fecha; notch clicável.
+- Pacote final (**17:38**) revalidado no AppImage: boot `692x106+700+300`,
+  abrir agentes com overlay idêntico (`300x183`, 6 px abaixo da barra),
+  fechar/reabrir pelo notch; no fundo (`[700,900]`) o popup `300x183` fica
+  acima do pill e os canais medem `200x178`; posição salva preservada.
+- **WM real (Mutter):** o overlay tem frame/CSD de **37 px no topo**
+  (`_NET_FRAME_EXTENTS`); `set_position` posiciona o cliente, mas o tracker
+  salvava o outer (deriva de 37 px a cada boot) e o menu usava o outer do notch
+  como âncora (invadia a barra para baixo, ficava longe para cima). Correção:
+  tracker salva `inner_position`; menu ancora no cliente; popup reafirma
+  `_NET_WM_STATE_ABOVE` ao abrir e ~150 ms depois.
+- Nota: fechar por **perda de foco** depende do WM; o caminho de clique no notch
+  foi validado no Xvfb e o listener tem teste.

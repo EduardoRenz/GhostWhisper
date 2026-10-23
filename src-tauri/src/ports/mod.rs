@@ -23,6 +23,7 @@ pub mod llm_provider_factory;
 pub mod locale_source;
 pub mod manual_suggestion_context;
 pub mod meeting_summaries_repository;
+pub mod menu_window;
 pub mod model_store;
 pub mod overlay_window;
 pub mod pending_capture;

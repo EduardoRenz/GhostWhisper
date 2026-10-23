@@ -520,7 +520,7 @@ o primeiro pixel. Para o seletor flutuar acima:
 | Peça | Valor |
 |---|---|
 | `AGENT_SELECTOR_BAND` (`domain/hud_layout.rs`) | **34 px** lógicos (26 da pílula + 6 de respiro + 2 de folga) |
-| Altura da janela | `AGENT_SELECTOR_BAND + densidade.window_height() + popover_extra` |
+| Altura da janela | `AGENT_SELECTOR_BAND + densidade.window_height()` |
 | Altura inicial (`tauri.conf.json`) | 118 (84 + 34, densidade padrão) |
 | Largura | a da **pilha** (`.overlay__stack`), medida pela UI |
 
@@ -537,9 +537,12 @@ janela (118 px)
 └──  8 px  padding inferior
 ```
 
-O `popover_extra` continua crescendo **para baixo**: com o menu aberto, a
-janela vai a `118 + 240`. O menu é absoluto (`top: calc(100% + 6px)`) e cobre a
-barra — comportamento normal de dropdown.
+O menu do seletor **não vive mais dentro do overlay**: é uma janela Tauri
+própria (`menu`, largura 300, altura dinâmica pelo conteúdo), posicionada pelo
+core **fora do notch** — abaixo da barra ou acima do pill, a 6 px. Abrir/fechar
+não muda o tamanho nem a posição do notch. O pill no overlay envia o `DOMRect`
+do botão e o retângulo da pilha (BR-072/ISS-062,
+`notch/tasks/20-task.md`).
 
 ### 11.2 Componente e CSS
 

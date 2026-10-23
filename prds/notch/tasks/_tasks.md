@@ -26,6 +26,7 @@ só começa após a revisão da PRD pelo usuário.
 | 17 | Notch com largura dinâmica + menu de canais visível (ISS-047) | CONCLUDED |
 | 18 | Dwell do "Sim" contínuo ao mover dentro do botão (ISS-048) | CONCLUDED |
 | 19 | Drill-hover em um estágio (sem confirmação "Sim") | CONCLUDED |
+| 20 | Menus em janela própria: notch imóvel e clicável (ISS-062) | CONCLUDED |
 
 ## Dependências
 
@@ -56,6 +57,8 @@ só começa após a revisão da PRD pelo usuário.
   (histórico; substituído pela 19).
 - 19 substitui o fluxo de dois estágios: o botão principal executa a ação ao
   completar o dwell, sem janela/popup "Sim".
+- 20 (ISS-062) depende de 11/15/17: os menus viram janela própria (acima/abaixo
+  do gatilho); o notch não muda de geometria nem perde cliques.
 - 08 (notch ativo) depende de 07: aplica a **estrutura** do protótipo (switcher,
   waveform, play/pause contextual) sobre os tokens.
 

@@ -16,6 +16,7 @@ use crate::ports::gpu_probe::GpuProbe;
 use crate::ports::journal_repository::JournalRepository;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::manual_suggestion_context::ManualSuggestionContextStore;
+use crate::ports::menu_window::MenuWindowController;
 use crate::ports::overlay_window::OverlayWindowController;
 use crate::ports::pending_capture::PendingCapture;
 use crate::ports::pending_session_end::PendingSessionEnd;
@@ -38,6 +39,8 @@ pub struct AppState {
     pub overlay: Arc<dyn OverlayWindowController>,
     /// Coordenação do click-through.
     pub click_through: Arc<dyn ClickThroughController>,
+    /// Janela flutuante dos menus (agentes/canais).
+    pub menu: Arc<dyn MenuWindowController>,
     /// Captura de microfone.
     pub audio: Arc<dyn AudioSource>,
     /// Captura de áudio do sistema (monitor de saída).
@@ -98,6 +101,7 @@ impl AppState {
     pub fn new(
         overlay: Arc<dyn OverlayWindowController>,
         click_through: Arc<dyn ClickThroughController>,
+        menu: Arc<dyn MenuWindowController>,
         audio: Arc<dyn AudioSource>,
         system_audio: Arc<dyn AudioSource>,
         monitor: Arc<dyn AudioMonitor>,
@@ -128,6 +132,7 @@ impl AppState {
         Self {
             overlay,
             click_through,
+            menu,
             audio,
             system_audio,
             monitor,
@@ -213,7 +218,6 @@ mod tests {
         ) {
         }
         fn set_actionbar_width(&self, _width: f64) {}
-        fn set_popover_extra_height(&self, _extra: f64) {}
         fn set_anchor_bottom(&self, _anchored: bool) {}
         fn anchor_bottom(&self) -> bool {
             true
@@ -245,6 +249,28 @@ mod tests {
             if let Ok(mut guard) = self.regions.lock() {
                 *guard = regions;
             }
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeMenuWindow {
+        open: Mutex<Option<crate::ports::menu_window::MenuKind>>,
+    }
+
+    impl crate::ports::menu_window::MenuWindowController for FakeMenuWindow {
+        fn open(
+            &self,
+            kind: crate::ports::menu_window::MenuKind,
+            _anchor: crate::ports::menu_window::MenuAnchor,
+        ) {
+            *self.open.lock().unwrap() = Some(kind);
+        }
+        fn resize(&self, _height: f64) {}
+        fn close(&self) {
+            *self.open.lock().unwrap() = None;
+        }
+        fn current(&self) -> Option<crate::ports::menu_window::MenuKind> {
+            *self.open.lock().unwrap()
         }
     }
 
@@ -552,6 +578,7 @@ mod tests {
         AppState::new(
             Arc::new(FakeOverlayWindow::new()),
             Arc::new(FakeClickThrough::default()),
+            Arc::new(FakeMenuWindow::default()),
             Arc::new(FakeAudioSource),
             Arc::new(FakeAudioSource),
             Arc::new(FakeAudioMonitor),

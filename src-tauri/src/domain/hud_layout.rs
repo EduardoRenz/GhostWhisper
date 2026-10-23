@@ -63,8 +63,7 @@ impl NotchAnchor {
 /// Faixa (px lógicos) reservada **acima** da barra para o seletor de agentes
 /// (BR-080): pílula de 26 px + 6 px de respiro + 2 px de folga.
 ///
-/// A barra deixa de encostar no topo da tela: o seletor flutua acima dela e a
-/// janela cresce para baixo (o topo continua ancorado em `y = work_area.y`).
+/// A barra deixa de encostar no topo da tela: o seletor flutua acima dela.
 pub const AGENT_SELECTOR_BAND: f64 = 34.0;
 
 impl HudDensity {

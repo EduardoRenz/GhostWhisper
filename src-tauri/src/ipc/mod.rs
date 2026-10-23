@@ -9,6 +9,7 @@ pub mod database_commands;
 pub mod export_commands;
 pub mod journal_commands;
 pub mod llm_commands;
+pub mod menu;
 pub mod overlay;
 pub mod panel_commands;
 pub mod ping;

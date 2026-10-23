@@ -33,9 +33,8 @@ interface ActionBarProps {
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
-  onChannelsChange: (channels: SessionChannel[]) => void;
-  /** Avisa o overlay para reservar/liberar altura do menu de canais. */
-  onChannelMenuOpenChange?: (open: boolean) => void;
+  /** Abre o menu de canais na janela flutuante (BR-072/ISS-063). */
+  onOpenChannelMenu?: (anchor: DOMRect) => void;
   onStartDrag: () => void;
   /** Atalho de iniciar/encerrar sessão (badges do botão verde). */
   startAccelerator: string;
@@ -89,8 +88,7 @@ export function ActionBar({
   onPause,
   onResume,
   onStop,
-  onChannelsChange,
-  onChannelMenuOpenChange,
+  onOpenChannelMenu,
   onStartDrag,
   startAccelerator,
   askAccelerator,
@@ -211,13 +209,7 @@ export function ActionBar({
             }}
           />
 
-          <ChannelMenu
-            channels={channels}
-            busy={busy}
-            onChannelsChange={onChannelsChange}
-            onNewSession={onStart}
-            onOpenChange={onChannelMenuOpenChange}
-          />
+          <ChannelMenu channels={channels} onOpenMenu={onOpenChannelMenu} />
 
           <IconButton
             label={stealth ? t("action_bar_stealth") : t("action_bar_stealth_off")}

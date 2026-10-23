@@ -84,6 +84,10 @@ Layout do protótipo (sem copiar Tailwind/Material — BR-008/BR-035):
 - **Timer**: `HH:MM:SS` mono, tabular, dot esmeralda/outline; clique abre a
   confirmação de encerramento.
 - **Canais**: popover (Ambos/Mic/Sistema) + **Nova sessão**; troca ao vivo (BR-019).
+- **Menus (canais e agentes)**: janela Tauri própria (`menu`) ancorada **fora do
+  notch** (abaixo da barra ou acima do pill, 6 px) e com altura dinâmica pelo
+  conteúdo; seleção/Escape/clique fora fecham. A janela do notch não muda de
+  tamanho nem de posição (BR-072, ISS-062/task 20).
 - **Trailing**: ocultar, Histórico e, **por último**, **Configurações**
   (engrenagem) — correção do protótipo, que a omitiu.
 - **Repouso** mantém a estrutura atual; só o re-skin da task 07.

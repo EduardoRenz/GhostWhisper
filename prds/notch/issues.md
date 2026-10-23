@@ -251,3 +251,51 @@ Modelo:
 - **Nota (2026-10-21):** o fluxo de confirmação "Sem clique"/"Sim" foi removido
   na [`tasks/19-task.md`](tasks/19-task.md); o drill-hover atual tem um estágio e
   executa direto. Este registro permanece como histórico da correção.
+
+---
+
+## ISS-062 — Notch se move (e fica sem clique) com os menus do notch
+
+- **Severidade:** Alta · **Status:** FIXED
+  ([`tasks/20-task.md`](tasks/20-task.md))
+- **Sintoma:** abrir o seletor de agentes/menu de canais com o notch embaixo
+  fazia o notch pular; depois de mover o notch bem para baixo (ou da troca de
+  lado), ele **parava de responder a cliques** — só dava para fechar pela barra
+  de tarefas.
+- **Causa raiz:** os menus viviam **dentro** da janela do notch. Para caberem,
+  a janela precisava crescer (ou reservar espaço e trocar o lado quando o notch
+  era arrastado). A janela é posicionada pelo compositor e o conteúdo pelo
+  WebKit: qualquer atraso entre os dois vira pulo. Na troca de lado, o conteúdo
+  mudava de posição dentro da janela, mas as **regiões de clique do X11**
+  (`input-shape`) não eram republicadas — o notch ficava "morto".
+- **Correção (task 20):** o menu passa a ser uma **janela própria** (`menu`,
+  Tauri): o notch nunca muda de tamanho nem de posição por causa de menu. O core
+  posiciona o popup **fora do notch** (abaixo da barra ou acima do pill, 6 px)
+  com **altura medida pelo conteúdo**, e a janela do notch só se move quando o
+  usuário a arrasta. Seleção, `Escape`, clique no notch e perda de foco fecham
+  o popup.
+- **Testes anti-regressão (R16/R17):**
+  `menu_opens_below_the_notch_when_it_fits`,
+  `menu_opens_above_the_notch_near_the_bottom`, `menu_clamps_x_and_right_aligns`,
+  `menu_respects_work_area_origin`;
+  `AgentMenu` (escolha + teclado), `ChannelMenu` (troca/nova sessão) e
+  `MenuWindow` (evento do core, `Escape`, perda de foco). No Xvfb, a geometria
+  do overlay é registrada antes/depois de abrir/fechar: **inalterada**.
+- **Arquivos:** `src-tauri/src/domain/geometry.rs`,
+  `src-tauri/src/ports/menu_window.rs`,
+  `src-tauri/src/adapters/menu/tauri_menu_window.rs`,
+  `src-tauri/src/ipc/menu.rs`, `src-tauri/src/state.rs`,
+  `src-tauri/src/lib.rs`, `src-tauri/tauri.conf.json`,
+  `src-tauri/capabilities/default.json`,
+  `src/features/menu/{MenuWindow,AgentMenu,ChannelMenu}.tsx`,
+  `src/features/overlay/{Overlay,AgentSwitcher,ChannelMenu,ActionBar}.tsx`,
+  `src/adapters/ipc/overlay.ts`, `src/styles/globals.css`.
+- **Task:** [`tasks/20-task.md`](tasks/20-task.md)
+- **Frame/CSD (correção final):** no Mutter o overlay tem 37 px de frame no
+  topo; `set_position` posiciona o **cliente**, mas o tracker salvava o outer
+  (deriva de 37 px por boot) e o menu usava o outer como âncora (invadia a barra
+  para baixo / ficava longe para cima). Agora o tracker salva
+  `inner_position`, o menu ancora no cliente e reafirma `_NET_WM_STATE_ABOVE`
+  ao abrir (e ~150 ms depois).
+- **Dano em dados existentes:** nenhum; `overlay_position` passa a ser o topo do
+  **cliente** (visível).

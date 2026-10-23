@@ -1,6 +1,6 @@
 //! Adaptador da janela overlay sobre `tauri::WebviewWindow`.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use tauri::{LogicalSize, PhysicalPosition, WebviewWindow};
@@ -21,9 +21,6 @@ pub const DEFAULT_ACTIONBAR_WIDTH: f64 = 700.0;
 const MIN_ACTIONBAR_WIDTH: f64 = 280.0;
 const MAX_ACTIONBAR_WIDTH: f64 = 1_800.0;
 
-/// Teto da altura extra reservada para o menu de canais (px lógicos).
-const MAX_POPOVER_EXTRA_HEIGHT: f64 = 320.0;
-
 /// Implementa `OverlayWindowController` sobre a janela Tauri.
 pub struct TauriOverlayWindow {
     window: WebviewWindow,
@@ -31,8 +28,6 @@ pub struct TauriOverlayWindow {
     anchor_bottom: AtomicBool,
     /// Largura lógica atual da barra (medida pela UI).
     width: AtomicU64,
-    /// Altura extra abaixo da barra (menu de canais), em px lógicos.
-    popover_extra: AtomicU32,
     /// Densidade do HUD (BR-062): 0 compacto · 1 padrão · 2 expandido.
     density: AtomicU8,
     /// Ancoragem do notch (BR-062): 0 topo central · 1 canto direito · 2 livre.
@@ -50,7 +45,6 @@ impl TauriOverlayWindow {
             click_through: Arc::new(AtomicBool::new(false)),
             anchor_bottom: AtomicBool::new(true),
             width: AtomicU64::new(DEFAULT_ACTIONBAR_WIDTH.to_bits()),
-            popover_extra: AtomicU32::new(0),
             density: AtomicU8::new(1),
             anchor: AtomicU8::new(0),
             stealth: AtomicBool::new(false),
@@ -62,14 +56,14 @@ impl TauriOverlayWindow {
         f64::from_bits(self.width.load(Ordering::Relaxed))
     }
 
-    /// Altura extra reservada para um popover aberto (px lógicos).
-    fn popover_extra(&self) -> f64 {
-        self.popover_extra.load(Ordering::Relaxed) as f64
+    /// Altura da pilha do notch (seletor + barra + banner), sem a reserva.
+    fn base_height(&self) -> f64 {
+        AGENT_SELECTOR_BAND + self.density().window_height()
     }
 
-    /// Altura total da janela: seletor de agentes + barra (densidade) + popover.
+    /// Altura total da janela: seletor de agentes + barra (densidade).
     fn window_height(&self) -> f64 {
-        AGENT_SELECTOR_BAND + self.density().window_height() + self.popover_extra()
+        self.base_height()
     }
 
     /// Aplica largura/altura atuais à janela.
@@ -266,22 +260,6 @@ impl OverlayWindowController for TauriOverlayWindow {
             self.apply_anchor();
         }
         // Resize pode remapear e perder o always-on-top (ISS-043).
-        self.apply_stealth();
-    }
-
-    fn set_popover_extra_height(&self, extra: f64) {
-        if !extra.is_finite() || extra < 0.0 {
-            return;
-        }
-        let extra = extra.clamp(0.0, MAX_POPOVER_EXTRA_HEIGHT).round() as u32;
-        if self.popover_extra.load(Ordering::Relaxed) == extra {
-            return;
-        }
-        self.popover_extra.store(extra, Ordering::Relaxed);
-        self.apply_size();
-        if self.anchor().is_anchored() {
-            self.apply_anchor();
-        }
         self.apply_stealth();
     }
 

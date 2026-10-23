@@ -6,15 +6,16 @@ import {
   useState,
 } from "react";
 import {
+  closeMenu as closeMenuIpc,
+  openMenu as openMenuIpc,
   openSettingsWindow,
   setActionbarWidth as setActionbarWidthIpc,
-  setPopoverExtraHeight as setPopoverExtraHeightIpc,
   setStealth as setStealthIpc,
   setSurface as setSurfaceIpc,
   startDrag as startDragIpc,
 } from "../../adapters/ipc/overlay";
+import { subscribe } from "../../adapters/ipc/events";
 import { panelHide, panelOpen, panelOpenTab } from "../../adapters/ipc/panels";
-import { setAssistantMode } from "../../adapters/ipc/settings";
 import { askOpen } from "../../adapters/ipc/ask";
 import { recordingPickerOpen } from "../../adapters/ipc/recording";
 import { sessionEndOpen } from "../../adapters/ipc/sessionEnd";
@@ -31,12 +32,6 @@ import { ActionBar } from "./ActionBar";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { AsrStatusBanner } from "./AsrStatusBanner";
 
-/** Altura extra (px lógicos) reservada abaixo da barra para o menu de canais. */
-const CHANNEL_MENU_EXTRA_HEIGHT = 180;
-
-/** Altura extra (px lógicos) reservada para o menu do seletor de agentes. */
-const AGENT_MENU_EXTRA_HEIGHT = 240;
-
 /**
  * Casca do overlay: apenas a barra de ações (e o aviso de status do ASR). O
  * painel (Transcrição/Resumo), Sugestões e Histórico vivem em janelas próprias,
@@ -48,11 +43,9 @@ const AGENT_MENU_EXTRA_HEIGHT = 240;
 export function Overlay() {
   const [stealth, setStealth] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [channelMenuOpen, setChannelMenuOpen] = useState(false);
-  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [menu, setMenu] = useState<{ kind: "agent" | "channel" } | null>(null);
   const stackRef = useRef<HTMLDivElement>(null);
-  const { state, busy, error, start, pause, resume, stop, setChannels } =
-    useSessionState();
+  const { state, busy, error, start, pause, resume, stop } = useSessionState();
   const {
     state: recording,
     capabilities: recordingCapabilities,
@@ -110,22 +103,90 @@ export function Overlay() {
     };
   }, []);
 
-  // Popovers abertos pedem altura extra ao core (o maior vence): o menu de
-  // canais abre abaixo da barra e o de agentes, abaixo do seletor.
-  useEffect(() => {
-    const extra = Math.max(
-      channelMenuOpen ? CHANNEL_MENU_EXTRA_HEIGHT : 0,
-      agentMenuOpen ? AGENT_MENU_EXTRA_HEIGHT : 0,
-    );
-    void setPopoverExtraHeightIpc(extra);
-  }, [channelMenuOpen, agentMenuOpen]);
+  /** Abre o menu flutuante (janela própria) ancorado no gatilho. */
+  const openMenu = useCallback(
+    (kind: "agent" | "channel", rect: DOMRect) => {
+      // Clicar de novo no mesmo gatilho fecha (dropdown normal).
+      if (menu?.kind === kind) {
+        setMenu(null);
+        void closeMenuIpc();
+        return;
+      }
+      const notch = stackRef.current?.getBoundingClientRect();
+      if (!notch) {
+        return;
+      }
+      setMenu({ kind });
+      void openMenuIpc(kind, {
+        trigger: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+        notch: {
+          x: Math.round(notch.x),
+          y: Math.round(notch.y),
+          width: Math.round(notch.width),
+          height: Math.round(notch.height),
+        },
+      });
+    },
+    [menu],
+  );
 
-  /** Troca o agente ativo no core (global e em tempo real — BR-080). */
-  const selectAgent = useCallback((id: string) => {
-    setSettingsError(null);
-    void setAssistantMode(id).catch((caught) =>
-      setSettingsError(String(caught)),
+  const openAgentMenu = useCallback(
+    (rect: DOMRect) => openMenu("agent", rect),
+    [openMenu],
+  );
+
+  const openChannelMenu = useCallback(
+    (rect: DOMRect) => openMenu("channel", rect),
+    [openMenu],
+  );
+
+  // Menu aberto: clique em qualquer outro ponto do notch (ou Escape) fecha o
+  // popup. O clique no próprio gatilho é ignorado aqui — o `onClick` alterna.
+  useEffect(() => {
+    if (!menu) {
+      return;
+    }
+    const close = () => {
+      setMenu(null);
+      void closeMenuIpc();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      const trigger =
+        menu.kind === "agent" ? ".agent-switcher" : ".channel-menu";
+      if (target?.closest(trigger)) {
+        return;
+      }
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menu]);
+
+  // Fechado pelo menu (item escolhido, Escape, perda de foco): sincroniza o
+  // estado local para o próximo clique não reenviar um close desnecessário.
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    void subscribe<null>("menu_closed", () => setMenu(null)).then(
+      (unlisten) => {
+        stop = unlisten;
+      },
     );
+    return () => stop?.();
   }, []);
 
   // Sincroniza o stealth com as settings persistidas.
@@ -203,8 +264,7 @@ export function Overlay() {
         <AgentSwitcher
           modes={modes}
           modeId={settings.assistant_mode_id}
-          onSelect={selectAgent}
-          onOpenChange={setAgentMenuOpen}
+          onOpenMenu={openAgentMenu}
         />
 
         <div className="overlay__bar-wrap">
@@ -223,8 +283,7 @@ export function Overlay() {
               onPause={() => void pause()}
               onResume={() => void resume()}
               onStop={() => void stopSession()}
-              onChannelsChange={(channels) => void setChannels(channels)}
-              onChannelMenuOpenChange={setChannelMenuOpen}
+              onOpenChannelMenu={openChannelMenu}
               onStartDrag={() => void startDragIpc()}
               startAccelerator={startAccelerator}
               askAccelerator={askAccelerator}

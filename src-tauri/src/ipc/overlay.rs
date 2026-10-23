@@ -48,7 +48,11 @@ impl From<InteractiveRegion> for Rect {
 /// Alterna a visibilidade do overlay; retorna `true` se ficou visível.
 #[tauri::command]
 pub fn overlay_toggle(state: State<'_, AppState>) -> Result<bool> {
-    Ok(state.overlay.toggle())
+    let visible = state.overlay.toggle();
+    if !visible {
+        state.menu.close();
+    }
+    Ok(visible)
 }
 
 /// Liga/desliga o modo stealth (fora da barra de tarefas, sem título).
@@ -74,7 +78,11 @@ pub fn overlay_set_click_through(state: State<'_, AppState>, enabled: bool) -> R
 /// Ajusta a superfície da janela (barra/expandida/oculta).
 #[tauri::command]
 pub fn overlay_set_surface(state: State<'_, AppState>, surface: SurfaceDto) -> Result<()> {
-    state.overlay.set_surface(surface.into());
+    let surface: Surface = surface.into();
+    if matches!(surface, Surface::Hidden) {
+        state.menu.close();
+    }
+    state.overlay.set_surface(surface);
     Ok(())
 }
 
@@ -91,18 +99,6 @@ pub fn overlay_set_actionbar_width(state: State<'_, AppState>, width: f64) -> Re
     Ok(())
 }
 
-/// Reserva/libera altura extra abaixo da barra (menu de canais aberto).
-#[tauri::command]
-pub fn overlay_set_popover_extra_height(state: State<'_, AppState>, height: f64) -> Result<()> {
-    if !height.is_finite() || height < 0.0 {
-        return Err(GhostWhisperError::Config(format!(
-            "altura extra inválida: {height}"
-        )));
-    }
-    state.overlay.set_popover_extra_height(height);
-    Ok(())
-}
-
 /// Inicia o arraste da janela pelo usuário (posição passa a ser preservada).
 #[tauri::command]
 pub fn overlay_start_drag(
@@ -110,6 +106,7 @@ pub fn overlay_start_drag(
     state: State<'_, AppState>,
     window: tauri::WebviewWindow,
 ) -> Result<()> {
+    state.menu.close();
     state.overlay.set_anchor_bottom(false);
     // Arrastar o notch significa "Flutuante Livre" (BR-062): a posição deixa de
     // ser ditada pela ancoragem e passa a ser a do usuário.

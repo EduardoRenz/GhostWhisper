@@ -38,8 +38,11 @@ pub fn run() {
             ipc::overlay::overlay_set_interactive_regions,
             ipc::overlay::overlay_set_surface,
             ipc::overlay::overlay_set_actionbar_width,
-            ipc::overlay::overlay_set_popover_extra_height,
             ipc::overlay::overlay_start_drag,
+            ipc::menu::menu_open,
+            ipc::menu::menu_resize,
+            ipc::menu::menu_close,
+            ipc::menu::menu_state,
             ipc::audio_commands::audio_list_devices,
             ipc::audio_commands::audio_start,
             ipc::audio_commands::audio_stop,
@@ -257,6 +260,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::audio::shared_audio_reference::{SharedAudioReference, SystemAudioReferenceTap};
     use adapters::events::tauri_event_publisher::TauriEventPublisher;
     use adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
+    use adapters::menu::tauri_menu_window::TauriMenuWindow;
     use adapters::overlay::cursor_click_through::CursorClickThroughController;
     use adapters::overlay::tauri_overlay_window::TauriOverlayWindow;
     use adapters::overlay::x11_input_shape_click_through::X11InputShapeClickThrough;
@@ -306,6 +310,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use ports::locale_source::LocaleSource;
     use ports::manual_suggestion_context::ManualSuggestionContextStore;
     use ports::meeting_summaries_repository::MeetingSummariesRepository;
+    use ports::menu_window::MenuWindowController;
     use ports::model_store::ModelStore;
     use ports::overlay_window::OverlayWindowController;
     use ports::pending_session_end::PendingSessionEnd;
@@ -332,6 +337,14 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let overlay_window = window.clone();
 
     let overlay: Arc<dyn OverlayWindowController> = Arc::new(TauriOverlayWindow::new(window));
+
+    // Menu flutuante (agentes/canais) em janela própria: o notch não muda de
+    // tamanho nem de posição ao abrir/fechar (BR-072/ISS-063).
+    let menu_window = app
+        .get_webview_window("menu")
+        .ok_or_else(|| GhostWhisperError::Other("janela 'menu' não encontrada".to_string()))?;
+    let menu: Arc<dyn MenuWindowController> =
+        Arc::new(TauriMenuWindow::new(menu_window, overlay_window.clone()));
 
     // Click-through: input-shape por região no X11; polling como fallback.
     let click_through: Arc<dyn ClickThroughController> =
@@ -757,6 +770,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     Ok(state::AppState::new(
         overlay,
         click_through,
+        menu,
         audio,
         system_audio,
         monitor,
@@ -1187,7 +1201,10 @@ fn spawn_overlay_position_tracker(app: tauri::AppHandle) {
             continue;
         }
 
-        let Ok(position) = window.outer_position() else {
+        // `set_position` do Tauri no Linux posiciona o **cliente** (inner); o
+        // tracker precisa salvar a mesma origem, senão o frame/CSD (37 px no
+        // topo) faz a janela subir um frame a cada boot.
+        let Ok(position) = window.inner_position().or_else(|_| window.outer_position()) else {
             continue;
         };
         let current = (position.x, position.y);

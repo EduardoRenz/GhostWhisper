@@ -26,6 +26,21 @@
         "center": true
       },
       {
+        "label": "menu",
+        "title": "",
+        "width": 300,
+        "height": 200,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": true,
+        "visible": false,
+        "center": false
+      },
+      {
         "label": "ask",
         "title": "",
         "width": 1040,

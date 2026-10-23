@@ -13,11 +13,41 @@ export const setActionbarWidth = (
 ): Promise<void | undefined> =>
   invokeSafe<void>("overlay_set_actionbar_width", { width });
 
-/** Reserva altura extra abaixo da barra enquanto um popover está aberto. */
-export const setPopoverExtraHeight = (
-  height: number,
+/** Tipo de menu flutuante (janela `menu`). */
+export type MenuKind = "agent" | "channel";
+
+/** Retângulo em CSS px relativo à janela do overlay. */
+export interface MenuRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Gatilho (eixo X) e corpo do notch (eixo Y) do menu. */
+export interface MenuAnchor {
+  trigger: MenuRect;
+  notch: MenuRect;
+}
+
+/** Abre (ou reposiciona) o menu flutuante ancorado no gatilho. */
+export const openMenu = (
+  kind: MenuKind,
+  anchor: MenuAnchor,
 ): Promise<void | undefined> =>
-  invokeSafe<void>("overlay_set_popover_extra_height", { height });
+  invokeSafe<void>("menu_open", { kind, anchor });
+
+/** Ajusta a altura do menu ao conteúdo medido (CSS px). */
+export const resizeMenu = (height: number): Promise<void | undefined> =>
+  invokeSafe<void>("menu_resize", { height });
+
+/** Fecha o menu flutuante. */
+export const closeMenu = (): Promise<void | undefined> =>
+  invokeSafe<void>("menu_close");
+
+/** Menu atualmente aberto (estado inicial do webview da janela `menu`). */
+export const menuState = (): Promise<MenuKind | null | undefined> =>
+  invokeSafe<MenuKind | null>("menu_state");
 
 /** Alterna a visibilidade do overlay; retorna o novo estado. */
 export const toggleOverlay = (): Promise<boolean | undefined> =>

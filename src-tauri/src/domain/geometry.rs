@@ -103,6 +103,49 @@ pub fn should_pass_through_margin(
     )
 }
 
+/// Posição de um popup ancorado (menus de agentes/canais), em pixels físicos.
+///
+/// `trigger` alinha o eixo X (centro ou direita do botão); `notch` manda no
+/// eixo Y: o menu fica **abaixo do corpo do notch** ou, se não couber, **acima
+/// dele** — nunca por cima da barra. O popup é uma janela própria: o notch não
+/// muda de tamanho nem de posição (BR-072/ISS-062).
+pub fn menu_placement(
+    trigger: Rect,
+    notch: Rect,
+    menu_size: (i32, i32),
+    work_area: Rect,
+    gap: i32,
+    align_right: bool,
+) -> (i32, i32) {
+    let (menu_w, menu_h) = menu_size;
+    let gap = gap.max(0);
+    let min_x = work_area.x;
+    let max_x = (work_area.x + work_area.width - menu_w).max(min_x);
+    let min_y = work_area.y;
+    let max_y = (work_area.y + work_area.height - menu_h).max(min_y);
+
+    let x = if align_right {
+        trigger.x + trigger.width - menu_w
+    } else {
+        trigger.x + (trigger.width - menu_w) / 2
+    }
+    .clamp(min_x, max_x);
+
+    // Abaixo do **corpo do notch** (barra/pill), não do botão: evita cobrir a
+    // barra e ficar atrás dela.
+    let below = notch.y + notch.height + gap;
+    let above = notch.y - gap - menu_h;
+    let y = if below + menu_h <= work_area.y + work_area.height {
+        below
+    } else if above >= work_area.y {
+        above
+    } else {
+        below
+    }
+    .clamp(min_y, max_y);
+    (x, y)
+}
+
 /// Trava de histerese do click-through.
 ///
 /// Entrar numa região interativa é **imediato** (evita perder o clique — ISS-001);
@@ -249,6 +292,58 @@ mod tests {
             &regions,
             8
         ));
+    }
+
+    #[test]
+    fn menu_opens_below_the_notch_when_it_fits() {
+        let work = rect(0, 0, 1920, 1080);
+        let trigger = rect(900, 200, 100, 30);
+        let notch = rect(800, 180, 300, 100);
+        // menu 200x120: abaixo do notch (280+6+120 = 406 ≤ 1080); x centrado no gatilho.
+        assert_eq!(
+            menu_placement(trigger, notch, (200, 120), work, 6, false),
+            (850, 286)
+        );
+    }
+
+    #[test]
+    fn menu_opens_above_the_notch_near_the_bottom() {
+        let work = rect(0, 0, 1920, 1080);
+        let trigger = rect(900, 1000, 100, 30);
+        let notch = rect(800, 980, 300, 100);
+        // abaixo iria a 1086 > 1080; abre acima do notch: 980-6-120 = 854.
+        assert_eq!(
+            menu_placement(trigger, notch, (200, 120), work, 6, false),
+            (850, 854)
+        );
+    }
+
+    #[test]
+    fn menu_clamps_x_and_right_aligns() {
+        let work = rect(0, 0, 1920, 1080);
+        let notch = rect(1800, 100, 120, 40);
+        // Colado à direita: alinhado à direita do gatilho e clampado.
+        let anchor = rect(1880, 100, 30, 30);
+        assert_eq!(
+            menu_placement(anchor, notch, (220, 100), work, 6, true).0,
+            1690
+        );
+        // Colado à esquerda, centralizado: clampa em 0.
+        let anchor = rect(10, 100, 30, 30);
+        assert_eq!(
+            menu_placement(anchor, notch, (220, 100), work, 6, false).0,
+            0
+        );
+    }
+
+    #[test]
+    fn menu_respects_work_area_origin() {
+        let work = rect(1920, 40, 1920, 1040);
+        let notch = rect(2900, 100, 300, 100);
+        let anchor = rect(3000, 100, 100, 30);
+        let (x, y) = menu_placement(anchor, notch, (220, 100), work, 6, false);
+        assert!(x >= 1920 && x + 220 <= 3840);
+        assert!(y >= 40 && y + 100 <= 1080);
     }
 
     #[test]

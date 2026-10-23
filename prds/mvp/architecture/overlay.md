@@ -101,9 +101,10 @@ janela, mas o **X11** expõe a extensão **SHAPE** (`ShapeRectangles` com
   `ResizeObserver` e envia `overlay_set_actionbar_width`; a janela acompanha o
   conteúdo e reancora em topo-centro/direita. Em "Flutuante Livre" o canto
   superior é preservado (ISS-047).
-- **Popover de canais:** abre **abaixo** da barra; enquanto aberto, o core
-  reserva altura extra (`overlay_set_popover_extra_height`) para o menu caber na
-  janela e receber cliques (ISS-047).
+- **Menus de canais/agentes:** janela Tauri própria (`menu`) ancorada
+  acima/abaixo do gatilho (ISS-047/ISS-062). A janela do notch não redimensiona
+  nem se move ao abrir/fechar; seleção, `Escape`, clique fora e perda de foco
+  fecham o popup (BR-072).
 
 > Ver também: a conversa em bolhas, o transporte por ícones e a pílula de sessão
 > estão especificados em [`../../chat/architecture/chat-ui.md`](../../chat/architecture/chat-ui.md)

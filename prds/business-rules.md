@@ -1561,6 +1561,9 @@ uma nota de revisão.
   2. a janela é **colocada pela primeira vez** no boot, por não haver posição
      salva (fallback centralizado/topo/canto);
   3. o usuário muda explicitamente a **âncora/densidade do notch** (BR-062);
+  4. o overlay **abre menus em janelas próprias** (agentes/canais) ancoradas
+     acima/abaixo do notch; a janela do notch não muda de tamanho nem de posição
+     (ISS-062);
 - **Motivo:** relato do usuário — a barra “Perguntar” pulava depois que a
   captura de tela a escondia e mostrava de novo. A causa era o
   `center_ask_window` chamado em toda abertura escondida; a captura chama
@@ -1573,8 +1576,9 @@ uma nota de revisão.
   restaura antes/depois do `show`. A posição de painéis/notch/Configurações
   também não é alterada pelo ciclo da captura; o único movimento automático é
   a colocação inicial.
-- **Exceções documentadas:** a primeira colocação de cada janela e a mudança
-  explícita de âncora/densidade — nenhuma delas é disparada por interação em
+- **Exceções documentadas:** a primeira colocação de cada janela, a mudança
+  explícita de âncora/densidade e a abertura de menus em janelas próprias (que
+  não alteram a janela do notch) — nenhuma delas é disparada por interação em
   outra janela.
 - **Revisão (2026-10-21):** posição de janela só é **persistida** quando veio
   de arraste explícito. Para a barra “Perguntar”, o tracker e o save antes de
@@ -1582,10 +1586,18 @@ uma nota de revisão.
   `InitialPlacement` só preenche quando ainda não há posição. O teste
   `automatic_ask_position_never_overwrites_user_position` (R16/R17) cobre a
   regressão ISS-057.
+- **Revisão (2026-10-23):** os menus de agentes/canais vivem em **janela
+  própria** (`menu`), posicionada acima/abaixo do gatilho pela área útil. A
+  janela do notch não muda de tamanho nem de posição ao abrir/fechar menu e
+  `overlay_position` volta a guardar o topo da janela. Tentativas de crescer ou
+  reservar espaço dentro do notch foram descartadas: geravam pulo e deixavam o
+  notch sem clique (ISS-062/task 20).
 - **Detalhes:** [`session/issues.md`](session/issues.md) ISS-055/ISS-057,
   [`session/tasks/12-task.md`](session/tasks/12-task.md),
-  [`session/tasks/14-task.md`](session/tasks/14-task.md).
-- **Data:** 2026-10-21 · **Status:** Ativa (revisada)
+  [`session/tasks/14-task.md`](session/tasks/14-task.md),
+  [`notch/issues.md`](notch/issues.md) ISS-062,
+  [`notch/tasks/20-task.md`](notch/tasks/20-task.md).
+- **Data:** 2026-10-21 · **Status:** Ativa (revisada em 2026-10-23)
 
 ## BR-073 — Todas as janelas do GhostWhisper ficam sempre à frente
 
@@ -1764,14 +1776,16 @@ uma nota de revisão.
 - **Consequência:** a janela do overlay reserva uma faixa de **34 px** acima da
   barra (`AGENT_SELECTOR_BAND`) — a barra deixa de encostar no topo da tela e a
   janela cresce para baixo; o seletor é `[data-interactive]` (o resto continua
-  click-through); o menu reserva altura extra abaixo, como o menu de canais (o
-  maior popover vence); entra o comando `settings_set_assistant_mode` (grava
+  click-through); o menu abre em **janela própria** acima/abaixo do pill, sem
+  redimensionar nem mover o notch (BR-072/ISS-062); entra o comando
+  `settings_set_assistant_mode` (grava
   **só** o campo, sem snapshot das settings) e sai o `AgentSelector` da janela
   de Sugestões.
 - **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §12,
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §11,
-  [`assistants/tasks/11-task.md`](assistants/tasks/11-task.md).
-- **Data:** 2026-10-22 · **Status:** Ativa (implementada em 2026-10-22)
+  [`assistants/tasks/11-task.md`](assistants/tasks/11-task.md),
+  [`notch/tasks/20-task.md`](notch/tasks/20-task.md).
+- **Data:** 2026-10-22 · **Status:** Ativa (revisada em 2026-10-23)
 
 ## BR-081 — Ajuda nos campos de prompt (tooltip)
 

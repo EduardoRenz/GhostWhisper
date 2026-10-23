@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Overlay } from "./features/overlay/Overlay";
+import { MenuWindow } from "./features/menu/MenuWindow";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { SuggestionsWindow } from "./features/suggestions/SuggestionsWindow";
 import { PanelWindow } from "./features/panel/PanelWindow";
@@ -25,6 +26,7 @@ export type Route =
   | "capture"
   | "session-end"
   | "recording-picker"
+  | "menu"
   | "unknown";
 
 /**
@@ -46,6 +48,7 @@ export function resolveRoute(): Route {
     if (label === "capture") return "capture";
     if (label === "session-end") return "session-end";
     if (label === "recording-picker") return "recording-picker";
+    if (label === "menu") return "menu";
     if (label === "overlay") return "overlay";
     return "unknown";
   } catch {
@@ -59,6 +62,7 @@ export function resolveRoute(): Route {
     if (target === "capture") return "capture";
     if (target === "session-end") return "session-end";
     if (target === "recording-picker") return "recording-picker";
+    if (target === "menu") return "menu";
     }
     return "overlay";
   }
@@ -116,6 +120,10 @@ export function App() {
 
   if (route === "recording-picker") {
     return <RecordingPickerWindow />;
+  }
+
+  if (route === "menu") {
+    return <MenuWindow />;
   }
 
   return (

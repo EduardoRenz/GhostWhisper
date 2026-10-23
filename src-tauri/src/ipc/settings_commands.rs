@@ -98,7 +98,7 @@ pub fn settings_set(
         let anchor = crate::domain::hud_layout::NotchAnchor::parse(&settings.notch_anchor);
         state.overlay.set_hud_layout(density, anchor);
         if !anchor.is_anchored() {
-            // "Flutuante Livre" volta para onde o usuário deixou o notch.
+            // "Flutuante Livre" volta para onde o usuário deixou a **pilha**.
             if let Some((x, y)) = settings
                 .overlay_position
                 .filter(|(x, y)| *x >= 0 && *y >= 0)
