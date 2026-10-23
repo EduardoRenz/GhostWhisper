@@ -103,6 +103,11 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 - **Números tabulares** obrigatórios em timers, contadores e tempos (`font-variant-numeric: tabular-nums`).
 - **Fontes:** `Geist` (SIL OFL 1.1) e `JetBrains Mono` (SIL OFL 1.1); incluir o
   arquivo de licença em `src/assets/fonts/`. `font-display: swap`.
+- **Escala (BR-087):** os tamanhos/entrelinhas acima são declarados em
+  **`rem`** (não `px`) — a escala da fonte é um zoom no `font-size` do `<html>`
+  e precisa alcançar token e linha. Em raiz de 16 px os valores são idênticos
+  aos antigos em px. O **bônus de IA** é o token `--oh-ai-font-scale`
+  (multiplicador nas superfícies geradas pela IA).
 
 ## 4. Raios e espaçamento
 
@@ -113,6 +118,7 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | `--oh-radius-md` | `1.5rem` |
 | `--oh-window-radius` | `var(--oh-radius-sm)` (8 px) — raio externo de painéis e Configurações (BR-064) |
 | `--hud-alpha` | `0.75` (20–100 %) — opacidade global das superfícies; sobrescrita no root de cada webview (BR-062) |
+| `--oh-ai-font-scale` | `1` (1,0–1,5) — bônus do tamanho do texto de IA; sobrescrita no root só das **janelas de conteúdo** (BR-087). A escala global (0,75–1,6) não é token: é o `font-size` do `<html>` aplicado por `useFontScale` |
 | `--oh-radius-lg` | `2rem` |
 | `--oh-radius-xl` | `3rem` |
 | `--oh-radius-full` | `9999px` |

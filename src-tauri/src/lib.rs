@@ -110,6 +110,8 @@ pub fn run() {
             ipc::settings_commands::settings_set_assistant_mode,
             ipc::settings_commands::settings_preview_overlay_opacity,
             ipc::settings_commands::settings_set_overlay_opacity,
+            ipc::settings_commands::settings_preview_font_scales,
+            ipc::settings_commands::settings_set_font_scales,
             ipc::settings_commands::settings_validate_key,
             ipc::settings_commands::settings_provider_label,
             ipc::settings_commands::settings_secrets_persistent,

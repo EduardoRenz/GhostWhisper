@@ -21,6 +21,7 @@
 | 13 | Overlay consome opacidade/densidade, docs e verificação | CONCLUDED |
 | 14 | Redesign da aba "Fontes de IA" | PENDING |
 | 15 | Opacidade global das janelas em tempo real + autosave | CONCLUDED |
+| 16 | Escala de fonte global + bônus do texto de IA | CONCLUDED |
 
 ## Revisão v0.2 (2026-10-20)
 

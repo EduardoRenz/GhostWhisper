@@ -187,6 +187,15 @@ export interface Settings {
   notch_anchor: NotchAnchor;
   /** Densidade (espaçamento/espessura) do notch — BR-062. */
   hud_density: HudDensity;
+  /**
+   * Escala relativa da fonte de toda a UI, 0,75–1,6 — BR-087.
+   *
+   * Só vale nas **janelas de conteúdo**: notch e barra "Perguntar" mantêm o
+   * tamanho próprio (densidade do HUD).
+   */
+  font_scale: number;
+  /** Bônus de tamanho do texto de IA (1,0–1,5) — BR-087. */
+  ai_font_scale: number;
   saved_questions: SavedQuestion[];
   /**
    * Marca a migração das perguntas prontas (BR-054): o preset **novo**
@@ -441,6 +450,8 @@ export const defaultSettings = (): Settings => ({
   overlay_opacity: DEFAULT_OVERLAY_OPACITY,
   notch_anchor: "top_center",
   hud_density: "standard",
+  font_scale: DEFAULT_FONT_SCALE,
+  ai_font_scale: DEFAULT_AI_FONT_SCALE,
   saved_questions: DEFAULT_SAVED_QUESTIONS,
   saved_questions_migrated: false,
   recording_mode: "video",
@@ -514,6 +525,37 @@ export function clampOverlayOpacity(value: number): number {
     return DEFAULT_OVERLAY_OPACITY;
   }
   return Math.min(MAX_OVERLAY_OPACITY, Math.max(MIN_OVERLAY_OPACITY, value));
+}
+
+/** Escala de fonte da UI (BR-087) ----------------------------------------- */
+
+/** Escala padrão (100 %). */
+export const DEFAULT_FONT_SCALE = 1;
+/** Escala mínima aceita (75 %). */
+export const MIN_FONT_SCALE = 0.75;
+/** Escala máxima aceita (160 %). */
+export const MAX_FONT_SCALE = 1.6;
+/** Bônus de texto de IA padrão (100 %). */
+export const DEFAULT_AI_FONT_SCALE = 1;
+/** Bônus mínimo (100 %): ele só acrescenta à escala global. */
+export const MIN_AI_FONT_SCALE = 1;
+/** Bônus máximo de texto de IA (150 %). */
+export const MAX_AI_FONT_SCALE = 1.5;
+
+/** Traz a escala global para a faixa aceita (passo livre). */
+export function clampFontScale(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_FONT_SCALE;
+  }
+  return Math.min(MAX_FONT_SCALE, Math.max(MIN_FONT_SCALE, value));
+}
+
+/** Traz o bônus de texto de IA para a faixa aceita (passo livre). */
+export function clampAiFontScale(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_AI_FONT_SCALE;
+  }
+  return Math.min(MAX_AI_FONT_SCALE, Math.max(MIN_AI_FONT_SCALE, value));
 }
 
 /** Opções de cadência do resumo automático. */

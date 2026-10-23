@@ -152,30 +152,46 @@
   );
 
   /* --- Tipografia ------------------------------------------------------- */
+  /*
+   * Tamanhos em `rem` (não `px`): o zoom de escala da fonte (BR-087) é um
+   * `font-size` no `<html>` e precisa alcançar fonte **e** entrelinha.
+   * Em raiz de 16 px os valores são idênticos aos antigos em px.
+   */
   --oh-font-sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto,
     sans-serif;
   --oh-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
     monospace;
-  --oh-headline-xl-size: 24px;
-  --oh-headline-xl-line: 32px;
-  --oh-headline-lg-size: 18px;
-  --oh-headline-lg-line: 26px;
-  --oh-headline-md-size: 15px;
-  --oh-headline-md-line: 22px;
-  --oh-body-lg-size: 14px;
-  --oh-body-lg-line: 20px;
-  --oh-body-md-size: 13px;
-  --oh-body-md-line: 18px;
-  --oh-body-sm-size: 12px;
-  --oh-body-sm-line: 16px;
-  --oh-label-md-size: 12px;
-  --oh-label-md-line: 16px;
-  --oh-label-sm-size: 11px;
-  --oh-label-sm-line: 14px;
-  --oh-code-sm-size: 11px;
-  --oh-code-sm-line: 14px;
-  --oh-status-size: 10px;
-  --oh-status-line: 12px;
+  --oh-headline-xl-size: 1.5rem; /* 24 */
+  --oh-headline-xl-line: 2rem; /* 32 */
+  --oh-headline-lg-size: 1.125rem; /* 18 */
+  --oh-headline-lg-line: 1.625rem; /* 26 */
+  --oh-headline-md-size: 0.9375rem; /* 15 */
+  --oh-headline-md-line: 1.375rem; /* 22 */
+  --oh-body-lg-size: 0.875rem; /* 14 */
+  --oh-body-lg-line: 1.25rem; /* 20 */
+  --oh-body-md-size: 0.8125rem; /* 13 */
+  --oh-body-md-line: 1.125rem; /* 18 */
+  --oh-body-sm-size: 0.75rem; /* 12 */
+  --oh-body-sm-line: 1rem; /* 16 */
+  --oh-label-md-size: 0.75rem; /* 12 */
+  --oh-label-md-line: 1rem; /* 16 */
+  --oh-label-sm-size: 0.6875rem; /* 11 */
+  --oh-label-sm-line: 0.875rem; /* 14 */
+  --oh-code-sm-size: 0.6875rem; /* 11 */
+  --oh-code-sm-line: 0.875rem; /* 14 */
+  --oh-status-size: 0.625rem; /* 10 */
+  --oh-status-line: 0.75rem; /* 12 */
+
+  /* --- Escala de fonte (BR-087) ------------------------------------------ */
+  /*
+   * Bônus do texto de IA: multiplica os tokens nas superfícies geradas pela IA
+   * (respostas, resumo, sugestões). Sobrescrito no `<html>` pelo hook
+   * `useFontScale` — só nas janelas de conteúdo.
+   *
+   * A escala **global** não é um token: é um zoom no `font-size` do `<html>`
+   * (rem acompanha fonte e espaçamento, então tudo cresce junto).
+   */
+  --oh-ai-font-scale: 1;
 
   /* --- Raio e espaçamento ---------------------------------------------- */
   --oh-radius-sm: 0.5rem;

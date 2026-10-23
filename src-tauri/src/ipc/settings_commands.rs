@@ -4,7 +4,12 @@
 
 use tauri::{Emitter, State};
 
-use crate::domain::settings::{ProviderKind, Settings, MAX_OVERLAY_OPACITY, MIN_OVERLAY_OPACITY};
+use serde::Serialize;
+
+use crate::domain::settings::{
+    ProviderKind, Settings, MAX_AI_FONT_SCALE, MAX_FONT_SCALE, MAX_OVERLAY_OPACITY,
+    MIN_AI_FONT_SCALE, MIN_FONT_SCALE, MIN_OVERLAY_OPACITY,
+};
 use crate::domain::shortcuts::ShortcutConflict;
 use crate::error::{GhostWhisperError, Result};
 use crate::ipc::window_visibility::show_above;
@@ -111,8 +116,94 @@ pub fn settings_set(
     // inclusive o drill-hover (BR-036). O preview garante que um save completo
     // (ex.: restaurar padrões) também atualize a opacidade global na hora.
     let _ = app.emit("hud_opacity_preview", settings.overlay_opacity);
+    let _ = app.emit("font_scales_preview", FontScalePreview::of(&settings));
     let _ = app.emit("settings_changed", ());
     Ok(conflicts)
+}
+
+/// Payload do preview das escalas de fonte (BR-087).
+///
+/// A UI de Configurações publica a cada movimento dos sliders; todas as
+/// janelas de conteúdo reaplicam sem esperar o autosave.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct FontScalePreview {
+    /// Escala global da UI (0,75–1,6).
+    pub font_scale: f32,
+    /// Bônus do texto de IA (1,0–1,5).
+    pub ai_font_scale: f32,
+}
+
+impl FontScalePreview {
+    /// Lê as duas escalas de um snapshot de settings.
+    pub fn of(settings: &Settings) -> Self {
+        Self {
+            font_scale: settings.font_scale,
+            ai_font_scale: settings.ai_font_scale,
+        }
+    }
+}
+
+/// Nome do evento de preview das escalas de fonte (BR-087).
+pub const FONT_SCALES_PREVIEW_EVENT: &str = "font_scales_preview";
+
+/// Valida a faixa das duas escalas de fonte (BR-087).
+fn validate_font_scales(font_scale: f32, ai_font_scale: f32) -> Result<()> {
+    if !font_scale.is_finite() || !(MIN_FONT_SCALE..=MAX_FONT_SCALE).contains(&font_scale) {
+        return Err(GhostWhisperError::Config(format!(
+            "escala da fonte deve ficar entre {MIN_FONT_SCALE} e {MAX_FONT_SCALE}"
+        )));
+    }
+    if !ai_font_scale.is_finite()
+        || !(MIN_AI_FONT_SCALE..=MAX_AI_FONT_SCALE).contains(&ai_font_scale)
+    {
+        return Err(GhostWhisperError::Config(format!(
+            "escala do texto de IA deve ficar entre {MIN_AI_FONT_SCALE} e {MAX_AI_FONT_SCALE}"
+        )));
+    }
+    Ok(())
+}
+
+/// Publica o preview das escalas de fonte sem gravar em disco.
+///
+/// Os sliders de Configurações chamam a cada movimento; o valor é aplicado nas
+/// janelas de conteúdo via `font_scales_preview` (BR-087).
+#[tauri::command]
+pub fn settings_preview_font_scales(
+    app: tauri::AppHandle,
+    font_scale: f32,
+    ai_font_scale: f32,
+) -> Result<()> {
+    validate_font_scales(font_scale, ai_font_scale)?;
+    let _ = app.emit(
+        FONT_SCALES_PREVIEW_EVENT,
+        FontScalePreview {
+            font_scale,
+            ai_font_scale,
+        },
+    );
+    Ok(())
+}
+
+/// Autosave das escalas de fonte (debounced pela UI).
+///
+/// Grava **só** esses campos — não reaplica atalhos nem geometria — e avisa as
+/// janelas. Os demais ajustes continuam no "Salvar Alterações" global.
+#[tauri::command(async)]
+pub fn settings_set_font_scales(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    font_scale: f32,
+    ai_font_scale: f32,
+) -> Result<()> {
+    validate_font_scales(font_scale, ai_font_scale)?;
+    let mut settings = state.settings.load()?;
+    settings.font_scale = font_scale;
+    settings.ai_font_scale = ai_font_scale;
+    settings.validate()?;
+    state.settings.save(&settings)?;
+    let _ = app.emit(FONT_SCALES_PREVIEW_EVENT, FontScalePreview::of(&settings));
+    let _ = app.emit("settings_changed", ());
+    Ok(())
 }
 
 /// Valida a faixa da opacidade global (20 %–100 %).

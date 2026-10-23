@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   ACCELERATION_LABELS,
   ACCELERATION_MODES,
+  DEFAULT_AI_FONT_SCALE,
+  DEFAULT_FONT_SCALE,
   DEFAULT_OVERLAY_OPACITY,
   HUD_DENSITIES,
   HUD_DENSITY_LABELS,
   LANGUAGES,
+  MAX_AI_FONT_SCALE,
   MAX_DWELL_MS,
+  MAX_FONT_SCALE,
   MAX_OVERLAY_OPACITY,
+  MIN_AI_FONT_SCALE,
   MIN_DWELL_MS,
+  MIN_FONT_SCALE,
   MIN_OVERLAY_OPACITY,
   NOTCH_ANCHORS,
   NOTCH_ANCHOR_LABELS,
@@ -17,6 +23,8 @@ import {
   SOURCE_LANGUAGE_LABELS,
   TARGET_LANGUAGE_LABELS,
   WHISPER_MODELS,
+  clampAiFontScale,
+  clampFontScale,
   clampOverlayOpacity,
   defaultSettings,
   providerRequiresBaseUrl,
@@ -107,6 +115,28 @@ describe("settings (domínio)", () => {
     expect(clampOverlayOpacity(3)).toBe(MAX_OVERLAY_OPACITY);
     expect(clampOverlayOpacity(Number.NaN)).toBe(DEFAULT_OVERLAY_OPACITY);
     expect(clampOverlayOpacity(0.6)).toBe(0.6);
+  });
+
+  it("escalas de fonte nascem em 100 % e respeitam a faixa (BR-087)", () => {
+    const settings = defaultSettings();
+    expect(settings.font_scale).toBe(1);
+    expect(settings.ai_font_scale).toBe(1);
+    expect(DEFAULT_FONT_SCALE).toBe(1);
+    expect(MIN_FONT_SCALE).toBe(0.75);
+    expect(MAX_FONT_SCALE).toBe(1.6);
+    // O bônus de IA só acrescenta à escala global.
+    expect(MIN_AI_FONT_SCALE).toBe(1);
+    expect(MAX_AI_FONT_SCALE).toBe(1.5);
+
+    expect(clampFontScale(0.1)).toBe(MIN_FONT_SCALE);
+    expect(clampFontScale(4)).toBe(MAX_FONT_SCALE);
+    expect(clampFontScale(Number.NaN)).toBe(DEFAULT_FONT_SCALE);
+    expect(clampFontScale(1.25)).toBe(1.25);
+
+    expect(clampAiFontScale(0.4)).toBe(MIN_AI_FONT_SCALE);
+    expect(clampAiFontScale(9)).toBe(MAX_AI_FONT_SCALE);
+    expect(clampAiFontScale(Number.NaN)).toBe(DEFAULT_AI_FONT_SCALE);
+    expect(clampAiFontScale(1.2)).toBe(1.2);
   });
 
   it("as perguntas prontas terminam com o pedido da última pergunta (BR-054)", () => {

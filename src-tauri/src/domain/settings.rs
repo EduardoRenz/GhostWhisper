@@ -311,6 +311,17 @@ pub struct Settings {
     /// Densidade do notch: `compact` | `standard` | `expanded` (BR-062).
     #[serde(default = "default_hud_density")]
     pub hud_density: String,
+    /// Escala relativa da fonte de toda a UI, 0,75–1,6 (BR-087).
+    ///
+    /// Só vale nas **janelas de conteúdo**: notch e barra "Perguntar" ficam no
+    /// tamanho próprio (densidade do HUD).
+    #[serde(default = "default_font_scale")]
+    pub font_scale: f32,
+    /// Bônus de tamanho do texto de IA, 1,0–1,5 (BR-087).
+    ///
+    /// Multiplica a escala global nas respostas/sugestões/resumo.
+    #[serde(default = "default_ai_font_scale")]
+    pub ai_font_scale: f32,
     /// Perguntas prontas do usuário (aba "Sessão", BR-054).
     #[serde(default = "default_saved_questions")]
     pub saved_questions: Vec<SavedQuestion>,
@@ -423,6 +434,18 @@ pub const DEFAULT_OVERLAY_OPACITY: f32 = 0.75;
 pub const MIN_OVERLAY_OPACITY: f32 = 0.2;
 /// Opacidade máxima aceita (100 %).
 pub const MAX_OVERLAY_OPACITY: f32 = 1.0;
+/// Escala de fonte padrão (100 %) — BR-087.
+pub const DEFAULT_FONT_SCALE: f32 = 1.0;
+/// Escala de fonte mínima aceita (75 %).
+pub const MIN_FONT_SCALE: f32 = 0.75;
+/// Escala de fonte máxima aceita (160 %).
+pub const MAX_FONT_SCALE: f32 = 1.6;
+/// Bônus de texto de IA padrão (100 %) — BR-087.
+pub const DEFAULT_AI_FONT_SCALE: f32 = 1.0;
+/// Bônus de texto de IA mínimo (100 %): ele só **acrescenta** à escala global.
+pub const MIN_AI_FONT_SCALE: f32 = 1.0;
+/// Bônus de texto de IA máximo (150 %).
+pub const MAX_AI_FONT_SCALE: f32 = 1.5;
 /// Valores aceitos de ancoragem do notch (BR-062).
 pub const NOTCH_ANCHORS: [&str; 3] = ["top_center", "top_right", "free"];
 /// Ancoragem padrão: centralizado no topo.
@@ -491,6 +514,8 @@ impl Default for Settings {
             overlay_opacity: default_overlay_opacity(),
             notch_anchor: default_notch_anchor(),
             hud_density: default_hud_density(),
+            font_scale: default_font_scale(),
+            ai_font_scale: default_ai_font_scale(),
             saved_questions: default_saved_questions(),
             saved_questions_migrated: false,
             recording_mode: default_recording_mode(),
@@ -611,6 +636,14 @@ fn default_notch_anchor() -> String {
 
 fn default_hud_density() -> String {
     DEFAULT_HUD_DENSITY.to_string()
+}
+
+fn default_font_scale() -> f32 {
+    DEFAULT_FONT_SCALE
+}
+
+fn default_ai_font_scale() -> f32 {
+    DEFAULT_AI_FONT_SCALE
 }
 
 /// `true` se a ancoragem é uma das aceitas (BR-062).
@@ -751,6 +784,20 @@ impl Settings {
                 HUD_DENSITIES.join(", ")
             )));
         }
+        if !self.font_scale.is_finite()
+            || !(MIN_FONT_SCALE..=MAX_FONT_SCALE).contains(&self.font_scale)
+        {
+            return Err(GhostWhisperError::Config(format!(
+                "escala da fonte deve ficar entre {MIN_FONT_SCALE} e {MAX_FONT_SCALE}"
+            )));
+        }
+        if !self.ai_font_scale.is_finite()
+            || !(MIN_AI_FONT_SCALE..=MAX_AI_FONT_SCALE).contains(&self.ai_font_scale)
+        {
+            return Err(GhostWhisperError::Config(format!(
+                "escala do texto de IA deve ficar entre {MIN_AI_FONT_SCALE} e {MAX_AI_FONT_SCALE}"
+            )));
+        }
         Ok(())
     }
 
@@ -850,6 +897,18 @@ impl Settings {
         if !is_supported_density(&self.hud_density) {
             self.hud_density = default_hud_density();
         }
+        // Escala de fonte (BR-087): fora da faixa (ou não finita) volta para o
+        // limite mais próximo; o bônus de IA nunca fica abaixo de 1,0.
+        if !self.font_scale.is_finite() {
+            self.font_scale = DEFAULT_FONT_SCALE;
+        }
+        self.font_scale = self.font_scale.clamp(MIN_FONT_SCALE, MAX_FONT_SCALE);
+        if !self.ai_font_scale.is_finite() {
+            self.ai_font_scale = DEFAULT_AI_FONT_SCALE;
+        }
+        self.ai_font_scale = self
+            .ai_font_scale
+            .clamp(MIN_AI_FONT_SCALE, MAX_AI_FONT_SCALE);
         self.suggestions_size = clamp_panel_size(self.suggestions_size);
         self.chat_size = clamp_panel_size(self.chat_size);
         self.history_size = clamp_panel_size(self.history_size);
@@ -1431,6 +1490,80 @@ mod tests {
             overlay_opacity: MAX_OVERLAY_OPACITY,
             notch_anchor: "free".to_string(),
             hud_density: "expanded".to_string(),
+            ..Settings::default()
+        };
+        assert!(valid.validate().is_ok());
+    }
+
+    #[test]
+    fn font_scale_defaults_to_one_and_legacy_settings_get_it() {
+        let settings = Settings::default();
+        assert_eq!(settings.font_scale, DEFAULT_FONT_SCALE);
+        assert_eq!(settings.ai_font_scale, DEFAULT_AI_FONT_SCALE);
+        assert_eq!(DEFAULT_FONT_SCALE, 1.0);
+        assert_eq!(MIN_FONT_SCALE, 0.75);
+        assert_eq!(MAX_FONT_SCALE, 1.6);
+        assert_eq!(MIN_AI_FONT_SCALE, 1.0);
+        assert_eq!(MAX_AI_FONT_SCALE, 1.5);
+        assert!(settings.validate().is_ok());
+
+        let mut legacy = serde_json::to_value(Settings::default()).expect("json");
+        let object = legacy.as_object_mut().expect("settings é um objeto");
+        object.remove("font_scale");
+        object.remove("ai_font_scale");
+        assert!(!legacy.to_string().contains("font_scale"));
+        let parsed: Settings = serde_json::from_value(legacy).expect("desserializa antigo");
+        assert_eq!(parsed.font_scale, DEFAULT_FONT_SCALE);
+        assert_eq!(parsed.ai_font_scale, DEFAULT_AI_FONT_SCALE);
+        assert!(parsed.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_clamps_font_scales_into_contract() {
+        let dirty = Settings {
+            font_scale: 9.0,
+            ai_font_scale: 0.2,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(dirty.font_scale, MAX_FONT_SCALE);
+        assert_eq!(dirty.ai_font_scale, MIN_AI_FONT_SCALE);
+        assert!(dirty.validate().is_ok());
+
+        let small = Settings {
+            font_scale: 0.1,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(small.font_scale, MIN_FONT_SCALE);
+
+        let nan = Settings {
+            font_scale: f32::NAN,
+            ai_font_scale: f32::NAN,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(nan.font_scale, DEFAULT_FONT_SCALE);
+        assert_eq!(nan.ai_font_scale, DEFAULT_AI_FONT_SCALE);
+    }
+
+    #[test]
+    fn font_scale_validation_rejects_out_of_contract() {
+        let global = Settings {
+            font_scale: 2.0,
+            ..Settings::default()
+        };
+        assert!(global.validate().is_err());
+
+        let ai = Settings {
+            ai_font_scale: 3.0,
+            ..Settings::default()
+        };
+        assert!(ai.validate().is_err());
+
+        let valid = Settings {
+            font_scale: MIN_FONT_SCALE,
+            ai_font_scale: MAX_AI_FONT_SCALE,
             ..Settings::default()
         };
         assert!(valid.validate().is_ok());

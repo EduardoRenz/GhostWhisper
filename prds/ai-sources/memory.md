@@ -243,3 +243,48 @@ e o comportamento do HUD ganha uma aba própria ("Geral & HUD") no lugar de
   Configurações e Chat.
 - AppImage no Xvfb: Configurações sem moldura nativa, slider 40→85→50→40 %
   persistido sem "Salvar" (overlay/Histórico abertos); pacotes às 11:13.
+
+## 2026-10-22 — Escala de fonte da UI com bônus para a IA (task 16)
+
+- **IDs:** BR-087, T16
+- **Refs:** [`tasks/16-task.md`](tasks/16-task.md),
+  [`../business-rules.md`](../business-rules.md) BR-087,
+  [`../notch/architecture/design-tokens.md`](../notch/architecture/design-tokens.md) §3–4
+
+### Pedido
+- Ajuste em **Configurações → Geral & HUD** para aumentar/diminuir o tamanho
+  relativo da fonte — **principalmente as respostas da IA**, "muito pequenas".
+- Todos os elementos e botões podem escalar, mas têm que **crescer junto** e
+  **não estourar**.
+
+### Decisões do usuário
+- **Dois controles**: escala global + bônus extra só para o texto de IA.
+- Faixa **75–160 %**, passo de **5 p.p.**, padrão 100 % (bônus IA 100–150 %).
+- Escala vale **só nas janelas de conteúdo**: notch e barra "Perguntar"
+  mantêm tamanho/densidade próprios.
+
+### Decisão/entrega
+- Zoom de raiz (`font-size` no `<html>`) + tokens de tipografia convertidos
+  de `px` para **`rem`**: fonte, entrelinha e espaçamento crescem juntos.
+  Base do sistema capturada uma vez (o zoom nunca se acumula); 100 % remove a
+  propriedade.
+- Bônus de IA como `--oh-ai-font-scale`, aplicado num bloco **no fim** de
+  `globals.css` (a ordem vence a regra original) sobre as superfícies
+  geradas pela IA.
+- IPC espelhando a opacidade: `settings_preview_font_scales` /
+  `settings_set_font_scales` + evento `font_scales_preview`, autosave com
+  debounce de 200 ms e flush ao desmontar; `settings_set` publica o preview.
+- `useFontScale(enabled)` no `App`; `enabled = route !== "overlay" &&
+  route !== "ask"`.
+- Auditoria de estouro: `font-size` em `px` → `rem` (7 ocorrências) e
+  alturas de controles **com texto** → `rem` (`.session-pill`,
+  `.composer__input`, `.composer__remove`); ícones continuam em `px`.
+
+### Verificação
+- `pnpm test` **453 ✓** (70 arquivos) · `tsc --noEmit` ✓.
+  Guardas novas: `src/styles/font-scale.test.ts` (6) e
+  `useFontScale.test.tsx` (6).
+- `cargo test` **657 ✓** (10 ignorados) · `cargo clippy --all-targets` sem
+  avisos · `cargo fmt --check` ✓.
+- Faixas travadas nos dois domínios (0,75–1,6 / 1,0–1,5), NaN → default e
+  settings legadas sem os campos carregam em 100 %.

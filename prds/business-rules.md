@@ -1914,3 +1914,34 @@ uma nota de revisão.
   [`l10n/tasks/01-task.md`](l10n/tasks/01-task.md) (CA-04),
   [`.agents/rules.md`](../.agents/rules.md) §5.1.
 - **Data:** 2026-10-22 · **Status:** Ativa
+
+## BR-087 — Escala de fonte da UI, com bônus para o texto de IA
+
+- **Decisão:** Configurações → **Geral & HUD** ganha a seção "Aparência &
+  Fonte" com **dois** sliders. O primeiro (`font_scale`, 75–160 %, passo de
+  5 p.p., padrão 100 %) é um **zoom de raiz**: `html { font-size: calc(base ×
+  escala) }`, e como tokens, fontes, entrelinhas e espaçamento vivem em `rem`,
+  **textos, botões e respiro crescem juntos** (nada fica grande com texto
+  pequeno, nem estoura). O segundo (`ai_font_scale`, 100–150 %, passo de
+  5 p.p., padrão 100 %) é um **bônus** que multiplica só o conteúdo gerado
+  pela IA — `--oh-ai-font-scale` nas respostas do chat, markdown (resumo,
+  diário, sugestões, histórico), título do resumo, insights e respostas
+  rápidas. O texto de IA é o menor do produto: é o que o controle resolve.
+- **Escopo:** o zoom vale nas **janelas de conteúdo** (Configurações, chat,
+  resumo, sugestões, histórico, sessão/fim, captura e seletor de gravação).
+  O **notch** e a **barra "Perguntar"** ficam de fora: têm tamanho e
+  densidade próprios (BR-062) e janela medida pelo conteúdo.
+- **Aplicação em tempo real:** espelha a opacidade (BR-062) —
+  `settings_preview_font_scales` publica `font_scales_preview` a cada
+  movimento e `settings_set_font_scales` faz o autosave debounced (200 ms)
+  gravando **só** esses campos; um save global também publica o preview.
+- **Motivo:** pedido do usuário (2026-10-22) — a fonte das respostas de IA
+  está pequena demais; e toda a UI precisa de um ajuste relativo de tamanho
+  que não quebre o layout.
+- **Consequência:** os tokens de tipografia passam a ser declarados em `rem`
+  (valores idênticos em raiz de 16 px) e caixas de controle **com texto**
+  usam `rem` (ícones continuam em `px`); fora da faixa, `validate` recusa e
+  `sanitized` traz para o limite mais próximo.
+- **Detalhes:** [`ai-sources/tasks/16-task.md`](ai-sources/tasks/16-task.md),
+  [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md) §3–4.
+- **Data:** 2026-10-22 · **Status:** Ativa

@@ -280,7 +280,7 @@ body,
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 28px;
+  height: 1.75rem; /* 28 — em rem para acompanhar a escala de fonte (BR-087) */
   padding: 0 10px 0 8px;
   border-radius: var(--oh-radius-full);
   background: rgba(16, 185, 129, 0.14);
@@ -315,14 +315,14 @@ body,
 }
 
 .session-pill__text {
-  font-size: 11px;
+  font-size: 0.6875rem; /* 11 */
   color: rgba(255, 255, 255, 0.75);
   white-space: nowrap;
 }
 
 .session-pill__button {
   font: inherit;
-  font-size: 11px;
+  font-size: 0.6875rem; /* 11 */
   padding: 3px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -557,7 +557,7 @@ body,
 }
 
 .chat__typing {
-  font-size: 14px;
+  font-size: 0.875rem; /* 14 */
   animation: chat-blink 1.4s infinite;
 }
 
@@ -744,7 +744,7 @@ body,
 }
 
 .chat__translate-busy {
-  font-size: 12px;
+  font-size: 0.75rem; /* 12 */
   line-height: 1;
 }
 
@@ -3900,7 +3900,7 @@ body,
 .suggestion-block__text {
   margin: 0;
   color: var(--oh-text);
-  font-size: 15px;
+  font-size: 0.9375rem; /* 15 */
   line-height: 1.55;
 }
 
@@ -4773,7 +4773,7 @@ body,
 .composer__input {
   flex: 1;
   min-width: 0;
-  height: 32px;
+  height: 2rem; /* 32 — em rem para acompanhar a escala de fonte (BR-087) */
   padding: 0 var(--oh-space-2);
   border: 1px solid var(--oh-border);
   border-radius: var(--oh-radius-full);
@@ -4845,8 +4845,8 @@ body,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 1.125rem; /* 18 — em rem: o glifo "×" escala junto (BR-087) */
+  height: 1.125rem;
   border: 1px solid var(--oh-border-strong);
   border-radius: 50%;
   background: var(--oh-surface-container-high);
@@ -5001,7 +5001,7 @@ body,
 .askbar__key {
   color: var(--oh-text-muted);
   font-family: var(--oh-font-mono);
-  font-size: 11px;
+  font-size: 0.6875rem; /* 11 */
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -5114,7 +5114,7 @@ body,
 
 /* A marca ocupa menos espaço no notch (o mockup é compacto). */
 .overlay__bar .overlay__brand {
-  font-size: 15px;
+  font-size: 0.9375rem; /* 15 */
 }
 
 .overlay__bar .overlay__group--end {
@@ -5652,4 +5652,65 @@ body,
   color: var(--oh-accent);
   font-size: 0.66rem;
   line-height: 1.5;
+}
+
+/* --- Escala extra do texto de IA (BR-087) -------------------------------- */
+/*
+ * `--oh-ai-font-scale` (1,0–1,5) multiplica somente o conteúdo **gerado
+ * pela IA**: a escala global já vale para o restante da UI. Superfícies:
+ * resposta no chat, markdown (resumo, diário, sugestões, histórico), título
+ * do resumo, insights e as respostas rápidas.
+ *
+ * O bloco fica no fim do arquivo de propósito: precisa vencer as regras de
+ * `font-size` originais de cada seletor.
+ */
+.chat__row--ai .chat__text {
+  font-size: calc(var(--oh-body-lg-size) * var(--oh-ai-font-scale));
+}
+
+.chat__translation {
+  font-size: calc(var(--oh-body-sm-size) * var(--oh-ai-font-scale));
+}
+
+.markdown {
+  font-size: calc(var(--oh-body-md-size) * var(--oh-ai-font-scale));
+}
+
+.markdown--compact {
+  font-size: calc(0.8rem * var(--oh-ai-font-scale));
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  font-size: calc(var(--oh-headline-md-size) * var(--oh-ai-font-scale));
+}
+
+.markdown h1 {
+  font-size: calc(var(--oh-headline-lg-size) * var(--oh-ai-font-scale));
+}
+
+.markdown table {
+  font-size: calc(0.78rem * var(--oh-ai-font-scale));
+}
+
+.summary-view__subject {
+  font-size: calc(1.02rem * var(--oh-ai-font-scale));
+}
+
+.suggestion-card__title {
+  font-size: calc(0.88rem * var(--oh-ai-font-scale));
+}
+
+.suggestion-block__text {
+  font-size: calc(0.9375rem * var(--oh-ai-font-scale));
+}
+
+.history__summary {
+  font-size: calc(0.78rem * var(--oh-ai-font-scale));
+}
+
+.insights__text {
+  font-size: calc(0.8rem * var(--oh-ai-font-scale));
 }

@@ -10,6 +10,7 @@ import { CapturePreviewWindow } from "./features/ask/CapturePreviewWindow";
 import { RecordingPickerWindow } from "./features/recording/RecordingPickerWindow";
 import { SessionEndWindow } from "./features/session-end/SessionEndWindow";
 import { useHudOpacity } from "./core/application/useHudOpacity";
+import { useFontScale } from "./core/application/useFontScale";
 import { useUiLanguage } from "./core/application/useUiLanguage";
 import { useTranslation } from "./core/l10n";
 
@@ -64,16 +65,18 @@ export function resolveRoute(): Route {
 }
 
 export function App() {
-  // Opacidade global (BR-062): vale para todas as janelas, inclusive as
-  // ocultas, e recebe preview em tempo real do slider de Configurações.
-  useHudOpacity();
-  // Idioma da interface (l10n): cada webview carrega o `ui_language` salvo.
-  useUiLanguage();
-  const { t } = useTranslation();
-
   // Resolve já na primeira renderização: janelas ocultas não montam o overlay
   // (e não publicam regiões interativas) antes de trocar de rota.
   const [route, setRoute] = useState<Route>(() => resolveRoute());
+  // Opacidade global (BR-062): vale para todas as janelas, inclusive as
+  // ocultas, e recebe preview em tempo real do slider de Configurações.
+  useHudOpacity();
+  // Escala de fonte (BR-087): só nas janelas de conteúdo — o notch e a barra
+  // "Perguntar" mantêm tamanho e densidade próprios.
+  useFontScale(route !== "overlay" && route !== "ask");
+  // Idioma da interface (l10n): cada webview carrega o `ui_language` salvo.
+  useUiLanguage();
+  const { t } = useTranslation();
 
   useEffect(() => {
     setRoute(resolveRoute());

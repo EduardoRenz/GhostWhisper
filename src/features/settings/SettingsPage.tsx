@@ -5,9 +5,11 @@ import {
   getProviders,
   getSettings,
   gpuInfo,
+  previewFontScales,
   previewOverlayOpacity,
   saveSettings,
   secretsPersistent,
+  setFontScales,
   setOverlayOpacity,
   settingsDefaults,
   type GpuInfo,
@@ -27,6 +29,10 @@ import {
 import { ResizeHandles } from "../panels/ResizeHandles";
 import { WindowHeader } from "../../components/WindowHeader";
 import { applyHudOpacity } from "../../core/application/useHudOpacity";
+import {
+  applyFontScale,
+  type FontScales,
+} from "../../core/application/useFontScale";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantsSettings } from "./AssistantsSettings";
 import { CadenceSettings } from "./CadenceSettings";
@@ -45,14 +51,18 @@ import {
 } from "../../components/icons";
 import {
   ACCELERATION_MODES,
+  DEFAULT_AI_FONT_SCALE,
+  DEFAULT_FONT_SCALE,
   DEFAULT_MIC_GAIN,
+  DEFAULT_OVERLAY_OPACITY,
   LANGUAGES,
   MAX_MIC_GAIN,
   MIN_MIC_GAIN,
   WHISPER_GPU_MODELS,
   WHISPER_MODELS,
   WHISPER_MODEL_SIZES,
-  DEFAULT_OVERLAY_OPACITY,
+  clampAiFontScale,
+  clampFontScale,
   defaultSettings,
   type AccelerationMode,
   type Language,
@@ -131,12 +141,22 @@ export function SettingsPage() {
   /** Debounce do autosave da opacidade (BR-062). */
   const opacityTimer = useRef<number | null>(null);
   const latestOpacity = useRef(DEFAULT_OVERLAY_OPACITY);
+  /** Debounce do autosave das escalas de fonte (BR-087). */
+  const fontTimer = useRef<number | null>(null);
+  const latestFont = useRef<FontScales>({
+    fontScale: DEFAULT_FONT_SCALE,
+    aiFontScale: DEFAULT_AI_FONT_SCALE,
+  });
 
   useEffect(() => {
     void (async () => {
       const loaded = await getSettings();
       if (loaded) {
         latestOpacity.current = loaded.overlay_opacity;
+        latestFont.current = {
+          fontScale: clampFontScale(loaded.font_scale),
+          aiFontScale: clampAiFontScale(loaded.ai_font_scale),
+        };
         // Configurações monta direto (testes/rota): alimenta o store de idioma.
         setUiLanguage(loaded.ui_language);
         setDraft(
@@ -215,6 +235,23 @@ export function SettingsPage() {
     [t],
   );
 
+  /** Persiste só as escalas de fonte, sem reaplicar atalhos/geometria. */
+  const persistFontScales = useCallback(
+    async (fontScale: number, aiFontScale: number) => {
+      try {
+        await setFontScales(fontScale, aiFontScale);
+      } catch (error) {
+        setStatus({
+          kind: "error",
+          text: t("settings_failed_save_font_scale_error", {
+            error: String(error),
+          }),
+        });
+      }
+    },
+    [t],
+  );
+
   const update = useCallback(
     <K extends keyof Settings>(field: K, value: Settings[K]) => {
       setDraft((prev) => ({ ...prev, [field]: value }));
@@ -236,9 +273,40 @@ export function SettingsPage() {
         return;
       }
 
+      // Mesmo tratamento da opacidade para as escalas de fonte (BR-087): o
+      // preview vale já no arraste, em todas as janelas de conteúdo.
+      if (field === "font_scale" || field === "ai_font_scale") {
+        const next: FontScales = {
+          fontScale:
+            field === "font_scale"
+              ? clampFontScale(Number(value))
+              : latestFont.current.fontScale,
+          aiFontScale:
+            field === "ai_font_scale"
+              ? clampAiFontScale(Number(value))
+              : latestFont.current.aiFontScale,
+        };
+        latestFont.current = next;
+        applyFontScale(next.fontScale, next.aiFontScale, true);
+        void previewFontScales(next.fontScale, next.aiFontScale).catch(
+          () => undefined,
+        );
+        if (fontTimer.current !== null) {
+          window.clearTimeout(fontTimer.current);
+        }
+        fontTimer.current = window.setTimeout(() => {
+          fontTimer.current = null;
+          void persistFontScales(
+            latestFont.current.fontScale,
+            latestFont.current.aiFontScale,
+          );
+        }, 200);
+        return;
+      }
+
       setHasUnsavedChanges(true);
     },
-    [persistOpacity],
+    [persistOpacity, persistFontScales],
   );
 
   // Se a janela for fechada/desmontada antes do debounce, grava o último valor.
@@ -248,6 +316,14 @@ export function SettingsPage() {
         window.clearTimeout(opacityTimer.current);
         opacityTimer.current = null;
         void setOverlayOpacity(latestOpacity.current).catch(() => undefined);
+      }
+      if (fontTimer.current !== null) {
+        window.clearTimeout(fontTimer.current);
+        fontTimer.current = null;
+        void setFontScales(
+          latestFont.current.fontScale,
+          latestFont.current.aiFontScale,
+        ).catch(() => undefined);
       }
     },
     [],
@@ -284,6 +360,10 @@ export function SettingsPage() {
         window.clearTimeout(opacityTimer.current);
         opacityTimer.current = null;
       }
+      if (fontTimer.current !== null) {
+        window.clearTimeout(fontTimer.current);
+        fontTimer.current = null;
+      }
       try {
         // Perguntas prontas em branco (linha recém-criada) não são persistidas.
         const result = await saveSettings({
@@ -297,9 +377,13 @@ export function SettingsPage() {
         setUiLanguage(draft.ui_language);
         setStatus({ kind: "ok", text: t("settings_settings_saved") });
       } catch (error) {
-        // Se o save completo falhar, a opacidade (autosave) ainda é gravada
-        // pelo seu próprio comando.
+        // Se o save completo falhar, a opacidade e as escalas de fonte
+        // (autosave) ainda são gravadas pelos seus próprios comandos.
         await persistOpacity(latestOpacity.current);
+        await persistFontScales(
+          latestFont.current.fontScale,
+          latestFont.current.aiFontScale,
+        );
         throw error;
       }
     });

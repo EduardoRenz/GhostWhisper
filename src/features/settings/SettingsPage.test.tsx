@@ -21,8 +21,10 @@ const settingsIpc = vi.hoisted(() => ({
   ]),
   getSettings: vi.fn(async () => undefined),
   gpuInfo: vi.fn(async () => undefined),
+  previewFontScales: vi.fn(async () => undefined),
   previewOverlayOpacity: vi.fn(async () => undefined),
   saveSettings: vi.fn(async (_settings: unknown) => [] as unknown[]),
+  setFontScales: vi.fn(async () => undefined),
   setOverlayOpacity: vi.fn(async () => undefined),
   secretsPersistent: vi.fn(async () => true),
   settingsDefaults: vi.fn(async () => undefined),
@@ -315,6 +317,51 @@ describe("SettingsPage", () => {
     );
     // Não usa o save global: o autosave é só da opacidade.
     expect(settingsIpc.saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("aplica a escala de fonte em tempo real e salva automaticamente", async () => {
+    document.documentElement.style.removeProperty("font-size");
+    document.documentElement.style.removeProperty("--oh-ai-font-scale");
+    render(<SettingsPage />);
+
+    await act(async () => {
+      screen.getByRole("tab", { name: /Geral & HUD/ }).click();
+    });
+
+    const fontSlider = await screen.findByLabelText("Escala da fonte");
+    await act(async () => {
+      fireEvent.change(fontSlider, { target: { value: "140" } });
+    });
+
+    expect(settingsIpc.previewFontScales).toHaveBeenCalledWith(1.4, 1);
+    // O jsdom normaliza `calc(16px * 1.4)` para `calc(22.4px)`; o navegador
+    // preserva a forma autorada. O teste aceita as duas.
+    expect(
+      [
+        "calc(16px * 1.4)",
+        `calc(${Number((16 * 1.4).toFixed(4))}px)`,
+      ].includes(document.documentElement.style.getPropertyValue("font-size")),
+    ).toBe(true);
+
+    const aiSlider = await screen.findByLabelText("Escala do texto de IA");
+    await act(async () => {
+      fireEvent.change(aiSlider, { target: { value: "130" } });
+    });
+
+    expect(settingsIpc.previewFontScales).toHaveBeenCalledWith(1.4, 1.3);
+    expect(
+      document.documentElement.style.getPropertyValue("--oh-ai-font-scale"),
+    ).toBe("1.3");
+
+    await waitFor(
+      () => expect(settingsIpc.setFontScales).toHaveBeenCalledWith(1.4, 1.3),
+      { timeout: 1000 },
+    );
+    // Não usa o save global: o autosave é só das escalas de fonte.
+    expect(settingsIpc.saveSettings).not.toHaveBeenCalled();
+
+    document.documentElement.style.removeProperty("font-size");
+    document.documentElement.style.removeProperty("--oh-ai-font-scale");
   });
 
   it("troca para a aba de transcrição e mostra o modelo whisper", async () => {

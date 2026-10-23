@@ -6,6 +6,17 @@ import type { ProviderKind, Settings } from "../../core/domain/settings";
 /** Evento de preview da opacidade global (BR-062). */
 export const HUD_OPACITY_PREVIEW_EVENT = "hud_opacity_preview";
 
+/** Evento de preview das escalas de fonte (BR-087). */
+export const FONT_SCALES_PREVIEW_EVENT = "font_scales_preview";
+
+/** Payload do preview das escalas de fonte (BR-087). */
+export interface FontScalePreview {
+  /** Escala global da UI (0,75–1,6). */
+  font_scale: number;
+  /** Bônus do texto de IA (1,0–1,5). */
+  ai_font_scale: number;
+}
+
 /** Lista os providers suportados. */
 export const getProviders = (): Promise<ProviderKind[] | undefined> =>
   invokeSafe<ProviderKind[]>("settings_providers");
@@ -47,6 +58,23 @@ export const previewOverlayOpacity = (opacity: number): Promise<void | undefined
 /** Autosave da opacidade global (não mexe nos demais campos). */
 export const setOverlayOpacity = (opacity: number): Promise<void | undefined> =>
   invokeSafe<void>("settings_set_overlay_opacity", { opacity });
+
+/** Publica o preview das escalas de fonte antes do autosave (BR-087). */
+export const previewFontScales = (
+  fontScale: number,
+  aiFontScale: number,
+): Promise<void | undefined> =>
+  invokeSafe<void>("settings_preview_font_scales", {
+    fontScale,
+    aiFontScale,
+  });
+
+/** Autosave das escalas de fonte (não mexe nos demais campos). */
+export const setFontScales = (
+  fontScale: number,
+  aiFontScale: number,
+): Promise<void | undefined> =>
+  invokeSafe<void>("settings_set_font_scales", { fontScale, aiFontScale });
 
 /** Testa a conexão com a fonte primária (validar chave). */
 export const validateKey = (): Promise<string | undefined> =>

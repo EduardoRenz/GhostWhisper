@@ -120,6 +120,7 @@ As regras canônicas vivem em [`../business-rules.md`](../business-rules.md):
 - **BR-050** — Log de debug do modelo em uso (com nível de raciocínio).
 - **BR-051** — O modelo que respondeu é visível na interface.
 - **BR-062** — Aba "Geral & HUD": opacidade global das janelas, ancoragem e densidade do notch (§10).
+- **BR-087** — Escala de fonte da UI (75–160 %) com bônus para o texto de IA (100–150 %), só nas janelas de conteúdo (§12).
 
 A revisão 0.3 (§11) é visual e reusa **BR-044, BR-045, BR-047 e BR-049**; não
 cria regra de produto nova.
@@ -474,3 +475,53 @@ Verificação manual em `pnpm dev` com
 [`tasks/14-task.md`](tasks/14-task.md). A arquitetura de UI (DOM, classes e
 mapeamento de estados) está em
 [`architecture/settings-redesign.md`](architecture/settings-redesign.md) §10.
+
+## 12. Revisão 0.4 — Escala de fonte da UI com bônus para a IA (2026-10-22)
+
+### 12.1 Objetivo
+
+Pedido do usuário (2026-10-22): a **fonte das respostas de IA está pequena
+demais**; além disso a interface precisa de um ajuste **relativo** de tamanho
+que faça todos os elementos crescerem **juntos**, sem estourar o layout.
+Regra canônica: **BR-087**.
+
+### 12.2 Modelo de dados
+
+Dois campos novos em `Settings` (Rust + espelho TS), com validação e
+sanitização como os demais:
+
+```rust
+pub font_scale: f32,     // 0.75..=1.6, padrão 1.0  — zoom global da UI
+pub ai_font_scale: f32,  // 1.0..=1.5, padrão 1.0  — bônus do texto de IA
+```
+
+### 12.3 Decisões
+
+- **Dois sliders** na nova seção **"Aparência & Fonte"** (topo da aba "Geral &
+  HUD"), passo de 5 p.p., badge `%` e legendas — mesmo desenho do card de
+  opacidade.
+- **Mecanismo:** zoom de raiz (`font-size` no `<html>`) com os tokens de
+  tipografia convertidos para **`rem`** → fonte, entrelinha e espaçamento
+  crescem juntos. O bônus da IA é o token `--oh-ai-font-scale`, aplicado só
+  às superfícies geradas pela IA (respostas, markdown, resumo, insights,
+  sugestões).
+- **Escopo:** janelas de conteúdo. Notch e barra "Perguntar" ficam de fora —
+  têm tamanho e densidade próprios (BR-062).
+- **Tempo real:** espelha a BR-062/task 15 — `settings_preview_font_scales`
+  publica `font_scales_preview` e `settings_set_font_scales` faz autosave
+  debounced (200 ms); o save global também publica o preview.
+
+### 12.4 Critérios de sucesso
+
+- Slider global 75–160 % e bônus de IA 100–150 % refletem em Configurações,
+  Chat, Resumo, Sugestões e Histórico **sem salvar**; 100 % restaura o
+  tamanho original exato.
+- Em 160 % nada estoura: caixas de controle com texto acompanham o zoom e os
+  corpos rolam; notch e Perguntar não mudam.
+- Settings antigas (sem os dois campos) carregam em 100 %; fora da faixa,
+  `validate` recusa e `sanitized` traz ao limite.
+
+### 12.5 Tasks
+
+[`tasks/16-task.md`](tasks/16-task.md). Tokens em
+[`../notch/architecture/design-tokens.md`](../notch/architecture/design-tokens.md) §3–4.

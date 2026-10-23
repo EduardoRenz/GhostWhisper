@@ -38,6 +38,46 @@ describe("HudSettings (aba Geral & HUD)", () => {
     expect(update).toHaveBeenCalledWith("overlay_opacity", 0.4);
   });
 
+  it("mostra a seção de aparência com os dois sliders de escala", () => {
+    setup();
+    expect(screen.getByText("Aparência & Fonte")).toBeDefined();
+    expect(screen.getByText("Tamanho da Fonte")).toBeDefined();
+    expect(screen.getByText("Texto da IA (Respostas)")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Vale nas janelas de conteúdo, em tempo real",
+      ),
+    ).toBeDefined();
+  });
+
+  it("muda a escala global da fonte e atualiza o badge", () => {
+    const { update } = setup({ font_scale: 1.4, ai_font_scale: 1 });
+    const slider = screen.getByLabelText("Escala da fonte") as HTMLInputElement;
+    expect(slider.value).toBe("140");
+    expect(slider.min).toBe("75");
+    expect(slider.max).toBe("160");
+    expect(slider.step).toBe("5");
+    expect(screen.getByText("140%")).toBeDefined();
+
+    fireEvent.change(slider, { target: { value: "115" } });
+    expect(update).toHaveBeenCalledWith("font_scale", 1.15);
+  });
+
+  it("muda o bônus do texto de IA, que nunca fica abaixo de 100 %", () => {
+    const { update } = setup({ font_scale: 1.4, ai_font_scale: 1 });
+    const slider = screen.getByLabelText(
+      "Escala do texto de IA",
+    ) as HTMLInputElement;
+    expect(slider.value).toBe("100");
+    expect(slider.min).toBe("100");
+    expect(slider.max).toBe("150");
+    expect(slider.step).toBe("5");
+    expect(screen.getByText("100%")).toBeDefined();
+
+    fireEvent.change(slider, { target: { value: "135" } });
+    expect(update).toHaveBeenCalledWith("ai_font_scale", 1.35);
+  });
+
   it("troca a ancoragem do notch", () => {
     const { update } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Canto Sup. Dir." }));
