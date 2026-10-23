@@ -442,3 +442,20 @@ contar, e às vezes iniciou a geração sem feedback.”*
 - TS: `AutoSuggestControl` (7), `SuggestionsWindow` (13),
   `useSuggestionCadence` (3); `pnpm test` ✓ · `tsc` ✓ · `pnpm build` ✓.
 - AppImage/deb recompilados às **22:00** (Vulkan).
+
+## 2026-10-23 — Contexto de sessão recuperada (ISS-048)
+
+- **IDs:** ISS-048, BR-089 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/10-task.md`](tasks/10-task.md)
+
+- **Sintoma:** ao continuar/recuperar uma sessão já gravada, “Sugerir agora”
+  dizia que não havia contexto/transcrição, apesar do histórico no painel.
+- **Causa:** a janela ao vivo usava `now_rel = agora - início da sessão`. Numa
+  sessão retomada horas depois, todas as falas antigas ficavam fora dos últimos
+  3 minutos; `recent_context_live` devolvia `None`.
+- **Correção:** `live_window_anchor` ancora na última fala quando não há fala
+  dentro da janela; `recent_context_live` e `context_since` usam a âncora.
+  Sessão ativa com fala recente continua ancorada no agora.
+- **Testes:** `live_context_anchors_on_the_last_speech_after_a_long_pause`,
+  `context_since_anchors_on_the_last_speech_after_a_long_pause` e
+  `recovered_sessions_use_the_last_speech_as_context`.

@@ -5,6 +5,7 @@
 //! momentos da conversa; um `since_ms` evita chamar o LLM sem fala nova.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
@@ -72,6 +73,68 @@ struct LastSuggestion {
     cursor_ms: i64,
     /// A sugestão em si (com a fase e o snapshot do agente).
     suggestion: Suggestion,
+}
+
+/// Dados do rascunho *fast-first* que roda em paralelo com o passe completo
+/// (BR-088).
+struct QuickPass {
+    llm: Arc<dyn LlmController>,
+    publisher: Arc<dyn EventPublisher>,
+    scope: AiRouteScope,
+    request: CompletionRequest,
+    /// O completo já emitiu algum texto; o rascunho atrasado deve ser descartado.
+    full_emitted: Arc<AtomicBool>,
+    session_id: String,
+    mode_id: String,
+    mode_name: String,
+    mode_icon: String,
+    mode_color: String,
+    generation_id: String,
+    trigger: SuggestionTrigger,
+    source: Option<SuggestionSource>,
+    at_ms: i64,
+    context_until_ms: i64,
+}
+
+impl QuickPass {
+    fn run(self) {
+        let completion = match self.llm.complete_for(&self.scope, &self.request) {
+            Ok(completion) => completion,
+            Err(error) => {
+                tracing::warn!("rascunho fast-first falhou: {error}");
+                return;
+            }
+        };
+
+        // O completo já começou a falar: um rascunho atrasado só regrediria a
+        // UI para a fase rápida. A UI também ignora esse caso (defesa dupla).
+        if self.full_emitted.load(Ordering::SeqCst) {
+            return;
+        }
+
+        // O rápido não pede `Subject:`, mas se vier, ele é o título.
+        let (title, text) = prompts::parse_suggestion_response(&completion.text);
+        if text.is_empty() {
+            return;
+        }
+        self.publisher.emit_suggestion(&Suggestion {
+            session_id: self.session_id,
+            mode_id: self.mode_id,
+            mode_name: self.mode_name,
+            mode_icon: self.mode_icon,
+            mode_color: self.mode_color,
+            generation_id: self.generation_id,
+            trigger: self.trigger,
+            source: self.source,
+            phase: SuggestionPhase::Quick,
+            title: title.unwrap_or_default(),
+            text,
+            at_ms: self.at_ms,
+            context_until_ms: self.context_until_ms,
+            message_id: None,
+            skipped: false,
+        });
+    }
 }
 
 /// Gera sugestões contextuais por agente.
@@ -341,43 +404,30 @@ impl SuggestionGenerator for SuggestionService {
         };
         let (max_tokens, temperature) = sampling(&mode);
 
-        // 1) Fast-first: rascunho curto publicado antes do texto completo.
-        //    Falha aqui não derruba a sugestão (o passe completo segue).
-        if request.fast_first {
-            let draft_system = assistant_prompts::fast_first_system_prompt(&mode, language);
-            match self.llm.complete_for(
-                &AiRouteScope::Agent(mode.id.clone()),
-                &CompletionRequest::user(user.clone())
-                    .with_system(draft_system)
-                    .with_temperature(FAST_FIRST_TEMPERATURE)
-                    .with_max_tokens(FAST_FIRST_MAX_TOKENS),
-            ) {
-                Ok(completion) => {
-                    // O rápido não pede `Subject:`, mas se vier, ele é o título.
-                    let (title, text) = prompts::parse_suggestion_response(&completion.text);
-                    if !text.is_empty() {
-                        self.publisher.emit_suggestion(&Suggestion {
-                            session_id: session.id.clone(),
-                            mode_id: mode.id.clone(),
-                            mode_name: mode.name.clone(),
-                            mode_icon: mode.icon.clone(),
-                            mode_color: mode.color.clone(),
-                            generation_id: generation_id.clone(),
-                            trigger,
-                            source: source.clone(),
-                            phase: SuggestionPhase::Quick,
-                            title: title.unwrap_or_default(),
-                            text,
-                            at_ms: now_rel,
-                            context_until_ms: recent.until_ms,
-                            message_id: None,
-                            skipped: false,
-                        });
-                    }
-                }
-                Err(error) => tracing::warn!("rascunho fast-first falhou: {error}"),
-            }
-        }
+        // BR-088: rascunho rápido e passe completo em paralelo. O rascunho é
+        // descartado se o completo já começou a falar; uma falha nele não
+        // derruba o completo.
+        let full_emitted = Arc::new(AtomicBool::new(false));
+        let quick = request.fast_first.then(|| QuickPass {
+            llm: Arc::clone(&self.llm),
+            publisher: Arc::clone(&self.publisher),
+            scope: AiRouteScope::Agent(mode.id.clone()),
+            request: CompletionRequest::user(user.clone())
+                .with_system(assistant_prompts::fast_first_system_prompt(&mode, language))
+                .with_temperature(FAST_FIRST_TEMPERATURE)
+                .with_max_tokens(FAST_FIRST_MAX_TOKENS),
+            full_emitted: Arc::clone(&full_emitted),
+            session_id: session.id.clone(),
+            mode_id: mode.id.clone(),
+            mode_name: mode.name.clone(),
+            mode_icon: mode.icon.clone(),
+            mode_color: mode.color.clone(),
+            generation_id: generation_id.clone(),
+            trigger,
+            source: source.clone(),
+            at_ms: now_rel,
+            context_until_ms: recent.until_ms,
+        });
 
         // 2) Passe completo, com deltas de streaming (texto acumulado).
         let system = assistant_prompts::suggestion_system_prompt(&mode, language);
@@ -392,6 +442,8 @@ impl SuggestionGenerator for SuggestionService {
         let mode_color = mode.color.clone();
         let until_ms = recent.until_ms;
         let mut emit = |partial: &str| {
+            // O completo começou a falar: o rascunho não deve mais aparecer.
+            full_emitted.store(true, Ordering::SeqCst);
             // O `Subject:` é o título gerado pelo agente (BR-038): sai do corpo.
             let (title, text) = prompts::parse_suggestion_response(partial);
             if !text.is_empty() {
@@ -414,11 +466,20 @@ impl SuggestionGenerator for SuggestionService {
                 });
             }
         };
-        let completion = self.llm.complete_streaming_for(
-            &AiRouteScope::Agent(mode.id.clone()),
-            &completion_request,
-            &mut emit,
-        )?;
+        let completion = std::thread::scope(|scope| {
+            let quick_handle = quick.map(|quick| scope.spawn(move || quick.run()));
+            let result = self.llm.complete_streaming_for(
+                &AiRouteScope::Agent(mode.id.clone()),
+                &completion_request,
+                &mut emit,
+            );
+            if let Some(handle) = quick_handle {
+                // A rápida não sobrevive ao `generate`; se ela falhar/panicar,
+                // o resultado do completo continua sendo a prioridade.
+                let _ = handle.join();
+            }
+            result
+        })?;
         let (title, text) = prompts::parse_suggestion_response(&completion.text);
         if text.is_empty() {
             return Err(GhostWhisperError::Other(
@@ -631,11 +692,30 @@ mod tests {
     }
 
     fn fixture(settings: Settings, response: &str) -> Fixture {
+        fixture_at(settings, response, 65_000)
+    }
+
+    fn fixture_at(settings: Settings, response: &str, now_ms: i64) -> Fixture {
+        fixture_with_llm_at(
+            settings,
+            Arc::new(FakeLlmController::new().with_response(response)),
+            now_ms,
+        )
+    }
+
+    fn fixture_with_llm(settings: Settings, llm: Arc<FakeLlmController>) -> Fixture {
+        fixture_with_llm_at(settings, llm, 65_000)
+    }
+
+    fn fixture_with_llm_at(
+        settings: Settings,
+        llm: Arc<FakeLlmController>,
+        now_ms: i64,
+    ) -> Fixture {
         let sessions = Arc::new(InMemorySessionRepository::new());
         sessions.create(&session()).expect("create session");
         let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
         let messages = Arc::new(InMemoryMessagesRepository::new());
-        let llm = Arc::new(FakeLlmController::new().with_response(response));
         let publisher = Arc::new(RecordingPublisher::new());
         let service = SuggestionService::new(
             llm.clone(),
@@ -643,7 +723,7 @@ mod tests {
             sessions,
             transcriptions.clone(),
             messages.clone(),
-            Arc::new(FixedClock(65_000)),
+            Arc::new(FixedClock(now_ms)),
             publisher.clone(),
         );
         Fixture {
@@ -687,8 +767,17 @@ mod tests {
 
     #[test]
     fn fast_first_emits_a_short_draft_before_the_full_suggestion() {
-        // BR-028: o rascunho (fast-first) é publicado antes do texto completo.
-        let fixture = fixture(Settings::default(), "> peça o prazo");
+        // BR-028/BR-088: o rascunho roda em paralelo; com o completo mais lento,
+        // ele é publicado antes do texto completo.
+        use std::time::Duration;
+        let fixture = fixture_with_llm(
+            Settings::default(),
+            Arc::new(
+                FakeLlmController::new()
+                    .with_response("> peça o prazo")
+                    .with_full_delay(Duration::from_millis(50)),
+            ),
+        );
         fixture
             .transcriptions
             .insert(&segment("1", 64_000, "e o prazo?"))
@@ -703,14 +792,25 @@ mod tests {
 
         let requests = fixture.llm.requests();
         assert_eq!(requests.len(), 2, "rascunho + passe completo");
-        assert_eq!(requests[0].max_tokens, Some(FAST_FIRST_MAX_TOKENS));
-        assert_eq!(requests[0].temperature, Some(FAST_FIRST_TEMPERATURE));
-        assert!(requests[0]
+        let quick = requests
+            .iter()
+            .find(|request| request.max_tokens == Some(FAST_FIRST_MAX_TOKENS))
+            .expect("pedido rápido");
+        let full = requests
+            .iter()
+            .find(|request| request.max_tokens == Some(MEETING_MAX_TOKENS))
+            .expect("pedido completo");
+        assert_eq!(quick.temperature, Some(FAST_FIRST_TEMPERATURE));
+        assert!(quick
             .system
             .as_deref()
             .unwrap_or_default()
             .contains("ONLY the first useful suggestion"));
-        assert_eq!(requests[1].max_tokens, Some(MEETING_MAX_TOKENS));
+        assert!(full
+            .system
+            .as_deref()
+            .unwrap_or_default()
+            .contains("live meeting copilot"));
 
         // Os dois passes chegam à UI (rascunho + acumulado final).
         let texts = fixture.publisher.texts();
@@ -720,6 +820,58 @@ mod tests {
             fixture.publisher.phases(),
             vec![SuggestionPhase::Quick, SuggestionPhase::Full]
         );
+    }
+
+    #[test]
+    fn a_late_quick_draft_is_discarded_when_the_full_already_spoke() {
+        // BR-088: o rápido não pode reaparecer depois que o completo começou.
+        use std::time::Duration;
+        let fixture = fixture_with_llm(
+            Settings::default(),
+            Arc::new(
+                FakeLlmController::new()
+                    .with_response("> completa")
+                    .with_quick_delay(Duration::from_millis(50)),
+            ),
+        );
+        fixture
+            .transcriptions
+            .insert(&segment("1", 64_000, "fala"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(
+                SuggestionRequest::ephemeral(None, "meeting".to_string()).with_fast_first(true),
+            )
+            .expect("generate");
+
+        assert_eq!(fixture.llm.call_count(), 2, "as duas chamadas acontecem");
+        assert_eq!(
+            fixture.publisher.phases(),
+            vec![SuggestionPhase::Full],
+            "a rápida atrasada é descartada"
+        );
+    }
+
+    #[test]
+    fn recovered_sessions_use_the_last_speech_as_context() {
+        // ISS-048: a sessão continuada horas depois mantém a transcrição antiga;
+        // a janela ao vivo não pode ancorar no relógio e dizer "transcrição vazia".
+        let fixture = fixture_at(Settings::default(), "> retome o contexto", 3_600_000);
+        fixture
+            .transcriptions
+            .insert(&segment("1", 0, "fala antiga da sessão"))
+            .unwrap();
+
+        let suggestion = fixture
+            .service
+            .generate(SuggestionRequest::ephemeral(None, "meeting".to_string()).with_force(true))
+            .expect("sugestão em sessão recuperada");
+
+        assert!(suggestion.text.contains("retome o contexto"));
+        let request = fixture.llm.last_request().expect("pedido");
+        assert!(request.prompt.contains("fala antiga da sessão"));
     }
 
     #[test]

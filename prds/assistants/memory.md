@@ -181,8 +181,9 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
 - `pnpm tauri:build` (Vulkan) concluído a cada mudança de core/UI (pill,
   BR-079 e BR-080): `GhostWhisper_0.1.0_amd64.deb` (17 MiB) e `.AppImage`
   (93 MiB) em `src-tauri/target/release/bundle/`. O bundle final embute
-  `index-DtMaM2Pl.js` / `index-BBaXZUJu.css` e o loader do Vulkan
-  (rebuild após o resumo por agente e o debrief de RH, BR-084).
+  `index-eIq_Atph.js` / `index-CkSVMwYI.css` e o loader do Vulkan
+  (rebuild após o rascunho/completa em paralelo e o contexto de sessão
+  recuperada, BR-088/BR-089).
 - `cargo fmt --check` **não** está limpo no repositório por arquivos
   anteriores à entrega (ex.: `ask_service.rs`, `recording_service.rs`,
   `connection.rs`); os arquivos alterados nesta PRD foram formatados.
@@ -367,3 +368,21 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
   semeado somente se ele ainda for o contrato geral; prompt editado/vazio é
   preservado e um RH excluído não volta.
 - **Testes:** 643 no `cargo test --lib`; 422 no `pnpm test`; `tsc` limpo.
+
+## 2026-10-23 — Sugestão: rascunho e resposta completa em paralelo (BR-088)
+
+- **IDs:** BR-088 · **Refs:** [`prd.md`](prd.md) §13.1,
+  [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §3.7,
+  [`tasks/16-task.md`](tasks/16-task.md)
+
+- **Sintoma:** a resposta completa demorava porque o passe `fast-first` (não
+  streaming, até 420 tokens) precisava terminar antes de o passe completo
+  começar.
+- **Correção:** o rascunho roda em uma thread de escopo e o completo no thread
+  atual, em paralelo. Um `AtomicBool` `full_emitted` marcado no primeiro delta
+  do completo descarta o rascunho atrasado; falha do rascunho só loga. A UI
+  mantém um `Set` de gerações com completa recebida e ignora `quick` atrasada
+  da mesma geração.
+- **Trade-off:** duas chamadas concorrentes ao mesmo provider; o rascunho é
+  descartável e a completa continua se ele falhar.
+- **Testes:** 658 no `cargo test --lib`; 454 no `pnpm test`; `tsc` limpo.

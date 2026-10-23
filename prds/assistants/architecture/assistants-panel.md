@@ -291,6 +291,22 @@ A **revisão de catálogo 2** (BR-084) atualiza o `summary_prompt` do RH já
 semeado **somente** quando ele ainda é o contrato geral antigo; prompt editado
 ou vazio é preservado, e um RH excluído não volta.
 
+### 3.7 Sugestão: passes rápido e completo em paralelo (BR-088)
+
+No `SuggestionService::generate`, quando `fast_first` está ligado:
+
+- o **rascunho** roda em uma thread de escopo (`std::thread::scope`) com o
+  `complete_for` (não-streaming);
+- o **completo** roda no thread atual com `complete_streaming_for`;
+- os dois começam juntos; o rascunho não bloqueia mais a completa;
+- um `AtomicBool` `full_emitted` é marcado no primeiro delta do completo. O
+  rascunho que terminar depois disso é **descartado** (não emite `quick`);
+- uma falha no rascunho só gera log; a completa segue;
+- o `useSuggestions` mantém um `Set` de `generation_id` cuja completa já
+  chegou e ignora uma fase `quick` atrasada da mesma geração (defesa dupla);
+- o custo é uma chamada concorrente ao provider — sujeita a rate limit; o
+  rascunho é descartável por definição.
+
 ## 4. IPC
 
 | Command | Entrada | Saída | Mudança |
@@ -449,6 +465,8 @@ fundo, e o ícone herda `currentColor` (BR-037 — sem hex solto).
 | prompt de resumo vazio cai no do Padrão | idem |
 | atualização incremental usa o prompt incremental | idem |
 | `HR_SUMMARY_PROMPT` tem as seis seções do debrief | `application/prompts/summary.rs` |
+| passes rápido e completo começam juntos; rascunho atrasado é descartado | `application/suggestion_service.rs` |
+| `useSuggestions` ignora `quick` atrasada da mesma geração | `core/application/useSuggestions.test.tsx` |
 | `default_settings()` traz os 4 agentes de fábrica | `application/assistant_catalog.rs` |
 | `Settings::default()` nasce **vazio** (domínio puro) | `domain/settings.rs` |
 | `sanitized()` volta para `default` se o selecionado sumiu | `domain/settings.rs` |

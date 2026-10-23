@@ -186,6 +186,7 @@ As decisões acima viram regras canônicas em
 | BR-082 | O contrato de leitura da transcrição é comum a todos os agentes |
 | BR-083 | Entrevista Técnica funde System Design; novo Entrevista com RH |
 | BR-084 | O resumo usa o prompt do agente ativo; RH tem debrief próprio |
+| BR-088 | Sugestão: rascunho e resposta completa em paralelo |
 
 ## 7. Modelo de dados
 
@@ -342,6 +343,8 @@ catálogo. Ver
       respondeu, o que o RH disse da empresa, benefícios/pretenções, outras
       perguntas e respostas, e opinião de entrevistador; seções sem informação
       dizem que o assunto não foi mencionado até o momento (BR-084).
+- [ ] O rascunho e a resposta completa da sugestão rodam em paralelo; um
+      rascunho atrasado não regride a UI (BR-088).
 
 ## 10. Riscos e limites
 
@@ -374,6 +377,7 @@ catálogo. Ver
 | 13 | Contrato comum de leitura da transcrição (BR-082) | CONCLUDED |
 | 14 | Entrevista Técnica funde System Design; novo Entrevista com RH (BR-083) | CONCLUDED |
 | 15 | Resumo por agente ativo + debrief da Entrevista com RH (BR-076/BR-084) | CONCLUDED |
+| 16 | Sugestão: rascunho e resposta completa em paralelo (BR-088) | CONCLUDED |
 
 Detalhes, entregáveis e critérios por task: [`tasks/_tasks.md`](tasks/_tasks.md).
 
@@ -469,7 +473,9 @@ Ordem do `suggestion_system_prompt`:
 O **fast-first** (primeira bolha curta) começa com o mesmo
 `TRANSCRIPT_CONTRACT` e depois usa um contrato fixo, `Agent: <nome>`, o
 `context` (se houver), idioma e segurança. Ele **não** usa `suggestion_prompt`
-nem `system_prompt`.
+nem `system_prompt`. Os dois passes rodam em **paralelo** (BR-088): a completa
+começa imediatamente e o rascunho é descartado se a completa já começou a
+falar.
 
 ### 13.2 "Campos avançados" não é outro motor
 

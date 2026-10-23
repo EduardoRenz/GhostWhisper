@@ -1945,3 +1945,43 @@ uma nota de revisão.
 - **Detalhes:** [`ai-sources/tasks/16-task.md`](ai-sources/tasks/16-task.md),
   [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md) §3–4.
 - **Data:** 2026-10-22 · **Status:** Ativa
+
+## BR-088 — Sugestão: rascunho e resposta completa em paralelo
+
+- **Decisão:** o passe **rápido** (fast-first) e o passe **completo** da
+  sugestão rodam em **paralelo**, não em série. O rascunho é descartado se a
+  resposta completa já começou a falar — tanto no core (flag
+  `full_emitted`) quanto na UI (gerações cuja completa já chegou). Uma falha no
+  rascunho não derruba a completa; a completa continua sendo a prioridade.
+- **Motivo:** pedido do usuário (2026-10-23) — a resposta completa demorava
+  porque o passe rápido, que não é streaming, precisava terminar antes de a
+  completa começar. Com os dois em paralelo, a completa começa imediatamente e
+  o rascunho aparece se chegar antes.
+- **Consequência:** `SuggestionService` dispara o rascunho em uma thread
+  (`std::thread::scope`) e o completo no thread atual; o rascunho atrasado é
+  ignorado. O `UseSuggestions` mantém um conjunto de gerações completas e
+  ignora uma fase `quick` atrasada da mesma geração. O `fast-first` deixa de
+  bloquear a resposta completa; o custo é uma chamada concorrente ao provider
+  (sujeita a rate limit, como qualquer paralelismo).
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13.1,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.7,
+  [`assistants/tasks/16-task.md`](assistants/tasks/16-task.md).
+- **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)
+
+## BR-089 — Contexto ao vivo ancora na última fala quando não há fala recente
+
+- **Decisão:** a janela do contexto ao vivo é ancorada no **agora** quando há
+  fala dentro dos últimos `window_ms`; caso contrário, ancora na **última fala
+  utilizável**. A regra vale para `recent_context_live` (sugestões) e
+  `context_since` (Busca). Numa sessão ativa com fala recente, nada muda.
+- **Motivo:** ISS-048 — ao continuar/recuperar uma sessão gravada horas antes,
+  o `now_rel` ficava muito à frente da última fala; a janela de 3 minutos
+  ficava vazia e o app dizia “transcrição vazia: nada para sugerir”, embora o
+  histórico estivesse no painel.
+- **Consequência:** sessões pausadas/retomadas/recuperadas usam os últimos
+  `window_ms` de **conversa** (não de relógio); sem nenhuma fala utilizável, o
+  erro de transcrição vazia continua. O teste de regressão cobre a janela e o
+  serviço de sugestão.
+- **Detalhes:** [`suggestions/issues.md`](suggestions/issues.md) (ISS-048),
+  [`suggestions/tasks/10-task.md`](suggestions/tasks/10-task.md).
+- **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)

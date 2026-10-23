@@ -16,6 +16,7 @@ só começa após a revisão da PRD pelo usuário.
 | 07 | Acabamento, usabilidade, validação visual, docs e pacote | CONCLUDED |
 | 08 | Agente Padrão (contextual), agentes que respondem e código puro | CONCLUDED |
 | 09 | Cadência coerente do auto-sugerir + feedback de geração (ISS-046) | CONCLUDED |
+| 10 | Contexto de sessão recuperada (ISS-048) | CONCLUDED |
 
 ## Dependências
 

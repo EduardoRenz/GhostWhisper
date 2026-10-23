@@ -181,6 +181,26 @@ fn build_recent(
     })
 }
 
+/// Instante de referência da janela ao vivo.
+///
+/// Numa sessão **pausada, retomada depois de um intervalo ou recuperada**, o
+/// `now_rel_ms` pode estar horas à frente da última fala; ancorar a janela no
+/// agora faria todas as falas antigas caírem fora e o serviço diria que não há
+/// contexto (ISS-048). Quando não há fala dentro da janela, ancora na última
+/// fala — a janela passa a ser os últimos `window_ms` de **conversa**, não de
+/// relógio.
+fn live_window_anchor(segments: &[TranscriptSegment], now_rel_ms: i64, window_ms: i64) -> i64 {
+    let last = segments
+        .iter()
+        .filter(|segment| !segment.text.trim().is_empty())
+        .map(|segment| segment.start_ms)
+        .max();
+    match last {
+        Some(last) if now_rel_ms.saturating_sub(last) > window_ms.max(0) => last,
+        _ => now_rel_ms,
+    }
+}
+
 /// Contexto dos “últimos momentos” da sugestão ao vivo, **incluindo a fala em
 /// andamento** (prévias).
 ///
@@ -194,7 +214,8 @@ pub fn recent_context_live(
     max_segments: usize,
     max_chars: usize,
 ) -> Option<RecentContext> {
-    let cutoff = now_rel_ms.saturating_sub(window_ms.max(0));
+    let anchor = live_window_anchor(segments, now_rel_ms, window_ms);
+    let cutoff = anchor.saturating_sub(window_ms.max(0));
     recent_context_from(segments, cutoff, max_segments, max_chars)
 }
 
@@ -203,7 +224,8 @@ pub fn recent_context_live(
 ///
 /// A janela de tempo continua valendo como teto: `since_ms` nunca recua além
 /// de `now_rel_ms - window_ms` (uma pergunta depois de uma pausa longa não
-/// manda meia hora de transcrição).
+/// manda meia hora de transcrição). A âncora segue a mesma regra da janela ao
+/// vivo: sem fala recente, usa a última fala (sessão recuperada — ISS-048).
 pub fn context_since(
     segments: &[TranscriptSegment],
     since_ms: i64,
@@ -212,7 +234,8 @@ pub fn context_since(
     max_segments: usize,
     max_chars: usize,
 ) -> Option<RecentContext> {
-    let window_start = now_rel_ms.saturating_sub(window_ms.max(0));
+    let anchor = live_window_anchor(segments, now_rel_ms, window_ms);
+    let window_start = anchor.saturating_sub(window_ms.max(0));
     recent_context_from(
         segments,
         since_ms.max(window_start),
@@ -364,6 +387,32 @@ mod tests {
         let live = recent_context_live(&segments, 2_000, 10_000, 40, 1_000).expect("contexto");
         assert!(live.text.contains("ME: texto final"));
         assert!(!live.text.contains("prévia errada"));
+    }
+
+    #[test]
+    fn live_context_anchors_on_the_last_speech_after_a_long_pause() {
+        // ISS-048: sessão recuperada/continuada horas depois; o relógio não
+        // pode empurrar a conversa inteira para fora da janela.
+        let segments = vec![
+            seg("1", 10_000, Speaker::They, "pergunta", true),
+            seg("2", 11_000, Speaker::Me, "resposta", true),
+        ];
+        let context = recent_context_live(&segments, 3_600_000, 5_000, 40, 1_000)
+            .expect("contexto da sessão recuperada");
+        assert!(context.text.contains("THEY: pergunta"));
+        assert!(context.text.contains("ME: resposta"));
+        assert_eq!(context.until_ms, 11_000);
+    }
+
+    #[test]
+    fn context_since_anchors_on_the_last_speech_after_a_long_pause() {
+        let segments = vec![
+            seg("1", 10_000, Speaker::They, "antiga", true),
+            seg("2", 30_000, Speaker::They, "nova", true),
+        ];
+        let context = context_since(&segments, 0, 3_600_000, 5_000, 40, 1_000).expect("contexto");
+        assert!(context.text.contains("nova"));
+        assert!(!context.text.contains("antiga"));
     }
 
     #[test]

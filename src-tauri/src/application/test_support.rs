@@ -5,6 +5,7 @@ use std::net::TcpListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use crate::domain::ai_route::AiRouteScope;
 use crate::domain::llm::{Completion, CompletionRequest};
@@ -109,6 +110,10 @@ pub struct FakeLlmController {
     failure: Mutex<Option<String>>,
     requests: Mutex<Vec<CompletionRequest>>,
     scopes: Mutex<Vec<AiRouteScope>>,
+    /// Atraso artificial do passe rápido (`complete_for`).
+    quick_delay: Mutex<Option<Duration>>,
+    /// Atraso artificial do passe completo (`complete_streaming_for`).
+    full_delay: Mutex<Option<Duration>>,
 }
 
 impl FakeLlmController {
@@ -120,6 +125,8 @@ impl FakeLlmController {
             failure: Mutex::new(None),
             requests: Mutex::new(Vec::new()),
             scopes: Mutex::new(Vec::new()),
+            quick_delay: Mutex::new(None),
+            full_delay: Mutex::new(None),
         }
     }
 
@@ -138,6 +145,18 @@ impl FakeLlmController {
     /// Faz `complete` falhar com a mensagem dada.
     pub fn with_failure(self, message: impl Into<String>) -> Self {
         *self.failure.lock().unwrap() = Some(message.into());
+        self
+    }
+
+    /// Atrasa o passe rápido para testar a ordem rascunho × completo.
+    pub fn with_quick_delay(self, delay: Duration) -> Self {
+        *self.quick_delay.lock().unwrap() = Some(delay);
+        self
+    }
+
+    /// Atrasa o passe completo para garantir que o rascunho chegue antes.
+    pub fn with_full_delay(self, delay: Duration) -> Self {
+        *self.full_delay.lock().unwrap() = Some(delay);
         self
     }
 
@@ -190,6 +209,9 @@ impl LlmController for FakeLlmController {
     ) -> Result<Completion> {
         self.requests.lock().unwrap().push(request.clone());
         self.scopes.lock().unwrap().push(scope.clone());
+        if let Some(delay) = *self.quick_delay.lock().unwrap() {
+            thread::sleep(delay);
+        }
         self.respond()
     }
 
@@ -201,6 +223,9 @@ impl LlmController for FakeLlmController {
     ) -> Result<Completion> {
         self.requests.lock().unwrap().push(request.clone());
         self.scopes.lock().unwrap().push(scope.clone());
+        if let Some(delay) = *self.full_delay.lock().unwrap() {
+            thread::sleep(delay);
+        }
         let completion = self.respond()?;
         on_text(&completion.text);
         Ok(completion)

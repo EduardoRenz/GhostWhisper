@@ -77,6 +77,13 @@ export function useSuggestions({
   const contextUntil = useRef<number | null>(null);
   const lastText = useRef<string | null>(null);
   const streamTimer = useRef<number | null>(null);
+  /**
+   * Gerações cuja resposta **completa** já chegou.
+   *
+   * Com os passes rápido e completo em paralelo, o rascunho pode terminar
+   * depois do completo; nesse caso ele é descartado para não regredir a UI.
+   */
+  const fullGenerations = useRef<Set<string>>(new Set());
 
   // A ref fica atualizada **antes** dos efeitos de sessão/subscribe, para o
   // filtro da automática enxergar o contexto manual já no primeiro evento.
@@ -150,6 +157,14 @@ export function useSuggestions({
   /** Aplica uma sugestão recebida, respeitando a fase e a prioridade (BR-042). */
   const applyIncoming = useCallback(
     (incoming: Suggestion) => {
+      // A completa desta geração já chegou: uma rápida atrasada não pode
+      // reabrir a fase rápida nem limpar o cartão.
+      if (incoming.phase === "full") {
+        fullGenerations.current.add(incoming.generation_id);
+      } else if (fullGenerations.current.has(incoming.generation_id)) {
+        return;
+      }
+
       // Com contexto manual ativo, a automática não assume o cartão: a
       // completa vai para o histórico e a rápida é ignorada (efêmera).
       if (incoming.trigger === "auto" && manualRef.current) {
@@ -202,6 +217,7 @@ export function useSuggestions({
     setStreamActive(false);
     setStreamingTrigger(null);
     setPendingFull(null);
+    fullGenerations.current.clear();
     if (streamTimer.current !== null) {
       window.clearTimeout(streamTimer.current);
       streamTimer.current = null;
@@ -256,6 +272,8 @@ export function useSuggestions({
         !incoming ||
         incoming.skipped ||
         !incoming.text.trim() ||
+        (incoming.phase === "quick" &&
+          fullGenerations.current.has(incoming.generation_id)) ||
         incoming.session_id !== sessionRef.current
       ) {
         return;

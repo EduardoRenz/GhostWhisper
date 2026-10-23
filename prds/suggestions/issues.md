@@ -3,13 +3,38 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser único
-no repositório). Próximo ID livre: **ISS-048**.
+no repositório). Próximo ID livre: **ISS-049**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
+| ISS-048 | Sessão recuperada fica sem contexto para gerar sugestão | Alta | FIXED |
 | ISS-046 | Contagem/anel do auto-sugerir incoerentes e geração sem feedback | Alta | FIXED |
 
 ---
+
+## ISS-048 — Sessão recuperada fica sem contexto para gerar sugestão
+
+- **Severidade:** Alta · **Status:** FIXED ([`tasks/10-task.md`](tasks/10-task.md))
+- **Sintoma:** ao continuar/recuperar uma sessão já gravada e clicar em
+  “Sugerir agora”, o app respondia que não havia contexto/transcrição para
+  sugerir — mesmo com o histórico visível no painel.
+- **Causa raiz:** a janela do contexto ao vivo era ancorada em
+  `now_rel = clock.now_ms() - session.started_at_ms`. Numa sessão continuada
+  depois de um intervalo (ou pausada por muito tempo), o relógio está horas à
+  frente da última fala; a janela de 3 minutos ficava vazia e
+  `recent_context_live` devolvia `None` — o serviço traduzia isso como
+  “transcrição vazia: nada para sugerir”.
+- **Correção:** `live_window_anchor` em `application/context.rs` ancora a
+  janela na **última fala** quando não há fala dentro da janela; vale para
+  `recent_context_live` (sugestões) e `context_since` (Busca). Numa sessão
+  ativa com fala recente, o comportamento continua ancorado no agora.
+- **Testes:** `live_context_anchors_on_the_last_speech_after_a_long_pause`,
+  `context_since_anchors_on_the_last_speech_after_a_long_pause` e
+  `recovered_sessions_use_the_last_speech_as_context` (falhariam no código
+  anterior).
+- **Arquivos:** `src-tauri/src/application/context.rs`,
+  `src-tauri/src/application/suggestion_service.rs`.
+- **Task:** [`tasks/10-task.md`](tasks/10-task.md)
 
 ## ISS-046 — Contagem/anel do auto-sugerir incoerentes e geração sem feedback
 

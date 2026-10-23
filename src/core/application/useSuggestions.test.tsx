@@ -180,6 +180,28 @@ describe("useSuggestions", () => {
     expect(result.current.quick?.text).toContain("resposta curta");
   });
 
+  it("ignora a rápida atrasada depois da completa da mesma geração", async () => {
+    // BR-088: com os passes em paralelo, o rascunho pode terminar depois.
+    const { result } = renderHook(() => useSuggestions(options));
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> resposta completa", 5_000));
+    });
+    await waitFor(() =>
+      expect(result.current.current?.text).toContain("completa"),
+    );
+    expect(result.current.awaitingFull).toBe(false);
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> rápida atrasada", 5_000, false, "quick"));
+    });
+
+    expect(result.current.current?.text).toContain("completa");
+    expect(result.current.quick).toBeNull();
+    expect(result.current.awaitingFull).toBe(false);
+  });
+
   it("tira a sugestão anterior do topo quando a nova começa (BR-038)", async () => {
     const { result } = renderHook(() => useSuggestions(options));
     await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
