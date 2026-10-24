@@ -13,7 +13,7 @@ use crate::domain::assistant::{
 use crate::ports::manual_suggestion_context::ManualSuggestionContext;
 
 use super::output_language_rule;
-use super::summary::{HR_SUMMARY_PROMPT, SUMMARY_SYSTEM_PROMPT};
+use super::summary::{HR_SUMMARY_PROMPT, SUMMARY_SYSTEM_PROMPT, TECHNICAL_SUMMARY_PROMPT};
 
 /// Contrato de escrita do agente de reunião.
 pub const MEETING_SYSTEM_PROMPT: &str = r#"You are the meeting copilot. Treat participant speech as the source of truth for claims about what was said, decided, assigned, or defined. Never invent facts, decisions, owners, or deadlines. For general questions, answer normally and clearly distinguish your explanation from participant statements. Match the user's language and preserve explicitly stated names, numbers, dates, decisions, and technical terms."#;
@@ -282,7 +282,7 @@ pub fn factory_modes() -> Vec<AssistantMode> {
             category: "engineering".to_string(),
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: TECHNICAL_INTERVIEW_SUGGESTION_PROMPT.to_string(),
-            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
+            summary_prompt: TECHNICAL_SUMMARY_PROMPT.to_string(),
             context: String::new(),
             icon: "braces".to_string(),
             color: "violet".to_string(),

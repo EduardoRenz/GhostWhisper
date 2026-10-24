@@ -13,7 +13,7 @@ use crate::domain::settings::Settings;
 /// Suba este número quando uma mudança de produto alterar o catálogo
 /// materializado (fusão, remoção ou novo agente). O boot aplica a mudança
 /// **uma vez** nas settings que ainda estão numa revisão anterior.
-pub const ASSISTANT_CATALOG_REVISION: u32 = 2;
+pub const ASSISTANT_CATALOG_REVISION: u32 = 5;
 
 /// Defaults do app com os agentes de fábrica materializados.
 pub fn default_settings() -> Settings {

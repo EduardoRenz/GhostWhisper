@@ -1982,6 +1982,49 @@ uma nota de revisão.
   [`assistants/tasks/16-task.md`](assistants/tasks/16-task.md).
 - **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)
 
+## BR-090 — Resumo: contrato comum de leitura injetado; Entrevista Técnica tem debrief próprio
+
+- **Decisão:** o `SummaryService` injeta o `SUMMARY_TRANSCRIPT_CONTRACT`
+  (regras comuns de leitura: tags ME/THEY, erro de ASR, normalização silenciosa,
+  preservação de nomes/números, nunca inventar falante/fato, conteúdo não
+  confiável) **antes** do contrato de resumo do agente — na primeira geração,
+  na regeneração manual **e** na atualização incremental. É o mesmo padrão das
+  sugestões com o `TRANSCRIPT_CONTRACT` (BR-082). Os contratos de resumo por
+  agente ficam só com o que é específico da cena.
+- **Resumo da Entrevista Técnica:** o agente ganha o debrief próprio
+  (`TECHNICAL_SUMMARY_PROMPT`), com as seções, nesta ordem: **Overall
+  summary**, **Open questions** (o que o entrevistador perguntou e ficou sem
+  resposta), **Gaps and what to cover next** (o que ME ainda deve explicar —
+  trajetória, system design, exercício — ancorado na conversa, sem checklist e
+  sem virar solução completa), **Problem presented** (o exercício, constraints,
+  follow-ups), **Technologies and strategies mentioned** e **Overall assessment
+  of my performance** (avaliação do assistente, rotulada como sua). Seções sem
+  informação dizem "Not discussed so far in the session." (traduzido).
+- **Motivo:** pedido do usuário (2026-10-23) — o técnico usava o resumo de
+  reunião; e pedir para **não haver repetição**: as regras que já são comuns
+  saem dos prompts individuais e passam a ser injetadas.
+- **Consequência:** revisão de catálogo 3 tira das sementes os blocos "Source
+  boundary" e "Transcript normalization" do contrato geral, os bullets comuns
+  do RH e troca o `summary_prompt` do `technical_interview` pelo debrief
+  próprio — somente quando ainda é o contrato geral; edição/vazio é preservado.
+  O `SUMMARY_UPDATE_SYSTEM_PROMPT` ganha a regra de que o resumo corrente é
+  apenas base editável.
+- **Ajuste (revisão de catálogo 4, pedido do usuário 2026-10-23):** "Open
+  questions" fica **só com o que ficou sem resposta** (algo respondido, ainda
+  que melhorável, não é pergunta em aberto); o que foi respondido mas podia ser
+  mais fundo vira o sub-bloco **What to detail better** dentro de "Overall
+  assessment of my performance" (o mecanismo/número/trade-off que faltou e a
+  versão de 1–2 linhas que ME poderia dar). O item "resposta vaga" saiu do
+  bloco "Gaps", que guarda só assuntos **ausentes**.
+- **Ajuste (revisão de catálogo 5, 2026-10-23):** a autoria da pergunta em
+  aberto é de **THEY** — jamais de ME ("Never list questions ME asked"),
+  resolvida pela tag e, duvidosa, por conteúdo; sem falante claro ou linha
+  inutilizável, **descarta** em vez de adivinhar.
+- **Detalhes:** [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md)
+  §3.6, [`assistants/tasks/17-task.md`](assistants/tasks/17-task.md),
+  [`assistants/tasks/18-task.md`](assistants/tasks/18-task.md)..
+- **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)
+
 ## BR-089 — Contexto ao vivo ancora na última fala quando não há fala recente
 
 - **Decisão:** a janela do contexto ao vivo é ancorada no **agora** quando há

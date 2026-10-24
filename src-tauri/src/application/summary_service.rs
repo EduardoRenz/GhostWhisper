@@ -108,14 +108,16 @@ impl SummaryService {
                 &chunk.text,
                 language,
             ))
-            .with_system(summary_prompts::SUMMARY_UPDATE_SYSTEM_PROMPT)
+            .with_system(summary_prompts::summary_system_prompt(
+                summary_prompts::SUMMARY_UPDATE_SYSTEM_PROMPT,
+            ))
             .with_temperature(self.limits.temperature)
             .with_max_tokens(self.limits.max_tokens),
             None => CompletionRequest::user(summary_prompts::summary_initial_user_prompt(
                 &chunk.text,
                 language,
             ))
-            .with_system(summary_prompt)
+            .with_system(summary_prompts::summary_system_prompt(summary_prompt))
             .with_temperature(self.limits.temperature)
             .with_max_tokens(self.limits.max_tokens),
         };
@@ -452,6 +454,46 @@ mod tests {
         assert!(system.contains("What I answered"));
         assert!(system.contains("Brief opinion and insight"));
         assert!(!system.contains("Confirmed Decisions"));
+        // BR-090: o contrato comum de leitura chega antes do contrato do agente.
+        assert!(system.starts_with(summary_prompts::SUMMARY_TRANSCRIPT_CONTRACT));
+    }
+
+    #[test]
+    fn uses_the_technical_agents_summary_prompt() {
+        // BR-090: o debrief da Entrevista Técnica chega ao serviço.
+        let technical = factory_mode("technical_interview").expect("agente técnico");
+        let settings = Settings {
+            assistant_mode_id: "technical_interview".to_string(),
+            custom_assistant_modes: vec![technical],
+            ..Settings::default()
+        };
+        let fixture = fixture_with_settings(
+            vec!["SUBJECT: Entrevista\nCONTENT: ## Problem presented\n\nExercício."],
+            settings,
+        );
+        fixture
+            .transcriptions
+            .insert(&segment("1", 0, "THEY: desenhe um encurtador de URLs"))
+            .unwrap();
+
+        fixture
+            .service
+            .generate(SummaryRequest {
+                session_id: None,
+                mode: SummaryMode::Auto,
+            })
+            .expect("summary");
+
+        let system = fixture
+            .llm
+            .last_request()
+            .expect("pedido")
+            .system
+            .expect("system");
+        assert!(system.contains("Open questions"));
+        assert!(system.contains("Gaps and what to cover next"));
+        assert!(system.contains("Overall assessment of my performance"));
+        assert!(system.starts_with(summary_prompts::SUMMARY_TRANSCRIPT_CONTRACT));
     }
 
     #[test]
@@ -528,7 +570,12 @@ mod tests {
         assert!(request.prompt.contains("primeiro"));
         assert_eq!(
             request.system.as_deref(),
-            Some(summary_prompts::SUMMARY_UPDATE_SYSTEM_PROMPT)
+            Some(
+                summary_prompts::summary_system_prompt(
+                    summary_prompts::SUMMARY_UPDATE_SYSTEM_PROMPT
+                )
+                .as_str()
+            )
         );
     }
 

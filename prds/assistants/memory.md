@@ -181,9 +181,9 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
 - `pnpm tauri:build` (Vulkan) concluído a cada mudança de core/UI (pill,
   BR-079 e BR-080): `GhostWhisper_0.1.0_amd64.deb` (17 MiB) e `.AppImage`
   (93 MiB) em `src-tauri/target/release/bundle/`. O bundle final embute
-  `index-eIq_Atph.js` / `index-CkSVMwYI.css` e o loader do Vulkan
-  (rebuild após o rascunho/completa em paralelo e o contexto de sessão
-  recuperada, BR-088/BR-089).
+  `index-BODkkvJM.js` / `index-D8gaLzlP.css` e o loader do Vulkan
+  (rebuild após o refine das perguntas em aberto — autoria de THEY, rev 5 do
+  catálogo, BR-090).
 - `cargo fmt --check` **não** está limpo no repositório por arquivos
   anteriores à entrega (ex.: `ask_service.rs`, `recording_service.rs`,
   `connection.rs`); os arquivos alterados nesta PRD foram formatados.
@@ -386,3 +386,49 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
 - **Trade-off:** duas chamadas concorrentes ao mesmo provider; o rascunho é
   descartável e a completa continua se ele falhar.
 - **Testes:** 658 no `cargo test --lib`; 454 no `pnpm test`; `tsc` limpo.
+
+## 2026-10-23 — Resumo: contrato comum injetado + debrief da Entrevista Técnica (BR-090)
+
+- **IDs:** BR-090 · **Refs:** [`prd.md`](prd.md),
+  [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §3.2/§3.4/§3.6,
+  [`tasks/17-task.md`](tasks/17-task.md)
+
+- **Pedido:** resumo próprio para a Entrevista Técnica (que usava o contrato de
+  reunião) e, na mesma passada, "não haver repetição": as regras de
+  ME/THEY + erro de ASR + normalização, que já eram comuns, vão para um
+  `SUMMARY_TRANSCRIPT_CONTRACT` pré-injetado no `SummaryService` (padrão da
+  BR-082 nas sugestões).
+- **Mudanças:** contrato injetado nas três chamadas do resumo (primeira,
+  regeneração manual e incremental); contratos geral e RH sem os blocos comuns
+  (o update ganha a regra de "base editável"); Técnica recebe
+  `TECHNICAL_SUMMARY_PROMPT` com seis seções de debrief técnico. Revisão de
+  catálogo 3 limpa as sementes antigas de forma textual/idempotente e troca o
+  técnico quando ainda está com o contrato geral (editado/vazio preservado).
+- **Testes:** 673 no `cargo test --lib`; `clippy` limpo.
+
+## 2026-10-23 — Debrief técnico: "em aberto" só com o que ficou sem resposta (BR-090, rev 4)
+
+- **IDs:** BR-090 · **Refs:** [`tasks/18-task.md`](tasks/18-task.md)
+
+- **Sintoma:** no resumo do ledger, "Open questions" marcava perguntas que ME
+  respondeu (mas raso) como em aberto — exigência demais para o próprio
+  usuário validar.
+- **Ajuste:** "Open questions" fica só com o que ficou **sem resposta**; o que
+  foi respondido, mas podia ser mais fundo, vira o sub-bloco **What to detail
+  better** dentro de "Overall assessment of my performance". O item "resposta
+  vaga" saiu de "Gaps" (era duplicado).
+- **Migração:** revisão de catálogo 4 troca os três trechos textualmente;
+  idempotente, edição do usuário preservada.
+- **Testes:** 676 no `cargo test --lib`; `clippy` limpo.
+
+## 2026-10-23 — Debrief técnico: autoria das perguntas em aberto (BR-090, rev 5)
+
+- **IDs:** BR-090 · **Refs:** [`tasks/19-task.md`](tasks/19-task.md)
+
+- **Sintoma:** no resumo do ledger, "Questões em aberto" listava perguntas de
+  ME (fragmentos de ASR no canal do microfone) como se fossem do entrevistador.
+- **Ajuste:** o parágrafo de "Open questions" fixa a autoria em THEY ("Never
+  list questions ME asked"); tag decide, duvidosa resolve por conteúdo, linha
+  inutilizável é descartada em vez de adivinhada.
+- **Migração:** revisão de catálogo 5 troca o parágrafo textualmente; idempotente.
+- **Testes:** 678 no `cargo test --lib`; `clippy` limpo.

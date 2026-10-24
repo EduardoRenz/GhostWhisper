@@ -143,17 +143,28 @@ pub fn resolve_mode(id: &str, custom: &[AssistantMode]) -> Option<AssistantMode>
 }
 ```
 
-Os **quatro agentes de fábrica** e o **agente protegido** nascem com
-`summary_prompt` = o contrato de resumo já existente (`SUMMARY_SYSTEM_PROMPT`),
-para que o card mostre **dado real** e não texto de exemplo.
+Os **quatro agentes de fábrica** e o **agente protegido** nascem com um
+`summary_prompt` próprio e não vazio: o geral (`SUMMARY_SYSTEM_PROMPT`) para o
+Padrão, Reunião e LeetCode, o debrief de RH (`HR_SUMMARY_PROMPT`) para o RH e o
+debrief técnico (`TECHNICAL_SUMMARY_PROMPT`) para a Entrevista Técnica — para
+que o card mostre **dado real** e não texto de exemplo. Todos são lidos com o
+`SUMMARY_TRANSCRIPT_CONTRACT` injetado antes (BR-090).
 
 **Contrato comum de leitura (BR-082):** o `TRANSCRIPT_CONTRACT` é o preâmbulo de
 `suggestion_system_prompt` (todos os agentes, inclusive personalizados) e de
 `fast_first_system_prompt`. O contrato do agente fica só com o que é específico
 da cena; as linhas de ME/THEY/ASR saíram dos prompts de fábrica. O `AskService`
 explica ME/THEY no próprio `ASK_RULES`, sem herdar a prioridade do THEY (lá a
-pergunta do usuário é a prioridade); o `SUMMARY_SYSTEM_PROMPT` mantém o contrato
-profundo e ganha a definição de ME/THEY.
+pergunta do usuário é a prioridade).
+
+**Contrato comum de leitura do resumo (BR-090):** o
+`SUMMARY_TRANSCRIPT_CONTRACT` é o preâmbulo que o `SummaryService` injeta na
+primeira geração, na regeneração manual **e** na atualização incremental — o
+mesmo padrão das sugestões. Os contratos de resumo por agente (geral/Padrão,
+RH, Entrevista Técnica) ficam só com o que é específico da cena; as regras de
+ME/THEY, erro de ASR e normalização estão **só** no contrato injetado (a
+revisão de catálogo 3 tirou das sementes os blocos "Source boundary" e
+"Transcript normalization" e os bullets comuns do RH).
 
 **Fallback de prompt vazio (BR-079):** `effective_suggestion_prompt`,
 `effective_system_prompt` e `effective_summary_prompt` devolvem o valor do
@@ -237,6 +248,23 @@ Regras:
     `source_id`; carrega o contexto/fonte do system design quando o técnico não
     tinha), adiciona `hr_interview` e troca a seleção ativa de `system_design`
     para `technical_interview`;
+  - revisão 2 (**BR-084**): o `summary_prompt` do RH já semeado sai do contrato
+    geral para o `HR_SUMMARY_PROMPT` — somente quando ainda for o contrato
+    geral; edição e vazio do usuário são preservados;
+  - revisão 3 (**BR-090**): tira das sementes os blocos comuns de leitura do
+    resumo ("Source boundary", "Transcript normalization" e os bullets ME/THEY
+    do RH — agora no `SUMMARY_TRANSCRIPT_CONTRACT` injetado) e dá ao
+    `technical_interview` o debrief próprio (`TECHNICAL_SUMMARY_PROMPT`) quando
+    ele ainda estiver com o contrato geral. Idempotente; edição/vazio do
+    usuário é preservado e um agente excluído não volta;
+  - revisão 4 (**BR-090**): afina o debrief técnico já semheado — troca
+    textualmente o parágrafo de "Open questions" (só sem resposta), tira o
+    item "resposta vaga" de "Gaps" e acrescenta o sub-bloco
+    **What to detail better** na avaliação; idempotente; edição do usuário
+    fica intacta;
+  - revisão 5 (**BR-090**): reforça a autoria — "Open questions" são perguntas
+    de THEY, nunca de ME; tag decide, duvidosa resolve por conteúdo, linha
+    inutilizável é descartada;
   - depois da revisão, edições e exclusões do usuário são respeitadas (um
     `hr_interview` excluído não volta).
 - Roda também em **instalação nova**: `Settings::default()` nasce vazio e com
@@ -272,10 +300,12 @@ O `SummaryService` carrega as settings, resolve o agente **ativo**
 `effective_summary_prompt(&mode)`:
 
 - **primeira geração / regeneração manual** (`current = None`): system prompt =
-  `summary_prompt` do agente; vazio depois do `trim` → `SUMMARY_SYSTEM_PROMPT`
-  do Padrão (BR-079);
+  `SUMMARY_TRANSCRIPT_CONTRACT` + `summary_prompt` do agente (BR-090); o
+  `summary_prompt` vazio depois do `trim` → `SUMMARY_SYSTEM_PROMPT` do Padrão
+  (BR-079);
 - **atualização incremental** (`Some(previous)`): system prompt =
-  `SUMMARY_UPDATE_SYSTEM_PROMPT`; o resumo corrente continua sendo a base da
+  `SUMMARY_TRANSCRIPT_CONTRACT` + `SUMMARY_UPDATE_SYSTEM_PROMPT` (BR-090); o
+  resumo corrente continua sendo a base da
   estrutura. As seções existentes (inclusive as marcadas como "não
   mencionado") são preservadas;
 - trocar o agente no meio da sessão não reestrutura o resumo já gerado; a nova
@@ -287,9 +317,22 @@ about the company**, **Benefits and salary expectations**, **Main questions and
 answers** e **Brief opinion and insight on how I did**; seções sem informação
 recebem "Not discussed so far in the session." (traduzido).
 
+O agente **Entrevista Técnica** tem `summary_prompt =
+TECHNICAL_SUMMARY_PROMPT` (BR-090), com as seções **Overall summary**,
+**Open questions** (o que o entrevistador perguntou e ficou sem resposta),
+**Gaps and what to cover next** (o que falta ME dizer/explicar — sistema,
+trajetória, exercício — ancorado na conversa, sem checklist), **Problem
+presented**, **Technologies and strategies mentioned** e **Overall assessment
+of my performance** (opinião do assistente, rotulada como sua, nunca como fala
+do entrevistador), com o sub-bloco **What to detail better** para respostas que
+existiram mas podiam ser mais afiadas. Seções sem informação
+recebem "Not discussed so far in the session." (traduzido).
+
 A **revisão de catálogo 2** (BR-084) atualiza o `summary_prompt` do RH já
 semeado **somente** quando ele ainda é o contrato geral antigo; prompt editado
-ou vazio é preservado, e um RH excluído não volta.
+ou vazio é preservado, e um RH excluído não volta. A **revisão de catálogo 3**
+(BR-090) limpa os blocos comuns das sementes de resumo e dá o debrief próprio
+à Entrevista Técnica (mesma regra de preservação).
 
 ### 3.7 Sugestão: passes rápido e completo em paralelo (BR-088)
 
@@ -465,6 +508,9 @@ fundo, e o ícone herda `currentColor` (BR-037 — sem hex solto).
 | prompt de resumo vazio cai no do Padrão | idem |
 | atualização incremental usa o prompt incremental | idem |
 | `HR_SUMMARY_PROMPT` tem as seis seções do debrief | `application/prompts/summary.rs` |
+| `TECHNICAL_SUMMARY_PROMPT` tem o debrief técnico (BR-090) | `application/prompts/summary.rs` |
+| `SUMMARY_TRANSCRIPT_CONTRACT` é injetado antes do contrato do agente | `application/summary_service.rs` |
+| revisão 3 limpa os blocos comuns e troca o técnico | `application/assistant_catalog_migration.rs` |
 | passes rápido e completo começam juntos; rascunho atrasado é descartado | `application/suggestion_service.rs` |
 | `useSuggestions` ignora `quick` atrasada da mesma geração | `core/application/useSuggestions.test.tsx` |
 | `default_settings()` traz os 4 agentes de fábrica | `application/assistant_catalog.rs` |

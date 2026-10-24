@@ -187,6 +187,7 @@ As decisões acima viram regras canônicas em
 | BR-083 | Entrevista Técnica funde System Design; novo Entrevista com RH |
 | BR-084 | O resumo usa o prompt do agente ativo; RH tem debrief próprio |
 | BR-088 | Sugestão: rascunho e resposta completa em paralelo |
+| BR-090 | Resumo: contrato comum de leitura injetado; Entrevista Técnica tem debrief próprio |
 
 ## 7. Modelo de dados
 
@@ -345,6 +346,13 @@ catálogo. Ver
       dizem que o assunto não foi mencionado até o momento (BR-084).
 - [ ] O rascunho e a resposta completa da sugestão rodam em paralelo; um
       rascunho atrasado não regride a UI (BR-088).
+- [ ] O resumo da **Entrevista Técnica** separa resumo geral, perguntas em
+      aberto, lacunas do que ME ainda deve falar, o problema apresentado,
+      tecnologias/estratégias mencionadas e uma avaliação do desempenho
+      (BR-090).
+- [ ] As regras comuns de leitura (ME/THEY, erro de ASR, normalização,
+      segurança) chegam ao resumo **injetadas** pelo serviço, uma única vez;
+      os contratos de resumo por agente não as repetem (BR-090).
 
 ## 10. Riscos e limites
 
@@ -378,6 +386,9 @@ catálogo. Ver
 | 14 | Entrevista Técnica funde System Design; novo Entrevista com RH (BR-083) | CONCLUDED |
 | 15 | Resumo por agente ativo + debrief da Entrevista com RH (BR-076/BR-084) | CONCLUDED |
 | 16 | Sugestão: rascunho e resposta completa em paralelo (BR-088) | CONCLUDED |
+| 17 | Resumo: contrato comum injetado + debrief da Entrevista Técnica (BR-090) | CONCLUDED |
+| 18 | Debrief técnico: "em aberto" só sem resposta (BR-090) | CONCLUDED |
+| 19 | Debrief técnico: perguntas em aberto são de THEY (BR-090) | CONCLUDED |
 
 Detalhes, entregáveis e critérios por task: [`tasks/_tasks.md`](tasks/_tasks.md).
 

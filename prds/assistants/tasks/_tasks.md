@@ -22,6 +22,9 @@
 | 14 | Entrevista Técnica funde System Design; novo Entrevista com RH | CONCLUDED |
 | 15 | Resumo por agente ativo + debrief da Entrevista com RH | CONCLUDED |
 | 16 | Sugestão: rascunho e resposta completa em paralelo | CONCLUDED |
+| 17 | Resumo: contrato comum injetado + debrief da Entrevista Técnica | CONCLUDED |
+| 18 | Debrief técnico: "em aberto" só sem resposta + What to detail better | CONCLUDED |
+| 19 | Debrief técnico: autoria das perguntas em aberto é de THEY | CONCLUDED |
 
 ## Implementação (2026-10-22)
 
