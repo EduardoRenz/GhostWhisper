@@ -3,7 +3,7 @@
 Registry de riscos, pendências e limitações observadas. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores). Próximo ID
-livre: **ISS-054**.
+livre: **ISS-056**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
@@ -13,6 +13,7 @@ livre: **ISS-054**.
 | ISS-052 | Captura por janela perde popups/diálogos e não acompanha troca de janela | Média | OPEN |
 | ISS-053 | Redimensionar a janela muda as dimensões dos segmentos | Média | OPEN |
 | ISS-054 | `ffmpeg` estático sem entrada Pulse: áudio cai para `parec` em PCM cru | Média | MITIGATED |
+| ISS-055 | Histórico revela a pasta e exclui sem confirmar a gravação | Média | OPEN |
 
 ---
 
@@ -111,3 +112,18 @@ livre: **ISS-054**.
 - **Caminho definitivo:** `ffmpeg` de distro com Pulse (ou sidecar com
   `--enable-libpulse`) — decide-se junto com a licença (ISS-049).
 - **Refs:** BR-069 · [`../architecture/recording.md`](../architecture/recording.md) §5.2.
+
+## ISS-055 — Histórico revela a pasta e exclui sem confirmar a gravação
+
+- **Severidade:** Média · **Status:** OPEN
+- **Sintoma:** a ação **Abrir gravação** do Histórico chama `revealItemInDir`
+  (abre o gerenciador na pasta), não um player; e o botão **Excluir** apaga a
+  sessão na hora, sem o aviso de que o vídeo também será apagado.
+- **Impacto:** o usuário precisa caçar o arquivo depois da sessão, e uma
+  exclusão sem confirmação pode apagar o MP4 por engano (CA-05.2/CA-05.4).
+- **Correção proposta:** abrir o arquivo com `openPath`
+  (`@tauri-apps/plugin-opener`) no Histórico e no modal de fim de sessão; incluir
+  `started_at_ms` no DTO da gravação; e uma confirmação explícita quando houver
+  `recording_path`.
+- **Task:** [`tasks/10-task.md`](tasks/10-task.md) (encerrada com escopo parcial)
+- **Refs:** BR-068, BR-071 · [`../prd.md`](prd.md) US-05.

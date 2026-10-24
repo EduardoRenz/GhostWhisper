@@ -8,14 +8,14 @@
 |---|--------|--------|
 | 01 | Domínio `Recording`, schema `recordings` e porta `ScreenRecorder` (+ fake) | CONCLUDED |
 | 02 | `FfmpegScreenRecorder`: binário, args puros, segmentos MKV, alvo janela/tela | CONCLUDED |
-| 03 | Seleção de janela (`_NET_ACTIVE_WINDOW` + seletor) e eventos de resize/close | IN PROGRESS |
+| 03 | Seleção de janela (`_NET_ACTIVE_WINDOW` + seletor) e eventos de resize/close | CANCELED |
 | 04 | Finalização: concat `-c copy`, remux MP4, progresso, re-encode e órfãos | CONCLUDED |
 | 05 | `RecordingService`: ciclo de vida amarrado à sessão e falha isolada | CONCLUDED |
 | 06 | IPC + eventos `recording_*` + `SessionEndDto` no `session_stop` | CONCLUDED |
 | 07 | Botão de câmera no notch (4 estados, atalho, acessibilidade) | CONCLUDED |
 | 08 | Modal "Sessão Finalizada" (janela, progresso, ações) | CONCLUDED |
 | 09 | Configurações: aba "Gravação" (campos, padrões, normalização, estimativa) | CONCLUDED |
-| 10 | Histórico/export, documentação, verificação e pacotes | IN PROGRESS |
+| 10 | Histórico/export, documentação, verificação e pacotes | CANCELED |
 
 ## Ordem e dependências
 
@@ -38,13 +38,20 @@
 - A **10** fecha: Histórico, export, BRs, ISS, `memory.md`, verificação e
   empacotamento (bloqueado por ISS-049).
 
+> **Encerrado em 2026-10-24.** As tasks **03** e **10** foram **canceladas com
+> escopo parcial**: ficaram de fora o watcher de ciclo de vida da janela
+> (ISS-053) e, na 10, abrir no player/confirmar a exclusão (ISS-055) e o
+> empacotamento (ISS-049). O gate de indisponibilidade do botão — falta de
+> `ffmpeg`, `parec`, X11 ou display — foi concluído, com motivo traduzido em
+> pt/en (`reason_code`).
+
 ## Entregáveis por camada
 
 | Task | `domain` | `application` | `ports` | `adapters` | `ipc` | frontend |
 |---|---|---|---|---|---|---|
 | 01 | `recording.rs` | — | `screen_recorder.rs`, `recordings_repository.rs` | `schema.sql`, `in_memory_…` | — | — |
 | 02 | — | — | — | `ffmpeg_args.rs`, `ffmpeg_path.rs`, `ffmpeg_screen_recorder.rs` | — | — |
-| 03 | `recording.rs` (alvo) | — | `screen_recorder.rs` | `x11_window_picker.rs` | `recording_commands.rs` (listar janelas) | `WindowPicker` |
+| 03 | `recording.rs` (alvo) | — | `screen_recorder.rs` | `x11_targets.rs` | `recording_commands.rs` (listar janelas) | `WindowPicker` |
 | 04 | — | — | — | `ffmpeg_finalizer.rs` | — | — |
 | 05 | — | `recording_service.rs` | — | — | — | — |
 | 06 | `recording.rs` (DTO) | — | — | `tauri_event_publisher.rs` | `recording_commands.rs`, `session_commands.rs` | `adapters/ipc/recording.ts` |

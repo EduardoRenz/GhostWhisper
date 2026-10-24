@@ -24,6 +24,7 @@ import {
   recordingQualityKey,
   recordingResolutionKey,
   recordingTargetKey,
+  recordingUnavailableKey,
 } from "../../core/l10n/labels";
 
 interface RecordingSettingsProps {
@@ -71,6 +72,12 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
   // Pediu VAAPI, mas o build/dispositivo não tem: cai para x264.
   const encoderFallback =
     settings.recording_encoder === "vaapi" && capabilities?.encoder === "x264";
+  // Motivo da indisponibilidade em l10n (código estável) com fallback ao texto.
+  const unavailableKey = recordingUnavailableKey(capabilities?.reason_code);
+  const unavailableText = unavailableKey
+    ? t(unavailableKey)
+    : (capabilities?.reason ??
+      t("recording_settings_recording_unavailable_environment"));
 
   const pickFolder = async () => {
     if (!isTauriRuntime()) {
@@ -426,8 +433,7 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
           ) : null}
           {capabilities && !capabilities.available ? (
             <p className="settings__card-description settings__card-description--warn">
-              {capabilities.reason ??
-                t("recording_settings_recording_unavailable_environment")}
+              {unavailableText}
             </p>
           ) : null}
         </article>

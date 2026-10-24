@@ -8,6 +8,7 @@ const CAPABILITIES = {
   available: true,
   encoder: "x264",
   reason: null,
+  reason_code: null,
 };
 
 describe("RecordingButton — botão de câmera", () => {
@@ -64,6 +65,29 @@ describe("RecordingButton — botão de câmera", () => {
           available: false,
           encoder: "x264",
           reason: "ffmpeg não encontrado",
+          reason_code: "ffmpeg_missing",
+        }}
+        busy={false}
+        onToggle={vi.fn()}
+        onPick={vi.fn()}
+      />,
+    );
+    // O código estável vira texto localizado, não a mensagem crua do Rust.
+    const button = screen.getByRole("button", {
+      name: "Instale o ffmpeg para liberar a gravação",
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("indisponível sem código: cai no motivo cru do backend", () => {
+    render(
+      <RecordingButton
+        state={IDLE_RECORDING}
+        capabilities={{
+          available: false,
+          encoder: "x264",
+          reason: "ffmpeg não encontrado",
+          reason_code: null,
         }}
         busy={false}
         onToggle={vi.fn()}

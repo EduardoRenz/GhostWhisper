@@ -39,11 +39,19 @@ export type RecordingTarget =
       y: number;
     };
 
+/** Por que o ambiente não grava (código estável traduzido pela UI). */
+export type RecordingUnavailableCode =
+  | "wayland"
+  | "no_display"
+  | "ffmpeg_missing"
+  | "no_audio";
+
 /** O ambiente consegue gravar? */
 export interface RecordingCapabilities {
   available: boolean;
   encoder: string;
   reason: string | null;
+  reason_code: RecordingUnavailableCode | null;
 }
 
 /** Resumo da mídia no modal. */

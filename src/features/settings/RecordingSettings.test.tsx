@@ -1,10 +1,40 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { RecordingCapabilities } from "../../core/domain/recording";
 import { defaultSettings } from "../../core/domain/settings";
 import { RecordingSettings } from "./RecordingSettings";
 
+// O adaptador IPC é mockado no arquivo inteiro: por padrão devolve `undefined`
+// (fora do Tauri), e o teste de indisponibilidade injeta as capabilities.
+const ipc = vi.hoisted(() => ({
+  capabilities: undefined as RecordingCapabilities | undefined,
+}));
+
+vi.mock("../../adapters/ipc/recording", () => ({
+  recordingCapabilities: async () => ipc.capabilities,
+}));
+
+afterEach(() => {
+  ipc.capabilities = undefined;
+});
+
 describe("RecordingSettings — aba Gravação", () => {
+  it("sem ffmpeg: avisa em l10n que falta instalar", async () => {
+    ipc.capabilities = {
+      available: false,
+      encoder: "x264",
+      reason: "ffmpeg não encontrado — instale o pacote ou defina GHOSTWHISPER_FFMPEG",
+      reason_code: "ffmpeg_missing",
+    };
+
+    render(<RecordingSettings settings={defaultSettings()} update={vi.fn()} />);
+
+    expect(
+      await screen.findByText("Instale o ffmpeg para liberar a gravação"),
+    ).toBeDefined();
+  });
+
   it("parte dos padrões da máquina de referência", () => {
     render(<RecordingSettings settings={defaultSettings()} update={vi.fn()} />);
 

@@ -1545,8 +1545,10 @@ uma nota de revisão.
 - **Motivo:** BR-002/BR-004/BR-005 e o mesmo contrato de privacidade do áudio: a
   gravação é mais sensível que a transcrição (expõe a tela inteira).
 - **Consequência:** "Descartar gravação" apaga arquivo e segmentos; excluir a
-  sessão apaga o vídeo junto (com aviso); o modal e o Histórico mostram o caminho
-  apenas localmente.
+  sessão apaga o vídeo junto (o aviso na exclusão está pendente — ISS-055); o
+  modal e o Histórico mostram o caminho apenas localmente. Sem `ffmpeg`/`parec`
+  (ou fora de X11), o botão de câmera fica **desabilitado** com o motivo
+  traduzido em pt/en (RNF-09, BR-086).
 - **Detalhes:** [`recording/prd.md`](recording/prd.md) RNF-08;
   [`recording/architecture/recording.md`](recording/architecture/recording.md) §11.
 - **Data:** 2026-10-21 · **Status:** Ativa

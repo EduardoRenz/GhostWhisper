@@ -74,7 +74,16 @@ Composition root: `lib.rs` instancia **um** `FfmpegScreenRecorder` e o injeta no
 pub struct RecordingCapabilities {
     pub available: bool,
     pub encoder: String,       // "vaapi" | "x264"
-    pub reason: Option<String>,// preenchido quando `available == false`
+    pub reason: Option<String>,// fallback/log quando `available == false`
+    pub reason_code: Option<RecordingUnavailableCode>,
+}
+
+/// Código estável do motivo; a UI resolve em pt/en (BR-086).
+pub enum RecordingUnavailableCode {
+    Wayland,       // "wayland"
+    NoDisplay,     // "no_display"
+    FfmpegMissing, // "ffmpeg_missing"
+    NoAudio,       // "no_audio"
 }
 
 /// Início de uma gravação (config já congelada pela aplicação).
@@ -139,7 +148,9 @@ idle ──start──▶ recording ──pause──▶ paused
 3. `ffmpeg` no `PATH`.
 
 Se nenhum existir, `capabilities().available = false` com
-`reason: "ffmpeg não encontrado"` e o botão fica desabilitado (CA-01.3).
+`reason_code = "ffmpeg_missing"` (e `reason` como fallback) e o botão fica
+desabilitado, com o tooltip **"Instale o ffmpeg para liberar a gravação"**
+traduzido em pt/en (CA-01.3, BR-086).
 
 ### 5.2 Segmento (vídeo)
 
@@ -424,9 +435,9 @@ kbps clampado, strings fora do allowlist caem no padrão, caminho vazio →
 
 | Situação | Comportamento |
 |---|---|
-| `ffmpeg` ausente | botão desabilitado, `reason` no *tooltip*, sessão normal |
+| `ffmpeg` ausente | botão desabilitado, `reason_code: "ffmpeg_missing"` traduzido no *tooltip*, sessão normal |
 | sessão Wayland (`WAYLAND_DISPLAY`/`XDG_SESSION_TYPE=wayland`) | botão desabilitado: a root do XWayland não contém janelas Wayland nativas |
-| sem `DISPLAY` | idem, `reason: "gravação disponível apenas em X11/XWayland (BR-007)"` |
+| sem `DISPLAY` | idem, `reason_code: "no_display"` (`reason` cita X11/XWayland, BR-007) |
 | janela alvo fechada ou minimizada | `stop` com `status=interrupted`, segmentos preservados, modal mostra "Abrir local" |
 | janela alvo redimensionada | fecha o segmento e abre outro na nova geometria (ISS-053) |
 | encoder falha no meio | `status=failed`, sessão continua, toast discreto |

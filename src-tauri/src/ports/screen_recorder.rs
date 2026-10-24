@@ -10,6 +10,36 @@ use serde::Serialize;
 use crate::domain::recording::{RecordingArtifact, RecordingSpec};
 use crate::error::Result;
 
+/// Por que o ambiente não grava.
+///
+/// Código estável (snake_case) que a UI traduz; `reason` fica como fallback e
+/// em log. A regra de frontend vem da BR-086 (nada de texto hardcoded na UI).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingUnavailableCode {
+    /// Sessão Wayland: o XWayland não captura janelas nativas (BR-007).
+    Wayland,
+    /// Sem `DISPLAY` (nem X11 nem XWayland).
+    NoDisplay,
+    /// `ffmpeg` não está no `PATH`, no sidecar nem em `GHOSTWHISPER_FFMPEG`.
+    FfmpegMissing,
+    /// Sem `pulse` no `ffmpeg` e sem `parec` (RNF-09).
+    NoAudio,
+}
+
+impl RecordingUnavailableCode {
+    /// Nome estável (o mesmo do `Serialize`) — usado nos testes do contrato.
+    #[cfg(test)]
+    fn as_str(self) -> &'static str {
+        match self {
+            RecordingUnavailableCode::Wayland => "wayland",
+            RecordingUnavailableCode::NoDisplay => "no_display",
+            RecordingUnavailableCode::FfmpegMissing => "ffmpeg_missing",
+            RecordingUnavailableCode::NoAudio => "no_audio",
+        }
+    }
+}
+
 /// O ambiente consegue gravar? (gate do botão de câmera)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecordingCapabilities {
@@ -17,17 +47,20 @@ pub struct RecordingCapabilities {
     pub available: bool,
     /// Encoder que será usado (`vaapi` ou `x264`).
     pub encoder: String,
-    /// Motivo da indisponibilidade (exibido no *tooltip*).
+    /// Motivo da indisponibilidade (fallback; a UI prefere o código).
     pub reason: Option<String>,
+    /// Código do motivo, para a UI traduzir.
+    pub reason_code: Option<RecordingUnavailableCode>,
 }
 
 impl RecordingCapabilities {
-    /// Indisponível, com o motivo.
-    pub fn unavailable(reason: impl Into<String>) -> Self {
+    /// Indisponível, com o código e o motivo de fallback.
+    pub fn unavailable(code: RecordingUnavailableCode, reason: impl Into<String>) -> Self {
         Self {
             available: false,
             encoder: "x264".to_string(),
             reason: Some(reason.into()),
+            reason_code: Some(code),
         }
     }
 
@@ -37,6 +70,7 @@ impl RecordingCapabilities {
             available: true,
             encoder: encoder.into(),
             reason: None,
+            reason_code: None,
         }
     }
 }
@@ -118,4 +152,19 @@ pub trait RecordingFinalizer: Send + Sync {
 
     /// Apaga os segmentos e o arquivo de controle após o sucesso.
     fn cleanup(&self, parts: &[PathBuf], output: &std::path::Path);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_code_serializes_as_snake_case() {
+        // Contrato com o frontend (`RecordingUnavailableCode` no TS).
+        let json = serde_json::to_string(&RecordingUnavailableCode::FfmpegMissing).expect("json");
+        assert_eq!(json, "\"ffmpeg_missing\"");
+        assert_eq!(RecordingUnavailableCode::Wayland.as_str(), "wayland");
+        assert_eq!(RecordingUnavailableCode::NoDisplay.as_str(), "no_display");
+        assert_eq!(RecordingUnavailableCode::NoAudio.as_str(), "no_audio");
+    }
 }

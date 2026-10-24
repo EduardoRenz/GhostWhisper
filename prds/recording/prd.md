@@ -2,7 +2,8 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-21
-- **Status:** Em implementação (v1 funcional; pendências nas tasks 03 e 10)
+- **Status:** **v1 encerrada em 2026-10-24** por decisão do usuário (tasks 03 e
+  10 canceladas com escopo parcial; o restante está em ISS-049/052/053/055)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/recording.md`](architecture/recording.md),

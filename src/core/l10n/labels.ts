@@ -142,6 +142,24 @@ export function recordingContainerKey(
   return `recording_container_${container}` as TranslationKey;
 }
 
+/** Motivo de indisponibilidade da gravação, já traduzido (null = desconhecido). */
+export function recordingUnavailableKey(
+  code: string | null | undefined,
+): TranslationKey | null {
+  switch (code) {
+    case "wayland":
+      return "recording_unavailable_wayland";
+    case "no_display":
+      return "recording_unavailable_no_display";
+    case "ffmpeg_missing":
+      return "recording_unavailable_ffmpeg_missing";
+    case "no_audio":
+      return "recording_unavailable_no_audio";
+    default:
+      return null;
+  }
+}
+
 /** Nome completo de um provedor (marca + endpoint custom). */
 export function providerLabelKey(
   provider: "openai" | "gemini" | "openrouter" | "deepseek" | "custom",

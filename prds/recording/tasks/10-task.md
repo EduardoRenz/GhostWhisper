@@ -1,6 +1,6 @@
 # 10 — Histórico, export, documentação e pacotes
 
-- **Status:** IN PROGRESS
+- **Status:** CANCELED (2026-10-24 — encerrada com escopo parcial)
 - **Depende de:** 08, 09
 - **Habilita:** —
 - **Issues:** ISS-049 · **BR:** BR-068, BR-071
@@ -35,8 +35,21 @@ Markdown, documentar e empacotar o binário de captura.
 
 - **Feito:** selo `Vídeo`/`Áudio` no Histórico, ação **Abrir gravação**, linha
   `Gravação:` no export, exclusão apagando todas as execuções.
-- **Pendente:** abrir o player no início da gravação (hoje revela o arquivo) e o
-  empacotamento (`ffmpeg`/`parec`, ISS-049).
+- **Pendente (não feito):** abrir o player no início da gravação (hoje revela o
+  arquivo), confirmação de exclusão com o aviso do vídeo e o empacotamento
+  (`ffmpeg`/`parec`, ISS-049).
+
+## Encerramento (2026-10-24)
+
+Entregue nesta data o que faltava do gate: o botão de câmera fica **desabilitado**
+quando falta `ffmpeg`/`parec`/X11/display, com o motivo **traduzido** (o backend
+passa um código estável em `reason_code`; a UI resolve em pt/en). O restante foi
+encerrado sem implementação:
+
+- abrir a gravação no player e confirmar a exclusão com aviso → **ISS-055**;
+- empacotamento e licença do `ffmpeg` → **ISS-049**;
+- CA-05.2 (`started_at_ms` no DTO) fica coberto pela ISS-055 quando o player for
+  retomado.
 
 ## Critérios de aceite
 

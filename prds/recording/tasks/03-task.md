@@ -1,6 +1,6 @@
 # 03 — Alvo da gravação: janela ativa, seletor e eventos de ciclo de vida
 
-- **Status:** IN PROGRESS
+- **Status:** CANCELED (2026-10-24 — encerrada com escopo parcial)
 - **Depende de:** 01, 02
 - **Habilita:** 04, 08
 - **Issues:** ISS-052, ISS-053 · **BR:** BR-070
@@ -44,9 +44,17 @@ exclusão de janela (BR-006), então o alvo é o caminho.
   seguir a janela ativa; **monitores**
   (RandR 1.5: todos os monitores ou um específico, com offset) e print de tela
   no monitor sob o cursor.
-- **Pendente:** observar `ConfigureNotify`/`DestroyNotify`/`UnmapNotify`
-  (`window_watch.rs`) para redimensionar/fechar a janela durante a captura
-  (CA-06.5/06.6, ISS-053).
+- **Pendente (não feito):** observar `ConfigureNotify`/`DestroyNotify`/
+  `UnmapNotify` (`window_watch.rs`) para redimensionar/fechar a janela durante a
+  captura (CA-06.5/06.6).
+
+## Encerramento (2026-10-24)
+
+O usuário encerrou a frente de gravação sem o watcher de ciclo de vida da janela.
+O que ficou de fora está registrado em **ISS-053** (redimensionar entre
+segmentos) e no CA-06.5 (fechar/minimizar encerra como `interrupted`). A
+mitigação atual é o alvo **"Tela inteira"** e a troca manual/automática de alvo,
+que já fecham e reabrem o segmento com `normalize` na finalização.
 
 ## Critérios de aceite
 

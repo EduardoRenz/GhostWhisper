@@ -325,3 +325,45 @@ gravação não acompanhava a janela ativa / se não dava para trocar.
 - Teste manual `records_and_finalizes` agora **troca para a janela ativa** no
   meio e finaliza com `normalize: true` (2 segmentos, reencode) ✓.
 - `cargo clippy --lib --all-targets`: limpo · `pnpm test`: **386** ✓.
+
+## 2026-10-24 — Gate de indisponibilidade em l10n e encerramento da v1
+
+- **IDs:** BR-065, BR-071, ISS-049, ISS-053, ISS-055, ISS-056
+- **Refs:** [`prd.md`](prd.md), [`tasks/03-task.md`](tasks/03-task.md),
+  [`tasks/10-task.md`](tasks/10-task.md), [`tasks/_tasks.md`](tasks/_tasks.md),
+  [`../business-rules.md`](../business-rules.md) BR-086
+
+### Pedido do usuário
+Com o `ffmpeg` ausente do sistema, deixar o botão de gravação **desabilitado**
+com tooltip "Instale o ffmpeg para liberar a gravação" — e, feito isso, encerrar
+a PRD de gravação por ora.
+
+### Decisão e implementação
+- O botão **já** era desabilitado por `RecordingCapabilities.available`; faltava
+  a mensagem. O motivo vinha hardcoded em português do Rust e ia direto para o
+  `title`, quebrando a BR-086 em UI inglesa.
+- `RecordingCapabilities` ganhou `reason_code` (`wayland`, `no_display`,
+  `ffmpeg_missing`, `no_audio`); a decisão virou a função pura
+  `unavailable_reason(...)` (testável sem ambiente — R16/R17) e `reason` ficou
+  como fallback/log.
+- `recordingUnavailableKey()` traduz o código em pt/en; usado no
+  `RecordingButton` e na aba **Gravação**. Fallback: `reason` cru (contrato
+  antigo continua válido).
+- Sem mudança de comportamento além do texto: nada de `ffmpeg` empacotado nem
+  detecção em tempo de clique (as capabilities são lidas na inicialização).
+
+### Encerramento
+- Tasks **03** e **10** → `CANCELED` com nota do que ficou fora: watcher de
+  ciclo de vida da janela (ISS-053), abrir no player/confirmar exclusão
+  (**ISS-055**) e empacotamento/licença (ISS-049).
+- PRD marcada como v1 encerrada; ISS-050/051/052 seguem como limitações
+  documentadas.
+
+### Verificação
+- `cargo test --lib` **681 ✓** (10 ignored) · `cargo clippy --lib --all-targets`
+  limpo · `cargo fmt --check` limpo.
+- `pnpm test` **467 ✓** · `tsc --noEmit` ✓.
+- Novo teste do contrato: `RecordingUnavailableCode` serializa em snake_case
+  (`ffmpeg_missing`), que é o valor que o TS consome.
+- Manual (a fazer pelo usuário): com `GHOSTWHISPER_FFMPEG=/nao/existe`, o botão
+  deve ficar desabilitado com "Instale o ffmpeg para liberar a gravação".

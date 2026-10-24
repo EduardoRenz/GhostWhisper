@@ -32,7 +32,7 @@ const base = {
   onHide: vi.fn(),
   recording: IDLE_RECORDING,
   recordingBusy: false,
-  recordingCapabilities: { available: true, encoder: "x264", reason: null },
+  recordingCapabilities: { available: true, encoder: "x264", reason: null, reason_code: null },
   onToggleRecording: vi.fn(),
   onPickRecordingTarget: vi.fn(),
 };

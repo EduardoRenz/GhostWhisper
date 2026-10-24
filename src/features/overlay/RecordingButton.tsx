@@ -1,5 +1,6 @@
 import { VideoCameraIcon } from "../../components/icons";
 import { useTranslation } from "../../core/l10n";
+import { recordingUnavailableKey } from "../../core/l10n/labels";
 import type {
   RecordingCapabilities,
   RecordingState,
@@ -33,9 +34,12 @@ export function RecordingButton({
   const finalizing = state.status === "finalizing";
   const unavailable = capabilities ? !capabilities.available : false;
   const disabled = busy || unavailable || finalizing;
+  const unavailableKey = recordingUnavailableKey(capabilities?.reason_code);
 
   const title = unavailable
-    ? (capabilities?.reason ?? t("recording_button_recording_unavailable"))
+    ? (unavailableKey
+        ? t(unavailableKey)
+        : (capabilities?.reason ?? t("recording_button_recording_unavailable")))
     : finalizing
       ? t("recording_button_finalizing_recording")
       : recording

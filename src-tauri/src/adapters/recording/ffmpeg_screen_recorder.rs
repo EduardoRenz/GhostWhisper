@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use crate::domain::recording::{RecordingKind, RecordingSpec, RecordingTarget};
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::screen_recorder::{
-    FallbackAudio, RecordingCapabilities, RecordingStart, ScreenRecorder,
+    FallbackAudio, RecordingCapabilities, RecordingStart, RecordingUnavailableCode, ScreenRecorder,
 };
 
 use super::ffmpeg_args::{
@@ -415,27 +415,51 @@ fn is_wayland_session() -> bool {
     is_wayland(wayland.as_deref(), session.as_deref())
 }
 
-/// Detecta `ffmpeg` + X11 + áudio.
-fn detect_capabilities(ffmpeg: &Path, audio: AudioMode) -> RecordingCapabilities {
-    if is_wayland_session() {
-        return RecordingCapabilities::unavailable(
+/// Decisão pura de disponibilidade (testável sem tocar no ambiente — R16/R17).
+///
+/// A ordem importa: Wayland invalida tudo, depois o display, o binário e o áudio.
+fn unavailable_reason(
+    wayland: bool,
+    has_display: bool,
+    ffmpeg_is_file: bool,
+    audio: AudioMode,
+) -> Option<(RecordingUnavailableCode, &'static str)> {
+    if wayland {
+        return Some((
+            RecordingUnavailableCode::Wayland,
             "gravação indisponível em Wayland: o XWayland não captura janelas Wayland nativas (use uma sessão X11)",
-        );
+        ));
     }
-    if std::env::var_os("DISPLAY").is_none() {
-        return RecordingCapabilities::unavailable(
+    if !has_display {
+        return Some((
+            RecordingUnavailableCode::NoDisplay,
             "gravação disponível apenas em X11/XWayland (BR-007)",
-        );
+        ));
     }
-    if !ffmpeg.is_file() {
-        return RecordingCapabilities::unavailable(
+    if !ffmpeg_is_file {
+        return Some((
+            RecordingUnavailableCode::FfmpegMissing,
             "ffmpeg não encontrado — instale o pacote ou defina GHOSTWHISPER_FFMPEG",
-        );
+        ));
     }
     if audio == AudioMode::None {
-        return RecordingCapabilities::unavailable(
+        return Some((
+            RecordingUnavailableCode::NoAudio,
             "sem captura de áudio: o ffmpeg não tem Pulse e o parec não foi encontrado",
-        );
+        ));
+    }
+    None
+}
+
+/// Detecta `ffmpeg` + X11 + áudio.
+fn detect_capabilities(ffmpeg: &Path, audio: AudioMode) -> RecordingCapabilities {
+    if let Some((code, reason)) = unavailable_reason(
+        is_wayland_session(),
+        std::env::var_os("DISPLAY").is_some(),
+        ffmpeg.is_file(),
+        audio,
+    ) {
+        return RecordingCapabilities::unavailable(code, reason);
     }
     let encoder = if supports_vaapi(ffmpeg) {
         "vaapi"
@@ -580,12 +604,49 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_explain_wayland() {
-        // Não mexe no ambiente: testa a mensagem de indisponibilidade.
+    fn unavailable_reason_follows_the_environment_order() {
+        let code = |wayland, display, ffmpeg, audio| {
+            unavailable_reason(wayland, display, ffmpeg, audio).map(|(code, _)| code)
+        };
+
+        assert_eq!(
+            code(true, true, true, AudioMode::Ffmpeg),
+            Some(RecordingUnavailableCode::Wayland)
+        );
+        assert_eq!(
+            code(false, false, true, AudioMode::Ffmpeg),
+            Some(RecordingUnavailableCode::NoDisplay)
+        );
+        assert_eq!(
+            code(false, true, false, AudioMode::Ffmpeg),
+            Some(RecordingUnavailableCode::FfmpegMissing)
+        );
+        assert_eq!(
+            code(false, true, true, AudioMode::None),
+            Some(RecordingUnavailableCode::NoAudio)
+        );
+        assert_eq!(code(false, true, true, AudioMode::Parec), None);
+    }
+
+    #[test]
+    fn missing_ffmpeg_has_an_actionable_reason() {
+        let (code, reason) =
+            unavailable_reason(false, true, false, AudioMode::Ffmpeg).expect("motivo");
+        assert_eq!(code, RecordingUnavailableCode::FfmpegMissing);
+        assert!(reason.contains("ffmpeg"), "{reason}");
+    }
+
+    #[test]
+    fn unavailable_capabilities_carry_the_code_and_the_reason() {
         let capabilities = RecordingCapabilities::unavailable(
-            "gravação disponível apenas em X11/XWayland (BR-007)",
+            RecordingUnavailableCode::FfmpegMissing,
+            "ffmpeg não encontrado",
         );
         assert!(!capabilities.available);
-        assert!(capabilities.reason.expect("motivo").contains("X11"));
+        assert_eq!(
+            capabilities.reason_code,
+            Some(RecordingUnavailableCode::FfmpegMissing)
+        );
+        assert!(capabilities.reason.expect("motivo").contains("ffmpeg"));
     }
 }
