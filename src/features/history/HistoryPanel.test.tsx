@@ -38,6 +38,7 @@ const sessions: SessionSummary[] = [
     ended_at_ms: STARTED + 3_660_000,
     subject: "Reunião de sexta",
     status: "ended",
+    overview: "## Resumo geral\n\nA conversa cobriu o ledger bancário.",
   },
   {
     id: "s1",
@@ -75,10 +76,38 @@ describe("HistoryPanel", () => {
     expect(screen.getByText(/02\/01\/2026 03:04 · 01:05/)).toBeDefined();
   });
 
+  it("abre o detalhe na aba Resumo com o resumo em card", async () => {
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText("Reunião de sexta"));
+
+    // A aba Resumo é a padrão e traz o overview da sessão.
+    const summaryTab = screen.getByRole("tab", { name: "Resumo" });
+    expect(summaryTab.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Resumo da sessão" })).toBeDefined();
+    expect(screen.getByText("Resumo geral")).toBeDefined();
+    // A linha temporal só aparece na outra aba.
+    expect(screen.queryByText("podemos fechar?")).toBeNull();
+  });
+
+  it("troca para a aba Transcrição e mostra a linha temporal", async () => {
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText("Reunião de sexta"));
+    fireEvent.click(screen.getByRole("tab", { name: "Transcrição" }));
+
+    expect(screen.getByRole("tab", { name: "Transcrição" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("heading", { name: "Resumo da sessão" })).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText("podemos fechar?")).toBeDefined();
+    });
+  });
+
   it("abre o detalhe com falas e sugestões marcadas com o tempo", async () => {
     render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
 
     fireEvent.click(await screen.findByText("Reunião de sexta"));
+    fireEvent.click(screen.getByRole("tab", { name: "Transcrição" }));
 
     await waitFor(() => {
       expect(screen.getByText("podemos fechar?")).toBeDefined();
@@ -102,6 +131,16 @@ describe("HistoryPanel", () => {
     fireEvent.click(rows[0]!);
 
     expect(onContinue).toHaveBeenCalledWith("s2");
+  });
+
+  it("sem resumo mostra aviso na aba Resumo", async () => {
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText("Sessão sem título"));
+
+    expect(
+      await screen.findByText("Nenhum resumo para esta sessão."),
+    ).toBeDefined();
   });
 
   it("renomeia pelo detalhe", async () => {

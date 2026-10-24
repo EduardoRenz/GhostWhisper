@@ -100,7 +100,6 @@ describe("escala de fonte (BR-087)", () => {
       ".summary-view__subject",
       ".suggestion-card__title",
       ".suggestion-block__text",
-      ".history__summary",
       ".insights__text",
     ];
     for (const selector of surfaces) {

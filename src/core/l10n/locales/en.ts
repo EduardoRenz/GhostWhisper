@@ -224,6 +224,7 @@ export const EN = {
   "history_session_progress": "Session in progress",
   "history_session_summary": "Session summary",
   "history_session_title": "Session title",
+  "history_summary_none": "No summary for this session.",
   "history_video": "Video",
   "history_view_timeline": "View the timeline",
   "hud_100ms_fast": "100ms (Fast)",

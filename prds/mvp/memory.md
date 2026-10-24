@@ -941,3 +941,34 @@ relative ao estado real do projeto.
   Sugestões, Translation, AI Sources, Sessão, Precisão/Desempenho) vive nas
   PRDs próprias, cada uma com o seu `memory.md` (R15).
 - A **tradução** (T1/T2) segue aberta em [`../translation/`](../translation/).
+
+---
+
+## 2026-10-23 — Detalhe da sessão em abas Resumo × Transcrição (mockup)
+
+- **IDs:** T17, BR-033
+- **Refs:** [`tasks/17-task.md`](tasks/17-task.md),
+  [`../chat/tasks/02-task.md`](../chat/tasks/02-task.md) (ChatView no detalhe),
+  [`../business-rules.md`](../business-rules.md) BR-033; mockup de 2026-10-23
+
+### Contexto
+O detalhe da sessão no histórico mostrava o resumo num `<details>` acima da linha
+temporal, tudo na mesma coluna, com Voltar/título/Renomear na mesma linha. O
+novo mockup pede **abas "Resumo" e "Transcrição"** e reposiciona o cabeçalho:
+Voltar à esquerda, Renomear à direita, título e metadata em linhas próprias e
+"Excluir" isolado à direita da barra de ações.
+
+### Decisão
+- Novo `features/history/DetailTabs.tsx`: pills segmentadas que reaproveitam o
+  visual do `PanelTabs` (BR-033) com ids próprios (`history-tab-*`) para não
+  colidir com as abas do painel da sessão; `role="tablist"` + setas/Home/End.
+- `HistoryPanel`: linha `history__detail-top` (ações à direita), título em `h2`,
+  metadata em `history__meta`, `Excluir` com `history__actions-delete`
+  (`margin-left: auto`) e corpo da aba em `history__tab-body`. A aba **Resumo**
+  é a padrão e renderiza o `overview` num card (`MarkdownView`); a aba
+  **Transcrição** mantém `ChatView` com os mesmos estados de loading/vazio/erro.
+- l10n: chave nova `history_summary_none` (pt/en). Statusbar/contadores do
+  mockup ficaram de fora a pedido (detalhes supérfluos).
+
+### Verificação
+- **465 testes frontend** (+3, 73 arquivos) · `tsc --noEmit` limpo.

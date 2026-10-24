@@ -224,6 +224,7 @@ export const PT = {
   "history_session_progress": "Sessão em andamento",
   "history_session_summary": "Resumo da sessão",
   "history_session_title": "Título da sessão",
+  "history_summary_none": "Nenhum resumo para esta sessão.",
   "history_video": "Vídeo",
   "history_view_timeline": "Ver a linha temporal",
   "hud_100ms_fast": "100ms (Rápido)",

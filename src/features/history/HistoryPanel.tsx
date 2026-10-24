@@ -17,6 +17,7 @@ import { ChatView } from "../chat/ChatView";
 import { MarkdownView } from "../../components/MarkdownView";
 import { useTranslation } from "../../core/l10n";
 import { sessionTitleText } from "../../core/l10n/labels";
+import { DetailTabs, type DetailTabId } from "./DetailTabs";
 
 interface HistoryPanelProps {
   /** Sessão em andamento (para marcar a lista). */
@@ -44,13 +45,16 @@ function fileNameFor(session: SessionSummary): string {
 
 /**
  * Histórico de sessões: lista (com continuar/renomear/excluir) e o detalhe da
- * linha temporal (falas + sugestões da IA com o tempo), com export Markdown.
+ * sessão em abas — Resumo (overview em markdown) e Transcrição (linha temporal
+ * de falas + sugestões da IA com o tempo) — com export Markdown.
  */
 export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps) {
   const { t } = useTranslation();
   const { sessions, loading, error, refresh, rename, remove } =
     useSessionHistory(activeSessionId);
   const [selected, setSelected] = useState<string | null>(null);
+  // Aba ativa no detalhe (Resumo × Transcrição); começa no resumo.
+  const [tab, setTab] = useState<DetailTabId>("summary");
   const { entries, loading: loadingTimeline, error: timelineError } =
     useSessionTimeline(selected);
   const [editing, setEditing] = useState(false);
@@ -98,29 +102,39 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
     );
   };
 
+  /** Abre o detalhe de uma sessão sempre pela aba Resumo. */
+  const openDetail = (id: string) => {
+    setSelected(id);
+    setTab("summary");
+    setEditing(false);
+    setNotice(null);
+  };
+
+  /** Volta para a lista limpando edição e avisos. */
+  const closeDetail = () => {
+    setSelected(null);
+    setEditing(false);
+    setNotice(null);
+  };
+
   if (selected && current) {
+    const overview =
+      current.overview && current.overview.trim() !== ""
+        ? current.overview
+        : null;
+
     return (
       <div className="history" data-interactive>
-        <div className="history__detail-head">
+        <div className="history__detail-top">
           <button
             type="button"
             className="overlay__button"
-            onClick={() => {
-              setSelected(null);
-              setEditing(false);
-              setNotice(null);
-            }}
+            onClick={closeDetail}
           >
             ← {t("history_back")}
           </button>
-          {editing ? (
-            <>
-              <input
-                className="history__title-input"
-                value={title}
-                aria-label={t("history_session_title")}
-                onChange={(event) => setTitle(event.target.value)}
-              />
+          <div className="history__detail-top-actions">
+            {editing ? (
               <button
                 type="button"
                 className="overlay__button"
@@ -128,12 +142,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               >
                 {t("history_save")}
               </button>
-            </>
-          ) : (
-            <>
-              <span className="history__detail-title">
-                {sessionTitleText(current, t)}
-              </span>
+            ) : (
               <button
                 type="button"
                 className="overlay__button"
@@ -141,11 +150,24 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               >
                 {t("history_rename")}
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
 
-        <p className="settings__hint">
+        {editing ? (
+          <input
+            className="history__title-input"
+            value={title}
+            aria-label={t("history_session_title")}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        ) : (
+          <h2 className="history__detail-title">
+            {sessionTitleText(current, t)}
+          </h2>
+        )}
+
+        <p className="history__meta">
           {formatDateTime(current.started_at_ms)} · {t("history_duration")}{" "}
           {sessionDuration(current)} ·{" "}
           {t("history_count_item_s", { count: entries.length })}
@@ -187,7 +209,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
           </button>
           <button
             type="button"
-            className="overlay__button overlay__button--stop"
+            className="overlay__button overlay__button--stop history__actions-delete"
             onClick={() => void remove(current.id)}
           >
             {t("history_delete")}
@@ -195,26 +217,47 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
         </div>
 
         {notice && <p className="settings__hint">{notice}</p>}
-        {timelineError && <p className="overlay__error">{timelineError}</p>}
 
-        {current.overview && current.overview.trim() !== "" && (
-          <details className="history__summary" open>
-            <summary>{t("history_session_summary")}</summary>
-            <div className="history__summary-body">
-              <MarkdownView markdown={current.overview} />
-            </div>
-          </details>
-        )}
+        <DetailTabs active={tab} onChange={setTab} />
 
-        {loadingTimeline ? (
-          <p className="chat__empty">{t("history_loading")}</p>
-        ) : entries.length === 0 ? (
-          <p className="chat__empty">{t("history_nothing_recorded_session")}</p>
+        {tab === "summary" ? (
+          <section
+            className="history__tab-body"
+            role="tabpanel"
+            id="history-view-summary"
+            aria-labelledby="history-tab-summary"
+          >
+            <h3 className="history__section-title">
+              {t("history_session_summary")}
+            </h3>
+            {overview ? (
+              <div className="history__summary-card">
+                <MarkdownView markdown={overview} />
+              </div>
+            ) : (
+              <p className="chat__empty">{t("history_summary_none")}</p>
+            )}
+          </section>
         ) : (
-          <ChatView
-            bubbles={bubbles}
-            sessionStartedAtMs={current.started_at_ms}
-          />
+          <section
+            className="history__tab-body"
+            role="tabpanel"
+            id="history-view-transcription"
+            aria-labelledby="history-tab-transcription"
+          >
+            {timelineError ? (
+              <p className="overlay__error">{timelineError}</p>
+            ) : loadingTimeline ? (
+              <p className="chat__empty">{t("history_loading")}</p>
+            ) : entries.length === 0 ? (
+              <p className="chat__empty">{t("history_nothing_recorded_session")}</p>
+            ) : (
+              <ChatView
+                bubbles={bubbles}
+                sessionStartedAtMs={current.started_at_ms}
+              />
+            )}
+          </section>
         )}
       </div>
     );
@@ -252,7 +295,7 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               type="button"
               className="history__open"
               title={t("history_view_timeline")}
-              onClick={() => setSelected(session.id)}
+              onClick={() => openDetail(session.id)}
             >
               <span className="history__row-title">
                 {sessionTitleText(session, t)}
