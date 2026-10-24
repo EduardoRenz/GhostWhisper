@@ -427,8 +427,7 @@ uma nota de revisão.
   um ícone no canto superior direito pede a tradução, que aparece **abaixo** do
   original, separada por **linha tracejada**, em **itálico e menor**; um novo
   clique **volta ao original**. O painel de tradução abaixo da conversa é
-  **removido** e não há botão de copiar por tradução. Quando o idioma detectado
-  pelo ASR (origem `auto`) é igual ao destino, a tradução **não** é oferecida. A
+  **removido** e não há botão de copiar por tradução. A
   tradução **automática em massa** fica fora (pode voltar, amadurecida, depois).
 - **Motivo:** feedback do usuário — o painel duplicado repetia a conversa e era
   ruim de ler/testar; e com origem `auto` + destino pt o app traduzia pt→pt.
@@ -437,10 +436,12 @@ uma nota de revisão.
 - **Consequência:** a fala só vai ao provider quando o usuário **clica** (BR-005);
   a tradução é **efêmera** (não vai ao banco nem ao export); a fila é serial e o
   resultado é cacheado por fala.
-- **Detalhes:** [`translation/prd.md`](translation/prd.md),
-  [`translation/tasks/01-task.md`](translation/tasks/01-task.md),
-  [`translation/tasks/02-task.md`](translation/tasks/02-task.md).
-- **Data:** 2026-10-18 · **Status:** Ativa (T1 implementado; T2 pendente)
+- **Detalhes:** `src/features/chat/ChatBubble.tsx`,
+  `src/core/application/useTranslation.ts`,
+  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md).
+- **Data:** 2026-10-18 · **Status:** Ativa (implementada). O gate por idioma
+  detectado (evitar pt→pt) foi **descartado** em 2026-10-24; o PRD `translation`
+  que o especificava foi removido — o comportamento atual fica como está.
 
 ## BR-031 — Teto da bolha de fala: fala longa continua em bolha seguinte
 - **Decisão:** a bolha de fala tem **teto de 180 caracteres**

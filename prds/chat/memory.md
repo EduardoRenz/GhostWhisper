@@ -343,3 +343,20 @@ A implementação foi alinhada a isso (não reintroduziu geração ao abrir).
 - Nesta sessão o WebKitGTK parou de pintar o conteúdo do AppImage (afeta também
   o build anterior e o MiniBrowser); DOM/bundle foram validados no WebKit e no
   Chrome, e a janela sem moldura está configurada no `tauri.conf.json`.
+
+## 2026-10-24 — PRD `translation` removido; tradução fica como está
+
+- **IDs:** BR-030, ISS-029, ISS-030
+- **Refs:** [`../business-rules.md`](../business-rules.md) BR-030,
+  [`architecture/chat-ui.md`](architecture/chat-ui.md),
+  `src/features/chat/ChatBubble.tsx`, `src/core/application/useTranslation.ts`
+
+### Decisão
+- O usuário encerrou a frente de tradução: a **T1** (tradução sob demanda na
+  bolha, já implementada) fica **como está** e a **T2** (gate por idioma
+  detectado, ISS-030) **não será feita**.
+- O PRD `prds/translation/` foi **removido** (recuperável no histórico do Git);
+  BR-030 passa a ser a fonte única do comportamento, agora sem a promessa de
+  gate por idioma.
+- Referências quebradas corrigidas em `business-rules.md`, `notch/prd.md`,
+  `precision-and-performance/tasks/02-task.md` e `memory.md`.

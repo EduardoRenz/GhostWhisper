@@ -97,6 +97,6 @@ Ponto de parada: usuário aprova a sensação de velocidade/tamanho antes de E3.
   `tsc`, `pnpm build` ✓.
 - **Manual:** o usuário seguiu para a próxima etapa (E3) após validar o
   comportamento geral — fast-first curto, automático com a janela fechada e bolha
-  colapsada. Ajustes de UX de tradução que apareceram no teste foram para o PRD
-  [`translation`](../../translation/prd.md) (BR-030).
+  colapsada. Ajustes de UX de tradução que apareceram no teste ficaram em
+  BR-030 (o PRD `translation` foi removido em 2026-10-24).
 - **Observações do usuário:** "pode seguir para próxima etapa".

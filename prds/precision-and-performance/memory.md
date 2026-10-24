@@ -118,8 +118,8 @@ funcionar sem a janela aberta — o que o usuário percebe como velocidade.
 - `cargo test --lib` 315 ✓ (8 `ignored`) · `clippy -D warnings` ✓ · `fmt --check`
   ✓ · `pnpm test` 121 ✓ · `tsc --noEmit` ✓ · `pnpm build` ✓.
 - Manual: o usuário validou o comportamento geral e seguiu para o E3. Ajustes de
-  UX de **tradução** que apareceram no teste foram para outra PRD
-  ([`../translation/prd.md`](../translation/prd.md), BR-030). Task 02 `CONCLUDED`.
+  UX de **tradução** que apareceram no teste foram para outra PRD (removida em
+  2026-10-24; BR-030). Task 02 `CONCLUDED`.
 
 ---
 

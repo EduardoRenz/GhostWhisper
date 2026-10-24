@@ -10,8 +10,7 @@
   [`architecture/drill-hover.md`](architecture/drill-hover.md),
   [`tasks/_tasks.md`](tasks/_tasks.md), PRDs anteriores:
   [`../mvp/prd.md`](../mvp/prd.md), [`../chat/prd.md`](../chat/prd.md),
-  [`../assistant/prd.md`](../assistant/prd.md),
-  [`../translation/prd.md`](../translation/prd.md)
+  [`../assistant/prd.md`](../assistant/prd.md)
 
 ---
 
