@@ -23,6 +23,7 @@
 | 15 | Concorrência e ciclo de vida das sugestões (single-flight e janela) | CONCLUDED |
 | 16 | Intercalação por sobreposição e grip padrão | CONCLUDED |
 | 17 | Casco padrão das janelas: header, drag à esquerda e raio (BR-064) | CONCLUDED |
+| 18 | Foco da barra de pesquisa pelo atalho global (ISS-064) | CONCLUDED |
 
 > A **14** é a última na ordem de execução, embora apareça antes da **15** na
 > tabela (mantém o fechamento junto das demais tasks). A ordem válida é a do

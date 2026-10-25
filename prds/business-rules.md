@@ -1136,6 +1136,14 @@ uma nota de revisão.
   (a mesma do notch/histórico), inclusive a aberta **pausada** pela pergunta
   (`ensure_session`) — é o que faz a resposta de um print **sem transcrição**
   ficar na aba. Encerrar a sessão (a pílula) zera a aba, nos dois casos.
+- **Revisão 7 (2026-10-25):** o atalho global **ativa** a barra de pesquisa
+  mesmo com o GhostWhisper em segundo plano e **mesmo que ela já esteja
+  aberta**. O `set_focus` do Tauri apresenta com timestamp zero
+  (`GDK_CURRENT_TIME`) e o Mutter recusa a ativação; a janela passa a ser
+  apresentada com o **timestamp atual do servidor X11**, na thread principal
+  do GTK, com uma repetição curta (~150 ms) se ainda estiver sem foco. É o
+  mesmo mecanismo do arraste (ISS-063/BR-064). O clique na lupa continua
+  funcionando pelo caminho normal (ISS-064).
 - **Data:** 2026-10-19 · **Status:** Ativa (planejada)
 
 ## BR-053 — "Busca" é a superfície de pergunta: perguntar, print e perguntas prontas

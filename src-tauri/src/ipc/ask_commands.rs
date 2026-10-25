@@ -10,6 +10,7 @@ use tauri::{Emitter, Manager, State};
 
 use crate::domain::settings::AskPositionSource;
 use crate::error::{GhostWhisperError, Result};
+use crate::ipc::window_focus::{focus_window, should_refocus};
 use crate::ipc::window_visibility::{assert_above, show_above};
 
 /// Janela da barra "Perguntar".
@@ -187,6 +188,28 @@ fn reassert_ask_position_later(app: tauri::AppHandle, target: (i32, i32)) {
     });
 }
 
+/// Reafirma o foco depois que o grab do atalho e o mapeamento terminam.
+///
+/// O `present` imediato pode acontecer enquanto o X11 ainda segura o grab da
+/// combinação (o WM pode recusar a ativação). Se a janela estiver visível e
+/// sem foco ~150 ms depois, repete a ativação e o evento que leva o cursor ao
+/// campo (ISS-064/BR-052).
+fn reassert_ask_focus_later(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        let Some(window) = app.get_webview_window(ASK_WINDOW) else {
+            return;
+        };
+        if should_refocus(
+            window.is_visible().unwrap_or(false),
+            window.is_focused().unwrap_or(false),
+        ) {
+            focus_window(&app, &window);
+            let _ = app.emit_to(ASK_WINDOW, "ask_focus", ());
+        }
+    });
+}
+
 /// Inicia o arraste explícito da barra e marca a intenção para o tracker.
 #[tauri::command]
 pub fn ask_start_drag(
@@ -253,8 +276,11 @@ pub fn show_ask_window(app: &tauri::AppHandle) {
     if let Some(target) = target {
         reassert_ask_position_later(app.clone(), target);
     }
-    let _ = window.set_focus();
+    // Ativa com timestamp X11: o `present` padrão usa `GDK_CURRENT_TIME` (0) e
+    // o Mutter recusa o foco quando o app não está ativo (atalho global).
+    focus_window(app, &window);
     let _ = app.emit_to(ASK_WINDOW, "ask_focus", ());
+    reassert_ask_focus_later(app.clone());
 }
 
 /// Abre (ou foca) a barra de pesquisa.

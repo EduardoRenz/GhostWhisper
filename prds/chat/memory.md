@@ -431,3 +431,40 @@ A implementação foi alinhada a isso (não reintroduziu geração ao abrir).
   pelo header saindo de janela inativa; resize 3/3 no canto sudeste.
 - AppImage/deb Vulkan republicados (21:04); SHA-256 do AppImage
   `06026cf6…a218794`.
+
+## 2026-10-25 — Atalho de pesquisa não ativava a barra (ISS-064)
+
+- **IDs:** ISS-064, BR-052, T18 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/18-task.md`](tasks/18-task.md)
+
+### Sintoma
+O atalho global de pesquisa (`focus_ask`, Ctrl+Shift+C no perfil do usuário)
+abria a barra, mas **não entregava o foco** com o GhostWhisper em segundo
+plano; clicar na lupa focava. O problema aparecia tanto ao abrir quanto com a
+barra já aberta.
+
+### Causa
+O `set_focus` do Tauri termina em
+`gtk_window_present_with_time(GDK_CURRENT_TIME)` — timestamp **0**. Em
+Mutter/X11 a ativação de um app inativo com timestamp zero é recusada pela
+proteção contra roubo de foco. O clique na lupa funciona porque o próprio
+clique ativa o app antes. É o mesmo mecanismo do arraste (ISS-063), que já
+usava `x11_get_server_time`; o foco nunca tinha recebido o mesmo tratamento.
+
+### Entregue
+- `ipc/window_focus.rs`: `focus_window` apresenta na thread principal do GTK
+  com o timestamp atual do servidor X11; fallback `set_focus` e `present` no
+  Wayland. `should_refocus(visible, focused)` centraliza a decisão de repetir.
+- `show_ask_window` ativa **sempre** (não só ao sair de oculta), emite
+  `ask_focus` e repete ~150 ms depois se a janela estiver visível e sem foco.
+- Sem mudança no frontend: `onFocusChanged` + `ask_focus` continuam devolvendo
+  o cursor ao campo.
+
+### Verificação
+- Xvfb: oculta → abre com `XGetInputFocus` na janela `ask`; aberta sem foco →
+  atalho refoca.
+- Mutter: com o Chrome ativo e a barra aberta, o atalho físico levou o cursor
+  ao campo (confirmado pelo usuário). XTest sintético não conta como interação
+  do usuário para o Mutter; a validação válida é com o teclado real.
+- `should_refocus` (4 estados), `AskWindow.test.tsx`; `cargo test --lib`
+  **693 ✓**, clippy `-D warnings` ✓.

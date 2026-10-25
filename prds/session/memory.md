@@ -632,3 +632,15 @@ responde sem a memória longa (velocidade primeiro); o resumo é gerado em
 background e a próxima pergunta já o utiliza. O warm-up na abertura da barra
 ficou de fora para não gerar chamada extra a cada abertura nem duplicar a
 geração disparada pelo próprio Perguntar.
+
+## 2026-10-25 — Atalho de pesquisa ativa a barra mesmo com o app inativo (ISS-064)
+
+- **IDs:** ISS-064, BR-052 (rev. 7) · **Refs:**
+  [`../chat/issues.md`](../chat/issues.md) (ISS-064),
+  [`../chat/tasks/18-task.md`](../chat/tasks/18-task.md)
+
+O atalho global de pesquisa passa a **ativar** a janela `ask` com o timestamp
+do servidor X11 (o `present` padrão usa timestamp 0 e o Mutter recusa a
+ativação de um app inativo), inclusive quando a barra já está aberta. O campo
+continua recebendo o cursor por `ask_focus` + `onFocusChanged`. A posição e o
+tamanho da barra não mudam. Detalhes e testes no ISS-064 (PRD Chat).

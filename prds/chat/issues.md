@@ -4,13 +4,14 @@ Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a de
 [`../mvp/issues.md`](../mvp/issues.md) para o ID ser único no repositório).
-Próximo ID livre: **ISS-064**.
+Próximo ID livre: **ISS-065**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
 | ISS-018 | Falas de canais diferentes colidiam na linha temporal (id sem canal) | Alta | FIXED |
 | ISS-031 | Bolha de fala crescia sem limite em fala contínua (Interlocutor) | Média | FIXED |
 | ISS-063 | Grip só começava o arraste no segundo clique (janela inativa) | Média | FIXED |
+| ISS-064 | Atalho não ativa a barra de pesquisa com o app inativo | Média | FIXED |
 
 ---
 
@@ -108,3 +109,39 @@ Próximo ID livre: **ISS-064**.
 - **Task:** [`17-task.md`](tasks/17-task.md) (revisão)
 - **Dano em dados existentes:** nenhum.
 
+
+---
+
+## ISS-064 — Atalho não ativa a barra de pesquisa com o app inativo
+
+- **Severidade:** Média · **Status:** FIXED (task 18)
+- **Sintoma (relato do usuário):** *"O atalho para pesquisa deveria sempre
+  mudar o foco para a barra de pesquisa, mesmo que ela já esteja aberta. mas
+  parou de funcionar. clicar no botao muda foco, mas usar o atalho nao"*.
+- **Causa raiz:** o `set_focus` do Tauri termina em
+  `gtk_window_present_with_time(GDK_CURRENT_TIME)` — **timestamp 0**. Em
+  Mutter/X11 a ativação de um app **inativo** com timestamp 0 é recusada pela
+  proteção contra roubo de foco; o atalho global roda justamente fora do app
+  ativo. Clicar na lupa funciona porque o clique ativa o GhostWhisper antes do
+  `show`/foco. É o mesmo mecanismo do ISS-063 (arraste com timestamp zero).
+  O código de foco não mudou; a pilha de janelas always-on-top e a barra que
+  permanece aberta (ISS-056/ISS-062) tornaram o caminho visível.
+- **Correção:** novo `ipc/window_focus.rs` apresenta a janela com o
+  **timestamp atual do servidor X11** (`x11_get_server_time`) na thread
+  principal do GTK (`run_on_main_thread`), com fallback `set_focus` e
+  `present` no Wayland. `show_ask_window` ativa **sempre** (oculta ou já
+  aberta), emite `ask_focus` e repete a ativação ~150 ms depois se a janela
+  estiver visível e sem foco (`should_refocus`). O frontend mantém o
+  `onFocusChanged` + `ask_focus` para devolver o cursor ao campo.
+- **Testes anti-regressão (R16/R17):** `should_refocus` cobre os quatro estados
+  (visível/oculta × focada/sem foco); `AskWindow.test.tsx` garante que o
+  `ask_focus` leva o `document.activeElement` ao campo. Validação manual no
+  Xvfb (barra oculta → abre focada; barra aberta sem foco → atalho refoca) e
+  na sessão real (Mutter): com o Chrome ativo e a barra aberta, o atalho
+  físico levou o cursor ao campo (confirmado pelo usuário). Eventos sintéticos
+  do XTest **não** contam como interação do usuário para o Mutter — por isso a
+  ativação precisa ser testada com o teclado real.
+- **Arquivos:** `src-tauri/src/ipc/window_focus.rs`,
+  `src-tauri/src/ipc/mod.rs`, `src-tauri/src/ipc/ask_commands.rs`.
+- **Task:** [`18-task.md`](tasks/18-task.md)
+- **Dano em dados existentes:** nenhum.
