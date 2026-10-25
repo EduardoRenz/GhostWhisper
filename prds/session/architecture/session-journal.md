@@ -224,10 +224,19 @@ UI (aba Sessão)
                  1. resolve_session(sessions, None)      ← sessão ativa ou mais recente
                  2. journal.insert_question(entry)        ← persistida ANTES da IA (RNF-06)
                  3. contexto = context::recent_context_live(...)   ← falas finalizadas + prévias
+                 3b. summaries.get(session)               ← memória longa (não-fatal)
+                 3c. se ausente/velho: thread "ask-summary"
+                       └─ summaries.generate(Auto)        ← em paralelo, NUNCA aguardada
                  4. llm.complete_streaming_for(Capability(Search), request, sink)
                       └─ sink → publisher.emit_journal(JournalUpdate { entry_id, phase, text })
                  5. journal.complete_answer(entry_id, text, at)
 ```
+
+**Memória longa** (task 15): o resumo incremental — gerado desde o início por
+cursor — entra como `<meeting_summary>` antes do transcript. O prompt declara
+que a fala recente tem precedência. A atualização quando o resumo falta ou
+ficou para trás roda em thread própria, com **single-flight por sessão** e
+cooldown de 60 s após falha; a resposta nunca espera por ela.
 
 **Single-flight** (BR-042): uma pergunta por vez. O `AskService` guarda a
 entrada em curso; um novo envio durante uma resposta **não** duplica texto.

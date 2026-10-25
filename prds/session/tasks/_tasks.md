@@ -20,6 +20,7 @@
 | 12 | Janelas não se movem sozinhas; barra “Perguntar” preserva posição (ISS-055) | CONCLUDED |
 | 13 | Todas as janelas sempre à frente após a captura (ISS-056) | CONCLUDED |
 | 14 | Persistência da barra Perguntar só por arraste explícito (ISS-057) | CONCLUDED |
+| 15 | Perguntar com memória longa: resumo no contexto, em paralelo | CONCLUDED |
 
 ## Revisão v2 (2026-10-20)
 
@@ -63,6 +64,9 @@ compositor** tirar as janelas antes do `GetImage`.
   BR-073) e depende da 12.
 - A **14** separa arraste explícito de posição automática do WM (ISS-057,
   BR-072/R16/R17) e depende da 12.
+- A **15** acrescenta a memória longa ao Perguntar (resumo incremental no
+  prompt + atualização em background paralela); depende da 03 e do resumo do
+  PRD `precision-and-performance`.
 
 ## Entregáveis por camada
 

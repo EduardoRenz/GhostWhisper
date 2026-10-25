@@ -159,7 +159,14 @@ mesma aba.
       as falas **posteriores à última pergunta respondida** (com a janela de
       180 s e os mesmos tetos das sugestões — BR-024) **mais** os resumos dos
       pares pergunta/resposta anteriores (janela deslizante de **5**, ~1 500
-      caracteres). O que já foi respondido **não** volta inteiro para o prompt.
+      caracteres; **3** quando o resumo da reunião está presente). O que já foi
+      respondido **não** volta inteiro para o prompt.
+- [ ] O **resumo incremental da sessão** (memória longa, desde o início) entra
+      no prompt como bloco `<meeting_summary>`, antes da transcrição recente;
+      esta tem **precedência** em caso de conflito. Se o resumo faltar ou
+      estiver mais velho que a janela, ele é atualizado em **background**, em
+      paralelo com a resposta: a pergunta **nunca** espera pelo resumo, e uma
+      falha dele não impede a resposta (task 15).
 - [ ] A própria resposta fecha com o bloco `<!--resumo: …-->`: o backend o
       remove do texto exibido/exportado, guarda em `journal_entries.summary` e
       usa na próxima pergunta (sem chamada extra ao provider). Sem o bloco,

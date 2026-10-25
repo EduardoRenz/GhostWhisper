@@ -620,6 +620,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&sessions),
         Arc::clone(&transcriptions),
         Arc::clone(&journal),
+        Arc::clone(&summary),
         Arc::clone(&clock),
         Arc::clone(&publisher),
     ));

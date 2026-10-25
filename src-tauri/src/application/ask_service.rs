@@ -14,14 +14,21 @@
 //!   IA própria (BR-048).
 //! - A entrada registra a **origem** (`search`/`preset`/`screenshot`) e o
 //!   `provider`/`model` que responderam.
+//! - A **memória longa** da sessão (o resumo incremental) entra no prompt como
+//!   contexto das partes antigas da reunião; se estiver ausente ou velha, é
+//!   atualizada em **background**, em paralelo com a resposta. A falha do
+//!   resumo nunca impede a pergunta (prioridade: velocidade da resposta).
 
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use uuid::Uuid;
 
 use crate::domain::ai_route::{AiCapability, AiRouteScope};
 use crate::domain::journal::{JournalEntry, JournalImage, JournalStatus};
 use crate::domain::llm::{CompletionImage, CompletionRequest};
+use crate::domain::overview::MeetingSummary;
 use crate::domain::transcription::TranscriptSegment;
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::ask_controller::{AskController, AskOutcome, AskRequest};
@@ -30,6 +37,7 @@ use crate::ports::event_publisher::{EventPublisher, JournalPhase, JournalUpdate}
 use crate::ports::journal_repository::JournalRepository;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
+use crate::ports::summary_generator::{SummaryGenerator, SummaryMode, SummaryRequest};
 
 use super::answer_summary;
 use super::context;
@@ -45,8 +53,21 @@ const CONTEXT_WINDOW_MS: i64 = 180_000;
 const CONTEXT_MAX_SEGMENTS: usize = 40;
 /// Quantos resumos anteriores entram no contexto (janela deslizante).
 const CONTEXT_SUMMARIES: usize = 5;
+/// Quantos resumos de perguntas entram quando o resumo da reunião está no
+/// prompt — o resumo da reunião já cobre o contexto longo.
+const CONTEXT_SUMMARIES_WITH_MEETING: usize = 3;
 /// Teto de caracteres dos resumos no prompt.
 const CONTEXT_SUMMARIES_MAX_CHARS: usize = 1_500;
+/// Teto de caracteres do resumo da reunião no prompt.
+///
+/// Um resumo típico fica bem abaixo disso (o teto de saída é 2.500 tokens);
+/// quando passa, o excesso é cortado pelo **fim** — a parte recente já está
+/// coberta pela transcrição ao vivo.
+const CONTEXT_MEETING_SUMMARY_MAX_CHARS: usize = 6_000;
+/// Cooldown depois de uma falha do resumo em background (ms).
+///
+/// Evita martelar o provedor a cada pergunta quando o resumo está quebrado.
+const SUMMARY_REFRESH_COOLDOWN_MS: i64 = 60_000;
 /// Teto de tokens da resposta.
 ///
 /// Folgado o bastante para uma resposta com código + exemplo **e** o bloco de
@@ -82,6 +103,10 @@ const ASK_RULES: &str = "Esta é uma pergunta direta do usuário (não uma suges
      No bloco <transcript>, ME é o usuário (microfone) e THEY é o outro lado \
      (áudio do sistema); ambos são fala de participante, com possíveis erros de \
      reconhecimento e atribuição imperfeita — interprete pelo contexto. \
+     Quando houver um bloco <meeting_summary>, ele é o contexto das partes \
+     anteriores da reunião; o <transcript> é a fala mais recente e tem \
+     precedência em caso de conflito. Não invente o que não estiver no resumo \
+     nem na transcrição e não repita o resumo literalmente. \
      Depois da resposta completa, numa linha própria, escreva exatamente: \
      <!--resumo: até 240 caracteres resumindo o que você respondeu--> \
      Esse bloco é apenas o fecho; a resposta acima dele deve estar completa.";
@@ -102,25 +127,95 @@ fn system_prompt() -> String {
     )
 }
 
+/// Estado do refresh do resumo disparado pelo **Perguntar**.
+///
+/// - **single-flight**: no máximo uma atualização por sessão; a pergunta
+///   seguinte não empilha outra (a aba Resumo tem o próprio `inFlight` no
+///   frontend).
+/// - **cooldown de falha**: se o resumo falhou, não tenta de novo a cada
+///   pergunta (evita martelar o provedor).
+#[derive(Default)]
+struct SummaryRefreshState {
+    inner: Mutex<SummaryRefreshInner>,
+}
+
+#[derive(Default)]
+struct SummaryRefreshInner {
+    in_flight: HashSet<String>,
+    last_failure_ms: HashMap<String, i64>,
+}
+
+impl SummaryRefreshState {
+    /// Reserva a atualização da sessão; `false` = já em voo ou em cooldown.
+    fn try_begin(&self, session_id: &str, now_ms: i64) -> bool {
+        let Ok(mut inner) = self.inner.lock() else {
+            return false;
+        };
+        if inner.in_flight.contains(session_id) {
+            return false;
+        }
+        if let Some(last) = inner.last_failure_ms.get(session_id) {
+            if now_ms.saturating_sub(*last) < SUMMARY_REFRESH_COOLDOWN_MS {
+                return false;
+            }
+        }
+        inner.in_flight.insert(session_id.to_string());
+        true
+    }
+
+    /// Libera a sessão (chamado no fim da thread, inclusive em panic).
+    fn finish(&self, session_id: &str) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.in_flight.remove(session_id);
+        }
+    }
+
+    /// Registra a falha para o cooldown.
+    fn note_failure(&self, session_id: &str, now_ms: i64) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.last_failure_ms.insert(session_id.to_string(), now_ms);
+        }
+    }
+}
+
+/// Limpa o "em voo" mesmo se a thread do resumo entrar em panic.
+struct SummaryRefreshGuard {
+    state: Arc<SummaryRefreshState>,
+    session_id: String,
+}
+
+impl Drop for SummaryRefreshGuard {
+    fn drop(&mut self) {
+        self.state.finish(&self.session_id);
+    }
+}
+
 /// Pergunta à IA e registra no diário da sessão.
 pub struct AskService {
     llm: Arc<dyn LlmController>,
     sessions: Arc<dyn SessionRepository>,
     transcriptions: Arc<dyn TranscriptionsRepository>,
     journal: Arc<dyn JournalRepository>,
+    /// Resumo da sessão: memória longa do Perguntar (`get`) e atualização
+    /// incremental em background (`generate`).
+    summaries: Arc<dyn SummaryGenerator>,
     clock: Arc<dyn Clock>,
     publisher: Arc<dyn EventPublisher>,
     /// Serializa as perguntas: uma por vez (BR-042).
     gate: Arc<Mutex<()>>,
+    /// Single-flight/cooldown do refresh do resumo em background.
+    summary_refresh: Arc<SummaryRefreshState>,
 }
 
 impl AskService {
     /// Cria o serviço com as portas resolvidas.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         llm: Arc<dyn LlmController>,
         sessions: Arc<dyn SessionRepository>,
         transcriptions: Arc<dyn TranscriptionsRepository>,
         journal: Arc<dyn JournalRepository>,
+        summaries: Arc<dyn SummaryGenerator>,
         clock: Arc<dyn Clock>,
         publisher: Arc<dyn EventPublisher>,
     ) -> Self {
@@ -129,9 +224,11 @@ impl AskService {
             sessions,
             transcriptions,
             journal,
+            summaries,
             clock,
             publisher,
             gate: Arc::new(Mutex::new(())),
+            summary_refresh: Arc::new(SummaryRefreshState::default()),
         }
     }
 
@@ -183,7 +280,8 @@ impl AskService {
         (self.clock.now_ms() - *started_at_ms).max(0)
     }
 
-    /// Contexto de uma pergunta: o **delta** da transcrição + os resumos.
+    /// Contexto de uma pergunta: o **delta** da transcrição + os resumos +
+    /// a memória longa da reunião.
     ///
     /// O corte é o instante da última pergunta **respondida** (BR-053): o que
     /// veio antes dela já foi usado para responder e voltaria a ser enviado à
@@ -222,13 +320,36 @@ impl AskService {
             ),
         };
 
+        // Memória longa: leitura barata (uma linha) e **não-fatal** — uma falha
+        // no banco não pode derrubar a pergunta.
+        let meeting_summary = self
+            .summaries
+            .get(Some(session_id.to_string()))
+            .ok()
+            .flatten();
+        let has_meeting_summary = meeting_summary
+            .as_ref()
+            .is_some_and(|summary| !summary.markdown.trim().is_empty());
+        // Com o resumo da reunião, a janela de perguntas antigas pode ser menor:
+        // o resumo já cobre o contexto longo (mantém o prompt no orçamento).
+        let summary_limit = if has_meeting_summary {
+            CONTEXT_SUMMARIES_WITH_MEETING
+        } else {
+            CONTEXT_SUMMARIES
+        };
+
         AskContext {
             transcript,
-            summaries: recent_summaries(&entries, CONTEXT_SUMMARIES, CONTEXT_SUMMARIES_MAX_CHARS),
+            summaries: recent_summaries(&entries, summary_limit, CONTEXT_SUMMARIES_MAX_CHARS),
+            meeting_summary,
+            has_final_speech: segments
+                .iter()
+                .any(|segment| segment.is_final && !segment.text.trim().is_empty()),
         }
     }
 
-    /// Monta o pedido: resumos + transcrição + pergunta (+ imagens).
+    /// Monta o pedido: resumo da reunião + resumos de perguntas + transcrição +
+    /// pergunta (+ imagens).
     fn build_request(
         &self,
         question: &str,
@@ -236,6 +357,26 @@ impl AskService {
         context: AskContext,
     ) -> CompletionRequest {
         let mut prompt = String::new();
+        // Memória longa primeiro (partes antigas); o transcript vem depois e
+        // tem precedência no prompt (ver `ASK_RULES`).
+        if let Some(summary) = context.meeting_summary.as_ref() {
+            let markdown = summary.markdown.trim();
+            if !markdown.is_empty() {
+                prompt.push_str("<meeting_summary>\n");
+                if let Some(subject) = summary
+                    .subject
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|subject| !subject.is_empty())
+                {
+                    prompt.push_str("SUBJECT: ");
+                    prompt.push_str(subject);
+                    prompt.push_str("\n\n");
+                }
+                prompt.push_str(&truncate_chars(markdown, CONTEXT_MEETING_SUMMARY_MAX_CHARS));
+                prompt.push_str("\n</meeting_summary>\n\n");
+            }
+        }
         if !context.summaries.is_empty() {
             prompt.push_str("<previous_questions>\n");
             for summary in &context.summaries {
@@ -258,6 +399,65 @@ impl AskService {
             .with_temperature(TEMPERATURE)
             .with_images(images.to_vec())
     }
+
+    /// O resumo precisa de atualização? Ausente sempre precisa; existente só
+    /// quando ficou para trás da janela que o transcript recente já cobre.
+    fn summary_refresh_needed(summary: Option<&MeetingSummary>, now_rel_ms: i64) -> bool {
+        match summary {
+            None => true,
+            Some(summary) => {
+                now_rel_ms.saturating_sub(summary.summarized_until_ms) > CONTEXT_WINDOW_MS
+            }
+        }
+    }
+
+    /// Atualiza o resumo em uma thread própria, **sem** participar da resposta.
+    ///
+    /// A resposta já foi montada com o snapshot atual e começa logo depois; o
+    /// resultado deste trabalho só beneficia a próxima pergunta (ou a aba
+    /// Resumo). Falha é log + cooldown, nunca erro da pergunta.
+    fn spawn_summary_refresh(&self, session_id: &str) {
+        let now_ms = self.clock.now_ms();
+        if !self.summary_refresh.try_begin(session_id, now_ms) {
+            return;
+        }
+
+        let generator = Arc::clone(&self.summaries);
+        let clock = Arc::clone(&self.clock);
+        let refresh = Arc::clone(&self.summary_refresh);
+        let id = session_id.to_string();
+        let spawned = thread::Builder::new()
+            .name("ask-summary".into())
+            .spawn(move || {
+                let _guard = SummaryRefreshGuard {
+                    state: Arc::clone(&refresh),
+                    session_id: id.clone(),
+                };
+                match generator.generate(SummaryRequest {
+                    session_id: Some(id.clone()),
+                    mode: SummaryMode::Auto,
+                }) {
+                    Ok(result) => tracing::debug!(
+                        session_id = %id,
+                        updated = result.updated,
+                        has_more = result.has_more,
+                        "resumo atualizado em background para o Perguntar"
+                    ),
+                    Err(error) => {
+                        tracing::warn!(
+                            session_id = %id,
+                            "falha ao atualizar o resumo em background: {error}"
+                        );
+                        refresh.note_failure(&id, clock.now_ms());
+                    }
+                }
+            });
+        if let Err(error) = spawned {
+            // A reserva foi feita antes do spawn; libera para a próxima.
+            self.summary_refresh.finish(session_id);
+            tracing::warn!("falha ao iniciar thread do resumo em background: {error}");
+        }
+    }
 }
 
 /// Contexto montado para uma pergunta (BR-053).
@@ -266,6 +466,24 @@ struct AskContext {
     transcript: Option<context::RecentContext>,
     /// Resumos dos pares pergunta/resposta anteriores (mais antigo primeiro).
     summaries: Vec<String>,
+    /// Resumo incremental da reunião (memória longa), quando existe.
+    meeting_summary: Option<MeetingSummary>,
+    /// Há fala final utilizável — evita gerar resumo para uma sessão criada
+    /// só pela própria pergunta (sem transcrição nenhuma).
+    has_final_speech: bool,
+}
+
+/// Corta um texto no teto **sem quebrar UTF-8**, sinalizando o corte.
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let mut truncated: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    truncated.push('…');
+    truncated
 }
 
 /// Últimos `limit` resumos da sessão, em ordem cronológica, com teto de chars.
@@ -377,7 +595,15 @@ impl AskController for AskService {
             .map_err(|_| GhostWhisperError::Other("lock de perguntas envenenado".to_string()))?;
 
         let context = self.build_context(&session.id, asked_at_ms);
+        // O snapshot do resumo vai no prompt abaixo. A atualização (se faltar
+        // ou estiver velha) roda em paralelo com a resposta e **nunca** é
+        // aguardada: velocidade da pergunta primeiro.
+        let refresh_summary = context.has_final_speech
+            && Self::summary_refresh_needed(context.meeting_summary.as_ref(), asked_at_ms);
         let completion_request = self.build_request(&prompt, &request.images, context);
+        if refresh_summary {
+            self.spawn_summary_refresh(&session.id);
+        }
 
         let mut streamed = String::new();
         let result = self.llm.complete_streaming_for(
@@ -464,11 +690,13 @@ mod tests {
     use crate::adapters::system::system_clock::MutableClock;
     use crate::domain::journal::JournalRequestSource;
     use crate::domain::llm::Completion;
+    use crate::domain::overview::MeetingSummary;
     use crate::domain::session::{Session, SessionStatus};
     use crate::domain::transcription::{Speaker, TranscriptSegment};
     use crate::ports::event_publisher::LlmSourceUsage;
     use crate::ports::session_controller::AudioChannel;
     use crate::ports::suggestion_generator::Suggestion;
+    use crate::ports::summary_generator::{SummaryGenerator, SummaryRequest, SummaryResult};
 
     /// Publicador que guarda os eventos do diário.
     #[derive(Default)]
@@ -561,6 +789,95 @@ mod tests {
         }
     }
 
+    /// Cancela a geração do resumo até `release` (prova de paralelismo).
+    struct SummaryGate {
+        started: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    /// Resumo fake: `get` devolve o que estiver guardado; `generate` pode
+    /// falhar ou bloquear num gate.
+    #[derive(Default)]
+    struct FakeSummary {
+        stored: Mutex<Option<MeetingSummary>>,
+        fail: bool,
+        calls: AtomicUsize,
+        gate: Mutex<Option<SummaryGate>>,
+    }
+
+    impl FakeSummary {
+        fn empty() -> Self {
+            Self::default()
+        }
+
+        fn with_markdown(markdown: &str, summarized_until_ms: i64) -> Self {
+            Self {
+                stored: Mutex::new(Some(MeetingSummary {
+                    session_id: "s1".to_string(),
+                    subject: Some("Reunião de teste".to_string()),
+                    markdown: markdown.to_string(),
+                    summarized_from_ms: 0,
+                    summarized_until_ms,
+                    updated_at_ms: 1,
+                })),
+                ..Self::default()
+            }
+        }
+
+        fn failing() -> Self {
+            Self {
+                fail: true,
+                ..Self::default()
+            }
+        }
+
+        fn gated(gate: SummaryGate) -> Self {
+            Self {
+                gate: Mutex::new(Some(gate)),
+                ..Self::default()
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    impl SummaryGenerator for FakeSummary {
+        fn get(&self, _session_id: Option<String>) -> Result<Option<MeetingSummary>> {
+            Ok(self.stored.lock().expect("lock").clone())
+        }
+
+        fn generate(&self, request: SummaryRequest) -> Result<SummaryResult> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(gate) = self.gate.lock().expect("lock").take() {
+                let _ = gate.started.send(());
+                let _ = gate.release.recv_timeout(std::time::Duration::from_secs(2));
+            }
+            if self.fail {
+                return Err(GhostWhisperError::Other("resumo fora".to_string()));
+            }
+            let summary = self
+                .stored
+                .lock()
+                .expect("lock")
+                .clone()
+                .unwrap_or_else(|| MeetingSummary {
+                    session_id: request.session_id.unwrap_or_default(),
+                    subject: None,
+                    markdown: String::new(),
+                    summarized_from_ms: 0,
+                    summarized_until_ms: 0,
+                    updated_at_ms: 0,
+                });
+            Ok(SummaryResult {
+                summary,
+                updated: false,
+                has_more: false,
+            })
+        }
+    }
+
     struct Fixture {
         service: AskService,
         llm: Arc<FakeLlm>,
@@ -571,7 +888,7 @@ mod tests {
         clock: Arc<MutableClock>,
     }
 
-    fn fixture(llm: Arc<FakeLlm>) -> Fixture {
+    fn fixture_with_summary(llm: Arc<FakeLlm>, summary: Arc<FakeSummary>) -> Fixture {
         let sessions = Arc::new(InMemorySessionRepository::new());
         let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
         let journal = Arc::new(InMemoryJournalRepository::new());
@@ -582,6 +899,7 @@ mod tests {
             sessions.clone(),
             transcriptions.clone(),
             journal.clone(),
+            summary.clone(),
             clock.clone(),
             publisher.clone(),
         );
@@ -594,6 +912,10 @@ mod tests {
             publisher,
             clock,
         }
+    }
+
+    fn fixture(llm: Arc<FakeLlm>) -> Fixture {
+        fixture_with_summary(llm, Arc::new(FakeSummary::empty()))
     }
 
     /// Fala final na sessão `s1` (tempos relativos ao início dela).
@@ -931,6 +1253,220 @@ mod tests {
             context.summaries.last().map(String::as_str),
             Some("resumo 6")
         );
+    }
+
+    #[test]
+    fn the_meeting_summary_goes_into_the_request_before_the_transcript() {
+        // A memória longa da reunião entra no prompt, e o transcript recente
+        // vem depois (precedência declarada no system prompt).
+        let summary = Arc::new(FakeSummary::with_markdown(
+            "## Decisões\n\n- Usar Postgres no ledger.",
+            4_000,
+        ));
+        let f = fixture_with_summary(Arc::new(FakeLlm::ok("resposta")), summary);
+        session(&f);
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala recente"))
+            .expect("fala");
+
+        f.service
+            .ask(ask("o que decidimos no começo?"))
+            .expect("pergunta");
+
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
+        assert!(sent.prompt.contains("<meeting_summary>"), "{}", sent.prompt);
+        assert!(
+            sent.prompt.contains("SUBJECT: Reunião de teste"),
+            "{}",
+            sent.prompt
+        );
+        assert!(
+            sent.prompt.contains("- Usar Postgres no ledger."),
+            "{}",
+            sent.prompt
+        );
+        let summary_at = sent.prompt.find("<meeting_summary>").expect("bloco");
+        let transcript_at = sent.prompt.find("<transcript>").expect("transcript");
+        assert!(
+            summary_at < transcript_at,
+            "o resumo deve vir antes da fala recente"
+        );
+        assert!(
+            sent.system
+                .as_deref()
+                .unwrap_or_default()
+                .contains("precedência"),
+            "o prompt deve declarar a precedência do transcript"
+        );
+    }
+
+    #[test]
+    fn without_a_summary_the_prompt_has_no_meeting_block() {
+        let f = fixture(Arc::new(FakeLlm::ok("resposta")));
+        session(&f);
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala"))
+            .expect("fala");
+
+        f.service.ask(ask("pergunta")).expect("pergunta");
+
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
+        assert!(
+            !sent.prompt.contains("<meeting_summary>"),
+            "{}",
+            sent.prompt
+        );
+    }
+
+    #[test]
+    fn the_meeting_summary_shrinks_the_previous_question_window() {
+        // O resumo da reunião já cobre o contexto longo: a janela de perguntas
+        // antigas cai de 5 para 3 (orçamento do prompt).
+        let summary = Arc::new(FakeSummary::with_markdown("resumo da reunião", 4_000));
+        let f = fixture_with_summary(Arc::new(FakeLlm::ok("x")), summary);
+        session(&f);
+        for index in 0..7 {
+            answered_entry(
+                &f,
+                &format!("e{index}"),
+                index * 1_000,
+                &format!("resumo {index}"),
+            );
+        }
+
+        let context = f.service.build_context("s1", 4_000);
+
+        assert!(context.meeting_summary.is_some());
+        assert_eq!(context.summaries.len(), CONTEXT_SUMMARIES_WITH_MEETING);
+    }
+
+    #[test]
+    fn a_fresh_summary_does_not_trigger_a_background_refresh() {
+        let summary = Arc::new(FakeSummary::with_markdown("resumo", 4_000));
+        let f = fixture_with_summary(Arc::new(FakeLlm::ok("x")), Arc::clone(&summary));
+        session(&f);
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala"))
+            .expect("fala");
+
+        f.service.ask(ask("pergunta")).expect("pergunta");
+
+        // Nada é disparado quando o cursor já cobre a janela recente.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert_eq!(summary.calls(), 0);
+    }
+
+    #[test]
+    fn a_summary_failure_does_not_block_or_fail_the_answer() {
+        let summary = Arc::new(FakeSummary::failing());
+        let f = fixture_with_summary(Arc::new(FakeLlm::ok("a resposta")), Arc::clone(&summary));
+        session(&f);
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala"))
+            .expect("fala");
+
+        let outcome = f.service.ask(ask("pergunta")).expect("pergunta");
+
+        assert_eq!(outcome.answer, "a resposta");
+        // O refresh foi tentado, mas o erro ficou no background.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while summary.calls() == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(summary.calls() >= 1, "o resumo deveria ser tentado");
+    }
+
+    #[test]
+    fn the_summary_refresh_runs_in_parallel_with_the_answer() {
+        // O resumo fica bloqueado; a resposta tem de chegar mesmo assim.
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let summary = Arc::new(FakeSummary::gated(SummaryGate {
+            started: started_tx,
+            release: release_rx,
+        }));
+        let f = fixture_with_summary(Arc::new(FakeLlm::ok("a resposta")), summary);
+        session(&f);
+        f.transcriptions
+            .insert(&speech("t1", 2_000, "fala"))
+            .expect("fala");
+
+        let service = &f.service;
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                let result = service.ask(ask("pergunta"));
+                let _ = done_tx.send(result.is_ok());
+            });
+
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("o resumo deveria iniciar em paralelo");
+            let answered = done_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("a resposta não pode esperar o resumo");
+            assert!(answered);
+            release_tx.send(()).expect("libera o resumo");
+        });
+    }
+
+    #[test]
+    fn the_summary_refresh_is_single_flight_and_cools_down() {
+        let state = SummaryRefreshState::default();
+
+        assert!(state.try_begin("s1", 1_000));
+        assert!(!state.try_begin("s1", 1_000), "já está em voo");
+        state.finish("s1");
+        assert!(state.try_begin("s1", 2_000), "liberou para a próxima");
+
+        state.finish("s1");
+        state.note_failure("s1", 3_000);
+        assert!(
+            !state.try_begin("s1", 3_000 + SUMMARY_REFRESH_COOLDOWN_MS - 1),
+            "durante o cooldown não tenta de novo"
+        );
+        assert!(
+            state.try_begin("s1", 3_000 + SUMMARY_REFRESH_COOLDOWN_MS),
+            "depois do cooldown volta a tentar"
+        );
+    }
+
+    #[test]
+    fn the_summary_refresh_needs_new_content() {
+        assert!(AskService::summary_refresh_needed(None, 0));
+        let fresh = MeetingSummary {
+            session_id: "s1".to_string(),
+            subject: None,
+            markdown: "resumo".to_string(),
+            summarized_from_ms: 0,
+            summarized_until_ms: 4_000,
+            updated_at_ms: 0,
+        };
+        assert!(!AskService::summary_refresh_needed(Some(&fresh), 4_000));
+        assert!(!AskService::summary_refresh_needed(
+            Some(&fresh),
+            4_000 + CONTEXT_WINDOW_MS
+        ));
+        assert!(AskService::summary_refresh_needed(
+            Some(&fresh),
+            4_000 + CONTEXT_WINDOW_MS + 1
+        ));
+    }
+
+    #[test]
+    fn truncate_chars_respects_the_utf8_and_the_cap() {
+        assert_eq!(truncate_chars("abc", 10), "abc");
+        let cut = truncate_chars("abcdef", 4);
+        assert_eq!(cut.chars().count(), 4);
+        assert!(cut.ends_with('…'));
+        assert!(truncate_chars("qualquer", 0).is_empty());
+    }
+
+    #[test]
+    fn the_ask_explains_the_meeting_summary_precedence() {
+        let prompt = system_prompt();
+        assert!(prompt.contains("<meeting_summary>"));
+        assert!(prompt.contains("precedência"));
     }
 
     #[test]

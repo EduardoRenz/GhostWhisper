@@ -575,3 +575,60 @@ posição que deixei. Como impedir regressões? Talvez testes de regressão.”*
 - AppImage 15:52: movimento automático para `[0,32]` foi ignorado
   (`ask_position` permaneceu `[567,32]`); arraste real para `271,272` foi
   persistido e sobreviveu a fechar/reabrir/capturar. Estado restaurado.
+
+## 2026-10-25 — Perguntar com memória longa: resumo no contexto, em paralelo (task 15)
+
+- **IDs:** BR-053, BR-024, R16, T15 · **Refs:** [`prd.md`](prd.md) US-02,
+  [`architecture/session-journal.md`](architecture/session-journal.md) §5.1,
+  [`tasks/15-task.md`](tasks/15-task.md),
+  [`../precision-and-performance/memory.md`](../precision-and-performance/memory.md)
+
+### Relato
+
+Depois da avaliação de desempenho, o usuário notou que a janela de 180 s do
+Perguntar faz a IA "esquecer" o começo em reuniões longas: aos 30 min, "o que
+decidimos no começo?" não tinha de onde vir. O resumo incremental já cobre a
+reunião desde o início, mas **não** entrava no prompt da Busca.
+
+### Decisão (com o usuário)
+
+- Opção escolhida: **manter a janela recente + anexar o resumo da reunião**
+  (criando/atualizando sob demanda), em vez de um campo de tempo nas
+  configurações (que continuaria limitado pelo teto de 6 000 chars e só
+  aumentaria custo/risco) ou de manter como estava (buraco de confiança).
+- **Velocidade primeiro:** a resposta nunca espera o resumo; a atualização roda
+  em paralelo e a falha dela não impede a pergunta.
+- Sem toggle nas configurações nesta versão; o resumo entra sempre que existir.
+
+### Implementação
+
+- `AskService` passou a depender de `SummaryGenerator` (porta existente) e lê o
+  resumo gravado em `build_context` (`get`); a leitura é **não-fatal** (erro →
+  `None`).
+- O prompt ganhou `<meeting_summary>` (assunto + markdown, teto de 6 000 chars)
+  **antes** do `<transcript>`; o `ASK_RULES` declara que a fala recente tem
+  precedência. Com o resumo presente, a janela de resumos de perguntas antigas
+  cai de 5 para 3.
+- `spawn_summary_refresh` dispara `generate(Auto)` em thread própria **antes**
+  da chamada ao LLM da resposta, com single-flight por sessão (hash set) e
+  cooldown de 60 s após falha; um guard de `Drop` libera o single-flight mesmo
+  em panic. Erros só em log.
+- Injeção no composition root (`lib.rs`).
+
+### Verificação
+
+- `cargo test --lib` **692 ✓** (10 ignorados) · `clippy --all-targets -D
+  warnings` ✓ · `cargo fmt --check` ✓.
+- Testes novos: bloco/ordem/assunto no prompt; ausência do bloco sem resumo;
+  janela 3; resumo fresco não dispara; falha do resumo não falha a resposta;
+  prova de paralelismo com o resumo bloqueado; single-flight/cooldown;
+  staleness; corte UTF-8.
+- Nenhuma mudança de frontend.
+
+### Limite conhecido
+
+Se a **primeira** pergunta ocorrer antes de qualquer resumo existir, ela
+responde sem a memória longa (velocidade primeiro); o resumo é gerado em
+background e a próxima pergunta já o utiliza. O warm-up na abertura da barra
+ficou de fora para não gerar chamada extra a cada abertura nem duplicar a
+geração disparada pelo próprio Perguntar.
