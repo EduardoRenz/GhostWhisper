@@ -50,7 +50,7 @@ pelo usuário (2026-10-19); o contrato em
 | Título | **"Transcrição ao Vivo"** na aba Transcrição; **"Resumo"** na aba Resumo | `PanelWindow` |
 | Subtítulo | removido do cabeçalho | o estado vai para o rodapé e para o notch |
 | Cabeçalho | `WindowHeader`: grip à esquerda, selo + título, ações e fechar à direita; padding 16/8 px | `WindowHeader`/`PanelFrame` (BR-064) |
-| Grip de arraste | visível no canto superior **esquerdo** de todas as janelas; só a alça arrasta | `DragHandle`/`PanelFrame`/`panel_start_drag` |
+| Arraste | o **header inteiro** arrasta (grip, selo, título, subtítulo e espaços); a alça fica como indicação e controles preservam o clique; gesto no `mousedown` com timestamp X11 válido no core | `WindowHeader`/`shouldStartHeaderDrag`/`window_commands` (BR-064, ISS-063) |
 | Medidores | fora da aba; o waveform do notch continua | BR-032 |
 | Atalho "Sugestões" no topo da conversa | removido; o notch já abre a janela | BR-032/BR-033 |
 | Pill de abas | `width:100%`; três colunas iguais; `gap:2px`; `padding:2px`; raio `--oh-radius-full` | `PanelTabs` |

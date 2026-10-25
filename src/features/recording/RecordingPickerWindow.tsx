@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { isTauriRuntime, onWindowFocus } from "../../adapters/ipc/client";
+import { onWindowFocus } from "../../adapters/ipc/client";
+import { startWindowDrag } from "../../adapters/ipc/windowDrag";
 import { subscribe } from "../../adapters/ipc/events";
 import {
   recordingPickerClose,
@@ -78,9 +78,7 @@ export function RecordingPickerWindow() {
   }, [close, load]);
 
   const startDrag = () => {
-    if (isTauriRuntime()) {
-      void getCurrentWindow().startDragging();
-    }
+    void startWindowDrag();
   };
 
   const pick = async (target: RecordingTarget) => {

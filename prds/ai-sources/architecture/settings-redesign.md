@@ -32,7 +32,7 @@ padrão; `ResizeHandles` preserva o redimensionamento sem a moldura do SO
     <WindowHeader class="settings__header"
       title="Configurações"
       subtitle="Personalize captura de áudio, IA local, privacidade e atalhos"
-      icon="TranscriptIcon" hint="Esc" onDrag="panel_start_drag" onClose="settings_close" />
+      icon="TranscriptIcon" hint="Esc" onDrag="startWindowDrag" onClose="settings_close" />
 
     <nav class="settings__tabs" role="tablist">…</nav>   <!-- 5 abas com ícone -->
 

@@ -18,7 +18,7 @@ import {
   getShortcutCatalog,
   setShortcuts as setShortcutsIpc,
 } from "../../adapters/ipc/shortcuts";
-import { panelStartDrag } from "../../adapters/ipc/panels";
+import { startWindowDrag } from "../../adapters/ipc/windowDrag";
 import {
   SHORTCUT_ACTIONS,
   defaultBindings,
@@ -440,7 +440,7 @@ export function SettingsPage() {
           )}
           icon={<TranscriptIcon size={18} />}
           hint={<kbd className="window-header__hint">Esc</kbd>}
-          onStartDrag={() => void panelStartDrag()}
+          onStartDrag={() => void startWindowDrag()}
           onClose={() => void closeSettings()}
           closeLabel={t("settings_close_settings")}
           dragLabel={t("settings_move_settings")}

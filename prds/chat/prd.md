@@ -353,7 +353,7 @@ em vez de aparecer depois dela.
   passa a carregar o `end_ms` da fala.
 - **CA-14.5** O grip de arraste fica visível no **canto superior esquerdo** de
   todas as janelas de painel (Chat, Sugestões, Histórico), com o header padrão
-  da BR-064.
+  da BR-064; **o header inteiro arrasta** a janela, exceto os controles.
 
 ### 9.5 Requisitos
 

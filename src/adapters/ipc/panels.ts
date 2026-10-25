@@ -28,10 +28,6 @@ export async function togglePanel(label: PanelLabel): Promise<void> {
   await (open ? panelHide(label) : panelOpen(label));
 }
 
-/** Inicia o arraste da janela atual. */
-export const panelStartDrag = (): Promise<void | undefined> =>
-  invokeSafe<void>("panel_start_drag");
-
 /** Informa se o painel está visível. */
 export const panelIsOpen = (
   label: PanelLabel,

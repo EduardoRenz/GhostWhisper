@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { DragHandle } from "./DragHandle";
 import { CloseIcon } from "./icons";
 import { useTranslation } from "../core/l10n";
+import { shouldStartHeaderDrag } from "./windowHeaderDrag";
 
 interface WindowHeaderProps {
   /** Título exibido no cabeçalho. */
@@ -16,7 +17,7 @@ interface WindowHeaderProps {
   actions?: ReactNode;
   /** Conteúdo auxiliar antes do fechar (ex.: atalho `Esc`). */
   hint?: ReactNode;
-  /** Inicia o arraste da janela. */
+  /** Inicia o arraste da janela (header inteiro e alça). */
   onStartDrag: () => void;
   /** Fecha/esconde a janela. */
   onClose: () => void;
@@ -31,9 +32,9 @@ interface WindowHeaderProps {
  * Cabeçalho padrão das janelas do GhostWhisper.
  *
  * A ordem é a do mockup: **grip de arraste à esquerda**, selo do ícone, título
- * (e subtítulo), ações e fechar à direita. A alça fica no canto superior
- * esquerdo em todas as janelas; o restante do header não arrasta, para não
- * roubar o clique dos controles.
+ * (e subtítulo), ações e fechar à direita. O header **inteiro** arrasta a
+ * janela (BR-064); a alça fica visível como indicação. Controles como botões,
+ * abas, links e campos não iniciam o arraste, para preservar o clique.
  */
 export function WindowHeader({
   title,
@@ -54,9 +55,20 @@ export function WindowHeader({
   const resolvedCloseLabel = closeLabel ?? t("common_close");
   const resolvedDragLabel = dragLabel ?? t("common_move_window");
 
+  const handleMouseDown = (event: MouseEvent<HTMLElement>) => {
+    if (event.button !== 0 || !shouldStartHeaderDrag(event.target)) {
+      return;
+    }
+    // Evita selecionar o título; o WM só aceita o gesto no press do mouse
+    // (`mousedown`), que chega depois da ativação da janela (ISS-063).
+    event.preventDefault();
+    onStartDrag();
+  };
+
   return (
     <header
       className={["window-header", className ?? ""].filter(Boolean).join(" ")}
+      onMouseDown={handleMouseDown}
     >
       <DragHandle
         className="window-header__drag"

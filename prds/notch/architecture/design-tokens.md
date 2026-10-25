@@ -181,7 +181,7 @@ Geist (UI) + JetBrains Mono (metadados/tempos/atalhos/código). Empacotadas
 | **Drill-hover (dwell)** | fill da esquerda para a direita em cyan suave (`--oh-dwell-fill`) + linha inferior 2px (`--oh-dwell-line`); ao completar, executa direto; sem popup nem som |
 | **Waveform** | 4 barras de 2px (raio full, gap 2px) cyan; altura 4–14px pelo nível de áudio; pausado estático/esmaecido |
 | **Painel / `PanelFrame`** | `--oh-glass-card` na casca; corpo em `--oh-read-surface`; `--oh-window-radius` |
-| **Header de janela (`WindowHeader`)** | grip à esquerda, selo 32 px, título/subtítulo, ações e fechar à direita; padding 16/8 px; min-height 56 px (BR-064) |
+| **Header de janela (`WindowHeader`)** | header inteiro arrasta; grip à esquerda como indicação, selo 32 px, título/subtítulo, ações e fechar à direita; controles não arrastam; padding 16/8 px; min-height 56 px (BR-064) |
 | **Botões** | primário (cyan hairline + hover gradiente cyan→violeta), ghost, toggle "ligado" em cyan |
 | **Status** | gravação: ponto esmeralda 4px + glow 10px; pausado: `--oh-outline` (sem âmbar); erro/parar: coral |
 | **Pill de resumo** | fundo violeta suave (`--oh-ai` 14%), borda 40%, spinner; título em `headline-md` |

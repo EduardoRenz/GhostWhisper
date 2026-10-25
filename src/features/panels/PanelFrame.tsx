@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { panelHide, panelStartDrag, type PanelLabel } from "../../adapters/ipc/panels";
+import { panelHide, type PanelLabel } from "../../adapters/ipc/panels";
+import { startWindowDrag } from "../../adapters/ipc/windowDrag";
 import { WindowHeader } from "../../components/WindowHeader";
 import { ResizeHandles } from "./ResizeHandles";
 
@@ -21,10 +22,10 @@ interface PanelFrameProps {
  * Casca das janelas de painel: sem moldura, sempre no topo e com o conteúdo
  * rolando por dentro. O fechar esconde a janela.
  *
- * O header é o `WindowHeader` comum: grip de arraste no canto superior
- * esquerdo, selo + título e fechar à direita. As alças de `ResizeHandles`
- * ficam nas bordas da **janela**, fora do painel (que tem uma margem), para o
- * resize pegar no pixel mais externo.
+ * O header é o `WindowHeader` comum: o **header inteiro** arrasta (grip, selo,
+ * título e espaços), com fechar à direita. As alças de `ResizeHandles` ficam
+ * nas bordas da **janela**, fora do painel (que tem uma margem), para o resize
+ * pegar no pixel mais externo.
  */
 export function PanelFrame({
   label,
@@ -47,7 +48,7 @@ export function PanelFrame({
           icon={icon}
           titleExtra={titleExtra}
           actions={actions}
-          onStartDrag={() => void panelStartDrag()}
+          onStartDrag={() => void startWindowDrag()}
           onClose={() => void panelHide(label)}
         />
         <div className="panel__body">{children}</div>

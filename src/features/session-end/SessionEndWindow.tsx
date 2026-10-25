@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { isTauriRuntime } from "../../adapters/ipc/client";
+import { startWindowDrag } from "../../adapters/ipc/windowDrag";
 import { WindowHeader } from "../../components/WindowHeader";
 import {
   CheckIcon,
@@ -41,9 +40,7 @@ export function SessionEndWindow() {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const startDrag = () => {
-    if (isTauriRuntime()) {
-      void getCurrentWindow().startDragging();
-    }
+    void startWindowDrag();
   };
 
   useEffect(() => {

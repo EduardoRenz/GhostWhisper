@@ -2034,9 +2034,11 @@ body,
     var(--oh-surface-container-low-rgb),
     var(--hud-alpha, 0.75)
   );
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* O grip vive no canto superior esquerdo em todas as janelas. */
+/* O header inteiro arrasta (BR-064); a alça fica como indicação. */
 .window-header__drag {
   margin-left: calc(-1 * var(--oh-space-1));
 }

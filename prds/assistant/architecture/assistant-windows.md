@@ -172,7 +172,9 @@ SuggestionsWindow → assistant_modes_list
 - `summary_open` / `suggestions_open` mostram e focam; emitem `panel_opened`.
 - `panel_hide` esconde e emite `panel_hidden`; o `CloseRequested` nativo também
   esconde em vez de destruir.
-- `panel_start_drag` chama `start_dragging()` na janela chamadora.
+- O arraste usa `startWindowDrag`/`window_start_drag`
+  (`src-tauri/src/ipc/window_commands.rs`), chamado no **`mousedown`**; o core
+  usa a API do GTK com timestamp X11 válido (ISS-063).
 - **Resize sem moldura:** como uma janela sem decoração não tem bordas para o
   gerenciador de janelas pegar, o `PanelFrame` renderiza `ResizeHandles` (8 alças
   invisíveis nas bordas/cantos) que chamam

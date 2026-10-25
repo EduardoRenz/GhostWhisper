@@ -51,8 +51,8 @@ const shortcutsIpc = vi.hoisted(() => ({
   setShortcuts: vi.fn(async () => []),
 }));
 
-const panelsIpc = vi.hoisted(() => ({
-  panelStartDrag: vi.fn(),
+const windowDrag = vi.hoisted(() => ({
+  startWindowDrag: vi.fn(),
 }));
 
 const audioIpc = vi.hoisted(() => ({
@@ -73,7 +73,7 @@ vi.mock("../../adapters/ipc/settings", () => settingsIpc);
 vi.mock("../../adapters/ipc/aiSources", () => aiSourcesIpc);
 vi.mock("../../adapters/ipc/shortcuts", () => shortcutsIpc);
 vi.mock("../../adapters/ipc/audio", () => audioIpc);
-vi.mock("../../adapters/ipc/panels", () => panelsIpc);
+vi.mock("../../adapters/ipc/windowDrag", () => windowDrag);
 vi.mock("../../adapters/ipc/suggestions", () => suggestionsIpc);
 vi.mock("../../adapters/ipc/events", () => eventsIpc);
 
@@ -149,8 +149,18 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     const drag = await screen.findByLabelText("Mover configurações");
-    fireEvent.pointerDown(drag);
-    expect(panelsIpc.panelStartDrag).toHaveBeenCalled();
+    fireEvent.mouseDown(drag, { button: 0 });
+    expect(windowDrag.startWindowDrag).toHaveBeenCalledTimes(1);
+  });
+
+  it("arrasta pelo header inteiro, não só pelo grip", async () => {
+    const { container } = render(<SettingsPage />);
+    await screen.findByLabelText("Mover configurações");
+
+    const title = container.querySelector(".window-header__title")!;
+    fireEvent.mouseDown(title, { button: 0 });
+
+    expect(windowDrag.startWindowDrag).toHaveBeenCalledTimes(1);
   });
 
   it("salva o rascunho inteiro uma única vez", async () => {

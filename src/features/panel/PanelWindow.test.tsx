@@ -4,17 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const saveSettings = vi.fn().mockResolvedValue([]);
 const reload = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ startResizeDragging: vi.fn() }),
-}));
-
-vi.mock("../../adapters/ipc/client", () => ({
-  isTauriRuntime: () => true,
-}));
-
 vi.mock("../../adapters/ipc/panels", () => ({
   panelHide: vi.fn(),
-  panelStartDrag: vi.fn(),
   panelIsOpen: vi.fn(async () => false),
   togglePanel: vi.fn(),
 }));

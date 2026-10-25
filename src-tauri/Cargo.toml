@@ -55,6 +55,13 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 x11rb = { version = "0.13", features = ["shape", "randr"] }
 raw-window-handle = "0.6"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+gdkx11 = "0.18"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri-runtime = "2"
+
 [dev-dependencies]
 mockall = "0.13"
 tempfile = "3"

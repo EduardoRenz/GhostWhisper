@@ -75,10 +75,9 @@ describe("AskWindow (barra de pesquisa)", () => {
 
   it("a alça inicia o arraste com intenção explícita (BR-072/ISS-057)", () => {
     render(<AskWindow />);
+    const handle = screen.getByLabelText("Mover a barra de pesquisa");
 
-    fireEvent.pointerDown(
-      screen.getByLabelText("Mover a barra de pesquisa"),
-    );
+    fireEvent.mouseDown(handle, { button: 0 });
 
     expect(askStartDrag).toHaveBeenCalledTimes(1);
   });

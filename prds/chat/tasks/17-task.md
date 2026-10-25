@@ -67,3 +67,21 @@ próprio (`--oh-window-radius`).
   também o build anterior e páginas carregadas direto no MiniBrowser (o DOM e o
   bundle foram validados); a configuração da janela sem moldura está no
   `tauri.conf.json` e o shell/resize no código.
+
+## Revisão (2026-10-24) — arraste pelo header inteiro
+
+- O `WindowHeader` passou a iniciar o arraste em **toda área inerte do header**
+  (grip, selo, título, subtítulo, espaços e dica `Esc`); o grip continua
+  visível como indicação, mas não é mais o único ponto de arraste.
+- Controles (botões, abas, links, campos, `role=...`, `contenteditable` e
+  `data-no-window-drag`) preservam o clique; só o botão primário arrasta.
+- Regra isolada em `shouldStartHeaderDrag`
+  (`src/components/windowHeaderDrag.ts`), com testes de unidade e de componente.
+- O critério do grip no canto esquerdo segue válido como affordance visual; o
+  arraste agora não depende dele.
+- **ISS-063:** o primeiro clique em janela inativa só a ativava; arraste e
+  resize agora partem do **`mousedown`** e o core usa
+  `gtk_window_begin_move_drag`/`begin_resize_drag` com timestamp X11 válido
+  (`window_commands.rs`), em vez do `start_dragging` com timestamp zero. O
+  tooltip nativo do grip/alças foi removido. Isso substitui o antigo
+  `panel_start_drag`.

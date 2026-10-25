@@ -1,24 +1,25 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const startResizeDragging = vi.fn().mockResolvedValue(undefined);
+const startWindowResize = vi.fn().mockResolvedValue(undefined);
 const panelHide = vi.fn();
-const panelStartDrag = vi.fn();
-
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ startResizeDragging }),
-}));
-
-vi.mock("../../adapters/ipc/client", () => ({
-  isTauriRuntime: () => true,
-}));
+const startWindowDrag = vi.fn();
 
 vi.mock("../../adapters/ipc/panels", () => ({
   panelHide: (...args: unknown[]) => panelHide(...args),
-  panelStartDrag: (...args: unknown[]) => panelStartDrag(...args),
+}));
+
+vi.mock("../../adapters/ipc/windowDrag", () => ({
+  startWindowDrag: (...args: unknown[]) => startWindowDrag(...args),
+  startWindowResize: (...args: unknown[]) => startWindowResize(...args),
 }));
 
 import { PanelFrame } from "./PanelFrame";
+
+/** O gesto parte do mousedown, que chega depois da ativação (ISS-063). */
+function dragFrom(element: Element) {
+  fireEvent.mouseDown(element, { button: 0 });
+}
 
 describe("PanelFrame", () => {
   beforeEach(() => {
@@ -44,11 +45,12 @@ describe("PanelFrame", () => {
       </PanelFrame>,
     );
 
-    fireEvent.pointerDown(
+    fireEvent.mouseDown(
       container.querySelector('[data-direction="SouthEast"]')!,
+      { button: 0 },
     );
 
-    expect(startResizeDragging).toHaveBeenCalledWith("SouthEast");
+    expect(startWindowResize).toHaveBeenCalledWith("SouthEast");
   });
 
   it("esconde a janela ao clicar em Fechar", () => {
@@ -75,7 +77,43 @@ describe("PanelFrame", () => {
     expect(header.firstElementChild).toBe(drag);
     expect(header.lastElementChild).toBe(close);
 
-    fireEvent.pointerDown(drag);
-    expect(panelStartDrag).toHaveBeenCalled();
+    fireEvent.mouseDown(drag);
+    expect(startWindowDrag).toHaveBeenCalledTimes(1);
+  });
+
+  it("arrasta pelo header inteiro, não só pelo grip", () => {
+    const { container } = render(
+      <PanelFrame label="chat" title="Transcrição ao Vivo">
+        x
+      </PanelFrame>,
+    );
+
+    dragFrom(container.querySelector(".window-header__title")!);
+
+    expect(startWindowDrag).toHaveBeenCalledTimes(1);
+  });
+
+  it("não arrasta ao clicar em um controle do header", () => {
+    const { container } = render(
+      <PanelFrame
+        label="suggestions"
+        title="Sugestões"
+        actions={
+          <button type="button" aria-label="Auto-sugerir">
+            Auto
+          </button>
+        }
+      >
+        x
+      </PanelFrame>,
+    );
+
+    dragFrom(
+      container.querySelector(
+        '.window-header__actions button[aria-label="Auto-sugerir"]',
+      )!,
+    );
+
+    expect(startWindowDrag).not.toHaveBeenCalled();
   });
 });

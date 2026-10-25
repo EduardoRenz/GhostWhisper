@@ -21,4 +21,5 @@ pub mod settings_commands;
 pub mod shortcuts_commands;
 pub mod suggestion_commands;
 pub mod summary_commands;
+pub mod window_commands;
 pub mod window_visibility;

@@ -1402,8 +1402,13 @@ uma nota de revisão.
   - header com margem horizontal de **16 px** e vertical de **8 px** (mínimo de
     56 px de altura); o título não encosta na borda e não é comprimido: as
     ações quebram em outra linha quando não couberem;
-  - **alça de arraste única** (`DragHandle`), no canto superior esquerdo. O
-    título/ícone não arrastam, para não capturar cliques dos controles;
+  - **arraste pelo header inteiro** (revisão de 2026-10-24): qualquer área
+    inerte do header — grip, selo, título, subtítulo, espaços e a dica — inicia
+    o arraste da janela. A alça (`DragHandle`) continua visível no canto
+    superior esquerdo como indicação, mas não é mais o único ponto de arraste;
+  - os **controles** do header (botões, abas, links, campos e áreas com
+    `data-no-window-drag`) preservam o clique e não iniciam o arraste; apenas o
+    botão primário arrasta;
   - **raio externo padrão das janelas** em `--oh-window-radius`, definido como
     `--oh-radius-sm` (0,5 rem/8 px) — a mesma geometria dos balões de conversa;
   - **Configurações sem moldura nativa**: `decorations: false`, janela
@@ -1412,18 +1417,27 @@ uma nota de revisão.
 - **Motivo:** o mockup do usuário (2026-10-21) mostra o grip à esquerda, ícone +
   título com respiro e fechar à direita; algumas janelas não tinham arraste e os
   raios de 24 px deixavam a casca mais arredondada que os balões. A janela de
-  Configurações somava o header próprio à moldura do sistema.
+  Configurações somava o header próprio à moldura do sistema. Em 2026-10-24 o
+  usuário pediu que o **header todo** arrastasse, mantendo o grip apenas como
+  indicação visual.
 - **Consequência:** novo componente `WindowHeader` usado por `PanelFrame` e
   `SettingsPage`; `PanelFrame` passa a receber `icon`/`titleExtra`; Chat,
   Sugestões e Histórico usam o selo no header; `--oh-window-radius` substitui
   `--oh-radius-md` no `.panel` e no `.settings`; a densidade do HUD
   (`compact`/`standard`/`expanded`) **não muda**. O comportamento de
-  redimensionar/arrastar e o fechar de cada janela são preservados.
+  redimensionar/arrastar e o fechar de cada janela são preservados. Na revisão
+  de 2026-10-24, `WindowHeader` passou a iniciar o arraste da área inerte do
+  header via `shouldStartHeaderDrag` (`src/components/windowHeaderDrag.ts`).
+  Também em 2026-10-24, arraste e redimensionamento passaram a partir do
+  **`mousedown`** com a API do GTK e timestamp X11 válido
+  (`window_commands.rs`), porque o `start_dragging` do Tauri (timestamp zero)
+  era ignorado no primeiro gesto de janela inativa (ISS-063); o tooltip nativo
+  do grip/alças foi removido para não engolir o clique.
 - **Detalhes:** [`chat/tasks/17-task.md`](chat/tasks/17-task.md),
   [`notch/architecture/design-tokens.md`](notch/architecture/design-tokens.md) §4/§6,
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md) §2,
   [`ai-sources/architecture/settings-redesign.md`](ai-sources/architecture/settings-redesign.md) §1.
-- **Data:** 2026-10-21 · **Status:** Ativa
+- **Data:** 2026-10-21 · revisada em 2026-10-24 · **Status:** Ativa
 
 ## BR-065 — Gravação é propriedade da sessão (não existe gravação avulsa)
 

@@ -360,3 +360,74 @@ A implementação foi alinhada a isso (não reintroduziu geração ao abrir).
   gate por idioma.
 - Referências quebradas corrigidas em `business-rules.md`, `notch/prd.md`,
   `precision-and-performance/tasks/02-task.md` e `memory.md`.
+
+## 2026-10-24 — Arraste pelo header inteiro das janelas (revisão da BR-064)
+
+- **IDs:** BR-064, T17
+- **Refs:** [`../business-rules.md`](../business-rules.md) BR-064,
+  [`tasks/17-task.md`](tasks/17-task.md),
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md) §2,
+  `src/components/WindowHeader.tsx`, `src/components/windowHeaderDrag.ts`
+
+### Pedido
+- O usuário pediu que o arraste da janela funcione em **todo o header**, não só
+  no ícone de grip à esquerda; o ícone continua visível como indicação.
+- Vale para qualquer janela do app que use o header padrão.
+
+### Entregue
+- `WindowHeader` ganhou `onPointerDown`: áreas inertes (grip, selo, título,
+  subtítulo, espaços e a dica `Esc`) chamam `onStartDrag`; controles e a própria
+  alça são ignorados (a alça já tem handler, evitando `startDragging` duplo).
+- Regra pura `shouldStartHeaderDrag` cobre botões, abas, links, campos,
+  `contenteditable`, `role=...`, `.drag-handle` e a escotilha
+  `data-no-window-drag`; só o botão primário arrasta.
+- CSS: `.window-header` com `user-select: none`; o grip mantém `cursor: move`.
+- Painéis, Configurações, Sessão Finalizada e Seletor de Gravação herdam o
+  comportamento por usarem `WindowHeader`; notch/AskBar continuam só no grip.
+
+### Verificação
+- `pnpm test` **483 ✓** (75 arquivos) · `tsc --noEmit` ✓.
+- Testes novos: `WindowHeader.test.tsx`, `windowHeaderDrag.test.ts`; casos de
+  header em `PanelFrame.test.tsx` e `SettingsPage.test.tsx`.
+- AppImage/deb Vulkan gerados por `pnpm tauri:build --bundles appimage`
+  (`GhostWhisper_0.1.0_amd64.AppImage`, 15:58); o asset `index-CF0mEfMm.js`
+  embutido confere com o `dist/` novo.
+
+## 2026-10-24 — Arraste e resize só no segundo clique (ISS-063)
+
+- **IDs:** ISS-063, BR-064, T17
+- **Refs:** [`issues.md`](issues.md) ISS-063,
+  [`../business-rules.md`](../business-rules.md) BR-064,
+  [`architecture/transcription-panel.md`](architecture/transcription-panel.md) §2,
+  `src-tauri/src/ipc/window_commands.rs`, `src/adapters/ipc/windowDrag.ts`
+
+### Sintoma
+- O grip à esquerda (e depois o header inteiro) só arrastava no **segundo**
+  clique; o primeiro apenas ativava a janela. As alças de resize tinham o mesmo
+  comportamento.
+- Causa: o `start_dragging` do Tauri usa `gtk_window_begin_move_drag` com
+  **timestamp zero**. Em Mutter/X11 o primeiro gesto de uma janela inativa era
+  ignorado e o estado ficava alternando entre gestos aceitos e recusados. O
+  tooltip nativo (`title`) do grip/alças também capturava o primeiro clique.
+  Focar/esperar `isFocused` e iniciar no `pointermove` não resolveram.
+
+### Entregue
+- O gesto parte do **`mousedown`** em `DragHandle`, `WindowHeader` e
+  `ResizeHandles`.
+- Novos comandos `window_start_drag`/`window_start_resize`
+  (`window_commands.rs`) chamam a API do GTK
+  (`begin_move_drag`/`begin_resize_drag`) com o timestamp atual do servidor X11
+  (`x11_get_server_time`). Em Wayland/fallback usam o caminho do Tauri.
+- `title` nativo removido do grip e das alças (o `aria-label` do grip fica).
+- Comando `panel_start_drag` removido (arraste direto na janela atual).
+
+### Verificação
+- `pnpm test` **485 ✓** (76 arquivos) · `tsc --noEmit` ✓ ·
+  `cargo test --lib` **682 ✓** (10 ignorados) · `rustfmt` ✓.
+- `windowDrag.test.ts`: comandos e direções; `window_commands` testa o
+  mapeamento das 8 direções; header/grip/alças em `WindowHeader`,
+  `PanelFrame`, `SettingsPage` e `AskWindow`.
+- Validação manual com XTest no binário Vulkan: 4/4 arrastes pelo grip e 3/3
+  pelo header saindo de janela inativa; resize 3/3 no canto sudeste.
+- AppImage/deb Vulkan republicados (21:04); SHA-256 do AppImage
+  `06026cf6…a218794`.

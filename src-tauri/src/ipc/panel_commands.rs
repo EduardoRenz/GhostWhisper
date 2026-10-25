@@ -70,14 +70,6 @@ pub fn panel_hide(app: tauri::AppHandle, label: String) -> Result<()> {
     Ok(())
 }
 
-/// Inicia o arraste da janela chamadora.
-#[tauri::command]
-pub fn panel_start_drag(window: tauri::WebviewWindow) -> Result<()> {
-    window
-        .start_dragging()
-        .map_err(|error| GhostWhisperError::Other(format!("falha ao arrastar: {error}")))
-}
-
 /// Informa se o painel está visível (fallback quando o evento se perde).
 #[tauri::command]
 pub fn panel_is_open(app: tauri::AppHandle, label: String) -> Result<bool> {
