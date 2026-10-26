@@ -41,6 +41,12 @@ pub struct SuggestionRequest {
     /// Ação explícita do usuário: entra como foco do prompt e sempre gera,
     /// mesmo sem fala nova.
     pub manual_context: Option<ManualSuggestionContext>,
+    /// Cue que disparou a sugestão (modo classificador — BR-094).
+    pub cue: Option<crate::domain::suggestion_gate::SuggestionCue>,
+    /// Foco curto vindo do classificador.
+    pub focus: Option<String>,
+    /// Trigger explícito (classificador); `None` mantém a inferência atual.
+    pub trigger: Option<SuggestionTrigger>,
 }
 
 impl SuggestionRequest {
@@ -98,6 +104,25 @@ impl SuggestionRequest {
         self.manual_context = manual_context;
         self
     }
+
+    /// Inclui a cue/foco do classificador (modo classificador).
+    // TODO(task 10): remover o allow quando o scheduler chamar este builder.
+    #[allow(dead_code)]
+    pub fn with_cue_focus(
+        mut self,
+        cue: Option<crate::domain::suggestion_gate::SuggestionCue>,
+        focus: Option<String>,
+    ) -> Self {
+        self.cue = cue;
+        self.focus = focus.filter(|value| !value.trim().is_empty());
+        self
+    }
+
+    /// Define o trigger explicitamente (modo classificador).
+    pub fn with_trigger(mut self, trigger: SuggestionTrigger) -> Self {
+        self.trigger = Some(trigger);
+        self
+    }
 }
 
 /// Fase da sugestão (BR-038).
@@ -125,6 +150,10 @@ pub enum SuggestionTrigger {
     Now,
     /// Sugestão manual a partir de uma mensagem da Transcrição.
     Manual,
+    /// Disparada pelo classificador de blocos.
+    // TODO(task 10): remover o allow quando o scheduler usar o trigger.
+    #[allow(dead_code)]
+    Classifier,
 }
 
 /// Snapshot **leve** da mensagem que originou uma sugestão manual.
@@ -172,6 +201,8 @@ pub struct Suggestion {
     pub message_id: Option<String>,
     /// `true` quando não havia fala nova e o LLM não foi chamado.
     pub skipped: bool,
+    /// Cue do classificador (quando `trigger = Classifier`).
+    pub cue: Option<crate::domain::suggestion_gate::SuggestionCue>,
 }
 
 /// Pedido de fixação de uma sugestão já gerada.
@@ -196,4 +227,28 @@ pub trait SuggestionGenerator: Send + Sync {
     ///
     /// Usada pela janela para hidratar o cartão ao montar/reabrir (BR-042).
     fn last_suggestion(&self, session_id: &str) -> Result<Option<Suggestion>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suggestion_trigger_serializes_classifier() {
+        let json = serde_json::to_value(SuggestionTrigger::Classifier).expect("json");
+        assert_eq!(json, "classifier");
+    }
+
+    #[test]
+    fn cue_focus_builder_keeps_only_non_empty_focus() {
+        let request = SuggestionRequest::ephemeral(None, "default".into()).with_cue_focus(
+            Some(crate::domain::suggestion_gate::SuggestionCue::Question),
+            Some("  ".into()),
+        );
+        assert_eq!(
+            request.cue,
+            Some(crate::domain::suggestion_gate::SuggestionCue::Question)
+        );
+        assert!(request.focus.is_none());
+    }
 }

@@ -9,6 +9,7 @@ use crate::ports::ai_source_service::AiSourceService;
 use crate::ports::ask_controller::AskController;
 use crate::ports::audio_monitor::AudioMonitor;
 use crate::ports::audio_source::AudioSource;
+use crate::ports::classifier_model_manager::ClassifierModelManager;
 use crate::ports::click_through::ClickThroughController;
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::EventPublisher;
@@ -27,6 +28,7 @@ use crate::ports::secret_store::SecretStore;
 use crate::ports::session_controller::SessionController;
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::shortcut_registry::GlobalShortcutRegistry;
+use crate::ports::suggestion_gate::SuggestionGate;
 use crate::ports::suggestion_generator::SuggestionGenerator;
 use crate::ports::summary_generator::SummaryGenerator;
 use crate::ports::translator::Translator;
@@ -83,6 +85,10 @@ pub struct AppState {
     pub summary: Arc<dyn SummaryGenerator>,
     /// Sugestões contextuais por agente.
     pub suggestions: Arc<dyn SuggestionGenerator>,
+    /// Gate por blocos do modo classificador (BR-093/BR-094).
+    pub suggestion_gate: Arc<dyn SuggestionGate>,
+    /// Catálogo/instalação do modelo do classificador (BR-099).
+    pub classifier_models: Arc<dyn ClassifierModelManager>,
     /// Contexto manual da Transcrição → Sugestões (BR-041).
     pub manual_context: Arc<dyn ManualSuggestionContextStore>,
     /// Publicação de eventos para a UI.
@@ -123,6 +129,8 @@ impl AppState {
         translator: Arc<dyn Translator>,
         summary: Arc<dyn SummaryGenerator>,
         suggestions: Arc<dyn SuggestionGenerator>,
+        suggestion_gate: Arc<dyn SuggestionGate>,
+        classifier_models: Arc<dyn ClassifierModelManager>,
         manual_context: Arc<dyn ManualSuggestionContextStore>,
         publisher: Arc<dyn EventPublisher>,
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
@@ -154,6 +162,8 @@ impl AppState {
             translator,
             summary,
             suggestions,
+            suggestion_gate,
+            classifier_models,
             manual_context,
             publisher,
             shortcuts,
@@ -171,12 +181,15 @@ mod tests {
 
     use crate::domain::audio::AudioDevice;
     use crate::domain::geometry::{Point, Rect};
+    use crate::domain::suggestion_gate::GateDecision;
     use crate::error::Result;
     use crate::ports::audio_consumer::AudioConsumer;
     use crate::ports::audio_monitor::AudioMonitor;
     use crate::ports::overlay_window::Surface;
     use crate::ports::screen_capture::CapturedImage;
     use crate::ports::session_controller::AudioChannel;
+    use crate::ports::suggestion_cue_classifier::ClassificationOutcome;
+    use crate::ports::suggestion_gate::{SuggestionGate, SuggestionGateError};
     use crate::ports::suggestion_generator::{
         PinSuggestionRequest, Suggestion, SuggestionGenerator, SuggestionPhase, SuggestionRequest,
         SuggestionTrigger,
@@ -431,6 +444,7 @@ mod tests {
                 context_until_ms: 0,
                 message_id: Some("m1".into()),
                 skipped: false,
+                cue: None,
             })
         }
         fn pin(&self, request: PinSuggestionRequest) -> Result<Suggestion> {
@@ -450,6 +464,7 @@ mod tests {
                 context_until_ms: request.at_ms,
                 message_id: Some("m1".into()),
                 skipped: false,
+                cue: None,
             })
         }
 
@@ -565,6 +580,79 @@ mod tests {
         }
     }
 
+    /// Fonte de modelo sem rede (o teste não instala nada).
+    struct NoopModelSource;
+
+    impl crate::adapters::models::local_classifier_model_manager::ClassifierModelSource
+        for NoopModelSource
+    {
+        fn fetch_bytes(
+            &self,
+            _url: &str,
+            _max: u64,
+        ) -> std::result::Result<
+            Vec<u8>,
+            crate::ports::classifier_model_manager::ClassifierModelError,
+        > {
+            Err(
+                crate::ports::classifier_model_manager::ClassifierModelError::Unavailable(
+                    "teste".to_string(),
+                ),
+            )
+        }
+
+        fn download_to(
+            &self,
+            _url: &str,
+            _dest: &std::path::Path,
+            _progress: &mut dyn FnMut(u64),
+        ) -> std::result::Result<(), crate::ports::classifier_model_manager::ClassifierModelError>
+        {
+            Err(
+                crate::ports::classifier_model_manager::ClassifierModelError::Unavailable(
+                    "teste".to_string(),
+                ),
+            )
+        }
+    }
+
+    struct FakeSuggestionGate;
+
+    impl SuggestionGate for FakeSuggestionGate {
+        fn classify_latest(
+            &self,
+            _session_id: &str,
+            _force_open: bool,
+        ) -> std::result::Result<ClassificationOutcome, SuggestionGateError> {
+            Err(SuggestionGateError::NoBlock)
+        }
+
+        fn last(&self, _session_id: &str) -> Option<ClassificationOutcome> {
+            None
+        }
+
+        fn pending(&self, _session_id: &str) -> Option<ClassificationOutcome> {
+            None
+        }
+
+        fn take_pending(&self, _session_id: &str) -> Option<ClassificationOutcome> {
+            None
+        }
+
+        fn should_generate(
+            &self,
+            _outcome: &ClassificationOutcome,
+            _now_ms: i64,
+            _generating: bool,
+        ) -> GateDecision {
+            GateDecision::Generate
+        }
+
+        fn mark_generated(&self, _session_id: &str, _block_id: &str, _at_ms: i64) {}
+
+        fn reset(&self, _session_id: &str) {}
+    }
+
     fn build_state() -> AppState {
         use crate::adapters::ai_sources::in_memory_ai_source_service::InMemoryAiSourceService;
         use crate::adapters::manual::in_memory_manual_suggestion_context_store::InMemoryManualSuggestionContextStore;
@@ -602,6 +690,14 @@ mod tests {
             Arc::new(FakeTranslator),
             Arc::new(FakeSummary),
             Arc::new(FakeSuggestions),
+            Arc::new(FakeSuggestionGate),
+            Arc::new(crate::adapters::models::local_classifier_model_manager::LocalClassifierModelManager::new(
+                std::env::temp_dir().join("ghostwhisper-classifier-models-test"),
+                Arc::new(InMemorySettingsStore::new()),
+                Arc::new(NoopModelSource),
+                Arc::new(FakePublisher),
+                Arc::new(crate::adapters::system::system_clock::FixedClock(1_000_000)),
+            )),
             Arc::new(InMemoryManualSuggestionContextStore::new()),
             Arc::new(FakePublisher),
             Arc::new(FakeShortcutRegistry),

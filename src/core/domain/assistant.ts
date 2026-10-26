@@ -129,7 +129,60 @@ export interface SummaryResult {
 export type SuggestionPhase = "quick" | "full";
 
 /** Origem da geração (BR-041/BR-042). */
-export type SuggestionTrigger = "auto" | "now" | "manual";
+export type SuggestionTrigger = "auto" | "now" | "manual" | "classifier";
+
+/** Estratégia de disparo das sugestões (BR-092/BR-097). */
+export type SuggestionMode = "auto" | "classifier";
+
+/** Cue do classificador de blocos (BR-094). */
+export type SuggestionCue =
+  | "question"
+  | "hesitation"
+  | "lost_thread"
+  | "invitation"
+  | "silence"
+  | "no_suggestion"
+  | "insufficient_context";
+
+/** Sensibilidade do classificador (BR-097). */
+export type ClassifierSensitivity = "low" | "balanced" | "high";
+
+/** Estado do classificador publicado pelo core. */
+export type SuggestionClassifierState =
+  | "paused"
+  | "no_session"
+  | "listening"
+  | "analyzing"
+  | "ready"
+  | "error";
+
+/** Evento `suggestion_classification` (BR-095). */
+export interface SuggestionClassificationEvent {
+  session_id: string;
+  state: SuggestionClassifierState;
+  outcome: SuggestionClassification | null;
+  error: string | null;
+  generating: boolean;
+}
+
+/** Classificação mais recente de um bloco (BR-095). */
+export interface SuggestionClassification {
+  block_id: string;
+  session_id: string;
+  cue: SuggestionCue;
+  should_suggest: boolean;
+  confidence: number;
+  evidence: string;
+  focus: string | null;
+  backend: string;
+  model: string | null;
+  latency_ms: number;
+  block_start_ms: number;
+  block_end_ms: number;
+  turn_count: number;
+  classified_at_ms: number;
+  abstained: boolean;
+}
 
 /** Mensagem selecionada na Transcrição para uma sugestão manual (BR-041). */
 export interface ManualSuggestionContext {
@@ -172,6 +225,8 @@ export interface Suggestion {
   context_until_ms: number;
   message_id: string | null;
   skipped: boolean;
+  /** Cue que disparou a sugestão (modo classificador). */
+  cue?: SuggestionCue | null;
 }
 
 /** Rótulo de um agente (fallback para sugestão genérica). */

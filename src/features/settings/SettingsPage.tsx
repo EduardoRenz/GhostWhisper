@@ -40,6 +40,7 @@ import { LanguageSettings } from "./LanguageSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
 import { HudSettings } from "./HudSettings";
+import { SuggestionsActivationBlock } from "./SuggestionsActivationBlock";
 import {
   BoltIcon,
   KeyboardIcon,
@@ -476,12 +477,15 @@ export function SettingsPage() {
 
         <div className="settings__body">
           {tab === "sources" && (
-            <AiSourcesSettings
-              sources={draft.ai_sources}
-              providers={providers}
-              onChange={(sources) => update("ai_sources", sources)}
-              onStatus={setStatus}
-            />
+            <>
+              <SuggestionsActivationBlock settings={draft} update={update} />
+              <AiSourcesSettings
+                sources={draft.ai_sources}
+                providers={providers}
+                onChange={(sources) => update("ai_sources", sources)}
+                onStatus={setStatus}
+              />
+            </>
           )}
 
           {tab === "transcription" && (

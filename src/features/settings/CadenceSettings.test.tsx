@@ -22,7 +22,7 @@ describe("CadenceSettings", () => {
     render(<Harness />);
 
     expect(screen.getByText("Resumo automático")).toBeDefined();
-    expect(screen.getByText("Sugestões automáticas")).toBeDefined();
+    expect(screen.queryByText("Sugestões automáticas")).toBeNull();
     expect(screen.getByText("Perguntas prontas")).toBeDefined();
     expect(
       (screen.getByLabelText("Intervalo do resumo") as HTMLSelectElement).value,
@@ -52,15 +52,12 @@ describe("CadenceSettings", () => {
     expect(select.value).toBe("60");
   });
 
-  it("liga e desliga as sugestões automáticas", () => {
+  it("não mostra mais o card de sugestões (migrou para Fontes de IA & Modelos)", () => {
     render(<Harness />);
-    const toggle = screen.getByRole("checkbox", {
-      name: "Sugestões automáticas",
-    }) as HTMLInputElement;
-
-    expect(toggle.checked).toBe(true);
-    fireEvent.click(toggle);
-    expect(toggle.checked).toBe(false);
+    expect(
+      screen.queryByRole("checkbox", { name: "Sugestões automáticas" }),
+    ).toBeNull();
+    expect(screen.queryByLabelText("Intervalo das sugestões")).toBeNull();
   });
 
   it("acrescenta e remove uma pergunta pronta", () => {

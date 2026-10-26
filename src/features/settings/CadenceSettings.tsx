@@ -10,7 +10,6 @@ import {
   DEFAULT_SAVED_QUESTIONS,
   MAX_SAVED_QUESTIONS,
   MAX_SAVED_QUESTION_CHARS,
-  SUGGESTION_INTERVALS,
   SUMMARY_INTERVALS,
   type SavedQuestion,
   type Settings,
@@ -80,43 +79,6 @@ export function CadenceSettings({ settings, update }: CadenceSettingsProps) {
           </label>
         </article>
 
-        <article className="settings__card settings__card--hud">
-          <header className="settings__card-header">
-            <h3 className="settings__card-title">
-              {t("cadence_automatic_suggestions")}
-            </h3>
-            <label className="settings__toggle">
-              <input
-                type="checkbox"
-                aria-label={t("cadence_automatic_suggestions")}
-                checked={settings.suggestion_auto_refresh}
-                onChange={(event) =>
-                  update("suggestion_auto_refresh", event.target.checked)
-                }
-              />
-              <span className="settings__toggle-track" aria-hidden="true" />
-            </label>
-          </header>
-          <p className="settings__card-description">
-            {t("cadence_generates_new_suggestion_every_interval_without")}
-          </p>
-          <label className="settings__field">
-            <span>{t("cadence_suggestion_interval")}</span>
-            <select
-              value={settings.suggestion_interval_secs}
-              disabled={!settings.suggestion_auto_refresh}
-              onChange={(event) =>
-                update("suggestion_interval_secs", Number(event.target.value))
-              }
-            >
-              {SUGGESTION_INTERVALS.map((seconds) => (
-                <option key={seconds} value={seconds}>
-                  {seconds}s
-                </option>
-              ))}
-            </select>
-          </label>
-        </article>
       </div>
 
       <article className="settings__card settings__card--hud">

@@ -68,7 +68,7 @@ pub fn chunks_after(
 
     let pending: Vec<&TranscriptSegment> = usable_sorted(segments)
         .into_iter()
-        .filter(|segment| cursor.map_or(true, |cursor| segment.start_ms > cursor))
+        .filter(|segment| cursor.is_none_or(|cursor| segment.start_ms > cursor))
         .collect();
 
     let mut chunks = Vec::new();

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Copiloto de reunião open-source, Linux-first e local-only"
 authors = ["GhostWhisper"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.88"
 
 [lib]
 name = "ghostwhisper_lib"
@@ -15,6 +15,10 @@ tauri-build = { version = "2", features = [] }
 
 [features]
 default = []
+# Classificador Laya (ONNX) — BR-098. O crate vive no submódulo `vendor/laya`
+# (Apache-2.0) e não é publicado no crates.io. Sem a feature, o app compila só
+# com o heurístico. Build: `git submodule update --init` + `cargo build --features laya`.
+laya = ["dep:laya-onnx", "dep:ort"]
 # Aceleração do Whisper por GPU (repassa para o `whisper-rs`). Por padrão o app é
 # CPU; ligar GPU é o entregável E3 do PRD `precision-and-performance` (BR-029).
 # A detecção de GPU (`ports::gpu_probe`) usa estas features em `cfg!` para saber
@@ -35,6 +39,14 @@ tauri-plugin-store = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2.8.3"
 base64 = "0.22"
+# Classificador Laya — importado como `laya` (ver `[lib]` do crate).
+# `default-features = false` desliga o download HTTP do SDK; o modelo é do
+# model manager. O `ort` ainda baixa o binário do ONNX Runtime no build.
+laya-onnx = { path = "../vendor/laya/laya-rust", optional = true, default-features = false }
+# Pin do ONNX Runtime: o `laya-onnx` foi escrito contra o rc.13 e o resolver
+# puxaria o rc.15 (API incompatível). Não é usado diretamente; só fixa a versão
+# para a árvore da feature `laya`.
+ort = { version = "=2.0.0-rc.13", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.15"
 libpulse-binding = "2"

@@ -83,11 +83,17 @@ Linux and staying fully open.
 ## Getting started
 
 ```bash
-git clone https://github.com/EduardoRenz/GhostWhisper.git
+git clone --recurse-submodules https://github.com/EduardoRenz/GhostWhisper.git
 cd GhostWhisper
 pnpm install
 pnpm tauri dev
 ```
+
+> O submódulo `vendor/laya` (classificador Laya, Apache-2.0) é resolvido pelo
+> Cargo mesmo sem a feature. Se você já clonou sem `--recurse-submodules`, rode
+> `git submodule update --init`. O engine Laya só é compilado com
+> `pnpm tauri dev --features laya` / `pnpm tauri build --features laya`; o
+> modelo ONNX (~1,2 GB) é baixado pelo app, nunca vai no bundle.
 
 On first launch, open **Settings** (gear icon) and add an AI source with your own
 API key. Keys are stored in the system keyring, never in plain text. The Whisper
@@ -103,11 +109,26 @@ model is downloaded only on the first session that uses it.
 ```bash
 pnpm tauri:build        # release with Vulkan (default) + embedded loader
 pnpm tauri:build:cpu    # release, CPU only (escape hatch)
+pnpm tauri:build:laya   # Vulkan + Laya engine + bundled ONNX model (AppImage, ~821 MiB)
 scripts/package-linux.sh        # .deb + AppImage
 scripts/package-linux.sh deb    # only .deb
 ```
 
 Artifacts are written to `src-tauri/target/release/bundle/{deb,appimage}/`.
+
+The Laya build needs the submodule and the exported artifact (not versioned):
+
+```bash
+git submodule update --init
+python3 vendor/laya/laya-rust/tools/export_onnx.py --model multilingual \
+  --out src-tauri/resources/laya
+pnpm tauri:build:laya
+```
+
+> **Laya is a POC:** the engine and the multilingual model are bundled, but the
+> zero-shot evaluation is below the quality gate. `Regras locais` remains the
+> default; the UI warns when Laya is selected. Fine-tuning is the next step
+> (task 12).
 
 - The Vulkan binary picks a GPU at runtime and falls back to CPU by itself when
   no Vulkan device is available — one build works everywhere.

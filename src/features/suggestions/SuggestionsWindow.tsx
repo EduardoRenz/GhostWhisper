@@ -6,6 +6,7 @@ import { useSettings } from "../../core/application/useSettings";
 import { useSuggestions } from "../../core/application/useSuggestions";
 import { useManualSuggestionContext } from "../../core/application/useManualSuggestionContext";
 import { useSuggestionCadence } from "../../core/application/useSuggestionCadence";
+import { useSuggestionClassification } from "../../core/application/useSuggestionClassification";
 import type { Suggestion } from "../../core/domain/assistant";
 import { saveSettings } from "../../adapters/ipc/settings";
 import { openSettingsWindow } from "../../adapters/ipc/overlay";
@@ -14,6 +15,8 @@ import { SlidersIcon, SparkleIcon } from "../../components/icons";
 import { Pill } from "../../components/Pill";
 import { StatusPill } from "../../components/StatusPill";
 import { AutoSuggestControl } from "./AutoSuggestControl";
+import { ClassifierSuggestControl } from "./ClassifierSuggestControl";
+import { LastClassificationStrip } from "./LastClassificationStrip";
 import { ManualContextCard } from "./ManualContextCard";
 import { SuggestionCard } from "./SuggestionCard";
 import { SuggestionHistory } from "./SuggestionHistory";
@@ -30,7 +33,9 @@ export function SuggestionsWindow() {
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
   const cadence = useSuggestionCadence();
+  const classification = useSuggestionClassification(state.session_id);
   const modeId = settings.assistant_mode_id;
+  const suggestionMode = settings.suggestion_mode ?? "auto";
   const [extraContext, setExtraContext] = useState("");
   /** O contexto extra fica recolhido por padrão (abre pelo ícone do header). */
   const [extraOpen, setExtraOpen] = useState(false);
@@ -90,7 +95,8 @@ export function SuggestionsWindow() {
 
   /** Feedback imediato do auto (o LLM pode demorar até o primeiro evento). */
   const autoGenerating = cadence.running && cadence.generating && auto;
-  const generatingNow = generating || autoGenerating;
+  const generatingNow =
+    generating || autoGenerating || classification.generating;
 
   /** Rótulo do pill de geração (BR-042). */
   const generatingLabel = (() => {
@@ -139,11 +145,22 @@ export function SuggestionsWindow() {
       >
         <SlidersIcon size={16} />
       </button>
-      <AutoSuggestControl
-        cadence={cadence}
-        paused={!auto}
-        onToggle={toggleAuto}
-      />
+      {suggestionMode === "classifier" ? (
+        <ClassifierSuggestControl
+          paused={!auto}
+          sessionActive={Boolean(state.session_id)}
+          classification={classification.outcome}
+          state={classification.state}
+          generating={classification.generating}
+          onToggle={toggleAuto}
+        />
+      ) : (
+        <AutoSuggestControl
+          cadence={cadence}
+          paused={!auto}
+          onToggle={toggleAuto}
+        />
+      )}
       <button
         type="button"
         className="suggest-now"
@@ -179,6 +196,18 @@ export function SuggestionsWindow() {
             onChange={(event) => setExtraContext(event.target.value)}
           />
         </label>
+      )}
+      {(settings.suggestion_show_classification ?? true) && (
+        <LastClassificationStrip
+          mode={suggestionMode}
+          classification={classification.outcome}
+          state={classification.state}
+          error={classification.error}
+          canClassify={Boolean(state.session_id)}
+          onClassifyNow={() => void classification.classifyNow()}
+          onRetry={() => void classification.classifyNow()}
+          onOpenSettings={() => void openSettingsWindow()}
+        />
       )}
       <div className="panel__scroll">
         {manual.context && (

@@ -8,6 +8,7 @@ use crate::domain::assistant::{
     is_builtin_id, is_protected_id, validate_custom_modes, AssistantMode,
 };
 use crate::domain::shortcuts::ShortcutBinding;
+use crate::domain::suggestion_gate::SuggestionCue;
 use crate::error::{GhostWhisperError, Result};
 
 /// Idiomas suportados em origem e destino.
@@ -275,6 +276,73 @@ pub struct Settings {
     /// Intervalo das sugestões automáticas (segundos).
     #[serde(default = "default_suggestion_interval")]
     pub suggestion_interval_secs: u32,
+    /// Estratégia de disparo: `auto` (timer) | `classifier` (classificador).
+    #[serde(default = "default_suggestion_mode")]
+    pub suggestion_mode: String,
+    /// Escopo do classificador: `blocks` (ME+THEY) | `adaptive` (qualquer bloco).
+    #[serde(default = "default_suggestion_scope")]
+    pub suggestion_scope: String,
+    /// Mostra a faixa de última classificação na janela de Sugestões.
+    #[serde(default = "default_enabled")]
+    pub suggestion_show_classification: bool,
+    /// Backend do classificador: `heuristic` | `laya`.
+    #[serde(default = "default_classifier_backend")]
+    pub suggestion_classifier_backend: String,
+    /// Sensibilidade: `low` | `balanced` | `high` (deriva o limiar).
+    #[serde(default = "default_classifier_sensitivity")]
+    pub suggestion_classifier_sensitivity: String,
+    /// Modelo do model manager.
+    #[serde(default = "default_classifier_model_id")]
+    pub suggestion_classifier_model_id: String,
+    /// Versão ativa do modelo (vazio = a ativa no cache).
+    #[serde(default)]
+    pub suggestion_classifier_model_version: String,
+    /// Override de dev para um diretório ONNX; vazio = model manager.
+    #[serde(default)]
+    pub suggestion_classifier_model_path: String,
+    /// URL do catálogo de modelos (apenas leitura/atualização).
+    #[serde(default = "default_classifier_model_catalog_url")]
+    pub suggestion_classifier_model_catalog_url: String,
+    /// Nunca baixar modelo sem ação explícita do usuário.
+    #[serde(default)]
+    pub suggestion_classifier_auto_download: bool,
+    /// Checkpoint Laya: só `multilingual`.
+    ///
+    /// O checkpoint English não é exposto: o multilingual cobre pt/en e ocupa
+    /// menos espaço no model manager.
+    #[serde(default = "default_classifier_checkpoint")]
+    pub suggestion_classifier_checkpoint: String,
+    /// Cooldown mínimo entre sugestões do classificador.
+    #[serde(default = "default_classifier_cooldown_secs")]
+    pub suggestion_classifier_cooldown_secs: u32,
+    /// Timeout do classificador.
+    #[serde(default = "default_classifier_timeout_ms")]
+    pub suggestion_classifier_timeout_ms: u32,
+    /// Em erro do classificador: `skip` | `auto`.
+    #[serde(default = "default_classifier_fallback")]
+    pub suggestion_classifier_fallback: String,
+    /// Silêncio que fecha um bloco.
+    #[serde(default = "default_block_gap_ms")]
+    pub suggestion_block_gap_ms: u32,
+    /// Duração máxima de um bloco.
+    #[serde(default = "default_block_max_ms")]
+    pub suggestion_block_max_ms: u32,
+    /// Turnos máximos por bloco.
+    #[serde(default = "default_block_max_turns")]
+    pub suggestion_block_max_turns: u32,
+    /// Blocos anteriores no contexto do classificador.
+    #[serde(default = "default_context_blocks")]
+    pub suggestion_context_blocks: u32,
+    /// Cues permitidas (vazio = todas as positivas). Strings para tolerar
+    /// settings antigas/desconhecidas e sanitizar sem falhar o parse.
+    #[serde(default)]
+    pub suggestion_allowed_cues: Vec<String>,
+    /// Sonda de bloco aberto para hesitação.
+    #[serde(default = "default_enabled")]
+    pub suggestion_probe_open_block: bool,
+    /// Fala contínua de ME que habilita a sonda de hesitação.
+    #[serde(default = "default_hesitation_probe_ms")]
+    pub suggestion_hesitation_probe_ms: u32,
     /// Posição da janela de sugestões.
     #[serde(default)]
     pub suggestions_position: Option<(i32, i32)>,
@@ -422,6 +490,13 @@ pub const PANEL_TABS: [&str; 3] = ["transcription", "summary", "session"];
 pub const MIN_AUTO_INTERVAL_SECS: u32 = 10;
 /// Intervalo máximo aceito para atualizações automáticas (segundos).
 pub const MAX_AUTO_INTERVAL_SECS: u32 = 120;
+/// Piso do ciclo de sugestões (o resumo continua em 10 s).
+pub const MIN_SUGGESTION_INTERVAL_SECS: u32 = 8;
+/// Modelo recomendado do classificador.
+pub const DEFAULT_CLASSIFIER_MODEL_ID: &str = "laya-multilingual";
+/// Catálogo oficial de modelos (placeholder até o release do artefato).
+pub const DEFAULT_CLASSIFIER_MODEL_CATALOG_URL: &str =
+    "https://downloads.ghostwhisper.app/laya/catalog.json";
 /// Tempo padrão do drill-hover (ms) — BR-036.
 pub const DEFAULT_DWELL_MS: u32 = 500;
 /// Tempo mínimo aceito do drill-hover (ms) — faixa do mockup (BR-062).
@@ -502,6 +577,27 @@ impl Default for Settings {
             summary_interval_secs: default_summary_interval(),
             suggestion_auto_refresh: true,
             suggestion_interval_secs: default_suggestion_interval(),
+            suggestion_mode: default_suggestion_mode(),
+            suggestion_scope: default_suggestion_scope(),
+            suggestion_show_classification: true,
+            suggestion_classifier_backend: default_classifier_backend(),
+            suggestion_classifier_sensitivity: default_classifier_sensitivity(),
+            suggestion_classifier_model_id: default_classifier_model_id(),
+            suggestion_classifier_model_version: String::new(),
+            suggestion_classifier_model_path: String::new(),
+            suggestion_classifier_model_catalog_url: default_classifier_model_catalog_url(),
+            suggestion_classifier_auto_download: false,
+            suggestion_classifier_checkpoint: default_classifier_checkpoint(),
+            suggestion_classifier_cooldown_secs: default_classifier_cooldown_secs(),
+            suggestion_classifier_timeout_ms: default_classifier_timeout_ms(),
+            suggestion_classifier_fallback: default_classifier_fallback(),
+            suggestion_block_gap_ms: default_block_gap_ms(),
+            suggestion_block_max_ms: default_block_max_ms(),
+            suggestion_block_max_turns: default_block_max_turns(),
+            suggestion_context_blocks: default_context_blocks(),
+            suggestion_allowed_cues: Vec::new(),
+            suggestion_probe_open_block: true,
+            suggestion_hesitation_probe_ms: default_hesitation_probe_ms(),
             suggestions_position: None,
             suggestions_size: None,
             chat_position: None,
@@ -619,7 +715,67 @@ fn default_summary_interval() -> u32 {
 }
 
 fn default_suggestion_interval() -> u32 {
-    20
+    15
+}
+
+fn default_suggestion_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_suggestion_scope() -> String {
+    "adaptive".to_string()
+}
+
+fn default_classifier_backend() -> String {
+    "heuristic".to_string()
+}
+
+fn default_classifier_sensitivity() -> String {
+    "balanced".to_string()
+}
+
+fn default_classifier_model_id() -> String {
+    DEFAULT_CLASSIFIER_MODEL_ID.to_string()
+}
+
+fn default_classifier_model_catalog_url() -> String {
+    DEFAULT_CLASSIFIER_MODEL_CATALOG_URL.to_string()
+}
+
+fn default_classifier_checkpoint() -> String {
+    "multilingual".to_string()
+}
+
+fn default_classifier_cooldown_secs() -> u32 {
+    15
+}
+
+fn default_classifier_timeout_ms() -> u32 {
+    3_000
+}
+
+fn default_classifier_fallback() -> String {
+    "skip".to_string()
+}
+
+fn default_block_gap_ms() -> u32 {
+    3_000
+}
+
+fn default_block_max_ms() -> u32 {
+    45_000
+}
+
+fn default_block_max_turns() -> u32 {
+    12
+}
+
+fn default_context_blocks() -> u32 {
+    3
+}
+
+fn default_hesitation_probe_ms() -> u32 {
+    4_000
 }
 
 fn default_dwell_ms() -> u32 {
@@ -751,12 +907,92 @@ impl Settings {
                 "intervalo do resumo deve ficar entre {MIN_AUTO_INTERVAL_SECS} e {MAX_AUTO_INTERVAL_SECS} s"
             )));
         }
-        if !(MIN_AUTO_INTERVAL_SECS..=MAX_AUTO_INTERVAL_SECS)
+        if !(MIN_SUGGESTION_INTERVAL_SECS..=MAX_AUTO_INTERVAL_SECS)
             .contains(&self.suggestion_interval_secs)
         {
             return Err(GhostWhisperError::Config(format!(
-                "intervalo das sugestões deve ficar entre {MIN_AUTO_INTERVAL_SECS} e {MAX_AUTO_INTERVAL_SECS} s"
+                "intervalo das sugestões deve ficar entre {MIN_SUGGESTION_INTERVAL_SECS} e {MAX_AUTO_INTERVAL_SECS} s"
             )));
+        }
+        if !matches!(self.suggestion_mode.as_str(), "auto" | "classifier") {
+            return Err(GhostWhisperError::Config(format!(
+                "modo de sugestão inválido: {}",
+                self.suggestion_mode
+            )));
+        }
+        if !matches!(self.suggestion_scope.as_str(), "blocks" | "adaptive") {
+            return Err(GhostWhisperError::Config(format!(
+                "escopo de sugestão inválido: {}",
+                self.suggestion_scope
+            )));
+        }
+        if !matches!(
+            self.suggestion_classifier_backend.as_str(),
+            "heuristic" | "laya"
+        ) {
+            return Err(GhostWhisperError::Config(format!(
+                "backend do classificador inválido: {}",
+                self.suggestion_classifier_backend
+            )));
+        }
+        if !matches!(
+            self.suggestion_classifier_sensitivity.as_str(),
+            "low" | "balanced" | "high"
+        ) {
+            return Err(GhostWhisperError::Config(format!(
+                "sensibilidade inválida: {}",
+                self.suggestion_classifier_sensitivity
+            )));
+        }
+        if !matches!(
+            self.suggestion_classifier_fallback.as_str(),
+            "skip" | "auto"
+        ) {
+            return Err(GhostWhisperError::Config(format!(
+                "fallback inválido: {}",
+                self.suggestion_classifier_fallback
+            )));
+        }
+        if self.suggestion_classifier_checkpoint != "multilingual" {
+            return Err(GhostWhisperError::Config(format!(
+                "checkpoint inválido: {}",
+                self.suggestion_classifier_checkpoint
+            )));
+        }
+        if !(5..=120).contains(&self.suggestion_classifier_cooldown_secs) {
+            return Err(GhostWhisperError::Config(
+                "cooldown do classificador deve ficar entre 5 e 120 s".to_string(),
+            ));
+        }
+        if !(500..=10_000).contains(&self.suggestion_classifier_timeout_ms) {
+            return Err(GhostWhisperError::Config(
+                "timeout do classificador deve ficar entre 500 e 10000 ms".to_string(),
+            ));
+        }
+        if !(1_000..=10_000).contains(&self.suggestion_block_gap_ms) {
+            return Err(GhostWhisperError::Config(
+                "silêncio do bloco deve ficar entre 1000 e 10000 ms".to_string(),
+            ));
+        }
+        if !(10_000..=120_000).contains(&self.suggestion_block_max_ms) {
+            return Err(GhostWhisperError::Config(
+                "duração do bloco deve ficar entre 10000 e 120000 ms".to_string(),
+            ));
+        }
+        if !(2..=24).contains(&self.suggestion_block_max_turns) {
+            return Err(GhostWhisperError::Config(
+                "turnos do bloco devem ficar entre 2 e 24".to_string(),
+            ));
+        }
+        if !(0..=5).contains(&self.suggestion_context_blocks) {
+            return Err(GhostWhisperError::Config(
+                "contexto do classificador deve ficar entre 0 e 5 blocos".to_string(),
+            ));
+        }
+        if !(2_000..=10_000).contains(&self.suggestion_hesitation_probe_ms) {
+            return Err(GhostWhisperError::Config(
+                "sonda de hesitação deve ficar entre 2000 e 10000 ms".to_string(),
+            ));
         }
         if !(MIN_DWELL_MS..=MAX_DWELL_MS).contains(&self.dwell_ms) {
             return Err(GhostWhisperError::Config(format!(
@@ -881,7 +1117,68 @@ impl Settings {
             .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
         self.suggestion_interval_secs = self
             .suggestion_interval_secs
-            .clamp(MIN_AUTO_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
+            .clamp(MIN_SUGGESTION_INTERVAL_SECS, MAX_AUTO_INTERVAL_SECS);
+        if !matches!(self.suggestion_mode.as_str(), "auto" | "classifier") {
+            self.suggestion_mode = default_suggestion_mode();
+        }
+        if !matches!(self.suggestion_scope.as_str(), "blocks" | "adaptive") {
+            self.suggestion_scope = default_suggestion_scope();
+        }
+        if !matches!(
+            self.suggestion_classifier_backend.as_str(),
+            "heuristic" | "laya"
+        ) {
+            self.suggestion_classifier_backend = default_classifier_backend();
+        }
+        if !matches!(
+            self.suggestion_classifier_sensitivity.as_str(),
+            "low" | "balanced" | "high"
+        ) {
+            self.suggestion_classifier_sensitivity = default_classifier_sensitivity();
+        }
+        if !matches!(
+            self.suggestion_classifier_fallback.as_str(),
+            "skip" | "auto"
+        ) {
+            self.suggestion_classifier_fallback = default_classifier_fallback();
+        }
+        if self.suggestion_classifier_checkpoint != "multilingual" {
+            self.suggestion_classifier_checkpoint = default_classifier_checkpoint();
+        }
+        if self.suggestion_classifier_model_id.trim().is_empty() {
+            self.suggestion_classifier_model_id = default_classifier_model_id();
+        }
+        if self
+            .suggestion_classifier_model_catalog_url
+            .trim()
+            .is_empty()
+        {
+            self.suggestion_classifier_model_catalog_url = default_classifier_model_catalog_url();
+        }
+        self.suggestion_classifier_cooldown_secs =
+            self.suggestion_classifier_cooldown_secs.clamp(5, 120);
+        self.suggestion_classifier_timeout_ms =
+            self.suggestion_classifier_timeout_ms.clamp(500, 10_000);
+        self.suggestion_block_gap_ms = self.suggestion_block_gap_ms.clamp(1_000, 10_000);
+        self.suggestion_block_max_ms = self.suggestion_block_max_ms.clamp(10_000, 120_000);
+        self.suggestion_block_max_turns = self.suggestion_block_max_turns.clamp(2, 24);
+        self.suggestion_context_blocks = self.suggestion_context_blocks.clamp(0, 5);
+        self.suggestion_hesitation_probe_ms =
+            self.suggestion_hesitation_probe_ms.clamp(2_000, 10_000);
+        let mut allowed = Vec::new();
+        for value in &self.suggestion_allowed_cues {
+            let Some(cue) = SuggestionCue::from_str(value) else {
+                continue;
+            };
+            if !cue.can_suggest() {
+                continue;
+            }
+            let value = cue.as_str().to_string();
+            if !allowed.contains(&value) {
+                allowed.push(value);
+            }
+        }
+        self.suggestion_allowed_cues = allowed;
         self.dwell_ms = self.dwell_ms.clamp(MIN_DWELL_MS, MAX_DWELL_MS);
         // HUD (BR-062): opacidade fora da faixa é trazida para dentro; âncora e
         // densidade desconhecidas caem no padrão.
@@ -1288,7 +1585,11 @@ mod tests {
         assert_eq!(settings.assistant_mode_id, "default");
         assert!(!settings.assistant_mode_migrated);
         assert_eq!(settings.summary_interval_secs, 30);
-        assert_eq!(settings.suggestion_interval_secs, 20);
+        assert_eq!(settings.suggestion_interval_secs, 15);
+        assert_eq!(settings.suggestion_mode, "auto");
+        assert_eq!(settings.suggestion_classifier_backend, "heuristic");
+        assert_eq!(settings.suggestion_classifier_sensitivity, "balanced");
+        assert!(!settings.suggestion_classifier_auto_download);
         assert!(settings.custom_assistant_modes.is_empty());
         // O domínio nasce puro: quem semeia os agentes é a aplicação (BR-075).
         assert!(!settings.assistant_modes_seeded);
@@ -1308,7 +1609,7 @@ mod tests {
             .replace("\"summary_auto_refresh\":true,", "")
             .replace("\"summary_interval_secs\":30,", "")
             .replace("\"suggestion_auto_refresh\":true,", "")
-            .replace("\"suggestion_interval_secs\":20,", "")
+            .replace("\"suggestion_interval_secs\":15,", "")
             .replace("\"suggestions_position\":null,", "");
         assert!(!legacy.contains("assistant_mode_id"));
         let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
@@ -1357,16 +1658,113 @@ mod tests {
     }
 
     #[test]
+    fn legacy_json_without_suggestion_classifier_fields_uses_defaults() {
+        let mut value = serde_json::to_value(Settings::default()).expect("json");
+        let object = value.as_object_mut().expect("objeto");
+        for key in [
+            "suggestion_mode",
+            "suggestion_scope",
+            "suggestion_show_classification",
+            "suggestion_classifier_backend",
+            "suggestion_classifier_sensitivity",
+            "suggestion_classifier_model_id",
+            "suggestion_classifier_model_version",
+            "suggestion_classifier_model_path",
+            "suggestion_classifier_model_catalog_url",
+            "suggestion_classifier_auto_download",
+            "suggestion_classifier_checkpoint",
+            "suggestion_classifier_cooldown_secs",
+            "suggestion_classifier_timeout_ms",
+            "suggestion_classifier_fallback",
+            "suggestion_block_gap_ms",
+            "suggestion_block_max_ms",
+            "suggestion_block_max_turns",
+            "suggestion_context_blocks",
+            "suggestion_allowed_cues",
+            "suggestion_probe_open_block",
+            "suggestion_hesitation_probe_ms",
+        ] {
+            object.remove(key);
+        }
+
+        let parsed: Settings = serde_json::from_value(value).expect("legado");
+        assert_eq!(parsed.suggestion_mode, "auto");
+        assert_eq!(parsed.suggestion_classifier_backend, "heuristic");
+        assert_eq!(parsed.suggestion_classifier_sensitivity, "balanced");
+        assert_eq!(parsed.suggestion_classifier_model_id, "laya-multilingual");
+        assert!(!parsed.suggestion_classifier_auto_download);
+        assert_eq!(parsed.suggestion_classifier_cooldown_secs, 15);
+        assert_eq!(parsed.suggestion_block_gap_ms, 3_000);
+        assert!(parsed.suggestion_allowed_cues.is_empty());
+        assert!(parsed.validate().is_ok());
+    }
+
+    #[test]
+    fn sanitized_falls_back_on_invalid_suggestion_classifier_settings() {
+        let dirty = Settings {
+            suggestion_mode: "nope".into(),
+            suggestion_classifier_backend: "nope".into(),
+            suggestion_classifier_sensitivity: "nope".into(),
+            suggestion_classifier_fallback: "nope".into(),
+            suggestion_classifier_checkpoint: "nope".into(),
+            suggestion_classifier_model_id: "  ".into(),
+            suggestion_classifier_model_catalog_url: "".into(),
+            suggestion_classifier_cooldown_secs: 0,
+            suggestion_classifier_timeout_ms: 1,
+            suggestion_block_gap_ms: 0,
+            suggestion_block_max_ms: 1,
+            suggestion_block_max_turns: 1,
+            suggestion_context_blocks: 99,
+            suggestion_hesitation_probe_ms: 1,
+            suggestion_allowed_cues: vec![
+                "question".into(),
+                "question".into(),
+                "no_suggestion".into(),
+                "insufficient_context".into(),
+                "nope".into(),
+            ],
+            ..Settings::default()
+        }
+        .sanitized();
+
+        assert_eq!(dirty.suggestion_mode, "auto");
+        assert_eq!(dirty.suggestion_classifier_backend, "heuristic");
+        assert_eq!(dirty.suggestion_classifier_sensitivity, "balanced");
+        assert_eq!(dirty.suggestion_classifier_fallback, "skip");
+        assert_eq!(dirty.suggestion_classifier_checkpoint, "multilingual");
+        assert_eq!(dirty.suggestion_classifier_model_id, "laya-multilingual");
+        assert!(dirty
+            .suggestion_classifier_model_catalog_url
+            .starts_with("https://"));
+        assert_eq!(dirty.suggestion_classifier_cooldown_secs, 5);
+        assert_eq!(dirty.suggestion_classifier_timeout_ms, 500);
+        assert_eq!(dirty.suggestion_block_gap_ms, 1_000);
+        assert_eq!(dirty.suggestion_block_max_ms, 10_000);
+        assert_eq!(dirty.suggestion_block_max_turns, 2);
+        assert_eq!(dirty.suggestion_context_blocks, 5);
+        assert_eq!(dirty.suggestion_hesitation_probe_ms, 2_000);
+        assert_eq!(dirty.suggestion_allowed_cues, vec!["question".to_string()]);
+        assert!(dirty.validate().is_ok());
+    }
+
+    #[test]
     fn sanitized_clamps_auto_intervals() {
         let dirty = Settings {
             summary_interval_secs: 1,
-            suggestion_interval_secs: 9_999,
+            suggestion_interval_secs: 1,
             ..Settings::default()
         }
         .sanitized();
         assert_eq!(dirty.summary_interval_secs, MIN_AUTO_INTERVAL_SECS);
-        assert_eq!(dirty.suggestion_interval_secs, MAX_AUTO_INTERVAL_SECS);
+        assert_eq!(dirty.suggestion_interval_secs, MIN_SUGGESTION_INTERVAL_SECS);
         assert!(dirty.validate().is_ok());
+
+        let high = Settings {
+            suggestion_interval_secs: 9_999,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(high.suggestion_interval_secs, MAX_AUTO_INTERVAL_SECS);
     }
 
     #[test]
@@ -1928,6 +2326,34 @@ mod tests {
         assert_eq!(settings.custom_assistant_modes.len(), 1);
         assert_eq!(settings.custom_assistant_modes[0].icon, "sparkle");
         assert_eq!(settings.custom_assistant_modes[0].color, "slate");
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn suggestion_scope_sanitizes_and_validates() {
+        let adaptive = Settings {
+            suggestion_scope: "adaptive".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(adaptive.clone().sanitized().suggestion_scope, "adaptive");
+        assert!(adaptive.validate().is_ok());
+
+        let invalid = Settings {
+            suggestion_scope: "nope".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(invalid.sanitized().suggestion_scope, "adaptive");
+    }
+
+    #[test]
+    fn english_checkpoint_is_sanitized_to_multilingual() {
+        // O English não é exposto; settings antigas caem no multilingual.
+        let settings = Settings {
+            suggestion_classifier_checkpoint: "english".to_string(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(settings.suggestion_classifier_checkpoint, "multilingual");
         assert!(settings.validate().is_ok());
     }
 

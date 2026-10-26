@@ -135,7 +135,9 @@ fn run_capture(
         match simple.read(&mut buffer) {
             Ok(()) => {
                 let samples: Vec<f32> = buffer
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 32768.0)
                     .collect();
                 if !samples.is_empty() {

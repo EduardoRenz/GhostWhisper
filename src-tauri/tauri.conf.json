@@ -199,6 +199,9 @@
           "usr/lib/libvulkan.so.1": "resources/libvulkan.so.1"
         }
       }
+    },
+    "resources": {
+      "resources/laya/multilingual": "laya/multilingual"
     }
   }
 }

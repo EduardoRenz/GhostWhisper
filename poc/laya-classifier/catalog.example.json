@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "schema": 1,
+      "model_id": "laya-multilingual",
+      "version": "0.1.0",
+      "checkpoint": "multilingual",
+      "layout": "onnx",
+      "label": "Laya Multilingual",
+      "size_bytes": 1200000000,
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "path": "model.onnx",
+          "url": "https://downloads.example.invalid/laya/laya-multilingual-0.1.0/model.onnx",
+          "size_bytes": 640000000,
+          "sha256": "REPLACE_WITH_THE_REAL_SHA256_OF_model.onnx"
+        }
+      ],
+      "calibration": { "threshold": 0.7, "ece": 0.31, "notes": "não calibrado" },
+      "metrics": { "accuracy": 0.82, "false_positive_rate": 0.11, "p50_ms": 120, "p95_ms": 380 },
+      "created_at": "2026-10-26"
+    }
+  ]
+}

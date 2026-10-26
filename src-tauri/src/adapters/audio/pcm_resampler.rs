@@ -122,7 +122,7 @@ impl Resampler {
         let mut extended = Vec::with_capacity(half + mono.len() + half);
         extended.extend_from_slice(&self.history);
         extended.extend_from_slice(mono);
-        extended.extend(std::iter::repeat(0.0).take(half));
+        extended.extend(std::iter::repeat_n(0.0, half));
 
         let mut out = Vec::with_capacity(mono.len());
         for index in 0..mono.len() {
@@ -141,7 +141,7 @@ impl Resampler {
         combined.extend_from_slice(mono);
         let mut next_history: Vec<f32> = Vec::with_capacity(half);
         if combined.len() < half {
-            next_history.extend(std::iter::repeat(0.0).take(half - combined.len()));
+            next_history.extend(std::iter::repeat_n(0.0, half - combined.len()));
         }
         let start = combined.len().saturating_sub(half);
         next_history.extend_from_slice(&combined[start..]);

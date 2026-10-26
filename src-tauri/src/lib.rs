@@ -134,6 +134,15 @@ pub fn run() {
             ipc::suggestion_commands::suggestion_manual_context,
             ipc::suggestion_commands::suggestion_clear_manual_context,
             ipc::suggestion_commands::suggestion_last,
+            ipc::suggestion_commands::suggestion_classification_last,
+            ipc::suggestion_commands::suggestion_classify_now,
+            ipc::model_commands::classifier_backend_status,
+            ipc::model_commands::classifier_model_catalog,
+            ipc::model_commands::classifier_model_installed,
+            ipc::model_commands::classifier_model_active,
+            ipc::model_commands::classifier_model_install,
+            ipc::model_commands::classifier_model_activate,
+            ipc::model_commands::classifier_model_remove,
             ipc::suggestion_commands::llm_insight,
             ipc::summary_commands::summary_get,
             ipc::summary_commands::summary_generate,
@@ -247,6 +256,22 @@ fn write_gpu_marker(data_dir: &std::path::Path, model: &str) {
     if let Err(error) = std::fs::write(data_dir.join(GPU_MARKER_FILE), payload.to_string()) {
         tracing::warn!("não foi possível gravar a marca de GPU: {error}");
     }
+}
+
+/// Modelo Laya empacotado nos resources (AppImage/deb), se existir.
+#[cfg(feature = "laya")]
+///
+/// O mapa `bundle.resources` copia `resources/laya/multilingual` para
+/// `<resource_dir>/laya/multilingual`; é o último fallback depois do override
+/// de dev e da versão ativa do model manager.
+fn bundled_laya_model(app: &tauri::App) -> Option<PathBuf> {
+    let directory = app
+        .path()
+        .resource_dir()
+        .ok()?
+        .join("laya")
+        .join("multilingual");
+    directory.join("model.onnx").is_file().then_some(directory)
 }
 
 /// Composition root: monta adaptadores concretos e injeta nas portas.
@@ -769,6 +794,83 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         .with_recording(recording_lifecycle),
     );
 
+    // Model manager do classificador (BR-099): o artefato ONNX vive em
+    // `app_data/models/laya` e é baixado sob ação explícita.
+    let classifier_models: Arc<dyn ports::classifier_model_manager::ClassifierModelManager> =
+        Arc::new(
+            adapters::models::local_classifier_model_manager::LocalClassifierModelManager::new(
+                data_dir.join("models").join("laya"),
+                Arc::clone(&settings),
+                Arc::new(
+                    adapters::models::local_classifier_model_manager::UreqClassifierModelSource,
+                ),
+                Arc::clone(&publisher),
+                Arc::clone(&clock),
+            ),
+        );
+
+    // Gate por blocos (BR-093/BR-094). O seletor aplica o backend salvo nas
+    // settings sem reiniciar: `heuristic` hoje; `laya` quando o engine ONNX
+    // estiver disponível (task 06 — bloqueada no artefato/crate publicado).
+    let heuristic_classifier: Arc<dyn ports::suggestion_cue_classifier::SuggestionCueClassifier> =
+        Arc::new(
+            adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier::default(),
+        );
+    #[cfg(feature = "laya")]
+    let laya_classifier: Option<
+        Arc<dyn ports::suggestion_cue_classifier::SuggestionCueClassifier>,
+    > = {
+        use adapters::ai::laya_onnx_predictor::OnnxLayaPredictor;
+        use adapters::ai::laya_suggestion_cue_classifier::{
+            resolve_model_dir, LayaClassifierConfig, LayaSuggestionCueClassifier,
+        };
+
+        let predictor = resolve_model_dir(
+            &current_settings.suggestion_classifier_model_path,
+            classifier_models.active_path(),
+            bundled_laya_model(app),
+        )
+        .ok()
+        .and_then(|directory| match OnnxLayaPredictor::new(directory) {
+            Ok(predictor) => Some(predictor),
+            Err(error) => {
+                tracing::warn!("backend Laya indisponível: {error}");
+                None
+            }
+        });
+
+        predictor.map(|predictor| {
+            let classifier = Arc::new(LayaSuggestionCueClassifier::new(
+                Box::new(predictor),
+                LayaClassifierConfig::from_settings(&current_settings),
+            ));
+            let warm = Arc::clone(&classifier);
+            std::thread::spawn(move || warm.warm_up());
+            classifier as Arc<dyn ports::suggestion_cue_classifier::SuggestionCueClassifier>
+        })
+    };
+    #[cfg(not(feature = "laya"))]
+    let laya_classifier: Option<
+        Arc<dyn ports::suggestion_cue_classifier::SuggestionCueClassifier>,
+    > = None;
+    let classifier: Arc<dyn ports::suggestion_cue_classifier::SuggestionCueClassifier> = Arc::new(
+        adapters::ai::settings_suggestion_cue_classifier::SettingsSuggestionCueClassifier::new(
+            Arc::clone(&settings),
+            heuristic_classifier,
+            laya_classifier,
+        ),
+    );
+    let suggestion_gate: Arc<dyn ports::suggestion_gate::SuggestionGate> = Arc::new(
+        application::suggestion_gate_service::SuggestionGateService::new(
+            classifier,
+            Arc::clone(&transcriptions),
+            Arc::clone(&sessions),
+            Arc::clone(&clock),
+            Arc::clone(&publisher),
+            application::suggestion_gate_service::config_from_settings(&current_settings),
+        ),
+    );
+
     Ok(state::AppState::new(
         overlay,
         click_through,
@@ -794,6 +896,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         translator,
         summary,
         suggestions,
+        suggestion_gate,
+        classifier_models,
         manual_context,
         publisher,
         shortcuts,
@@ -926,7 +1030,9 @@ const SUGGESTION_MIN_INTERVAL_MS: i64 = 1_000;
 /// à UI pelo evento `suggestion`.
 fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
     use application::suggestion_scheduler::{should_trigger, SchedulerTick};
-    use ports::suggestion_generator::SuggestionRequest;
+    use domain::suggestion_gate::GateDecision;
+    use ports::event_publisher::{SuggestionClassificationEvent, SuggestionClassifierState};
+    use ports::suggestion_generator::{SuggestionRequest, SuggestionTrigger};
 
     std::thread::spawn(move || {
         let mut cursor: Option<i64> = None;
@@ -942,6 +1048,10 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
             let Ok(settings) = state.settings.load() else {
                 continue;
             };
+            // Salvar sensibilidade/cues/cooldown passa a valer sem reiniciar.
+            state.suggestion_gate.reconfigure(
+                application::suggestion_gate_service::config_from_settings(&settings),
+            );
             let interval_ms = (settings.suggestion_interval_secs as i64)
                 .saturating_mul(1_000)
                 .max(SUGGESTION_MIN_INTERVAL_MS);
@@ -961,10 +1071,94 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
             if session_id != current_session {
                 // Sessao nova: o cursor recomeca (a primeira sugestao nao
                 // compara com a fala da sessao anterior) e o ciclo tambem.
+                if let Some(previous) = current_session.as_deref() {
+                    state.suggestion_gate.reset(previous);
+                }
                 current_session = session_id.clone();
                 cursor = None;
                 cycle_started = std::time::Instant::now();
             }
+
+            // Modo classificador (BR-092/BR-094): a decisão é do gate, não do
+            // timer. Mantém a janela aberta como o modo automático.
+            if settings.suggestion_mode == "classifier"
+                && settings.suggestion_auto_refresh
+                && window_open
+            {
+                let Some(session_id) = session_id.clone() else {
+                    continue;
+                };
+                let now_ms = state.clock.now_ms();
+                let fallback_auto = settings.suggestion_classifier_fallback == "auto";
+
+                // Sonda aberta → bloco fechado → fallback (application).
+                match application::classifier_tick::classify_once(
+                    state.suggestion_gate.as_ref(),
+                    &session_id,
+                    fallback_auto,
+                ) {
+                    application::classifier_tick::ClassifierTick::Classified(outcome) => {
+                        let decision = state
+                            .suggestion_gate
+                            .should_generate(&outcome, now_ms, false);
+                        if decision != GateDecision::Generate {
+                            continue;
+                        }
+                        tracing::info!(
+                            "sugestão do classificador: cue={} confiança={:.2} bloco={}",
+                            outcome.cue.as_str(),
+                            outcome.confidence,
+                            outcome.block_id
+                        );
+
+                        state.publisher.emit_suggestion_classification(
+                            &SuggestionClassificationEvent {
+                                session_id: session_id.clone(),
+                                state: SuggestionClassifierState::Ready,
+                                outcome: Some(outcome.clone()),
+                                error: None,
+                                generating: true,
+                            },
+                        );
+
+                        // O gate já decidiu; `force` evita que o serviço
+                        // reaproveite o cache porque o bloco termina no mesmo
+                        // instante do cursor (`recent.until_ms <= since`).
+                        let request = SuggestionRequest::ephemeral(
+                            Some(session_id.clone()),
+                            settings.assistant_mode_id.clone(),
+                        )
+                        .with_since_ms(Some(outcome.block_end_ms))
+                        .with_force(true)
+                        .with_fast_first(true)
+                        .with_cue_focus(Some(outcome.cue), outcome.focus.clone())
+                        .with_trigger(SuggestionTrigger::Classifier);
+                        if let Err(error) = state.suggestions.generate(request) {
+                            tracing::debug!("sugestão do classificador indisponível: {error}");
+                        }
+                        state.suggestion_gate.mark_generated(
+                            &session_id,
+                            &outcome.block_id,
+                            now_ms,
+                        );
+                        state.publisher.emit_suggestion_classification(
+                            &SuggestionClassificationEvent {
+                                session_id,
+                                state: SuggestionClassifierState::Ready,
+                                outcome: Some(outcome),
+                                error: None,
+                                generating: false,
+                            },
+                        );
+                        continue;
+                    }
+                    application::classifier_tick::ClassifierTick::Skip => continue,
+                    application::classifier_tick::ClassifierTick::FallbackAuto => {
+                        // Erro do classificador: cai no caminho automático.
+                    }
+                }
+            }
+
             let Some(session_id) = session_id else {
                 // Sem sessao: publica a cadencia ociosa (a UI mostra "sem escuta").
                 publish_cadence(

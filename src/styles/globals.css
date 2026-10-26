@@ -3755,6 +3755,469 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+/* Model manager do classificador (BR-099). */
+.classifier-model {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1);
+  padding: var(--oh-space-1-5);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.classifier-model__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--oh-space-1);
+}
+
+.classifier-model__title {
+  font-size: var(--oh-label-sm-size);
+  font-weight: 600;
+  color: var(--oh-text-strong);
+}
+
+.classifier-model__hint,
+.classifier-model__meta {
+  color: var(--oh-text-muted);
+  font-size: var(--oh-label-sm-size);
+}
+
+.classifier-model__hint--warn {
+  color: var(--oh-danger, #ff6b6b);
+}
+
+.classifier-model__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--oh-space-1-5);
+  flex-wrap: wrap;
+  padding: var(--oh-space-1);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-sm, 6px);
+}
+
+.classifier-model__card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 10rem;
+}
+
+.classifier-model__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1);
+  flex: 1 1 14rem;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-text-secondary);
+}
+
+.classifier-model__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+}
+
+.classifier-model__error {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  flex-wrap: wrap;
+  color: var(--oh-danger, #ff6b6b);
+  font-size: var(--oh-label-sm-size);
+}
+
+.classifier-model__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: var(--oh-label-sm-size);
+  color: var(--oh-text-secondary);
+}
+
+.classifier-model__bar {
+  height: 4px;
+  border-radius: var(--oh-radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.classifier-model__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--oh-accent);
+  transition: width 0.2s linear;
+}
+
+.classifier-model__versions ul {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.classifier-model__versions li {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  font-size: var(--oh-label-sm-size);
+}
+
+.classifier-model__version {
+  color: var(--oh-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.classifier-model__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--oh-accent);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  cursor: pointer;
+}
+
+.classifier-model__link:disabled {
+  color: var(--oh-text-muted);
+  cursor: default;
+}
+
+/* Bloco de ativação de sugestões em Fontes de IA & Modelos (BR-097). */
+.suggestion-activation {
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-lg);
+  padding: var(--oh-space-3);
+  background:
+    radial-gradient(circle at 0 0, rgba(0, 242, 254, 0.08), transparent 45%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.suggestion-activation__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--oh-space-2);
+  margin-bottom: var(--oh-space-2);
+}
+
+.suggestion-activation__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--oh-space-1-5);
+}
+
+.suggestion-activation__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--oh-radius-md);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  background: rgba(0, 242, 254, 0.1);
+  color: var(--oh-accent);
+}
+
+.suggestion-activation__subtitle {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  margin-top: 0.2rem;
+  color: var(--oh-text-muted);
+  font-size: var(--oh-label-sm-size);
+}
+
+.suggestion-activation__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--oh-space-2);
+}
+
+.suggestion-activation__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1-5);
+  padding: var(--oh-space-2);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+}
+
+.suggestion-activation__card--active {
+  border-color: var(--oh-accent);
+  box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.25);
+}
+
+.suggestion-activation__card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--oh-space-1);
+}
+
+.suggestion-activation__card-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.suggestion-activation__card-header p {
+  margin: 0.15rem 0 0;
+  color: var(--oh-text-muted);
+  font-size: var(--oh-label-sm-size);
+}
+
+.suggestion-activation__description {
+  margin: 0;
+  color: var(--oh-text-secondary);
+  font-size: var(--oh-label-sm-size);
+  line-height: 1.5;
+}
+
+.suggestion-activation__status {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  color: var(--oh-text-muted);
+  font-size: var(--oh-label-sm-size);
+}
+
+.suggestion-activation__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--oh-accent);
+  flex: 0 0 auto;
+}
+
+.suggestion-activation__dot--off {
+  background: var(--oh-text-muted);
+}
+
+.suggestion-activation__segmented {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.suggestion-activation__segmented button {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: transparent;
+  color: var(--oh-text-secondary);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  cursor: pointer;
+}
+
+.suggestion-activation__segmented button.is-active {
+  border-color: var(--oh-accent);
+  background: rgba(0, 242, 254, 0.12);
+  color: var(--oh-text-strong);
+}
+
+.suggestion-activation__advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--oh-accent);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  cursor: pointer;
+}
+
+.suggestion-activation__advanced {
+  margin-top: var(--oh-space-2);
+  padding-top: var(--oh-space-2);
+  border-top: 1px solid var(--oh-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-2);
+}
+
+.suggestion-activation__cues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--oh-space-1);
+}
+
+.suggestion-activation__test {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1-5);
+  flex-wrap: wrap;
+}
+
+.suggestion-activation__test-result {
+  color: var(--oh-text-secondary);
+  font-size: var(--oh-label-sm-size);
+}
+
+.suggestion-activation__test-result--error {
+  color: var(--oh-danger, #ff6b6b);
+}
+
+/* Faixa persistente da última classificação (BR-095). */
+.classification-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1);
+  margin: 0 var(--oh-space-2) var(--oh-space-1);
+  padding: var(--oh-space-1) var(--oh-space-1-5);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: var(--oh-label-sm-size);
+}
+
+.classification-strip--muted,
+.classification-strip--empty,
+.classification-strip--error {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--oh-space-1);
+  flex-wrap: wrap;
+}
+
+.classification-strip__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.classification-strip__title {
+  font-weight: 600;
+  color: var(--oh-text-strong);
+  white-space: nowrap;
+}
+
+.classification-strip__hint {
+  color: var(--oh-text-muted);
+  flex: 1;
+  min-width: 12rem;
+}
+
+.classification-strip__decision,
+.classification-strip__time,
+.classification-strip__confidence {
+  color: var(--oh-text-secondary);
+  white-space: nowrap;
+}
+
+.classification-strip__confidence {
+  font-variant-numeric: tabular-nums;
+}
+
+.classification-strip__cue {
+  flex: 0 0 auto;
+}
+
+.classification-strip__chevron--open {
+  transform: rotate(180deg);
+}
+
+.classification-strip__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oh-space-1);
+  padding-top: var(--oh-space-1);
+  border-top: 1px solid var(--oh-border);
+}
+
+.classification-strip__row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--oh-space-1);
+}
+
+.classification-strip__row > span {
+  color: var(--oh-text-muted);
+}
+
+.classification-strip__row p {
+  margin: 0;
+  color: var(--oh-text);
+  overflow-wrap: anywhere;
+}
+
+.classification-strip__actions {
+  display: flex;
+  gap: var(--oh-space-1);
+  flex-wrap: wrap;
+}
+
+.classification-strip__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--oh-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.classification-strip__link:disabled {
+  color: var(--oh-text-muted);
+  cursor: default;
+}
+
+/* Controle do modo classificador (sem cronômetro). */
+.classifier-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oh-space-1);
+  max-width: 22rem;
+  padding: var(--oh-space-0-5) var(--oh-space-1);
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--oh-text);
+  font: inherit;
+  font-size: var(--oh-label-sm-size);
+  line-height: var(--oh-label-sm-line);
+  cursor: pointer;
+}
+
+.classifier-control:hover {
+  border-color: var(--oh-border-strong);
+  color: var(--oh-text-strong);
+}
+
+.classifier-control--paused,
+.classifier-control--error {
+  border-color: var(--oh-border);
+}
+
+.classifier-control__label {
+  white-space: nowrap;
+}
+
+.classifier-control__state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* "Sugerir agora": contornado, **sem glow** (pedido explícito). */
 .suggest-now {
   display: inline-flex;
