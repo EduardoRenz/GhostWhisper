@@ -432,3 +432,30 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
   inutilizável é descartada em vez de adivinhada.
 - **Migração:** revisão de catálogo 5 troca o parágrafo textualmente; idempotente.
 - **Testes:** 678 no `cargo test --lib`; `clippy` limpo.
+
+## 2026-10-25 — Resumo do Padrão livre; Reunião e LeetCode com contrato próprio (BR-091, rev 6)
+
+- **IDs:** BR-091 · **Refs:** [`tasks/20-task.md`](tasks/20-task.md)
+
+- **Sintoma:** o resumo do agente **Padrão** saía sempre com a pauta de uma
+  reunião de empresa (Overview, Decisões confirmadas, Metas, Métricas, Action
+  Items, Questões em aberto), mesmo quando a conversa era uma aula, um
+  atendimento, um brainstorm ou um papo. O LeetCode, que é código, também usava
+  o contrato de reunião.
+- **Mudança:** o contrato fixo vira o do agente **Reunião**
+  (`SUMMARY_SYSTEM_PROMPT` → `MEETING_SUMMARY_PROMPT`, texto preservado); o
+  **Padrão** ganha `DEFAULT_SUMMARY_PROMPT`, **livre e adaptativo** — detecta o
+  tipo de conversa, abre com um parágrafo curto e escolhe 2–4 títulos `##`
+  conforme o conteúdo, sem seção vazia. Os invariantes (idioma, não inventar,
+  preservar números, distinguir decisão × proposta × hipótese × pergunta em
+  aberto) continuam. **LeetCode** passa ao debrief técnico
+  (`TECHNICAL_SUMMARY_PROMPT`), como a Entrevista Técnica.
+  `effective_summary_prompt` vazio herda o contrato do **Padrão** (BR-079).
+- **Migração:** revisão de catálogo **6** troca o `summary_prompt` do `leetcode`
+  semeado só quando ainda é o contrato de reunião; edição/vazio preservado e
+  Reunião intacta. O Padrão não precisa de migração (vive no core). Resumos já
+  gerados mantêm o layout antigo até a regeneração manual (BR-076/BR-084).
+  `SUMMARY_UPDATE_SYSTEM_PROMPT` não muda: é compartilhado com RH/Técnica e só
+  preserva a organização existente.
+- **Testes:** 701 no `cargo test --lib`; `clippy` e `fmt --check` limpos; 485 no
+  `pnpm test`.

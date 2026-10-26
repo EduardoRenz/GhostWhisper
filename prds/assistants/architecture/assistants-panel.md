@@ -144,9 +144,11 @@ pub fn resolve_mode(id: &str, custom: &[AssistantMode]) -> Option<AssistantMode>
 ```
 
 Os **quatro agentes de fábrica** e o **agente protegido** nascem com um
-`summary_prompt` próprio e não vazio: o geral (`SUMMARY_SYSTEM_PROMPT`) para o
-Padrão, Reunião e LeetCode, o debrief de RH (`HR_SUMMARY_PROMPT`) para o RH e o
-debrief técnico (`TECHNICAL_SUMMARY_PROMPT`) para a Entrevista Técnica — para
+`summary_prompt` próprio e não vazio — o contrato da **cena** de cada um
+(BR-091): o livre/adaptativo (`DEFAULT_SUMMARY_PROMPT`) para o **Padrão**, a
+pauta de reunião (`MEETING_SUMMARY_PROMPT`) para **Reunião**, o debrief de RH
+(`HR_SUMMARY_PROMPT`) para o **RH** e o debrief técnico
+(`TECHNICAL_SUMMARY_PROMPT`) para **Entrevista Técnica** e **LeetCode** — para
 que o card mostre **dado real** e não texto de exemplo. Todos são lidos com o
 `SUMMARY_TRANSCRIPT_CONTRACT` injetado antes (BR-090).
 
@@ -160,11 +162,13 @@ pergunta do usuário é a prioridade).
 **Contrato comum de leitura do resumo (BR-090):** o
 `SUMMARY_TRANSCRIPT_CONTRACT` é o preâmbulo que o `SummaryService` injeta na
 primeira geração, na regeneração manual **e** na atualização incremental — o
-mesmo padrão das sugestões. Os contratos de resumo por agente (geral/Padrão,
-RH, Entrevista Técnica) ficam só com o que é específico da cena; as regras de
-ME/THEY, erro de ASR e normalização estão **só** no contrato injetado (a
-revisão de catálogo 3 tirou das sementes os blocos "Source boundary" e
-"Transcript normalization" e os bullets comuns do RH).
+mesmo padrão das sugestões. Os contratos de resumo por agente (Padrão, Reunião,
+RH, Entrevista Técnica e LeetCode) ficam só com o que é específico da cena; as
+regras de ME/THEY, erro de ASR e normalização estão **só** no contrato injetado
+(a revisão de catálogo 3 tirou das sementes os blocos "Source boundary" e
+"Transcript normalization" e os bullets comuns do RH). O contrato do **Padrão**
+é livre e adaptativo (BR-091): sem pauta fixa, escolhe 2–4 títulos conforme o
+conteúdo e omite seção vazia.
 
 **Fallback de prompt vazio (BR-079):** `effective_suggestion_prompt`,
 `effective_system_prompt` e `effective_summary_prompt` devolvem o valor do
@@ -265,6 +269,10 @@ Regras:
   - revisão 5 (**BR-090**): reforça a autoria — "Open questions" são perguntas
     de THEY, nunca de ME; tag decide, duvidosa resolve por conteúdo, linha
     inutilizável é descartada;
+  - revisão 6 (**BR-091**): o `leetcode` já semeado sai do contrato de reunião
+    para o debrief técnico (`TECHNICAL_SUMMARY_PROMPT`) — somente quando ainda
+    for o contrato de reunião; edição e vazio do usuário são preservados e a
+    Reunião não é tocada;
   - depois da revisão, edições e exclusões do usuário são respeitadas (um
     `hr_interview` excluído não volta).
 - Roda também em **instalação nova**: `Settings::default()` nasce vazio e com
@@ -301,8 +309,8 @@ O `SummaryService` carrega as settings, resolve o agente **ativo**
 
 - **primeira geração / regeneração manual** (`current = None`): system prompt =
   `SUMMARY_TRANSCRIPT_CONTRACT` + `summary_prompt` do agente (BR-090); o
-  `summary_prompt` vazio depois do `trim` → `SUMMARY_SYSTEM_PROMPT` do Padrão
-  (BR-079);
+  `summary_prompt` vazio depois do `trim` → `DEFAULT_SUMMARY_PROMPT` do Padrão
+  (BR-079/BR-091);
 - **atualização incremental** (`Some(previous)`): system prompt =
   `SUMMARY_TRANSCRIPT_CONTRACT` + `SUMMARY_UPDATE_SYSTEM_PROMPT` (BR-090); o
   resumo corrente continua sendo a base da
@@ -310,6 +318,14 @@ O `SummaryService` carrega as settings, resolve o agente **ativo**
   mencionado") são preservadas;
 - trocar o agente no meio da sessão não reestrutura o resumo já gerado; a nova
   estrutura vale na próxima regeneração manual ou sessão.
+
+O agente **Padrão** tem `summary_prompt = DEFAULT_SUMMARY_PROMPT` (BR-091): o
+contrato **livre e adaptativo** — detecta o tipo de conversa e escolhe 2–4
+títulos (`##`) conforme o conteúdo, sem pauta fixa; parágrafo de abertura curto,
+nenhuma seção vazia e nenhum marcador de "não mencionado". Os invariantes
+(idioma, não inventar, preservar números, distinguir decisão de proposta)
+continuam valendo. O agente **Reunião** mantém a pauta de reunião
+(`MEETING_SUMMARY_PROMPT`).
 
 O agente **Entrevista com RH** tem `summary_prompt = HR_SUMMARY_PROMPT`, com as
 seções **Overall summary**, **What I answered**, **What the recruiter said
@@ -326,13 +342,16 @@ presented**, **Technologies and strategies mentioned** e **Overall assessment
 of my performance** (opinião do assistente, rotulada como sua, nunca como fala
 do entrevistador), com o sub-bloco **What to detail better** para respostas que
 existiram mas podiam ser mais afiadas. Seções sem informação
-recebem "Not discussed so far in the session." (traduzido).
+recebem "Not discussed so far in the session." (traduzido). O **LeetCode** usa o
+mesmo debrief técnico (BR-091).
 
 A **revisão de catálogo 2** (BR-084) atualiza o `summary_prompt` do RH já
 semeado **somente** quando ele ainda é o contrato geral antigo; prompt editado
 ou vazio é preservado, e um RH excluído não volta. A **revisão de catálogo 3**
 (BR-090) limpa os blocos comuns das sementes de resumo e dá o debrief próprio
-à Entrevista Técnica (mesma regra de preservação).
+à Entrevista Técnica (mesma regra de preservação). A **revisão de catálogo 6**
+(BR-091) dá ao LeetCode o debrief técnico quando ele ainda está com o contrato
+de reunião; Reunião não é tocada.
 
 ### 3.7 Sugestão: passes rápido e completo em paralelo (BR-088)
 

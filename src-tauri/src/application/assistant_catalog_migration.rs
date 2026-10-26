@@ -11,13 +11,14 @@
 //! Também remove, dos agentes de fábrica já semeados, as linhas que passaram a
 //! ser **gerais** no `TRANSCRIPT_CONTRACT` (BR-082) — preservando o resto do
 //! texto e as edições do usuário — e aplica as **revisões do catálogo**
-//! (BR-083): fusão de agentes, remoção e novos agentes, uma vez por revisão.
+//! (BR-083/BR-090/BR-091): fusão de agentes, remoção, novos agentes e o
+//! contrato de resumo próprio de cada cena, uma vez por revisão.
 
 use std::sync::Arc;
 
 use crate::application::assistant_catalog::ASSISTANT_CATALOG_REVISION;
 use crate::application::prompts::assistant::factory_modes;
-use crate::application::prompts::summary::SUMMARY_SYSTEM_PROMPT;
+use crate::application::prompts::summary::MEETING_SUMMARY_PROMPT;
 use crate::domain::settings::Settings;
 use crate::error::Result;
 use crate::ports::settings_store::SettingsStore;
@@ -144,6 +145,9 @@ fn upgrade_catalog(settings: &mut Settings) -> bool {
     if from < 5 {
         upgrade_catalog_to_revision_5(settings);
     }
+    if from < 6 {
+        upgrade_catalog_to_revision_6(settings);
+    }
 
     settings.assistant_catalog_revision = ASSISTANT_CATALOG_REVISION;
     true
@@ -232,7 +236,8 @@ fn upgrade_catalog_to_revision_2(settings: &mut Settings) {
         .expect("hr_interview no catálogo de fábrica");
 
     for mode in &mut settings.custom_assistant_modes {
-        if mode.id == "hr_interview" && mode.summary_prompt.trim() == SUMMARY_SYSTEM_PROMPT.trim() {
+        if mode.id == "hr_interview" && mode.summary_prompt.trim() == MEETING_SUMMARY_PROMPT.trim()
+        {
             mode.summary_prompt = hr_prompt.clone();
         }
     }
@@ -262,7 +267,7 @@ fn upgrade_catalog_to_revision_3(settings: &mut Settings) {
         .find(|mode| mode.id == "technical_interview")
         .map(|mode| mode.summary_prompt.clone())
         .expect("technical_interview no catálogo de fábrica");
-    let general_prompt = SUMMARY_SYSTEM_PROMPT.trim();
+    let general_prompt = MEETING_SUMMARY_PROMPT.trim();
 
     for mode in settings
         .custom_assistant_modes
@@ -349,6 +354,26 @@ fn upgrade_catalog_to_revision_5(settings: &mut Settings) {
         );
         if refined != mode.summary_prompt {
             mode.summary_prompt = refined;
+        }
+    }
+}
+
+/// Revisão 6 (BR-091): o LeetCode deixa o contrato de **reunião** e recebe o
+/// debrief técnico que a Entrevista Técnica já usa.
+///
+/// Só troca quando o `summary_prompt` ainda é exatamente o contrato de reunião
+/// da semente antiga (o "contrato geral" de antes da BR-091); prompt editado ou
+/// vazio é preservado, e Reunião continua com a pauta dela.
+fn upgrade_catalog_to_revision_6(settings: &mut Settings) {
+    let technical_prompt = factory_modes()
+        .into_iter()
+        .find(|mode| mode.id == "leetcode")
+        .map(|mode| mode.summary_prompt)
+        .expect("leetcode no catálogo de fábrica");
+
+    for mode in &mut settings.custom_assistant_modes {
+        if mode.id == "leetcode" && mode.summary_prompt.trim() == MEETING_SUMMARY_PROMPT.trim() {
+            mode.summary_prompt = technical_prompt.clone();
         }
     }
 }
@@ -784,7 +809,7 @@ mod tests {
     #[test]
     fn revision_2_gives_hr_its_summary_contract() {
         let mut hr = agent("hr_interview", "Entrevista com RH");
-        hr.summary_prompt = SUMMARY_SYSTEM_PROMPT.to_string();
+        hr.summary_prompt = MEETING_SUMMARY_PROMPT.to_string();
         let mut custom = agent("hr_custom", "RH custom");
         custom.summary_prompt = "Meu resumo customizado.".to_string();
 
@@ -848,7 +873,7 @@ mod tests {
         // O técnico semeado antigo usava o contrato geral; a revisão de catálogo
         // o troca pelo debrief próprio sem mexer no contexto nem no restante.
         let mut technical = agent("technical_interview", "Entrevista Técnica");
-        technical.summary_prompt = SUMMARY_SYSTEM_PROMPT.to_string();
+        technical.summary_prompt = MEETING_SUMMARY_PROMPT.to_string();
         technical.context = "Foco em backend Java.".into();
         let settings = Settings {
             custom_assistant_modes: vec![technical],
@@ -1149,6 +1174,158 @@ mod tests {
         assert_eq!(technical.summary_prompt, "Meu resumo técnico.");
     }
 
+    #[test]
+    fn revision_6_gives_leetcode_the_technical_debrief() {
+        // BR-091: o LeetCode semeado usava o contrato de reunião; passa a usar
+        // o debrief técnico, como a Entrevista Técnica.
+        let mut leetcode = agent("leetcode", "LeetCode");
+        leetcode.summary_prompt = MEETING_SUMMARY_PROMPT.to_string();
+        let settings = Settings {
+            custom_assistant_modes: vec![leetcode],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 5,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+
+        let outcome = AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("revisão 6");
+        assert!(outcome.upgraded);
+
+        let saved = store.load().expect("lê");
+        let leetcode = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "leetcode")
+            .expect("LeetCode");
+        assert!(leetcode.summary_prompt.contains("Problem presented"));
+        assert!(leetcode
+            .summary_prompt
+            .contains("Overall assessment of my performance"));
+        assert!(!leetcode.summary_prompt.contains("Confirmed Decisions"));
+        assert_eq!(saved.assistant_catalog_revision, ASSISTANT_CATALOG_REVISION);
+    }
+
+    #[test]
+    fn revision_6_upgrades_an_old_install_from_revision_zero() {
+        // Caminho rev0 → 6: a revisão 3 limpa o contrato geral e a 6 o troca
+        // pelo debrief técnico no LeetCode.
+        let mut leetcode = agent("leetcode", "LeetCode");
+        leetcode.summary_prompt = legacy_general_summary_prompt();
+        let mut meeting = agent("meeting", "Reunião");
+        meeting.summary_prompt = legacy_general_summary_prompt();
+        let settings = Settings {
+            custom_assistant_modes: vec![leetcode, meeting],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 0,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+
+        AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("rev0 → 6");
+
+        let saved = store.load().expect("lê");
+        let mode = |id: &str| {
+            saved
+                .custom_assistant_modes
+                .iter()
+                .find(|mode| mode.id == id)
+                .expect(id)
+                .clone()
+        };
+        assert!(mode("leetcode")
+            .summary_prompt
+            .contains("Problem presented"));
+        // Reunião mantém a pauta (sem os blocos comuns da revisão 3).
+        let meeting = mode("meeting");
+        assert!(meeting.summary_prompt.contains("Confirmed Decisions"));
+        assert!(!meeting.summary_prompt.contains("## Source boundary"));
+    }
+
+    #[test]
+    fn revision_6_preserves_an_edited_leetcode_summary_prompt() {
+        let mut leetcode = agent("leetcode", "LeetCode");
+        leetcode.summary_prompt = "Meu resumo de código.".to_string();
+        let settings = Settings {
+            custom_assistant_modes: vec![leetcode],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 5,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+
+        AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("revisão 6");
+
+        let saved = store.load().expect("lê");
+        let leetcode = saved
+            .custom_assistant_modes
+            .iter()
+            .find(|mode| mode.id == "leetcode")
+            .expect("LeetCode");
+        assert_eq!(leetcode.summary_prompt, "Meu resumo de código.");
+    }
+
+    #[test]
+    fn revision_6_leaves_the_meeting_and_custom_agents_untouched() {
+        let mut meeting = agent("meeting", "Reunião");
+        meeting.summary_prompt = MEETING_SUMMARY_PROMPT.to_string();
+        let mut custom = agent("custom-vendas", "Vendas");
+        custom.summary_prompt = MEETING_SUMMARY_PROMPT.to_string();
+        let settings = Settings {
+            custom_assistant_modes: vec![meeting, custom],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 5,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+
+        AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("revisão 6");
+
+        let saved = store.load().expect("lê");
+        for id in ["meeting", "custom-vendas"] {
+            let mode = saved
+                .custom_assistant_modes
+                .iter()
+                .find(|mode| mode.id == id)
+                .expect(id);
+            assert_eq!(mode.summary_prompt, MEETING_SUMMARY_PROMPT);
+        }
+    }
+
+    #[test]
+    fn revision_6_is_idempotent() {
+        let mut leetcode = agent("leetcode", "LeetCode");
+        leetcode.summary_prompt = MEETING_SUMMARY_PROMPT.to_string();
+        let settings = Settings {
+            custom_assistant_modes: vec![leetcode],
+            assistant_modes_seeded: true,
+            assistant_catalog_revision: 5,
+            ..Settings::default()
+        };
+        let store = store_with(settings);
+
+        AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("primeira");
+        let after_first = store.load().expect("lê");
+        let outcome = AssistantCatalogMigration::new(store.clone())
+            .seed()
+            .expect("segunda");
+        assert!(!outcome.upgraded);
+        let after_second = store.load().expect("lê");
+        assert_eq!(
+            after_second.custom_assistant_modes[0].summary_prompt,
+            after_first.custom_assistant_modes[0].summary_prompt
+        );
+    }
+
     /// `summary_prompt` do agente de fábrica por id (auxiliar dos testes).
     fn factory_mode_summary_prompt(id: &str) -> String {
         factory_modes()
@@ -1161,7 +1338,7 @@ mod tests {
     /// Contrato geral de resumo **antes** da revisão 3 (com os blocos comuns),
     /// reconstruído a partir do atual para casar exatamente com a semente antiga.
     fn legacy_general_summary_prompt() -> String {
-        SUMMARY_SYSTEM_PROMPT
+        MEETING_SUMMARY_PROMPT
             .replace(
                 NEW_SUMMARY_INTRO,
                 &format!("{LEGACY_SUMMARY_INTRO}{LEGACY_SUMMARY_SOURCE_BOUNDARY}"),

@@ -13,7 +13,9 @@ use crate::domain::assistant::{
 use crate::ports::manual_suggestion_context::ManualSuggestionContext;
 
 use super::output_language_rule;
-use super::summary::{HR_SUMMARY_PROMPT, SUMMARY_SYSTEM_PROMPT, TECHNICAL_SUMMARY_PROMPT};
+use super::summary::{
+    DEFAULT_SUMMARY_PROMPT, HR_SUMMARY_PROMPT, MEETING_SUMMARY_PROMPT, TECHNICAL_SUMMARY_PROMPT,
+};
 
 /// Contrato de escrita do agente de reunião.
 pub const MEETING_SYSTEM_PROMPT: &str = r#"You are the meeting copilot. Treat participant speech as the source of truth for claims about what was said, decided, assigned, or defined. Never invent facts, decisions, owners, or deadlines. For general questions, answer normally and clearly distinguish your explanation from participant statements. Match the user's language and preserve explicitly stated names, numbers, dates, decisions, and technical terms."#;
@@ -250,7 +252,7 @@ pub fn default_mode() -> AssistantMode {
         category: "general".to_string(),
         system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
         suggestion_prompt: DEFAULT_SUGGESTION_PROMPT.to_string(),
-        summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
+        summary_prompt: DEFAULT_SUMMARY_PROMPT.to_string(),
         context: String::new(),
         icon: "sparkle".to_string(),
         color: "slate".to_string(),
@@ -262,6 +264,9 @@ pub fn default_mode() -> AssistantMode {
 ///
 /// A identidade (ícone + cor) é **fixa** nos agentes de fábrica (BR-037): o
 /// usuário reconhece o agente de relance no seletor, no título e no histórico.
+///
+/// Cada agente tem o **resumo da sua cena** (BR-091): reunião → pauta de
+/// reunião, LeetCode e Entrevista Técnica → debrief técnico, RH → debrief de RH.
 pub fn factory_modes() -> Vec<AssistantMode> {
     vec![
         AssistantMode {
@@ -270,7 +275,7 @@ pub fn factory_modes() -> Vec<AssistantMode> {
             category: "productivity".to_string(),
             system_prompt: MEETING_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: MEETING_SUGGESTION_PROMPT.to_string(),
-            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
+            summary_prompt: MEETING_SUMMARY_PROMPT.to_string(),
             context: String::new(),
             icon: "users".to_string(),
             color: "cyan".to_string(),
@@ -294,7 +299,7 @@ pub fn factory_modes() -> Vec<AssistantMode> {
             category: "engineering".to_string(),
             system_prompt: TECHNICAL_SYSTEM_PROMPT.to_string(),
             suggestion_prompt: LEETCODE_SUGGESTION_PROMPT.to_string(),
-            summary_prompt: SUMMARY_SYSTEM_PROMPT.to_string(),
+            summary_prompt: TECHNICAL_SUMMARY_PROMPT.to_string(),
             context: String::new(),
             icon: "code".to_string(),
             color: "emerald".to_string(),
@@ -396,9 +401,10 @@ pub fn effective_system_prompt(mode: &AssistantMode) -> &str {
 /// Prompt de resumo, com o fallback do Padrão (BR-079).
 ///
 /// Consumido pelo `SummaryService` (BR-076): o resumo usa o prompt do agente
-/// **ativo**; vazio usa o do Padrão.
+/// **ativo**; vazio usa o do Padrão — o contrato **livre e adaptativo**
+/// (BR-091), não o de Reunião.
 pub fn effective_summary_prompt(mode: &AssistantMode) -> &str {
-    effective(&mode.summary_prompt, SUMMARY_SYSTEM_PROMPT)
+    effective(&mode.summary_prompt, DEFAULT_SUMMARY_PROMPT)
 }
 
 /// Prompt de sistema da sugestão: contrato do agente + regras comuns + domínio +
@@ -799,7 +805,7 @@ mod tests {
             MEETING_SUGGESTION_PROMPT
         );
         assert_eq!(effective_system_prompt(&mode), MEETING_SYSTEM_PROMPT);
-        assert_eq!(effective_summary_prompt(&mode), SUMMARY_SYSTEM_PROMPT);
+        assert_eq!(effective_summary_prompt(&mode), MEETING_SUMMARY_PROMPT);
 
         mode.suggestion_prompt = "  ".into();
         mode.system_prompt = String::new();
@@ -809,7 +815,19 @@ mod tests {
             DEFAULT_SUGGESTION_PROMPT
         );
         assert_eq!(effective_system_prompt(&mode), DEFAULT_SYSTEM_PROMPT);
-        assert_eq!(effective_summary_prompt(&mode), SUMMARY_SYSTEM_PROMPT);
+        assert_eq!(effective_summary_prompt(&mode), DEFAULT_SUMMARY_PROMPT);
+    }
+
+    #[test]
+    fn each_agent_carries_the_summary_contract_of_its_scene() {
+        // BR-091: o Padrão é livre; Reunião tem a pauta; LeetCode e Entrevista
+        // Técnica têm o debrief técnico; o RH tem o debrief de RH.
+        let summary_of = |id: &str| factory_mode(id).expect("agente de fábrica").summary_prompt;
+        assert_eq!(default_mode().summary_prompt, DEFAULT_SUMMARY_PROMPT);
+        assert_eq!(summary_of("meeting"), MEETING_SUMMARY_PROMPT);
+        assert_eq!(summary_of("leetcode"), TECHNICAL_SUMMARY_PROMPT);
+        assert_eq!(summary_of("technical_interview"), TECHNICAL_SUMMARY_PROMPT);
+        assert_eq!(summary_of("hr_interview"), HR_SUMMARY_PROMPT);
     }
 
     #[test]

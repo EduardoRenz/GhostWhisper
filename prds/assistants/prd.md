@@ -249,7 +249,7 @@ correspondente do **agente Padrão**:
 |---|---|
 | `suggestion_prompt` | `DEFAULT_SUGGESTION_PROMPT` (contrato do Padrão) |
 | `system_prompt` | `DEFAULT_SYSTEM_PROMPT` (critérios do Padrão) |
-| `summary_prompt` | `SUMMARY_SYSTEM_PROMPT` (contrato de resumo do Padrão) |
+| `summary_prompt` | `DEFAULT_SUMMARY_PROMPT` (contrato de resumo do Padrão) |
 
 - Vale no **runtime** (`application::prompts::assistant::effective_*_prompt`),
   não só na criação: um agente antigo com campo em branco também herda.
@@ -465,8 +465,9 @@ THEY, que é do contexto ao vivo).
 | `source_id` | Fonte de IA vinculada | Modelo pronto, sem UI (BR-048) | Fonte primária |
 
 O que **não** é usado pelo resumo hoje: nenhum campo do agente. O
-`SummaryService` usa `SUMMARY_SYSTEM_PROMPT` + `SUMMARY_UPDATE_SYSTEM_PROMPT`
-(globais) e os construtores de prompt de usuário com a transcrição.
+`SummaryService` usa o `summary_prompt` do agente ativo + o
+`SUMMARY_UPDATE_SYSTEM_PROMPT` (incremental) e os construtores de prompt de
+usuário com a transcrição.
 
 ### 13.1 Como o prompt da sugestão é montado
 
@@ -510,13 +511,21 @@ repeti-lo.
    efetivo; se o id sumiu, usa o Padrão.
 2. O system prompt da **primeira geração** e da **regeneração manual** é
    `effective_summary_prompt(mode)`: o `summary_prompt` do agente ou, vazio
-   depois do `trim`, o `SUMMARY_SYSTEM_PROMPT` do Padrão (BR-079).
+   depois do `trim`, o `DEFAULT_SUMMARY_PROMPT` do Padrão (BR-079/BR-091).
 3. As **atualizações incrementais** usam `SUMMARY_UPDATE_SYSTEM_PROMPT` e o
    resumo corrente como base: preservam a estrutura e as seções já existentes,
-   inclusive as marcadas como "não mencionado".
+   inclusive as marcadas como "não mencionado". No resumo **livre** do Padrão
+   não há marcadores: a atualização preserva os títulos que o resumo já escolheu.
 4. Trocar o agente no meio da sessão **não** reestrutura o resumo já gerado; a
    nova estrutura vale na próxima regeneração manual (ou numa sessão nova).
 5. O agente **Entrevista com RH** usa `HR_SUMMARY_PROMPT` (BR-084): resumo
    geral, o que ME respondeu, o que o RH disse da empresa,
    benefícios/pretenções, outras perguntas e respostas, e uma opinião de
    entrevistador.
+6. **Entrevista Técnica** e **LeetCode** usam `TECHNICAL_SUMMARY_PROMPT`
+   (BR-090/BR-091): problema apresentado, questões em aberto do entrevistador,
+   lacunas, tecnologias/estratégias citadas e avaliação do desempenho.
+7. O agente **Padrão** usa `DEFAULT_SUMMARY_PROMPT` (BR-091): resumo **livre e
+   adaptativo**, sem pauta fixa — detecta o tipo de conversa, abre com um
+   parágrafo curto e escolhe 2–4 títulos conforme o conteúdo, sem seção vazia.
+   **Reunião** mantém a pauta de reunião (`MEETING_SUMMARY_PROMPT`).

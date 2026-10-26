@@ -1914,6 +1914,10 @@ uma nota de revisão.
   o `summary_prompt` do RH já semeado **somente** quando ele ainda é o contrato
   geral antigo — prompt editado ou vazio é preservado, e um RH excluído não
   volta. O resumo dos demais agentes continua com o contrato geral do Padrão.
+- **Ajuste (BR-091, 2026-10-25):** o "contrato geral" passou a ser o do agente
+  **Reunião** (`MEETING_SUMMARY_PROMPT`) e o **Padrão** ganhou um contrato livre
+  e adaptativo (`DEFAULT_SUMMARY_PROMPT`); a regra desta decisão — prompt do
+  agente ativo, vazio herda o Padrão — continua valendo.
 - **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13.4,
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.6,
   [`assistants/tasks/15-task.md`](assistants/tasks/15-task.md).
@@ -2049,6 +2053,41 @@ uma nota de revisão.
   §3.6, [`assistants/tasks/17-task.md`](assistants/tasks/17-task.md),
   [`assistants/tasks/18-task.md`](assistants/tasks/18-task.md)..
 - **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)
+
+## BR-091 — Resumo por agente: Padrão livre; Reunião e LeetCode com contrato próprio
+
+- **Decisão:** o contrato de resumo fixo (Overview, Decisões confirmadas,
+  Metas/Hipóteses/Propostas, Plano, Métricas, Action Items, Questões em aberto)
+  deixa de ser "o contrato geral" e passa a ser o do agente **Reunião**
+  (`MEETING_SUMMARY_PROMPT`, texto preservado). O agente **Padrão** (protegido)
+  ganha `DEFAULT_SUMMARY_PROMPT`, **livre e adaptativo**: detecta o tipo de
+  conversa (reunião, aula, entrevista, atendimento, brainstorm, papo…), abre com
+  um parágrafo curto e organiza o resto em **2–4 títulos `##` escolhidos
+  conforme o conteúdo** — sem pauta fixa, sem seção vazia e sem marcadores de
+  "não mencionado". Continuam valendo os invariantes: idioma da conversa
+  (+ tradução dos títulos), não inventar fatos/decisões/donos/prazos, preservar
+  nomes, números e datas, distinguir decisão confirmada × proposta × meta ×
+  hipótese × recomendação × questão em aberto, não dar como resolvido o que
+  ficou em aberto e capturar mudanças de direção. O **LeetCode** deixa o
+  contrato de reunião e usa o debrief técnico (`TECHNICAL_SUMMARY_PROMPT`), como
+  a Entrevista Técnica. `effective_summary_prompt` (vazio depois do `trim`)
+  passa a herdar o contrato do **Padrão** (BR-079).
+- **Motivo:** pedido do usuário (2026-10-25) — o resumo do agente padrão trazia
+  tópicos fixos de reunião de empresa mesmo quando a conversa era outra coisa; o
+  resumo deve refletir o que a conversa **foi**.
+- **Consequência:** `DEFAULT_SUMMARY_PROMPT` e o rename `SUMMARY_SYSTEM_PROMPT`
+  → `MEETING_SUMMARY_PROMPT` em `application::prompts::summary`;
+  `default_mode()` usa o contrato livre; **revisão de catálogo 6** troca o
+  `summary_prompt` do `leetcode` já semeado **somente** quando ainda é o
+  contrato de reunião (edição ou vazio é preservado; Reunião não é tocada); o
+  Padrão não precisa de migração (vive no core). Resumos já gerados mantêm o
+  layout antigo até a regeneração manual (BR-076/BR-084). O
+  `SUMMARY_UPDATE_SYSTEM_PROMPT` **não** muda: é compartilhado com RH/Técnica,
+  cujas seções marcadas dependem dele, e só preserva a organização existente.
+- **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §7.4/§13.4,
+  [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md)
+  §3.1/§3.6, [`assistants/tasks/20-task.md`](assistants/tasks/20-task.md).
+- **Data:** 2026-10-25 · **Status:** Ativa (implementada em 2026-10-25)
 
 ## BR-089 — Contexto ao vivo ancora na última fala quando não há fala recente
 

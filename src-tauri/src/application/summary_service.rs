@@ -385,7 +385,11 @@ mod tests {
 
         let request = fixture.llm.last_request().expect("pedido");
         assert!(request.prompt.contains("podemos fechar assim?"));
-        assert!(request.system.unwrap().contains("Confirmed Decisions"));
+        // BR-091: o agente padrão usa o contrato livre do Padrão.
+        assert!(request
+            .system
+            .unwrap()
+            .contains("Structure (free, adapted to the conversation)"));
     }
 
     #[test]
@@ -526,7 +530,10 @@ mod tests {
             .expect("pedido")
             .system
             .expect("system");
-        assert!(system.contains("Confirmed Decisions"));
+        // BR-091: o Padrão herda o contrato **livre**, não o de Reunião.
+        assert!(system.contains("Structure (free, adapted to the conversation)"));
+        assert!(system.contains("Detect the kind of conversation"));
+        assert!(!system.contains("Confirmed Decisions"));
         assert!(!system.contains("Overall summary"));
     }
 
@@ -610,7 +617,11 @@ mod tests {
             request.prompt.contains("Conversation to summarize"),
             "manual usa o contrato completo"
         );
-        assert!(request.system.unwrap().contains("Confirmed Decisions"));
+        // BR-091: contrato completo = o livre do agente padrão.
+        assert!(request
+            .system
+            .unwrap()
+            .contains("Structure (free, adapted to the conversation)"));
     }
 
     #[test]
