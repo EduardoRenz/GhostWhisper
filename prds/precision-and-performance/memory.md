@@ -601,3 +601,45 @@ não muda em nada.
 ### Verificação
 - `cargo test --lib` **619 ✓** · clippy `-D warnings` ✓ · rustfmt ✓.
 - Nenhum símbolo da etapa 3 restante no código (`grep` limpo).
+
+## 2026-10-27 — Ordem entre canais e GPU sem falso positivo (ISS-060/ISS-061, task 07)
+
+- **IDs:** ISS-060, ISS-061, T07, BR-029, BR-040, R16, R17
+- **Refs:** [`issues.md`](issues.md), [`tasks/07-task.md`](tasks/07-task.md),
+  [`../../mvp/architecture/transcription-streaming.md`](../../mvp/architecture/transcription-streaming.md) §3
+
+### Relato
+*“Às vezes fica fora de ordem EU e ELES, meu balão vai para frente, mesmo que
+haja pausas e uma distância entre as falas. O balão fica muito tempo em azul
+processando, mesmo que a pessoa já parou de falar; preciso mandar o bloco para
+as Sugestões mais rápido.”*
+
+### Diagnóstico
+- O log da sessão de 27/10 mostrava `backend="cpu" gpu_build=true`: a sessão
+  rodou em CPU porque a **marca de crash** era gravada no boot. Abrir/fechar o
+  app antes de qualquer sessão já condenava o próximo boot. Em GPU (sessão de
+  02:25) o mesmo `small` decodificava 7,9 s em 1,26 s; em CPU, 15 s levaram
+  10 s. `commit_ms` variava de 6 a 14 s em CPU contra 1,4–2,5 s em GPU.
+- A ordem tinha duas causas: a origem era medida antes de criar o motor e cada
+  turno avançava pela soma de amostras (fontes abrindo em tempos diferentes e
+  backlog de 30 s descartado sem avançar a base); e a prévia ficava sempre no
+  fim da lista, então o final curto do ME aparecia acima do turno longo do THEY
+  ainda em processamento.
+
+### Correção
+- Origem calculada **depois** de criar o motor, por canal; base do turno
+  re-ancorada no relógio de parede quando o buffer esvazia (nunca para trás);
+  descarte de backlog avança base e índices de fala/prévia.
+- `buildChatRows` intercala a fala em andamento pelo `start_ms`; ao finalizar,
+  a posição não muda.
+- A marca de GPU é armada no carregamento do contexto GPU e desarmada no
+  fallback para CPU; abrir/fechar o app sem sessão não afeta mais o boot.
+
+### Verificação
+- `cargo test --lib` **832 ✓** (11 ignorados) · clippy `-D warnings` ✓.
+- `pnpm test` **522 ✓** (82 arquivos) · `tsc --noEmit` ✓.
+- Build final (`pnpm build:final`): AppImage Vulkan+Laya+modelo **821,45 MiB**,
+  sha256 `2cfc515dc9afd27e…`, publicado em
+  `src-tauri/target/release/bundle/appimage/`.
+- **Pendente:** teste manual no app com GPU (conferir `backend="gpu"` no log e a
+  ordem das bolhas em conversa alternada).

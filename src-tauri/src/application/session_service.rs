@@ -225,7 +225,7 @@ impl SessionService {
     fn open_channel(
         &self,
         session_id: &str,
-        origin_ms: i64,
+        started_at_ms: i64,
         channel: AudioChannel,
     ) -> Option<ActiveChannel> {
         let asr = match self.engines.create() {
@@ -235,6 +235,11 @@ impl SessionService {
                 return None;
             }
         };
+
+        // A origem é medida **depois** de criar o motor: carregar o modelo pode
+        // levar segundos, e o primeiro canal não pode começar o relógio antes do
+        // segundo (isso jogava a fala de um canal para trás na linha do tempo).
+        let origin_ms = self.origin_ms(started_at_ms);
 
         let speaker = match channel {
             AudioChannel::Microphone => Speaker::Me,
@@ -290,10 +295,9 @@ impl SessionService {
         })?;
 
         let live: Vec<ActiveChannel> = if capture {
-            let origin_ms = self.origin_ms(started_at_ms);
             channels
                 .iter()
-                .filter_map(|channel| self.open_channel(&id, origin_ms, *channel))
+                .filter_map(|channel| self.open_channel(&id, started_at_ms, *channel))
                 .collect()
         } else {
             Vec::new()
@@ -449,10 +453,9 @@ impl SessionController for SessionService {
             return Ok(());
         };
 
-        let origin_ms = self.origin_ms(started_at_ms);
         let live: Vec<ActiveChannel> = channels
             .iter()
-            .filter_map(|channel| self.open_channel(&id, origin_ms, *channel))
+            .filter_map(|channel| self.open_channel(&id, started_at_ms, *channel))
             .collect();
 
         let mut missing = false;
@@ -522,12 +525,11 @@ impl SessionController for SessionService {
         }
 
         // Liga os que entraram, com a **mesma origem de tempo** da sessão.
-        let origin_ms = self.origin_ms(started_at_ms);
         for channel in &channels {
             if kept.iter().any(|entry| entry.channel == *channel) {
                 continue;
             }
-            if let Some(entry) = self.open_channel(&id, origin_ms, *channel) {
+            if let Some(entry) = self.open_channel(&id, started_at_ms, *channel) {
                 kept.push(entry);
             }
         }
@@ -583,10 +585,9 @@ impl SessionController for SessionService {
             self.sessions.resume(id)?;
         }
 
-        let origin_ms = self.origin_ms(session.started_at_ms);
         let live: Vec<ActiveChannel> = channels
             .iter()
-            .filter_map(|channel| self.open_channel(id, origin_ms, *channel))
+            .filter_map(|channel| self.open_channel(id, session.started_at_ms, *channel))
             .collect();
 
         if live.is_empty() {

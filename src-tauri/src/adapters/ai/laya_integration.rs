@@ -115,7 +115,7 @@ fn conversation(state: &str, id: &str) -> ConversationBlock {
 
 fn request(fixture: &Fixture) -> ClassificationRequest {
     let full_block = conversation(&fixture.state, &fixture.id);
-    let block = crate::domain::suggestion_gate::they_target(&full_block)
+    let block = crate::domain::suggestion_gate::they_target(&full_block, 3)
         .unwrap_or_else(|| full_block.clone());
     let context = if fixture.context.trim().is_empty() {
         vec![]
@@ -155,7 +155,7 @@ fn request_with_prior(
     prior_questions: Vec<crate::domain::suggestion_gate::PriorQuestion>,
 ) -> ClassificationRequest {
     let full_block = conversation(state, id);
-    let block = crate::domain::suggestion_gate::they_target(&full_block)
+    let block = crate::domain::suggestion_gate::they_target(&full_block, 3)
         .unwrap_or_else(|| full_block.clone());
     ClassificationRequest {
         session_id: "s1".to_string(),

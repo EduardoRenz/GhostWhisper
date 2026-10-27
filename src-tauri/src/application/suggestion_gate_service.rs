@@ -17,7 +17,6 @@ use crate::domain::suggestion_gate::{
     ConversationBlock, GateDecision, GateSkipReason, GateTick, HeuristicConfig, PriorQuestion,
     SuggestionCue,
 };
-use crate::domain::transcription::Speaker;
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::{
     EventPublisher, SuggestionClassificationEvent, SuggestionClassifierState,
@@ -29,6 +28,9 @@ use crate::ports::suggestion_cue_classifier::{
 use crate::ports::suggestion_gate::{
     GateResult, SuggestionGate, SuggestionGateConfig, SuggestionGateError,
 };
+
+/// Espera mínima depois do fim da última fala para classificar um bloco aberto.
+const OPEN_BLOCK_SETTLE_MS: i64 = 300;
 
 /// Contexto curto do agente selecionado para o classificador.
 ///
@@ -214,19 +216,36 @@ impl SuggestionGateService {
         min_chars: usize,
         allow_single_speaker: bool,
         they_only: bool,
+        allow_open: bool,
     ) -> Option<(usize, &ConversationBlock)> {
+        let open_classifiable = |block: &ConversationBlock| {
+            block.they_chars >= min_chars
+                && (allow_single_speaker || they_only || block.has_both_speakers())
+        };
+
         if they_only {
-            // Só a ponta da conversa interessa: se o ME falou por último, não
-            // há pergunta de THEY pendente. Não volta para um bloco antigo.
+            // Só a ponta da conversa interessa: não volta para um bloco antigo.
             let (index, block) = blocks.iter().enumerate().next_back()?;
-            if block.is_open
-                || block.turns.last().map(|turn| turn.speaker) != Some(Speaker::They)
-                || !block.is_classifiable_with(min_chars, true)
-            {
+            if block.is_open {
+                if allow_open && open_classifiable(block) {
+                    return Some((index, block));
+                }
                 return None;
             }
-            return Some((index, block));
+            if block.is_classifiable_with(min_chars, true) {
+                return Some((index, block));
+            }
+            return None;
         }
+
+        if allow_open {
+            if let Some((index, block)) = blocks.iter().enumerate().next_back() {
+                if block.is_open && open_classifiable(block) {
+                    return Some((index, block));
+                }
+            }
+        }
+
         blocks
             .iter()
             .enumerate()
@@ -299,13 +318,22 @@ impl SuggestionGate for SuggestionGateService {
             config.block.min_chars,
             config.allow_single_speaker,
             config.they_only,
+            true,
         ) else {
             return Err(SuggestionGateError::NoBlock);
         };
 
+        // Um bloco aberto é classificado quando a última fala finalizada já
+        // assentou (300 ms), sem esperar o silêncio de fechamento. A conversa
+        // contínua não fica sem sugestão.
+        if block.is_open && now.saturating_sub(block.end_ms) < OPEN_BLOCK_SETTLE_MS {
+            return Err(SuggestionGateError::NoBlock);
+        }
+
         // O alvo é só o que THEY falou desde a última fala de ME. O bloco
         // completo continua disponível em `full_block` como contexto.
-        let target = they_target(block).ok_or(SuggestionGateError::NoBlock)?;
+        let target =
+            they_target(block, config.heuristic.min_words).ok_or(SuggestionGateError::NoBlock)?;
 
         if let Some(cached) = self.lock_state().last.get(session_id) {
             if cached.block_id == target.id {
@@ -783,6 +811,124 @@ mod tests {
         let request = &classifier.requests()[0];
         assert_eq!(request.block.turns.len(), 1);
         assert_eq!(request.block.turns[0].text, "obrigado");
+    }
+
+    #[test]
+    fn short_me_noise_does_not_block_the_they_question() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::They, "o que você faz?", 0, 1_000))
+            .unwrap();
+        repo.insert(&segment("b", Speaker::Me, "tchau tchau", 1_100, 1_400))
+            .unwrap();
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        let gate = service_at(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg.clone(),
+        );
+
+        let result = gate.classify_latest("s1").expect("ruído não bloqueia");
+        assert_eq!(result.cue, SuggestionCue::Question);
+        assert_eq!(classifier.requests()[0].block.turns.len(), 1);
+        assert_eq!(
+            classifier.requests()[0].block.turns[0].text,
+            "o que você faz?"
+        );
+
+        // Resposta real do ME (3+ palavras) encerra a pergunta.
+        repo.insert(&segment(
+            "c",
+            Speaker::Me,
+            "eu entrego na polícia",
+            2_000,
+            2_500,
+        ))
+        .unwrap();
+        let gate = service_at(
+            classifier,
+            repo,
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        assert!(matches!(
+            gate.classify_latest("s1"),
+            Err(SuggestionGateError::NoBlock)
+        ));
+    }
+
+    #[test]
+    fn thinking_filler_does_not_block_the_they_question() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::They, "o que é um mutex?", 0, 1_000))
+            .unwrap();
+        repo.insert(&segment(
+            "b",
+            Speaker::Me,
+            "Hmmm, deixa eu pensar",
+            1_100,
+            2_000,
+        ))
+        .unwrap();
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        let gate = service_at(
+            classifier.clone(),
+            repo,
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        let result = gate.classify_latest("s1").expect("hesitação não bloqueia");
+        assert_eq!(result.cue, SuggestionCue::Question);
+        assert_eq!(classifier.requests()[0].block.turns.len(), 1);
+        assert_eq!(
+            classifier.requests()[0].block.turns[0].text,
+            "o que é um mutex?"
+        );
+    }
+
+    #[test]
+    fn an_open_block_is_classified_after_the_bubble_settles() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::They, "qual é o prazo?", 0, 500))
+            .unwrap();
+
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        // Ainda não assentou 300 ms: não classifica.
+        let gate = service_at(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(FixedClock(700)),
+            Arc::new(RecordingPublisher::default()),
+            cfg.clone(),
+        );
+        assert!(matches!(
+            gate.classify_latest("s1"),
+            Err(SuggestionGateError::NoBlock)
+        ));
+
+        // 300 ms depois do fim da fala, o bloco ainda está aberto pelo gap de
+        // 1 s, mas já pode ser classificado.
+        let gate = service_at(
+            classifier.clone(),
+            repo,
+            Arc::new(FixedClock(801)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        let result = gate.classify_latest("s1").expect("bloco aberto");
+        assert_eq!(result.cue, SuggestionCue::Question);
     }
 
     #[test]

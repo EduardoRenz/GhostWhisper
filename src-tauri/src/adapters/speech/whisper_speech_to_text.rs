@@ -14,6 +14,7 @@
 //! re-agenda o próximo passe com o buffer mais novo
 //! (`WhisperSessionStreaming.js`: `finishProcessing`/`processAudioWindow`).
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -174,18 +175,44 @@ struct LoadedWhisper {
     state: WhisperState,
 }
 
+/// O build traz algum backend de GPU?
+fn gpu_build() -> bool {
+    cfg!(any(
+        feature = "vulkan",
+        feature = "cuda",
+        feature = "hipblas",
+        feature = "metal"
+    ))
+}
+
+/// Marca "GPU ativa" **no momento em que a GPU é de fato carregada**.
+///
+/// A marca é o que faz o próximo boot cair para CPU depois de um encerramento
+/// sujo (BR-029). Escrevê-la no boot (antes de qualquer sessão) transformava
+/// qualquer fechamento abrupto da janela em uma execução CPU inteira — o relato
+/// de 27/10: o app abriu e foi fechado algumas vezes, e a sessão seguinte rodou
+/// 10× mais lenta sem o usuário saber. Só arma quando o contexto GPU vai abrir.
+pub(crate) fn arm_gpu_marker(path: Option<&std::path::Path>, model: &str) {
+    let Some(path) = path else { return };
+    let body = format!("{{\"active\":true,\"model\":\"{model}\"}}");
+    if let Err(error) = std::fs::write(path, body) {
+        tracing::warn!(%error, "não foi possível gravar a marca de GPU");
+    }
+}
+
+/// Remove a marca quando a GPU **não** chegou a rodar (ex.: driver recusou).
+pub(crate) fn disarm_gpu_marker(path: Option<&std::path::Path>) {
+    let Some(path) = path else { return };
+    let _ = std::fs::remove_file(path);
+}
+
 impl LoadedWhisper {
     /// Carrega o contexto e o estado a partir do caminho do modelo.
     fn load(model_path: &str, use_gpu: bool) -> Result<Self> {
         // GPU/flash attention: `use_gpu` vem da configuração (`auto`/`cpu`/`gpu`),
         // mas só tem efeito se o build trouxer o backend (`vulkan`/`cuda`/…). Flash
         // attention é ligado junto (Perssua: `--no-flash-attn` só no macOS).
-        let gpu_build = cfg!(any(
-            feature = "vulkan",
-            feature = "cuda",
-            feature = "hipblas",
-            feature = "metal"
-        ));
+        let gpu_build = gpu_build();
         let effective_gpu = use_gpu && gpu_build;
         let flash_attn = effective_gpu
             && cfg!(any(
@@ -237,6 +264,8 @@ pub struct WhisperSpeechToText {
     /// tiver o backend).
     use_gpu: bool,
     threads: i32,
+    /// Caminho da marca de "GPU ativa" (BR-029); `None` em testes.
+    gpu_marker: Option<PathBuf>,
     /// Publicador opcional para o status de download/carga (feedback da UI).
     publisher: Option<Arc<dyn EventPublisher>>,
     state: Mutex<WorkerState>,
@@ -259,9 +288,16 @@ impl WhisperSpeechToText {
             prompt: Mutex::new(prompt.into()),
             use_gpu,
             threads: asr_threads(),
+            gpu_marker: None,
             publisher,
             state: Mutex::new(WorkerState::NotStarted),
         }
+    }
+
+    /// Define o arquivo-marca gravado enquanto um contexto GPU estiver ativo.
+    pub fn with_gpu_marker(mut self, path: Option<PathBuf>) -> Self {
+        self.gpu_marker = path;
+        self
     }
 
     /// Troca o prompt de decodificação dos próximos passes (sem recarregar).
@@ -463,9 +499,18 @@ fn run_worker(
 
     // GPU primeiro (quando pedido); se o driver recusar, cai para CPU na hora —
     // melhor perder a aceleração do que não transcrever (BR-029).
+    //
+    // A marca de "GPU ativa" só é armada quando o contexto GPU vai abrir. Se o
+    // driver recusar, desarma: um fallback normal para CPU não pode fazer o
+    // *próximo* boot começar em CPU (foi o que deixou uma sessão inteira 10×
+    // mais lenta depois de relançar o app, em 27/10).
+    if this.use_gpu && gpu_build() {
+        arm_gpu_marker(this.gpu_marker.as_deref(), &this.model_name);
+    }
     let mut loaded = match LoadedWhisper::load(&model_path, this.use_gpu) {
         Ok(loaded) => loaded,
         Err(error) if this.use_gpu => {
+            disarm_gpu_marker(this.gpu_marker.as_deref());
             tracing::warn!("GPU indisponível ({error}); caindo para CPU");
             match LoadedWhisper::load(&model_path, false) {
                 Ok(loaded) => loaded,
@@ -477,6 +522,7 @@ fn run_worker(
             }
         }
         Err(error) => {
+            disarm_gpu_marker(this.gpu_marker.as_deref());
             this.emit_status(AsrPhase::Failed, error.to_string());
             failed.store(true, Ordering::Relaxed);
             return;
@@ -796,5 +842,25 @@ mod tests {
         assert!(!parse_switch("false"));
         assert!(!parse_switch(" OFF "));
         assert!(!parse_switch("no"));
+    }
+
+    #[test]
+    fn gpu_marker_is_armed_and_disarmed() {
+        // Regressão (R16): a marca só existe enquanto a GPU está carregada; um
+        // fallback para CPU precisa removê-la para não condenar o próximo boot.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "ghostwhisper-gpu-marker-{}-{nanos}.json",
+            std::process::id()
+        ));
+
+        arm_gpu_marker(Some(&path), "small");
+        assert!(path.exists(), "a marca devia existir durante a GPU");
+
+        disarm_gpu_marker(Some(&path));
+        assert!(!path.exists(), "o fallback para CPU devia limpar a marca");
     }
 }

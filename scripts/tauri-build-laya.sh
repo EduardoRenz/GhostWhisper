@@ -48,6 +48,7 @@ bash scripts/ensure-libvulkan.sh
 source scripts/vulkan-env.sh
 
 chmod -R u+w,a+rX "${CARGO_TARGET_DIR:-src-tauri/target}/laya" 2>/dev/null || true
+chmod -R u+w,a+rX "${CARGO_TARGET_DIR:-src-tauri/target}/release/laya" 2>/dev/null || true
 
 pnpm tauri build --features "vulkan,laya" --bundles appimage "$@"
 

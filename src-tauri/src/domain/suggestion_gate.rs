@@ -478,19 +478,109 @@ pub fn question_title(block: &ConversationBlock) -> String {
     raw.chars().take(180).collect()
 }
 
+/// Fala de ME que conta como resposta (e não como ruído/backchannel curto).
+fn is_meaningful_me_turn(text: &str, min_words: usize) -> bool {
+    let lower = text.to_lowercase();
+
+    // “Hmmm, deixa eu pensar” é ruído de espera, não resposta. Só ignora se,
+    // depois de tirar a expressão, não sobra conteúdo (ex.: “deixa eu pensar,
+    // a resposta é B” continua contando como resposta).
+    if is_thinking_filler(&lower) {
+        return false;
+    }
+
+    if normalized_words(text).len() >= min_words.max(1) {
+        return true;
+    }
+
+    const ANSWER_MARKERS: [&str; 17] = [
+        "opção",
+        "opcao",
+        "opsão",
+        "opsao",
+        "alternativa",
+        "letra",
+        "resposta",
+        "sim",
+        "não",
+        "nao",
+        "yes",
+        "no",
+        "correto",
+        "errado",
+        "não sei",
+        "nao sei",
+        "i don't know",
+    ];
+    ANSWER_MARKERS.iter().any(|marker| lower.contains(marker))
+}
+
+fn is_thinking_filler(lower: &str) -> bool {
+    const PHRASES: [&str; 14] = [
+        "deixa eu pensar",
+        "deixa eu ver",
+        "vou pensar",
+        "estou pensando",
+        "pensando aqui",
+        "só um instante",
+        "so um instante",
+        "um momento",
+        "espera um pouco",
+        "calma",
+        "let me think",
+        "wait a moment",
+        "hold on",
+        "give me a second",
+    ];
+    let Some(phrase) = PHRASES.iter().find(|phrase| lower.contains(**phrase)) else {
+        return false;
+    };
+    let rest = lower.replace(phrase, " ");
+    const FILLERS: [&str; 24] = [
+        "hmm",
+        "hmmm",
+        "hum",
+        "ahn",
+        "ah",
+        "eh",
+        "é",
+        "tipo",
+        "assim",
+        "aqui",
+        "um",
+        "uma",
+        "pouco",
+        "pouquinho",
+        "só",
+        "so",
+        "bem",
+        "então",
+        "entao",
+        "né",
+        "ne",
+        "ok",
+        "okay",
+        "yeah",
+    ];
+    normalized_words(&rest)
+        .into_iter()
+        .all(|word| FILLERS.contains(&word.as_str()))
+}
+
 /// Projeção do bloco para o **alvo**: falas de THEY desde a última fala de ME.
 ///
-/// Retorna `None` quando o último turno não é de THEY: nesse caso não há
-/// pergunta/convite pendente para o copiloto responder. O bloco completo
-/// (com ME+THEY) continua disponível como contexto.
-pub fn they_target(block: &ConversationBlock) -> Option<ConversationBlock> {
-    if block.turns.last().map(|turn| turn.speaker) != Some(Speaker::They) {
-        return None;
-    }
+/// Retorna `None` quando não sobra fala de THEY depois da última resposta
+/// **com conteúdo** de ME. Ruído curto de ME (“ok”, “tchau”) é ignorado. O
+/// bloco completo (com ME+THEY) continua disponível como contexto.
+pub fn they_target(block: &ConversationBlock, min_me_words: usize) -> Option<ConversationBlock> {
+    // ME curto (“ok”, “tchau”, ruído) não bloqueia uma pergunta de THEY.
+    // Só uma fala de ME com conteúdo conta como resposta anterior.
     let start = block
         .turns
         .iter()
-        .rposition(|turn| turn.speaker == Speaker::Me)
+        .rposition(|turn| {
+            turn.speaker == Speaker::Me && is_meaningful_me_turn(&turn.text, min_me_words)
+        })
         .map(|index| index + 1)
         .unwrap_or(0);
     let turns: Vec<BlockTurn> = block.turns[start..]
@@ -1106,10 +1196,10 @@ mod tests {
         let block = block_with_turns(vec![
             ("a", Speaker::Me, "minha resposta", 0, 500),
             ("b", Speaker::They, "primeira pergunta?", 600, 900),
-            ("c", Speaker::Me, "resposta", 1_000, 1_300),
+            ("c", Speaker::Me, "minha resposta completa", 1_000, 1_300),
             ("d", Speaker::They, "pergunta atual?", 1_400, 1_700),
         ]);
-        let target = they_target(&block).expect("alvo");
+        let target = they_target(&block, 3).expect("alvo");
         assert_eq!(target.turns.len(), 1);
         assert_eq!(target.turns[0].text, "pergunta atual?");
         assert_eq!(target.me_chars, 0);
@@ -1117,9 +1207,63 @@ mod tests {
 
         let ends_me = block_with_turns(vec![
             ("e", Speaker::They, "pergunta?", 0, 300),
-            ("f", Speaker::Me, "resposta", 400, 700),
+            ("f", Speaker::Me, "minha resposta completa", 400, 700),
         ]);
-        assert!(they_target(&ends_me).is_none());
+        assert!(they_target(&ends_me, 3).is_none());
+    }
+
+    #[test]
+    fn short_me_noise_does_not_hide_the_they_question() {
+        let block = block_with_turns(vec![
+            ("a", Speaker::They, "o que você faz?", 0, 1_000),
+            ("b", Speaker::Me, "tchau tchau", 1_100, 1_400),
+        ]);
+        let target = they_target(&block, 3).expect("alvo");
+        assert_eq!(target.turns.len(), 1);
+        assert_eq!(target.turns[0].text, "o que você faz?");
+        assert!(target
+            .turns
+            .iter()
+            .all(|turn| turn.speaker == Speaker::They));
+
+        let meaningful_answer = block_with_turns(vec![
+            ("c", Speaker::They, "o que você faz?", 0, 1_000),
+            ("d", Speaker::Me, "eu entrego na polícia", 1_100, 1_600),
+        ]);
+        assert!(they_target(&meaningful_answer, 3).is_none());
+
+        // Resposta curta de múltipla escolha conta como resposta.
+        let short_answer = block_with_turns(vec![
+            ("e", Speaker::They, "A, B ou C?", 0, 1_000),
+            ("f", Speaker::Me, "opsão B", 1_100, 1_500),
+        ]);
+        assert!(they_target(&short_answer, 3).is_none());
+
+        // Hesitação de espera não é resposta.
+        let thinking = block_with_turns(vec![
+            ("g", Speaker::They, "o que é um mutex?", 0, 1_000),
+            ("h", Speaker::Me, "Hmmm, deixa eu pensar", 1_100, 2_000),
+        ]);
+        assert_eq!(they_target(&thinking, 3).expect("alvo").turns.len(), 1);
+
+        // Mas “deixa eu pensar, a resposta é B” contém resposta.
+        let thinking_then_answer = block_with_turns(vec![
+            ("i", Speaker::They, "A ou B?", 0, 1_000),
+            (
+                "j",
+                Speaker::Me,
+                "deixa eu pensar, a resposta é B",
+                1_100,
+                2_500,
+            ),
+        ]);
+        assert!(they_target(&thinking_then_answer, 3).is_none());
+
+        let unsure = block_with_turns(vec![
+            ("k", Speaker::They, "o que é um mutex?", 0, 1_000),
+            ("l", Speaker::Me, "não sei", 1_100, 1_500),
+        ]);
+        assert!(they_target(&unsure, 3).is_none());
     }
 
     #[test]

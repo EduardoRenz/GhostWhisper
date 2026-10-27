@@ -248,18 +248,6 @@ fn gpu_marker_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
         .map(|dir| dir.join(GPU_MARKER_FILE))
 }
 
-/// Grava a marca enquanto a GPU estiver habilitada nesta execução.
-fn write_gpu_marker(data_dir: &std::path::Path, model: &str) {
-    let payload = serde_json::json!({
-        "pid": std::process::id(),
-        "model": model,
-        "started_at_ms": chrono::Utc::now().timestamp_millis(),
-    });
-    if let Err(error) = std::fs::write(data_dir.join(GPU_MARKER_FILE), payload.to_string()) {
-        tracing::warn!("não foi possível gravar a marca de GPU: {error}");
-    }
-}
-
 /// Modelo Laya empacotado nos resources (AppImage/deb), se existir.
 #[cfg(feature = "laya")]
 ///
@@ -722,16 +710,9 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let engines: Arc<dyn SpeechEngineFactory> = Arc::new(
         WhisperSpeechEngineFactory::new(Arc::clone(&models), Arc::clone(&settings))
             .with_publisher(Arc::clone(&publisher))
-            .with_force_cpu(force_cpu_after_crash),
+            .with_force_cpu(force_cpu_after_crash)
+            .with_gpu_marker(gpu_marker_path(app.handle())),
     );
-
-    // GPU ligada nesta execução ⇒ marca no disco até a saída limpa (BR-029).
-    if gpu_info.acceleration_enabled
-        && !force_cpu_after_crash
-        && current_settings.acceleration != "cpu"
-    {
-        write_gpu_marker(&data_dir, &current_settings.whisper_model);
-    }
 
     // Gravação da sessão (BR-065…BR-071): adaptador `ffmpeg` atrás da porta.
     let recordings: Arc<dyn RecordingsRepository> =

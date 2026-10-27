@@ -277,3 +277,57 @@ Modelo:
   `src-tauri/src/adapters/ai/settings_suggestion_cue_classifier.rs`,
   `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`.
 - **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-070 — Ruído curto do ME escondia a pergunta de THEY
+
+- **Severidade:** Alta · **Status:** FIXED (2026-10-27)
+- **Sintoma:** em uma sessão real, o último segmento era ME (“tchau tchau”)
+  captado pelo microfone; o gate não analisava e não sugeria, mesmo com uma
+  pergunta completa de THEY no mesmo bloco.
+- **Causa raiz:** `they_target` considerava qualquer turno de ME como resposta;
+  um ruído curto depois de THEY fazia o alvo ficar vazio. Além disso, o alvo
+  era cortado a partir do último ME, podendo remover a pergunta.
+- **Correção:** só uma fala de ME com **≥ 3 palavras** conta como resposta
+  anterior. Ruído/backchannel curto é ignorado; a pergunta de THEY continua no
+  alvo. O modo `they_only` também não exige mais que o último turno bruto seja
+  THEY; a checagem é feita pelo alvo.
+- **Testes:** `short_me_noise_does_not_hide_the_they_question`,
+  `short_me_noise_does_not_block_the_they_question`.
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-071 — “Deixa eu pensar” interrompia a análise da pergunta
+
+- **Severidade:** Alta · **Status:** FIXED (2026-10-27)
+- **Sintoma:** THEY fazia a pergunta, ME dizia “Hmmm, deixa eu pensar” e o
+  classificador não analisava; a pergunta ficava sem sugestão.
+- **Causa raiz:** a fala de espera do ME tem 3+ palavras e era tratada como
+  resposta, encerrando o alvo.
+- **Correção:** `is_meaningful_me_turn` agora detecta expressões de hesitação
+  (“deixa eu pensar”, “deixa eu ver”, “vou pensar”, “espera”, “let me think”)
+  e as ignora quando não há conteúdo depois delas. “deixa eu pensar, a resposta
+  é B” continua contando como resposta; “não sei” também.
+- **Testes:** `thinking_filler_does_not_block_the_they_question`,
+  `short_me_noise_does_not_hide_the_they_question`.
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-072 — Conversa contínua nunca fechava bloco e não sugeria
+
+- **Severidade:** Alta · **Status:** FIXED (2026-10-27)
+- **Sintoma:** em conversa sem pausa de 3 s, o bloco ficava aberto e o
+  classificador não rodava; a sugestão nunca aparecia.
+- **Causa raiz:** `classify_latest` só aceitava blocos fechados
+  (`is_open = false`), e o fechamento dependia do gap de silêncio.
+- **Correção:** blocos abertos passam a ser classificados 300 ms depois da
+  última fala finalizada (`OPEN_BLOCK_SETTLE_MS`). O gap de 3 s continua
+  fechando blocos e montando contexto, mas não bloqueia mais a análise. O
+  cache por `block_id`/alvo evita reclassificar a mesma ponta.
+- **Testes:** `an_open_block_is_classified_after_the_bubble_settles`.
+- **Arquivos:** `src-tauri/src/application/suggestion_gate_service.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)

@@ -92,8 +92,9 @@ pnpm tauri dev
 > O submódulo `vendor/laya` (classificador Laya, Apache-2.0) é resolvido pelo
 > Cargo mesmo sem a feature. Se você já clonou sem `--recurse-submodules`, rode
 > `git submodule update --init`. O engine Laya só é compilado com
-> `pnpm tauri dev --features laya` / `pnpm tauri build --features laya`; o
-> modelo ONNX (~1,2 GB) é baixado pelo app, nunca vai no bundle.
+> `pnpm tauri dev --features laya` / `pnpm tauri build --features laya`; no
+> build padrão o modelo ONNX (~1,2 GB) é baixado pelo app, e no build final
+> (`./scripts/build-final.sh`) ele vai empacotado no AppImage.
 
 On first launch, open **Settings** (gear icon) and add an AI source with your own
 API key. Keys are stored in the system keyring, never in plain text. The Whisper
@@ -106,10 +107,31 @@ model is downloaded only on the first session that uses it.
 
 ## Build and packaging
 
+### Build final (tudo incluso)
+
+Para o artefato completo de teste/distribuição — **Vulkan + engine Laya + modelo
+ONNX empacotado** — use:
+
+```bash
+./scripts/build-final.sh
+# ou
+pnpm build:final
+```
+
+É o caminho canônico do build final: confere o submódulo `vendor/laya` e o
+artefato ONNX, corrige as permissões que o snapshot do Hugging Face deixa
+somente-leitura e então chama o build Laya. Gera **um AppImage** em
+`src-tauri/target/release/bundle/appimage/GhostWhisper_0.1.0_amd64.AppImage`
+(~821 MiB), com o modelo embutido — não precisa baixar nada no primeiro uso.
+
+O build padrão (`pnpm tauri:build`) continua leve: sem Laya e com o modelo
+Whisper baixado sob demanda.
+
 ```bash
 pnpm tauri:build        # release with Vulkan (default) + embedded loader
 pnpm tauri:build:cpu    # release, CPU only (escape hatch)
-pnpm tauri:build:laya   # Vulkan + Laya engine + bundled ONNX model (AppImage, ~821 MiB)
+pnpm tauri:build:laya   # Vulkan + Laya engine + bundled ONNX (no pre-flight)
+pnpm build:final        # final artifact: pre-flight + Vulkan + Laya + ONNX
 scripts/package-linux.sh        # .deb + AppImage
 scripts/package-linux.sh deb    # only .deb
 ```
@@ -123,6 +145,8 @@ git submodule update --init
 python3 vendor/laya/laya-rust/tools/export_onnx.py --model multilingual \
   --out src-tauri/resources/laya
 pnpm tauri:build:laya
+# ou o build final (checagens + permissões + publish):
+./scripts/build-final.sh
 ```
 
 > **Laya is a POC:** the engine and the multilingual model are bundled, but the
@@ -136,9 +160,11 @@ pnpm tauri:build:laya
   loader installed; GPU drivers/ICDs still come from the host.
 - `scripts/vulkan-env.sh` assembles the SDK from the system (`libvulkan-dev`,
   `glslc`) or extracts downloaded `.deb` files into `.vulkan-sdk/` — no sudo.
-- After three consecutive GPU crashes the next launch disables GPU acceleration
-  automatically. The choice is also available in **Settings → Transcription &
-  Audio → Acceleration** (`auto` / `CPU` / `GPU`).
+- After an unclean shutdown with a GPU context active, the next launch runs on
+  CPU and returns to GPU after a clean exit. The crash marker is armed only when
+  the GPU context actually loads, so opening/closing the app without a session
+  does not disable acceleration. The choice is also available in
+  **Settings → Transcription & Audio → Acceleration** (`auto` / `CPU` / `GPU`).
 
 Install a release:
 
@@ -158,6 +184,8 @@ chmod +x GhostWhisper_0.1.0_amd64.AppImage && ./GhostWhisper_0.1.0_amd64.AppImag
 | `pnpm tauri:dev:clean` | Dev launcher that strips snap environment variables |
 | `pnpm tauri:build` | Release build with Vulkan + bundles |
 | `pnpm tauri:build:cpu` | Release build without GPU |
+| `pnpm tauri:build:laya` | Release with Vulkan + Laya engine + bundled ONNX (no pre-flight) |
+| `pnpm build:final` / `scripts/build-final.sh` | **Final AppImage with everything** (Vulkan + Laya + ONNX) |
 | `pnpm test` | Frontend tests (Vitest) |
 | `scripts/package-linux.sh` | Linux packaging (`.deb` / AppImage) |
 
