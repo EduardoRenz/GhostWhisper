@@ -119,6 +119,13 @@ pub struct TranscriptionPipeline {
     /// início da captura: ao retomar/continuar uma sessão a linha temporal segue
     /// de onde estava em vez de reiniciar em 0 (BR-019).
     time_origin_ms: i64,
+    /// Instante de criação do pipeline (relógio monotônico).
+    ///
+    /// Serve para ancorar o início de cada turno no **relógio de parede** quando
+    /// o buffer está vazio: sem isso, a soma de amostras fazia os dois canais
+    /// divergirem (fonte que demora a abrir, backlog descartado) e a fala de um
+    /// aparecia antes/depois da do outro fora de ordem.
+    created_at: Instant,
     /// Buffer do turno atual (teto rígido).
     buffer: Mutex<VecDeque<f32>>,
     stop: AtomicBool,
@@ -229,6 +236,7 @@ impl TranscriptionPipeline {
             transcriptions,
             timings,
             time_origin_ms: 0,
+            created_at: now,
             buffer: Mutex::new(VecDeque::new()),
             stop: AtomicBool::new(false),
             turn: AtomicU64::new(0),
@@ -499,11 +507,14 @@ impl TranscriptionPipeline {
             };
             let take = ms_to_samples(cut_ms).min(guard.len());
             guard.drain(0..take);
-            samples_to_ms(take)
+            let drained = samples_to_ms(take);
+            // Atualiza a base **sob o lock do buffer**: o `consume` re-ancora a
+            // base quando encontra o buffer vazio; fora do lock, um `fetch_add`
+            // atrasado podia somar em cima da âncora nova.
+            self.turn_base_ms
+                .fetch_add(drained.max(0) as u64, Ordering::Relaxed);
+            drained
         };
-        let _ = self
-            .turn_base_ms
-            .fetch_add(drained_ms.max(0) as u64, Ordering::Relaxed);
         self.set_last_decode(0);
         self.last_attempt_failed.store(false, Ordering::Relaxed);
 
@@ -936,6 +947,15 @@ impl TranscriptionPipeline {
             *slot = v;
         }
     }
+    /// Ajusta índices relativos ao buffer depois de descartar o áudio antigo.
+    fn shift_after_drop(&self, dropped_ms: i64) {
+        if let Ok(mut slot) = self.last_voiced_end_ms.lock() {
+            *slot = (*slot - dropped_ms).max(0);
+        }
+        if let Ok(mut slot) = self.last_decode_ms.lock() {
+            *slot = (*slot - dropped_ms).max(0);
+        }
+    }
     fn set_last_voiced_at(&self, at: Instant) {
         if let Ok(mut slot) = self.last_voiced_at.lock() {
             *slot = Some(at);
@@ -1064,15 +1084,38 @@ impl TranscriptionPipeline {
 
 impl AudioConsumer for TranscriptionPipeline {
     fn consume(&self, samples: &[f32]) {
+        if samples.is_empty() {
+            return;
+        }
+        let chunk_ms = samples_to_ms(samples.len());
+        let received_ms = self.created_at.elapsed().as_millis() as i64;
+        let mut dropped_ms = 0i64;
         let buffered_ms = {
             let Ok(mut buffer) = self.buffer.lock() else {
                 return;
             };
+            let was_empty = buffer.is_empty();
             buffer.extend(samples.iter().copied());
+            if was_empty {
+                // O bloco que acabou de chegar começa `chunk_ms` antes de agora.
+                // Ancorar no relógio de parede mantém os canais alinhados mesmo
+                // quando a fonte demora a abrir ou perde áudio (o contador de
+                // amostras sozinho acumulava diferença entre microfone e sistema).
+                // Nunca volta no tempo: áudio sintético de teste chega "antes" do
+                // relógio e a linha do tempo não pode retroceder.
+                let current = self.turn_base_ms.load(Ordering::Relaxed) as i64;
+                let base = current.max(next_turn_base(received_ms, chunk_ms));
+                self.turn_base_ms.store(base as u64, Ordering::Relaxed);
+            }
             if samples_to_ms(buffer.len()) > MAX_BUFFER_MS {
                 let cap = ms_to_samples(MAX_BUFFER_MS);
                 let excess = buffer.len().saturating_sub(cap);
                 buffer.drain(0..excess);
+                dropped_ms = samples_to_ms(excess);
+                // O áudio descartado também sai do relógio: sem isso os próximos
+                // turnos ficariam `dropped_ms` atrasados em relação ao outro canal.
+                self.turn_base_ms
+                    .fetch_add(dropped_ms as u64, Ordering::Relaxed);
                 let total = self
                     .dropped_samples
                     .fetch_add(excess as u64, Ordering::Relaxed)
@@ -1087,6 +1130,12 @@ impl AudioConsumer for TranscriptionPipeline {
             }
             samples_to_ms(buffer.len())
         };
+
+        // Índices relativos ao buffer (fala/preview) precisam acompanhar o
+        // descarte; senão o silêncio é calculado contra uma posição que sumiu.
+        if dropped_ms > 0 {
+            self.shift_after_drop(dropped_ms);
+        }
 
         // VAD de amplitude (Perssua: `appendAudio` + RMS): marca fala e o fim
         // da última janela falada, base do corte por silêncio.
@@ -1106,6 +1155,16 @@ impl AudioConsumer for TranscriptionPipeline {
         }
         self.emit_level(samples);
     }
+}
+
+/// Base (ms, relativa ao início da captura) do turno que começa no bloco
+/// recém-chegado.
+///
+/// O bloco cobre `chunk_ms` de áudio e chegou `elapsed_ms` depois da criação do
+/// pipeline; logo o primeiro sample dele é de `elapsed - chunk` (nunca antes do
+/// início da captura). O chamador soma a origem da sessão (`time_origin_ms`).
+fn next_turn_base(elapsed_ms: i64, chunk_ms: i64) -> i64 {
+    elapsed_ms.saturating_sub(chunk_ms).max(0)
 }
 
 /// Resultado de uma decodificação de turno.
@@ -1922,6 +1981,47 @@ mod tests {
             "teto excedido: {remaining_ms}ms"
         );
         assert!(pipeline.dropped_samples.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
+    fn next_turn_base_anchors_late_chunks_without_going_before_capture() {
+        // Teste entrega 1,5 s de uma vez, no instante da criação: o turno começa
+        // no início da captura (0), não 1,5 s antes.
+        assert_eq!(next_turn_base(0, 1_500), 0);
+        assert_eq!(next_turn_base(1_500, 1_500), 0);
+        // A fonte demorou 2,1 s para entregar um bloco de 100 ms: o primeiro
+        // sample é de 2,0 s.
+        assert_eq!(next_turn_base(2_100, 100), 2_000);
+    }
+
+    #[test]
+    fn dropped_backlog_advances_the_timeline_and_the_speech_index() {
+        // 80 s num buffer de 30 s: 50 s do começo são descartados. A linha do
+        // tempo precisa andar os mesmos 50 s; senão o segundo canal fica
+        // "atrasado" e as bolhas trocam de ordem.
+        let (pipeline, _publisher) = fake_pipeline("x");
+        pipeline.consume(&vec![0.4f32; 80 * TARGET_SAMPLE_RATE as usize]);
+
+        assert_eq!(pipeline.turn_base_ms.load(Ordering::Relaxed), 50_000);
+        assert_eq!(pipeline.last_voiced_end_ms(), MAX_BUFFER_MS);
+    }
+
+    #[test]
+    fn an_empty_buffer_reanchors_only_forward() {
+        // Fecha um turno de 2 s (fala + silêncio) e confirma que o próximo
+        // começa em 2 s, mesmo com o áudio sintético chegando "na hora".
+        let (pipeline, publisher) = fake_pipeline("x");
+        pipeline.consume(&speech(1_000));
+        pipeline.tick();
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+        assert_eq!(pipeline.turn_base_ms.load(Ordering::Relaxed), 2_000);
+
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        let segments = publisher.segments();
+        let last = segments.last().expect("nova prévia");
+        assert_eq!(last.start_ms, 2_000, "o relógio não pode retroceder");
     }
 
     #[test]

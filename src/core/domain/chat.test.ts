@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildChatRows,
   buildChatTimeline,
   bubblesFromTimeline,
   splitChatTimeline,
@@ -62,6 +63,75 @@ describe("splitChatTimeline", () => {
     ]);
 
     expect(pending.map((item) => item.text)).toEqual(["eu 2", "ele"]);
+  });
+
+  it("a fala em andamento fica no lugar do tempo, não no fim da lista", () => {
+    // Regressão do relato de 27/10: o turno longo do outro lado ainda está em
+    // processamento; a fala do ME que veio depois não pode aparecer antes dele.
+    const { bubbles, pending } = buildChatTimeline([
+      segment({
+        id: "they-antes",
+        speaker: "THEY",
+        start_ms: 1_000,
+        end_ms: 2_000,
+        text: "antes",
+      }),
+      segment({
+        id: "they-em-curso",
+        speaker: "THEY",
+        start_ms: 3_000,
+        end_ms: 9_000,
+        final: false,
+        text: "em curso",
+      }),
+      segment({
+        id: "me-depois",
+        speaker: "ME",
+        start_ms: 6_000,
+        end_ms: 7_000,
+        text: "depois",
+      }),
+    ]);
+
+    const rows = buildChatRows(bubbles, pending);
+    expect(
+      rows.map((row) =>
+        row.kind === "bubble" ? row.bubble.id : row.segment.id,
+      ),
+    ).toEqual(["they-antes", "they-em-curso", "me-depois"]);
+  });
+
+  it("ao finalizar, a fala não muda de posição (mesmo start_ms)", () => {
+    const before = buildChatRows(
+      [],
+      [
+        segment({
+          id: "me",
+          speaker: "ME",
+          start_ms: 5_000,
+          final: false,
+          text: "em curso",
+        }),
+      ],
+    );
+    const after = buildChatRows(
+      [
+        {
+          kind: "speech",
+          id: "me",
+          speaker: "ME",
+          text: "fechada",
+          at_ms: 5_000,
+        },
+      ],
+      [],
+    );
+
+    const at = (rows: ReturnType<typeof buildChatRows>) =>
+      rows[0]?.kind === "pending"
+        ? rows[0].segment.start_ms
+        : rows[0]?.bubble.at_ms;
+    expect(at(before)).toBe(at(after));
   });
 
   it("retratação: final vazio substitui a prévia e não vira bolha (ISS-021)", () => {

@@ -132,6 +132,11 @@ Regras transpostas (equivalência com o Perssua):
 - **I6.** A decisão de fechar cedo por frase só vale quando a **mesma prévia** que
   ancorou a cadência cobre o fim da fala e termina em pontuação forte; a métrica
   `commit_ms` (espera + fila + ASR) é logada em `info`.
+- **I7.** Os turnos de canais diferentes compartilham a mesma linha do tempo: a
+  origem é medida **por canal depois** de criar o motor; quando o buffer esvazia,
+  a base do próximo turno é re-ancorada no relógio de parede (nunca para trás) e
+  o descarte de backlog avança a base. A fala em andamento é exibida na posição
+  do seu `start_ms`, não no fim da lista (ISS-060).
 
 ---
 

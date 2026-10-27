@@ -461,3 +461,50 @@ export function bubblesFromTimeline(
   bubbles.sort(byTimeThenKind);
   return bubbles.slice(-cap);
 }
+
+/** Linha de renderização: bolha da linha do tempo ou fala em andamento. */
+export type ChatRow =
+  | { kind: "bubble"; bubble: ChatBubble }
+  | { kind: "pending"; segment: TranscriptSegment };
+
+/**
+ * Junta as bolhas finalizadas com as falas em andamento **na ordem do tempo**.
+ *
+ * A fala em andamento tem um `start_ms` fixo; prendê-la no fim fazia a fala do
+ * outro canal parecer ter vindo antes (o balão do usuário "passava para frente"
+ * enquanto o turno longo do outro lado ainda estava em processamento). A posição
+ * é a mesma antes e depois do final, então a bolha não pula ao fechar.
+ */
+export function buildChatRows(
+  bubbles: ChatBubble[],
+  pending: TranscriptSegment[] = [],
+  cap: number = MAX_BUBBLES,
+): ChatRow[] {
+  const rows: ChatRow[] = [
+    ...bubbles.map((bubble): ChatRow => ({ kind: "bubble", bubble })),
+    ...pending.map((segment): ChatRow => ({ kind: "pending", segment })),
+  ];
+  rows.sort((a, b) => {
+    const at = a.kind === "bubble" ? a.bubble.at_ms : a.segment.start_ms;
+    const bt = b.kind === "bubble" ? b.bubble.at_ms : b.segment.start_ms;
+    if (at !== bt) {
+      return at - bt;
+    }
+    // No mesmo instante, o que já fechou vem antes; entre prévias, ME antes
+    // de THEY (mesma ordem do painel).
+    if (a.kind !== b.kind) {
+      return a.kind === "bubble" ? -1 : 1;
+    }
+    if (a.kind === "bubble" && b.kind === "bubble") {
+      return byTimeThenKind(a.bubble, b.bubble);
+    }
+    if (a.kind === "pending" && b.kind === "pending") {
+      const bySpeaker =
+        SPEAKER_ORDER.indexOf(a.segment.speaker) -
+        SPEAKER_ORDER.indexOf(b.segment.speaker);
+      return bySpeaker || a.segment.id.localeCompare(b.segment.id);
+    }
+    return 0;
+  });
+  return rows.slice(-cap);
+}

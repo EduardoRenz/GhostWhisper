@@ -16,7 +16,8 @@
     "tauri:build": "bash scripts/tauri-build-linux.sh",
     "tauri:build:cpu": "bash scripts/tauri-build-cpu.sh",
     "tauri:dev:laya": "tauri dev --features laya",
-    "tauri:build:laya": "bash scripts/tauri-build-laya.sh"
+    "tauri:build:laya": "bash scripts/tauri-build-laya.sh",
+    "build:final": "bash scripts/build-final.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

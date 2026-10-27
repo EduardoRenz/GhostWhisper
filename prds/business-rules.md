@@ -506,7 +506,10 @@ uma nota de revisão.
   (`preview_cutoff_ms`, 250 ms) também é **experimento desligado por padrão**
   (default = `silence_ms`): a prévia continua rolando até o commit, como antes.
   O passe **final** mantém **prioridade** sobre prévias que esperam na fila
-  global do ASR.
+  global do ASR. A **marca de crash de GPU** é armada só quando um contexto GPU
+  é realmente carregado (e desarmada se o driver recusar e o app cair para CPU):
+  abrir/fechar o app sem sessão não pode condenar o próximo boot à CPU
+  (ISS-061).
 - **Detalhes:** [`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md),
   [`precision-and-performance/tasks/04-task.md`](precision-and-performance/tasks/04-task.md),
   [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §4.
@@ -813,7 +816,10 @@ uma nota de revisão.
     `started_at_ms + at_ms`), com fallback `mm:ss`; o dado persistido continua
     **relativo à sessão** (BR-019);
   - a fala em andamento tem borda/fundo cyan, **"Falando agora…"** e selo
-    **Streaming**; continuação não repete nome/hora;
+    **Streaming**; continuação não repete nome/hora; ela ocupa a **posição do
+    seu `start_ms`** na linha do tempo (não fica presa no fim) — assim o turno
+    longo do outro canal continua antes da fala do ME que veio depois e a bolha
+    não pula ao finalizar (ISS-060);
   - cada fala **finalizada** ganha a ação de IA no canto superior direito
     (BR-041); prévia/continuação não;
   - o rodapé mostra **"Idioma de Entrada:"** + seletor e o **estado real** do
@@ -2134,8 +2140,10 @@ uma nota de revisão.
   último e envia ao modelo apenas os turnos de THEY do bloco atual (as falas do
   ME não disparam sugestão). Em todos os escopos, o **contexto** enviado ao
   modelo tem ME+THEY, mas o **alvo** é só o trecho de THEY desde a última fala
-  de ME; o prompt separa `[CONTEXTO]` e `[ALVO]`. **Não existe mais sonda de
-  bloco aberto** — silêncio e hesitação saíram da taxonomia.
+  **com conteúdo** de ME; fala curta de ME (< 3 palavras, “ok”, “tchau”, ruído)
+  é ignorada e não bloqueia a pergunta. O prompt separa `[CONTEXTO]` e `[ALVO]`.
+  **Não existe mais sonda de bloco aberto** — silêncio e hesitação saíram da
+  taxonomia.
 - **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco é a
   menor unidade que contém pergunta/resposta, mas a decisão de “já respondida”
   precisa de mais fio de conversa.

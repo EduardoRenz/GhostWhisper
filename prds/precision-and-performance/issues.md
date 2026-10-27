@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-060**.
+único no repositório). Próximo ID livre: **ISS-062**.
 
 > `ISS-022` permanece reservada pelo PRD [`assistant`](../assistant/issues.md);
 > esta PRD começa em `ISS-023` para não colidir.
@@ -18,6 +18,8 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ISS-028 | Passe final beam search duplicado no fechamento do turno | Baixa | FIXED |
 | ISS-058 | Commit de fala preso atrás de prévia e silêncio fixo de 1 s | Alta | FIXED |
 | ISS-059 | Prompt instrucional vazava para a transcrição (frases sem sentido) | Alta | FIXED |
+| ISS-060 | Balão do ME passava à frente do turno longo do THEY (relógio por canal + prévia no fim) | Alta | FIXED |
+| ISS-061 | Encerramento antes da GPU condenava o próximo boot à CPU (10× mais lento) | Alta | FIXED |
 
 ---
 
@@ -134,6 +136,49 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
   `adapters/speech/whisper_speech_engine_factory.rs`,
   `src/core/domain/settings.ts`, `src/features/settings/SettingsPage.tsx`
 - **Task:** [`tasks/05-task.md`](tasks/05-task.md)
+
+## ISS-060 — Balão do ME passava à frente do turno longo do THEY
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma (relato do usuário, 27/10):** “às vezes fica fora de ordem EU e
+  ELES, meu balão vai para frente, mesmo que haja pausas e uma distância entre
+  as falas cronologicamente.”
+- **Causa raiz:** duas somas independentes:
+  1. **relógio por canal** — a origem era medida antes de criar o motor e cada
+     turno avançava pela soma de amostras; abrir a fonte (ou descartar backlog
+     de 30 s) deixava um canal segundos à frente do outro. O descarte nem
+     mexia no `turn_base_ms`;
+  2. **prévia sempre no fim da lista** — com o turno longo do THEY ainda em
+     processamento, o final curto do ME era desenhado acima dele; ao fechar, o
+     turno do THEY era inserido antes, e a bolha do usuário “pulava”.
+- **Correção:** origem calculada **depois** de criar o motor, por canal; a base
+  do turno é re-ancorada no relógio de parede quando o buffer esvazia (nunca
+  volta no tempo); amostras descartadas avançam a base e os índices de fala; a
+  fala em andamento entra na linha do tempo pelo `start_ms` (`buildChatRows`),
+  não no fim.
+- **Arquivos:** `application/session_service.rs`,
+  `application/transcription_pipeline.rs`,
+  `src/core/domain/chat.ts`, `src/features/chat/ChatView.tsx`
+- **Task:** [`tasks/07-task.md`](tasks/07-task.md)
+
+## ISS-061 — Encerramento antes da GPU condenava o próximo boot à CPU
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** sessão de 27/10 com `commit_ms` de **6–14 s** e prévias de
+  2–5 s; o log mostrava `backend="cpu" gpu_build=true flash_attn=false`. Na
+  sessão de 02:25 (GPU), o mesmo `small` decodificava 7,9 s em **1,26 s** e
+  prévias em ~300 ms — ~10× mais rápido.
+- **Causa raiz:** a marca de crash (`whisper-gpu-active.json`) era escrita no
+  **boot**, antes de qualquer sessão. Abrir e fechar o app algumas vezes
+  (inclusive antes de o whisper carregar) deixava a marca para trás; o próximo
+  boot via “encerramento sujo” e desligava a GPU **sem avisar**.
+- **Correção:** a marca passa a ser armada **no carregamento do contexto GPU**
+  (`WhisperSpeechToText`) e desarmada quando o driver recusa e o app cai para
+  CPU. Abrir/fechar o app sem sessão não afeta mais o próximo boot. O boot
+  continua lendo a marca e forçando CPU uma vez após um crash real.
+- **Arquivos:** `adapters/speech/whisper_speech_to_text.rs`,
+  `adapters/speech/whisper_speech_engine_factory.rs`, `lib.rs`
+- **Task:** [`tasks/07-task.md`](tasks/07-task.md)
 
 ---
 

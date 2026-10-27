@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copyText } from "../../core/application/clipboard";
 import {
-  MAX_BUBBLES,
+  buildChatRows,
   splitSpeechText,
   type ChatBubble,
 } from "../../core/domain/chat";
@@ -78,7 +78,10 @@ export const ChatView = memo(function ChatView({
   const stickToBottom = useRef(true);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const visible = useMemo(() => bubbles.slice(-MAX_BUBBLES), [bubbles]);
+  const rows = useMemo(
+    () => buildChatRows(bubbles, pending),
+    [bubbles, pending],
+  );
   const pendingText = pending.map((segment) => segment.text).join("\u0000");
 
   const onScroll = () => {
@@ -98,7 +101,7 @@ export const ChatView = memo(function ChatView({
     }
     const element = scrollerRef.current;
     element?.scrollTo?.({ top: element.scrollHeight, behavior: "smooth" });
-  }, [visible.length, pending.length, pendingText]);
+  }, [rows.length, pending.length, pendingText]);
 
   const onCopy = useCallback(async (id: string, text: string) => {
     if (await copyText(text)) {
@@ -107,14 +110,33 @@ export const ChatView = memo(function ChatView({
     }
   }, []);
 
-  const empty = visible.length === 0 && pending.length === 0;
+  const empty = rows.length === 0;
 
   return (
     <div className="chat" data-interactive>
       <div className="chat__list" ref={scrollerRef} onScroll={onScroll}>
         {empty && <p className="chat__empty">{emptyLabel ?? t("chat_no_speech_yet")}</p>}
-        {visible.map((bubble) =>
-          bubble.kind === "speech" ? (
+        {rows.map((row) => {
+          if (row.kind === "pending") {
+            const segment = row.segment;
+            // A prévia cresce enquanto o outro lado fala: mesma regra de teto,
+            // com o `…`/Streaming só na última parte.
+            const parts = splitSpeechText(segment.text);
+            return parts.map((part, index) => (
+              <Bubble
+                key={`pending-${segment.id}#${index}`}
+                text={part}
+                label={t(speakerLabelKey(segment.speaker))}
+                side={segment.speaker === "ME" ? "me" : "they"}
+                pending
+                streaming={index === parts.length - 1}
+                typing={index === parts.length - 1}
+                continues={index > 0}
+              />
+            ));
+          }
+          const bubble = row.bubble;
+          return bubble.kind === "speech" ? (
             <Bubble
               key={`speech-${bubble.id}`}
               text={bubble.text}
@@ -166,24 +188,7 @@ export const ChatView = memo(function ChatView({
               copied={copied === bubble.id}
               onCopy={() => void onCopy(bubble.id, bubble.text)}
             />
-          ),
-        )}
-        {pending.flatMap((segment) => {
-          // A prévia cresce enquanto o outro lado fala: mesma regra de teto,
-          // com o `…`/Streaming só na última parte.
-          const parts = splitSpeechText(segment.text);
-          return parts.map((part, index) => (
-            <Bubble
-              key={`pending-${segment.id}#${index}`}
-              text={part}
-              label={t(speakerLabelKey(segment.speaker))}
-              side={segment.speaker === "ME" ? "me" : "they"}
-              pending
-              streaming={index === parts.length - 1}
-              typing={index === parts.length - 1}
-              continues={index > 0}
-            />
-          ));
+          );
         })}
       </div>
     </div>

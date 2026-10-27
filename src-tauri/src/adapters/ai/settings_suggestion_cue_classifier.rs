@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::domain::suggestion_gate::SuggestionCue;
-use crate::domain::transcription::Speaker;
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::suggestion_cue_classifier::{
     ClassificationOutcome, ClassificationRequest, ClassifierError, SuggestionCueClassifier,
@@ -101,17 +100,6 @@ impl SuggestionCueClassifier for SettingsSuggestionCueClassifier {
         //   usar as regras (recall);
         // - Laya positivo: preservar a decisão contextual do modelo.
         let fallback = self.heuristic.classify(request)?;
-        // Bloco terminando em ME significa que ele já respondeu/está
-        // conduzindo a fala. O Laya às vezes ainda vê uma pergunta anterior e
-        // sugere; as regras locais são a guarda determinística.
-        if request
-            .full_block
-            .turns
-            .last()
-            .is_some_and(|turn| turn.speaker == Speaker::Me)
-        {
-            return Ok(fallback);
-        }
         if fallback.cue == SuggestionCue::AlreadyAnswered {
             return Ok(fallback);
         }
@@ -314,58 +302,6 @@ mod tests {
         }];
         let result = classifier.classify(&request).expect("guarda");
         assert_eq!(result.cue, SuggestionCue::AlreadyAnswered);
-        assert!(!result.should_suggest);
-    }
-
-    #[test]
-    fn a_block_ending_in_me_never_uses_a_positive_laya_decision() {
-        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
-        let mut no_action = outcome("heuristic");
-        no_action.cue = SuggestionCue::NoAction;
-        no_action.should_suggest = false;
-        heuristic.push_outcome(no_action);
-
-        let laya = Arc::new(FakeSuggestionCueClassifier::new());
-        laya.push_outcome(outcome("laya")); // Laya diz Question.
-
-        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
-        let mut request = request();
-        request.block.turns = vec![
-            crate::domain::suggestion_gate::BlockTurn {
-                speaker: Speaker::They,
-                text: "o que é um mutex?".to_string(),
-                start_ms: 0,
-                end_ms: 500,
-            },
-            crate::domain::suggestion_gate::BlockTurn {
-                speaker: Speaker::Me,
-                text: "é um mecanismo de exclusão mútua".to_string(),
-                start_ms: 1_000,
-                end_ms: 2_000,
-            },
-        ];
-        request.full_block = request.block.clone();
-        let result = classifier.classify(&request).expect("guarda");
-        assert_eq!(result.cue, SuggestionCue::NoAction);
-        assert!(!result.should_suggest);
-    }
-
-    #[test]
-    fn a_laya_comment_without_an_explicit_invitation_is_ignored() {
-        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
-        let mut no_action = outcome("heuristic");
-        no_action.cue = SuggestionCue::NoAction;
-        no_action.should_suggest = false;
-        heuristic.push_outcome(no_action);
-
-        let laya = Arc::new(FakeSuggestionCueClassifier::new());
-        let mut comment = outcome("laya");
-        comment.cue = SuggestionCue::Comment;
-        laya.push_outcome(comment);
-
-        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
-        let result = classifier.classify(&request()).expect("guarda");
-        assert_eq!(result.cue, SuggestionCue::NoAction);
         assert!(!result.should_suggest);
     }
 

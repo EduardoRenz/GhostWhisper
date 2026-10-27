@@ -277,3 +277,23 @@ Modelo:
   `src-tauri/src/adapters/ai/settings_suggestion_cue_classifier.rs`,
   `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`.
 - **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-070 — Ruído curto do ME escondia a pergunta de THEY
+
+- **Severidade:** Alta · **Status:** FIXED (2026-10-27)
+- **Sintoma:** em uma sessão real, o último segmento era ME (“tchau tchau”)
+  captado pelo microfone; o gate não analisava e não sugeria, mesmo com uma
+  pergunta completa de THEY no mesmo bloco.
+- **Causa raiz:** `they_target` considerava qualquer turno de ME como resposta;
+  um ruído curto depois de THEY fazia o alvo ficar vazio. Além disso, o alvo
+  era cortado a partir do último ME, podendo remover a pergunta.
+- **Correção:** só uma fala de ME com **≥ 3 palavras** conta como resposta
+  anterior. Ruído/backchannel curto é ignorado; a pergunta de THEY continua no
+  alvo. O modo `they_only` também não exige mais que o último turno bruto seja
+  THEY; a checagem é feita pelo alvo.
+- **Testes:** `short_me_noise_does_not_hide_the_they_question`,
+  `short_me_noise_does_not_block_the_they_question`.
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)

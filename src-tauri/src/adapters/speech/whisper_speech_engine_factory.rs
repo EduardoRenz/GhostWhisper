@@ -6,6 +6,7 @@
 //! enquanto não mudarem — a serialização da decodificação continua garantida por
 //! `SerialisingSpeechToText` (uma fila global).
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::domain::settings::Settings;
@@ -41,6 +42,8 @@ pub struct WhisperSpeechEngineFactory {
     publisher: Option<Arc<dyn EventPublisher>>,
     /// A GPU foi desabilitada após um encerramento sujo (marca de crash do boot).
     force_cpu: bool,
+    /// Arquivo-marca gravado enquanto um contexto GPU estiver ativo (BR-029).
+    gpu_marker: Option<PathBuf>,
     cached: Mutex<Option<CachedEngine>>,
 }
 
@@ -53,6 +56,7 @@ impl WhisperSpeechEngineFactory {
             gate: Arc::new(SpeechGate::new()),
             publisher: None,
             force_cpu: false,
+            gpu_marker: None,
             cached: Mutex::new(None),
         }
     }
@@ -66,6 +70,12 @@ impl WhisperSpeechEngineFactory {
     /// Desabilita a GPU nesta execução (marca de crash do boot anterior).
     pub fn with_force_cpu(mut self, force_cpu: bool) -> Self {
         self.force_cpu = force_cpu;
+        self
+    }
+
+    /// Define o arquivo-marca armado só quando a GPU for realmente carregada.
+    pub fn with_gpu_marker(mut self, path: Option<PathBuf>) -> Self {
+        self.gpu_marker = path;
         self
     }
 
@@ -133,14 +143,17 @@ impl SpeechEngineFactory for WhisperSpeechEngineFactory {
             }
         }
 
-        let whisper = Arc::new(WhisperSpeechToText::new(
-            Arc::clone(&self.models),
-            params.model.clone(),
-            params.language.clone(),
-            params.prompt.clone(),
-            params.use_gpu,
-            self.publisher.clone(),
-        ));
+        let whisper = Arc::new(
+            WhisperSpeechToText::new(
+                Arc::clone(&self.models),
+                params.model.clone(),
+                params.language.clone(),
+                params.prompt.clone(),
+                params.use_gpu,
+                self.publisher.clone(),
+            )
+            .with_gpu_marker(self.gpu_marker.clone()),
+        );
         // Baixa/carrega o modelo em background e avisa a UI; enquanto isso o
         // pipeline apenas aguarda (ver `AsrNotReady`).
         whisper.preload();

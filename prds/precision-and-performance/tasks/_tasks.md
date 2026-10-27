@@ -13,6 +13,7 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 | 04 | Commit de fala mais rápido (etapa 1): fila com prioridade, prévias na pausa, fechamento por frase, métrica | L1 | IN PROGRESS |
 | 05 | Prompt como contexto: default vazio, migração e aviso na UI | L2 | IN PROGRESS |
 | 06 | Commit por frase (etapa 3): avaliada e rejeitada — código removido | L3 | CANCELED |
+| 07 | Ordem entre canais (relógio + prévia no lugar) e GPU sem falso positivo | L4 | IN PROGRESS |
 
 ## Dependências
 
@@ -32,6 +33,8 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 - 06 depende de 03 (reuso do final/VAD) e 04 (métrica). Foi implementada como
   experimento, **rejeitada no teste manual** e o código removido; fica só o
   registro da decisão.
+- 07 depende de 03 (engine/GPU) e 04 (métrica de commit); corrige a ordem entre
+  canais e o falso positivo da marca de GPU sem mexer na segmentação.
 
 ## Definição de pronto (geral)
 

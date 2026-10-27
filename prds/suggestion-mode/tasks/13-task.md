@@ -59,6 +59,8 @@ blocos anteriores.
 - `a_generated_comment_also_enters_the_answered_history`
 - `repeated_comment_invitation_is_already_answered`
 - `a_mere_statement_is_not_a_comment_invitation`
+- `short_me_noise_does_not_hide_the_they_question`
+- `short_me_noise_does_not_block_the_they_question`
 - `a_laya_comment_without_an_explicit_invitation_is_ignored`
 - `laya_integration_marks_a_repeated_mutex_question_as_already_answered`
 - `me_last_turn_is_not_a_suggestion_opportunity`

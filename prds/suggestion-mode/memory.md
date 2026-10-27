@@ -766,3 +766,16 @@ Aumentar o timeout para 10 s no Avançado evita esse primeiro aviso.
   detectarem convite.
 - Fixtures: 24 no total (5 `comment`, 6 `no_action`); heurístico e caminho
   efetivo em 100% de decisão/cue. Laya bruto segue como POC.
+
+
+## 2026-10-27 — Ruído curto do ME não bloqueia pergunta
+
+- **IDs:** BR-093/BR-094 · **Issues:** ISS-070 · **Task:** 13
+- Sessão real: ME “tchau tchau” captado como último segmento; o alvo ficava
+  vazio e o gate não analisava, apesar da pergunta completa de THEY.
+- `they_target` agora usa a última fala de ME com **≥ 3 palavras**; ruído,
+  backchannel e fala curta são ignorados. `they_only` não exige mais o último
+  turno bruto de THEY — o alvo decide.
+- Testes de domínio e serviço cobrem ruído curto + resposta real.
+- Sessões com sobreposição de timestamps (pergunta longa de THEY e ME curto no
+  meio) continuam um caso a observar; o alvo usa a ordem dos turnos finais.

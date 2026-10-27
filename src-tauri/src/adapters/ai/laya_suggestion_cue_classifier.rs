@@ -967,7 +967,7 @@ mod tests {
 
     fn fixture_request(fixture: &FixtureBlock) -> ClassificationRequest {
         let full_block = conversation_from(fixture, &fixture.id);
-        let block = crate::domain::suggestion_gate::they_target(&full_block)
+        let block = crate::domain::suggestion_gate::they_target(&full_block, 3)
             .unwrap_or_else(|| full_block.clone());
         let context = if fixture.context.trim().is_empty() {
             vec![]
