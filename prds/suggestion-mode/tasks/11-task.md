@@ -1,6 +1,6 @@
 # 11 — Hardening, docs, pacote e teste manual
 
-- **Status:** IN PROGRESS (2026-10-26) — checks automatizados concluídos; roteiro manual no app pendente
+- **Status:** CONCLUDED (2026-10-26) — checks automatizados e teste manual no AppImage aprovados pelo usuário.
 - **Depende de:** 10
 - **Habilita:** —
 - **Issues:** — · **BR:** BR-092…BR-100

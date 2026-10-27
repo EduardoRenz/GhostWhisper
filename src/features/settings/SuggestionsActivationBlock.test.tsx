@@ -76,7 +76,6 @@ describe("SuggestionsActivationBlock", () => {
 
     fireEvent.change(select, { target: { value: "laya" } });
     expect(select.value).toBe("laya");
-    expect(screen.getByText("Modelo não instalado")).toBeDefined();
   });
 
   it("troca a sensibilidade", () => {
@@ -91,6 +90,9 @@ describe("SuggestionsActivationBlock", () => {
     render(<Harness />);
     const select = screen.getByLabelText("Quando sugerir") as HTMLSelectElement;
     expect(select.value).toBe("adaptive");
+    expect(screen.getByRole("option", { name: "Só THEY (perguntas do outro)" })).toBeDefined();
+    fireEvent.change(select, { target: { value: "they_only" } });
+    expect(select.value).toBe("they_only");
     fireEvent.change(select, { target: { value: "blocks" } });
     expect(select.value).toBe("blocks");
   });

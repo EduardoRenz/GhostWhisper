@@ -171,7 +171,7 @@ export interface Settings {
   /** Estratégia de disparo: automático ou classificador. */
   suggestion_mode: SuggestionMode;
   /** Escopo do classificador: blocos ME+THEY ou adaptativo. */
-  suggestion_scope: "blocks" | "adaptive";
+  suggestion_scope: "blocks" | "adaptive" | "they_only";
   /** Mostra a faixa de última classificação. */
   suggestion_show_classification: boolean;
   /** Backend do classificador. */
@@ -496,7 +496,7 @@ export const defaultSettings = (): Settings => ({
   suggestion_classifier_auto_download: false,
   suggestion_classifier_checkpoint: "multilingual",
   suggestion_classifier_cooldown_secs: 15,
-  suggestion_classifier_timeout_ms: 3_000,
+  suggestion_classifier_timeout_ms: 12_000,
   suggestion_classifier_fallback: "skip",
   suggestion_block_gap_ms: 3_000,
   suggestion_block_max_ms: 45_000,

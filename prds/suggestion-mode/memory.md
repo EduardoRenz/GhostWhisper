@@ -698,3 +698,42 @@ Aumentar o timeout para 10 s no Avançado evita esse primeiro aviso.
 - Fixtures: 22 no total (5 `already_answered`, 5 `no_action`), incluindo `a05`
   (pergunta + resposta no mesmo bloco) e `n05` (ME-only). Integração efetiva
   segue 100% de decisão/cue.
+
+
+## 2026-10-26 — Fechamento das tasks 06/11 e ajuste de UI
+
+- **IDs:** BR-097 · **Issues:** — · **Tasks:** 06, 11, 13
+- Tasks 06 e 11 marcadas como `CONCLUDED`: engine/model manager/AppImage e
+  hardening/teste manual aprovados. O fine-tuning continua como evolução
+  (task 12) e a qualidade bruta do Laya segue em ISS-062.
+- Settings de classificadores compactados: descrições longas removidas,
+  modelo/escopo/sensibilidade agrupados, model manager movido para o
+  “Avançado” e nota “POC” removida. O modelo aparece apenas como “Laya”.
+
+
+## 2026-10-26 — Timeout do primeiro uso, logs locais e UI compacta
+
+- **IDs:** BR-097 · **Issues:** ISS-067 · **Tasks:** 06, 11, 13
+- “Falha” repetida era o timeout de 3 s durante a carga inicial do ONNX
+  (~1,2 GB). O padrão passou a 12 s e o piso para 10 s (faixa 10–30 s);
+  settings antigas migram no load.
+- Logs locais em `<app_data>/logs/ghostwhisper.log` (rotação em 5 MB) com
+  timeout/carga/erros, sem texto de transcrição ou segredo. A aba
+  **Geral & HUD → Logs** mostra as últimas 300 linhas e abre a pasta.
+- A seção de classificadores foi compactada: sem parágrafos descritivos, sem
+  “POC”, model manager no “Avançado”, escopo com rótulos claros:
+  “Qualquer bloco” vs “Só com ME e THEY”.
+
+
+## 2026-10-26 — Escopo “Só THEY” e logs de diagnóstico
+
+- **IDs:** BR-093/BR-097 · **Issues:** ISS-067 · **Task:** 13
+- Novo `suggestion_scope = they_only`: só classifica quando THEY é o último a
+  falar; o bloco enviado ao modelo é projetado apenas com turnos de THEY
+  (ME não influencia a decisão). Contexto anterior continua completo.
+- UI: opções “Qualquer bloco”, “Só THEY (perguntas do outro)” e “Só com ME e
+  THEY”, com legenda curta.
+- Timeout do classificador: 12 s padrão, faixa 10–30 s, para cobrir a carga
+  inicial de ~1,2 GB do ONNX e evitar “Falha” repetida.
+- Logs locais em `<app_data>/logs/ghostwhisper.log`, com consulta em
+  Configurações → Geral & HUD → Logs.

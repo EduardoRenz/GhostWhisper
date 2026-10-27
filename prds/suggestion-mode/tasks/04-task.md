@@ -29,7 +29,7 @@ consulta/classificação manual.
   - `suggestion_classifier_model_catalog_url` (default oficial);
   - `suggestion_classifier_checkpoint` (default `multilingual`);
   - `suggestion_classifier_cooldown_secs` (5–120; default 15);
-  - `suggestion_classifier_timeout_ms` (500–10.000; default 3.000);
+  - `suggestion_classifier_timeout_ms` (10.000–30.000; default 12.000);
   - `suggestion_classifier_fallback` (`skip` | `auto`; default `skip`);
   - `suggestion_block_gap_ms` (1.000–10.000; default 3.000);
   - `suggestion_block_max_ms` (10.000–120.000; default 45.000);

@@ -47,13 +47,6 @@ export function SuggestionsActivationBlock({
   const isClassifier = mode === "classifier";
   const isLaya = settings.suggestion_classifier_backend === "laya";
   const modelValue = isLaya ? "laya" : "heuristic";
-  const hasModel = settings.suggestion_classifier_model_path.trim().length > 0;
-  const modelStatus = !isLaya
-    ? t("suggestion_model_status_offline")
-    : hasModel
-      ? t("suggestion_model_status_configured")
-      : t("suggestion_model_status_missing");
-
   const selectMode = (next: SuggestionMode) => {
     update("suggestion_mode", next);
     if (!settings.suggestion_auto_refresh) {
@@ -118,15 +111,9 @@ export function SuggestionsActivationBlock({
           <span className="suggestion-activation__icon">
             <SparkleIcon size={16} />
           </span>
-          <div>
-            <h2 className="settings__section-title">
-              {t("suggestion_activation_title")}
-            </h2>
-            <div className="suggestion-activation__subtitle">
-              <Pill tone="neutral">{t("suggestion_activation_badge")}</Pill>
-              <span>{t("suggestion_activation_subtitle")}</span>
-            </div>
-          </div>
+          <h2 className="settings__section-title">
+            {t("suggestion_activation_title")}
+          </h2>
         </div>
         <label className="settings__toggle">
           <input
@@ -167,10 +154,6 @@ export function SuggestionsActivationBlock({
               <Pill tone="accent">{t("suggestion_activation_active")}</Pill>
             )}
           </header>
-          <p className="suggestion-activation__description">
-            {t("suggestion_mode_classifier_description")}
-          </p>
-
           <label className="settings__field">
             <span>{t("suggestion_model_selected")}</span>
             <select
@@ -185,71 +168,63 @@ export function SuggestionsActivationBlock({
             </select>
           </label>
 
-          <label className="settings__field">
-            <span>{t("suggestion_scope")}</span>
-            <select
-              value={settings.suggestion_scope}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) =>
-                update(
-                  "suggestion_scope",
-                  event.target.value as "blocks" | "adaptive",
-                )
-              }
-            >
-              <option value="blocks">{t("suggestion_scope_blocks")}</option>
-              <option value="adaptive">
-                {t("suggestion_scope_adaptive")}
-              </option>
-            </select>
-          </label>
+          <div className="settings__grid">
+            <label className="settings__field">
+              <span>{t("suggestion_scope")}</span>
+              <select
+                aria-label={t("suggestion_scope")}
+                value={settings.suggestion_scope}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) =>
+                  update(
+                    "suggestion_scope",
+                    event.target.value as
+                      | "blocks"
+                      | "adaptive"
+                      | "they_only",
+                  )
+                }
+              >
+                <option value="adaptive">
+                  {t("suggestion_scope_adaptive")}
+                </option>
+                <option value="they_only">
+                  {t("suggestion_scope_they")}
+                </option>
+                <option value="blocks">{t("suggestion_scope_blocks")}</option>
+              </select>
+              <small className="settings__hint">
+                {t("suggestion_scope_hint")}
+              </small>
+            </label>
 
-          <div className="suggestion-activation__status">
-            <span
-              className={`suggestion-activation__dot${
-                isLaya && !hasModel ? " suggestion-activation__dot--off" : ""
-              }`}
-            />
-            {modelStatus}
-          </div>
-          {isLaya && (
-            <div onClick={(event) => event.stopPropagation()}>
-              <ClassifierModelManager
-                modelId={settings.suggestion_classifier_model_id}
-                checkpoint={settings.suggestion_classifier_checkpoint}
-              />
-              <p className="suggestion-activation__note">
-                {t("suggestion_laya_poc_note")}
-              </p>
-            </div>
-          )}
-
-          <div className="settings__field">
-            <span>{t("suggestion_sensitivity")}</span>
-            <div className="suggestion-activation__segmented">
-              {(["low", "balanced", "high"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={
-                    settings.suggestion_classifier_sensitivity === value
-                      ? "is-active"
-                      : ""
-                  }
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    update("suggestion_classifier_sensitivity", value);
-                  }}
-                >
-                  {t(
-                    value === "low"
-                      ? "suggestion_sensitivity_low"
-                      : value === "balanced"
-                        ? "suggestion_sensitivity_balanced"
-                        : "suggestion_sensitivity_high",
-                  )}
-                </button>
-              ))}
+            <div className="settings__field">
+              <span>{t("suggestion_sensitivity")}</span>
+              <div className="suggestion-activation__segmented">
+                {(["low", "balanced", "high"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={
+                      settings.suggestion_classifier_sensitivity === value
+                        ? "is-active"
+                        : ""
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      update("suggestion_classifier_sensitivity", value);
+                    }}
+                  >
+                    {t(
+                      value === "low"
+                        ? "suggestion_sensitivity_low"
+                        : value === "balanced"
+                          ? "suggestion_sensitivity_balanced"
+                          : "suggestion_sensitivity_high",
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -292,9 +267,6 @@ export function SuggestionsActivationBlock({
               <Pill tone="accent">{t("suggestion_activation_active")}</Pill>
             )}
           </header>
-          <p className="suggestion-activation__description">
-            {t("suggestion_mode_auto_description")}
-          </p>
           <div className="settings__field">
             <span>{t("suggestion_cadence")}</span>
             <div className="suggestion-activation__segmented">
@@ -317,14 +289,19 @@ export function SuggestionsActivationBlock({
               ))}
             </div>
           </div>
-          <p className="suggestion-activation__note">
-            {t("suggestion_blind_trigger")}
-          </p>
         </article>
       </div>
 
       {advancedOpen && isClassifier && (
         <div className="suggestion-activation__advanced">
+          {isLaya && (
+            <div onClick={(event) => event.stopPropagation()}>
+              <ClassifierModelManager
+                modelId={settings.suggestion_classifier_model_id}
+                checkpoint={settings.suggestion_classifier_checkpoint}
+              />
+            </div>
+          )}
           <div className="settings__grid">
             <label className="settings__field">
               <span>{t("suggestion_classifier_cooldown")}</span>
@@ -345,8 +322,8 @@ export function SuggestionsActivationBlock({
               <span>{t("suggestion_classifier_timeout")}</span>
               <input
                 type="number"
-                min={500}
-                max={10_000}
+                min={10_000}
+                max={30_000}
                 value={settings.suggestion_classifier_timeout_ms}
                 onChange={(event) =>
                   update(

@@ -210,3 +210,25 @@ Modelo:
   `src-tauri/src/adapters/ai/settings_suggestion_cue_classifier.rs`,
   `src-tauri/src/application/suggestion_gate_service.rs`.
 - **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-067 — “Falha” repetida no topo ao carregar o Laya
+
+- **Severidade:** Alta · **Status:** FIXED (2026-10-26)
+- **Sintoma:** o cabeçalho do classificador exibia “Falha” várias vezes nos
+  primeiros blocos, mesmo com Laya selecionado e modelo empacotado.
+- **Causa raiz:** o timeout padrão era 3 s. A primeira inferência carrega o
+  ONNX de ~1,2 GB dentro do worker e pode levar mais que isso; cada tick
+  estourava o timeout e publicava `Error`.
+- **Correção:** timeout padrão 12 s e piso de 10 s (faixa 10–30 s); migração
+  de settings antigas para o piso. O log registra timeout, carga do modelo e
+  falha de classificação. Logs locais em `<app_data>/logs/ghostwhisper.log`,
+  consultáveis em Configurações → Geral & HUD → Logs.
+- **Testes:** `tail_keeps_only_the_requested_lines`,
+  `LogsSettings` (frontend), suíte de settings.
+- **Arquivos:** `src-tauri/src/domain/settings.rs`,
+  `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`,
+  `src-tauri/src/adapters/ai/laya_onnx_predictor.rs`,
+  `src-tauri/src/lib.rs`, `src-tauri/src/ipc/log_commands.rs`,
+  `src/features/settings/LogsSettings.tsx`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)

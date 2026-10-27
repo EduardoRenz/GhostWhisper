@@ -16,6 +16,7 @@ use crate::domain::suggestion_gate::{
     build_blocks, decide, question_title, BlockConfig, ClassifierSensitivity, ConversationBlock,
     GateDecision, GateSkipReason, GateTick, HeuristicConfig, PriorQuestion, SuggestionCue,
 };
+use crate::domain::transcription::Speaker;
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::{
     EventPublisher, SuggestionClassificationEvent, SuggestionClassifierState,
@@ -95,7 +96,8 @@ pub fn config_from_settings(settings: &Settings) -> SuggestionGateConfig {
             .unwrap_or_else(|| "pt".to_string()),
         mode_id: settings.assistant_mode_id.clone(),
         mode_context: selected_mode_context(settings),
-        allow_single_speaker: settings.suggestion_scope == "adaptive",
+        allow_single_speaker: settings.suggestion_scope != "blocks",
+        they_only: settings.suggestion_scope == "they_only",
     }
 }
 
@@ -210,7 +212,20 @@ impl SuggestionGateService {
         blocks: &[ConversationBlock],
         min_chars: usize,
         allow_single_speaker: bool,
+        they_only: bool,
     ) -> Option<(usize, &ConversationBlock)> {
+        if they_only {
+            // Só a ponta da conversa interessa: se o ME falou por último, não
+            // há pergunta de THEY pendente. Não volta para um bloco antigo.
+            let (index, block) = blocks.iter().enumerate().next_back()?;
+            if block.is_open
+                || block.turns.last().map(|turn| turn.speaker) != Some(Speaker::They)
+                || !block.is_classifiable_with(min_chars, true)
+            {
+                return None;
+            }
+            return Some((index, block));
+        }
         blocks
             .iter()
             .enumerate()
@@ -278,11 +293,40 @@ impl SuggestionGate for SuggestionGateService {
             .map_err(|error| SuggestionGateError::Repository(error.to_string()))?;
         let blocks = build_blocks(session_id, &segments, &config.block, now);
 
-        let Some((index, block)) =
-            Self::last_block(&blocks, config.block.min_chars, config.allow_single_speaker)
-        else {
+        let Some((index, block)) = Self::last_block(
+            &blocks,
+            config.block.min_chars,
+            config.allow_single_speaker,
+            config.they_only,
+        ) else {
             return Err(SuggestionGateError::NoBlock);
         };
+
+        // No escopo `they_only`, o classificador recebe só os turnos de THEY do
+        // bloco atual. O histórico/contexto anteriores continuam completos.
+        let mut classification_block = block.clone();
+        if config.they_only {
+            // Só o que THEY disse depois da última fala de ME: uma pergunta
+            // anterior já respondida não pode voltar como pendente só porque o
+            // ME foi removido da projeção.
+            let start = block
+                .turns
+                .iter()
+                .rposition(|turn| turn.speaker == Speaker::Me)
+                .map(|index| index + 1)
+                .unwrap_or(0);
+            classification_block.turns = block.turns[start..]
+                .iter()
+                .filter(|turn| turn.speaker == Speaker::They)
+                .cloned()
+                .collect();
+            classification_block.me_chars = 0;
+            classification_block.they_chars = classification_block
+                .turns
+                .iter()
+                .map(|turn| turn.text.chars().count())
+                .sum();
+        }
 
         if let Some(cached) = self.lock_state().last.get(session_id) {
             if cached.block_id == block.id {
@@ -300,7 +344,7 @@ impl SuggestionGate for SuggestionGateService {
             .unwrap_or_default();
         let request = ClassificationRequest {
             session_id: session_id.to_string(),
-            block: block.clone(),
+            block: classification_block.clone(),
             context,
             locale: config.locale.clone(),
             mode_id: config.mode_id.clone(),
@@ -320,14 +364,19 @@ impl SuggestionGate for SuggestionGateService {
 
         match self.classifier.classify(&request) {
             Ok(outcome) => {
-                let outcome =
-                    attach_metadata(outcome, block, wall_now, self.classifier.backend_id());
+                let outcome = attach_metadata(
+                    outcome,
+                    &classification_block,
+                    wall_now,
+                    self.classifier.backend_id(),
+                );
                 {
                     let mut state = self.lock_state();
                     if outcome.cue.can_suggest() {
-                        state
-                            .question_titles
-                            .insert(outcome.block_id.clone(), question_title(block));
+                        state.question_titles.insert(
+                            outcome.block_id.clone(),
+                            question_title(&classification_block),
+                        );
                     } else {
                         state.question_titles.remove(&outcome.block_id);
                     }
@@ -338,7 +387,7 @@ impl SuggestionGate for SuggestionGateService {
                         remember_answered(
                             &mut state,
                             session_id,
-                            question_title(block),
+                            question_title(&classification_block),
                             &outcome.block_id,
                             now,
                             config.answered_questions,
@@ -356,6 +405,7 @@ impl SuggestionGate for SuggestionGateService {
                 Ok(outcome)
             }
             Err(error) => {
+                tracing::warn!("classificação de sugestão falhou: {error}");
                 let last = self.last(session_id);
                 self.publish(
                     session_id,
@@ -679,6 +729,81 @@ mod tests {
     }
 
     #[test]
+    fn they_only_ignores_me_and_projects_only_they_turns() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::Me, "minha resposta longa", 0, 500))
+            .unwrap();
+
+        let mut they_only = config();
+        they_only.allow_single_speaker = true;
+        they_only.they_only = true;
+
+        // O bloco mais novo termina em ME: nada a classificar.
+        let gate = service_at(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(FixedClock(2_000)),
+            Arc::new(RecordingPublisher::default()),
+            they_only.clone(),
+        );
+        assert!(matches!(
+            gate.classify_latest("s1"),
+            Err(SuggestionGateError::NoBlock)
+        ));
+
+        // THEY pergunta: o bloco projetado tem só turnos de THEY.
+        repo.insert(&segment("b", Speaker::They, "e o prazo?", 4_000, 4_500))
+            .unwrap();
+        let gate = service_at(
+            classifier.clone(),
+            repo,
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            they_only,
+        );
+        let result = gate.classify_latest("s1").expect("classificação");
+        assert_eq!(result.cue, SuggestionCue::Question);
+        let request = &classifier.requests()[0];
+        assert!(!request.block.turns.is_empty());
+        assert!(request
+            .block
+            .turns
+            .iter()
+            .all(|turn| turn.speaker == Speaker::They));
+        assert_eq!(request.block.me_chars, 0);
+    }
+
+    #[test]
+    fn they_only_does_not_reopen_a_question_answered_before_the_last_they_turn() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::NoAction, false));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::They, "qual é o prazo?", 0, 500))
+            .unwrap();
+        repo.insert(&segment("b", Speaker::Me, "entrego na sexta", 1_000, 1_500))
+            .unwrap();
+        repo.insert(&segment("c", Speaker::They, "obrigado", 2_000, 2_500))
+            .unwrap();
+        let mut they_only = config();
+        they_only.allow_single_speaker = true;
+        they_only.they_only = true;
+        let gate = service_at(
+            classifier.clone(),
+            repo,
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            they_only,
+        );
+
+        let _ = gate.classify_latest("s1").expect("classificação");
+        let request = &classifier.requests()[0];
+        assert_eq!(request.block.turns.len(), 1);
+        assert_eq!(request.block.turns[0].text, "obrigado");
+    }
+
+    #[test]
     fn config_uses_the_selected_agent_scope_and_laya_threshold() {
         use crate::domain::settings::Settings;
 
@@ -696,9 +821,17 @@ mod tests {
 
         let heuristic = Settings {
             suggestion_classifier_backend: "heuristic".to_string(),
-            ..settings
+            ..settings.clone()
         };
         assert_eq!(config_from_settings(&heuristic).confidence_min, 0.70);
+
+        let they_only = Settings {
+            suggestion_scope: "they_only".to_string(),
+            ..settings
+        };
+        let config = config_from_settings(&they_only);
+        assert!(config.they_only);
+        assert!(config.allow_single_speaker);
     }
 
     #[test]

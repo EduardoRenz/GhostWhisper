@@ -55,6 +55,8 @@ impl OnnxLayaPredictor {
             return Err(ClassifierError::Unavailable);
         }
 
+        tracing::info!("carregando modelo Laya de {}", self.directory.display());
+        let started = std::time::Instant::now();
         let loaded = laya::LayaEngine::create(laya::LayaOptions {
             model_directory: Some(self.directory.clone()),
             allow_download: false,
@@ -67,7 +69,11 @@ impl OnnxLayaPredictor {
             self.failed.store(true, Ordering::Relaxed);
             ClassifierError::Unavailable
         })?;
-        tracing::info!("modelo Laya carregado de {}", self.directory.display());
+        tracing::info!(
+            "modelo Laya carregado de {} em {:?}",
+            self.directory.display(),
+            started.elapsed()
+        );
         *guard = Some(loaded);
         Ok(guard)
     }

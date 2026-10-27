@@ -448,7 +448,8 @@ Como usuário, quero escolher como o copiloto decide quando sugerir.
 Como usuário, quero que o copiloto só sugira quando houver um motivo real.
 
 - **CA-02.1** Um bloco só é classificado quando está fechado e tem contexto
-  suficiente (ME+THEY no escopo `blocks`; qualquer falante no `adaptive`).
+  suficiente (ME+THEY no `blocks`; qualquer falante no `adaptive`; só THEY no
+  `they_only`, que ignora/projeta os turnos de ME).
 - **CA-02.2** `question` e `comment` podem gerar sugestão; `already_answered`,
   `no_action` e `insufficient_context` nunca.
 - **CA-02.3** Confiança abaixo do limiar não gera.

@@ -32,6 +32,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             ipc::ping::ping,
+            ipc::log_commands::logs_path,
+            ipc::log_commands::logs_recent,
             ipc::overlay::overlay_toggle,
             ipc::overlay::overlay_set_stealth,
             ipc::overlay::overlay_set_click_through,
@@ -1555,8 +1557,58 @@ fn migrate_legacy_data_dir(dir: &std::path::Path) -> crate::error::Result<()> {
     Ok(())
 }
 
+/// Caminho do log local (`<app_data>/logs/ghostwhisper.log`).
+///
+/// O mesmo diretório que o Tauri usa para os dados do app no Linux. Criado no
+/// boot; o arquivo é rotacionado ao passar de 5 MB.
+pub(crate) fn log_file_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"))
+        })?;
+    let dir = base.join("com.ghostwhisper.desktop").join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join("ghostwhisper.log");
+    if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > 5 * 1024 * 1024) {
+        let _ = std::fs::rename(&path, dir.join("ghostwhisper.log.1"));
+    }
+    Some(path)
+}
+
+struct SharedLogFile(std::sync::Arc<std::sync::Mutex<std::fs::File>>);
+
+struct SharedLogGuard<'a>(std::sync::MutexGuard<'a, std::fs::File>);
+
+impl std::io::Write for SharedLogGuard<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogFile {
+    type Writer = SharedLogGuard<'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        SharedLogGuard(
+            self.0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+    }
+}
+
 /// Configura o subsistema de logs (`RUST_LOG` controla o nível).
+///
+/// Além do stderr, grava em `<app_data>/logs/ghostwhisper.log` para consulta
+/// local. Nenhum texto de transcrição/segredo é logado por contrato.
 fn init_tracing() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::EnvFilter;
 
     // whisper.cpp/ggml são barulhentos (um `whisper_full_with_state` por token).
@@ -1573,7 +1625,36 @@ fn init_tracing() {
     let filter =
         EnvFilter::try_new(directives).unwrap_or_else(|_| EnvFilter::new("info,whisper_rs=warn"));
 
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
+    let file_layer = log_file_path().and_then(|path| {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()?;
+        Some(
+            tracing_subscriber::fmt::layer()
+                .with_writer(SharedLogFile(std::sync::Arc::new(std::sync::Mutex::new(
+                    file,
+                ))))
+                .with_ansi(false),
+        )
+    });
+
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(stderr_layer);
+    match file_layer {
+        Some(layer) => {
+            let _ = registry.with(layer).try_init();
+        }
+        None => {
+            let _ = registry.try_init();
+        }
+    }
+    if let Some(path) = log_file_path() {
+        tracing::info!("logs: {}", path.display());
+    }
     whisper_rs::install_logging_hooks();
 }
 

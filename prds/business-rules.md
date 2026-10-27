@@ -2129,8 +2129,11 @@ uma nota de revisão.
   de turnos. No escopo **`blocks`** o bloco classificável exige ME + THEY; no
   escopo **`adaptive`** (padrão do classificador) basta um falante com conteúdo.
   O classificador lê no mínimo **8 blocos anteriores** (`suggestion_context_blocks`,
-  faixa 8–20) numa janela de até 5 min/120 segmentos. **Não existe mais sonda
-  de bloco aberto** — silêncio e hesitação saíram da taxonomia.
+  faixa 8–20) numa janela de até 5 min/120 segmentos. Além de `blocks` e
+  `adaptive`, o escopo **`they_only`** só classifica quando THEY fala por
+  último e envia ao modelo apenas os turnos de THEY do bloco atual (as falas do
+  ME não disparam sugestão). **Não existe mais sonda de bloco aberto** —
+  silêncio e hesitação saíram da taxonomia.
 - **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco é a
   menor unidade que contém pergunta/resposta, mas a decisão de “já respondida”
   precisa de mais fio de conversa.

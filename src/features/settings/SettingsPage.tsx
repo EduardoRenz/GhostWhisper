@@ -36,6 +36,7 @@ import {
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantsSettings } from "./AssistantsSettings";
 import { CadenceSettings } from "./CadenceSettings";
+import { LogsSettings } from "./LogsSettings";
 import { LanguageSettings } from "./LanguageSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
@@ -714,6 +715,7 @@ export function SettingsPage() {
               <LanguageSettings settings={draft} update={update} />
               <HudSettings settings={draft} update={update} />
               <CadenceSettings settings={draft} update={update} />
+              <LogsSettings />
             </>
           )}
 

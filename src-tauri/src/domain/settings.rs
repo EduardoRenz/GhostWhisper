@@ -279,7 +279,8 @@ pub struct Settings {
     /// Estratégia de disparo: `auto` (timer) | `classifier` (classificador).
     #[serde(default = "default_suggestion_mode")]
     pub suggestion_mode: String,
-    /// Escopo do classificador: `blocks` (ME+THEY) | `adaptive` (qualquer bloco).
+    /// Escopo do classificador: `blocks` (ME+THEY) | `adaptive` (qualquer bloco)
+    /// | `they_only` (só falas de THEY).
     #[serde(default = "default_suggestion_scope")]
     pub suggestion_scope: String,
     /// Mostra a faixa de última classificação na janela de Sugestões.
@@ -747,7 +748,7 @@ fn default_classifier_cooldown_secs() -> u32 {
 }
 
 fn default_classifier_timeout_ms() -> u32 {
-    3_000
+    12_000
 }
 
 fn default_classifier_fallback() -> String {
@@ -916,7 +917,10 @@ impl Settings {
                 self.suggestion_mode
             )));
         }
-        if !matches!(self.suggestion_scope.as_str(), "blocks" | "adaptive") {
+        if !matches!(
+            self.suggestion_scope.as_str(),
+            "blocks" | "adaptive" | "they_only"
+        ) {
             return Err(GhostWhisperError::Config(format!(
                 "escopo de sugestão inválido: {}",
                 self.suggestion_scope
@@ -960,9 +964,9 @@ impl Settings {
                 "cooldown do classificador deve ficar entre 5 e 120 s".to_string(),
             ));
         }
-        if !(500..=10_000).contains(&self.suggestion_classifier_timeout_ms) {
+        if !(10_000..=30_000).contains(&self.suggestion_classifier_timeout_ms) {
             return Err(GhostWhisperError::Config(
-                "timeout do classificador deve ficar entre 500 e 10000 ms".to_string(),
+                "timeout do classificador deve ficar entre 10000 e 30000 ms".to_string(),
             ));
         }
         if !(1_000..=10_000).contains(&self.suggestion_block_gap_ms) {
@@ -1117,7 +1121,10 @@ impl Settings {
         if !matches!(self.suggestion_mode.as_str(), "auto" | "classifier") {
             self.suggestion_mode = default_suggestion_mode();
         }
-        if !matches!(self.suggestion_scope.as_str(), "blocks" | "adaptive") {
+        if !matches!(
+            self.suggestion_scope.as_str(),
+            "blocks" | "adaptive" | "they_only"
+        ) {
             self.suggestion_scope = default_suggestion_scope();
         }
         if !matches!(
@@ -1153,8 +1160,10 @@ impl Settings {
         }
         self.suggestion_classifier_cooldown_secs =
             self.suggestion_classifier_cooldown_secs.clamp(5, 120);
+        // O primeiro uso carrega ~1,2 GB de ONNX; 3 s estourava e a UI piscava
+        // “Falha”. O piso cobre a carga inicial; inferências seguintes são ~600 ms.
         self.suggestion_classifier_timeout_ms =
-            self.suggestion_classifier_timeout_ms.clamp(500, 10_000);
+            self.suggestion_classifier_timeout_ms.clamp(10_000, 30_000);
         self.suggestion_block_gap_ms = self.suggestion_block_gap_ms.clamp(1_000, 10_000);
         self.suggestion_block_max_ms = self.suggestion_block_max_ms.clamp(10_000, 120_000);
         self.suggestion_block_max_turns = self.suggestion_block_max_turns.clamp(2, 24);
@@ -1736,7 +1745,7 @@ mod tests {
             .suggestion_classifier_model_catalog_url
             .starts_with("https://"));
         assert_eq!(dirty.suggestion_classifier_cooldown_secs, 5);
-        assert_eq!(dirty.suggestion_classifier_timeout_ms, 500);
+        assert_eq!(dirty.suggestion_classifier_timeout_ms, 10_000);
         assert_eq!(dirty.suggestion_block_gap_ms, 1_000);
         assert_eq!(dirty.suggestion_block_max_ms, 10_000);
         assert_eq!(dirty.suggestion_block_max_turns, 2);
@@ -2339,6 +2348,13 @@ mod tests {
         };
         assert_eq!(adaptive.clone().sanitized().suggestion_scope, "adaptive");
         assert!(adaptive.validate().is_ok());
+
+        let they_only = Settings {
+            suggestion_scope: "they_only".to_string(),
+            ..Settings::default()
+        };
+        assert_eq!(they_only.clone().sanitized().suggestion_scope, "they_only");
+        assert!(they_only.validate().is_ok());
 
         let invalid = Settings {
             suggestion_scope: "nope".to_string(),

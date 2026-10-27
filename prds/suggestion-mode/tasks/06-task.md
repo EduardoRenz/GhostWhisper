@@ -1,6 +1,6 @@
 # 06 — Modelo Laya (`laya-onnx`) + model manager + avaliação
 
-- **Status:** IN PROGRESS (2026-10-26) — engine, artefato ONNX, model manager e AppImage CONCLUDED; eval real abaixo do gate (ISS-062), fine-tuning pendente
+- **Status:** CONCLUDED (2026-10-26) — engine, artefato ONNX, model manager e AppImage entregues. Qualidade bruta do Laya segue em ISS-062/fine-tuning (task 12).
 - **Depende de:** 02, 03, 04
 - **Habilita:** 09, 10, 12
 - **Issues:** — · **BR:** BR-098, BR-099

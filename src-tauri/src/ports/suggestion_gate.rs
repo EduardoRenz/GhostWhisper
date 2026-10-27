@@ -36,8 +36,11 @@ pub struct SuggestionGateConfig {
     pub mode_id: String,
     /// Contexto curto do agente selecionado (nome/categoria/foco).
     pub mode_context: String,
-    /// Classifica bloco de um falante só (escopo `adaptive`).
+    /// Classifica bloco de um falante só (escopos `adaptive`/`they_only`).
     pub allow_single_speaker: bool,
+    /// Só classifica quando THEY é o último a falar e projeta o bloco só com
+    /// turnos de THEY (escopo `they_only`).
+    pub they_only: bool,
 }
 
 impl Default for SuggestionGateConfig {
@@ -57,6 +60,7 @@ impl Default for SuggestionGateConfig {
             mode_id: "default".to_string(),
             mode_context: String::new(),
             allow_single_speaker: false,
+            they_only: false,
         }
     }
 }

@@ -113,7 +113,7 @@ impl Default for LayaClassifierConfig {
     fn default() -> Self {
         Self {
             threshold: 0.70,
-            timeout_ms: 3_000,
+            timeout_ms: 12_000,
             model: "multilingual".to_string(),
         }
     }
@@ -425,8 +425,17 @@ impl SuggestionCueClassifier for LayaSuggestionCueClassifier {
         let prediction = response
             .recv_timeout(Duration::from_millis(self.config.timeout_ms))
             .map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => ClassifierError::Timeout,
-                mpsc::RecvTimeoutError::Disconnected => ClassifierError::Unavailable,
+                mpsc::RecvTimeoutError::Timeout => {
+                    tracing::warn!(
+                        "Laya timeout após {} ms (modelo pode estar carregando)",
+                        self.config.timeout_ms
+                    );
+                    ClassifierError::Timeout
+                }
+                mpsc::RecvTimeoutError::Disconnected => {
+                    tracing::warn!("worker do Laya desconectado");
+                    ClassifierError::Unavailable
+                }
             })??;
 
         Ok(self.outcome(request, &prediction, started.elapsed().as_millis() as u64))

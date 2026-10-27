@@ -13,12 +13,12 @@ usuário (PRD §16).
 | 03 | Serviço de gate + cache da última classificação | Fundação | CONCLUDED |
 | 04 | Settings, migração, tipos e IPC | Contrato | CONCLUDED |
 | 05 | Backend heurístico local (offline) | Classificadores | CONCLUDED |
-| 06 | Modelo Laya (`laya-onnx`) + model manager + avaliação | Classificadores | IN PROGRESS |
+| 06 | Modelo Laya (`laya-onnx`) + model manager + avaliação | Classificadores | CONCLUDED |
 | 07 | Cabeçalho adaptativo (timer vs. classificador) | UI | CONCLUDED |
 | 08 | Faixa “Última classificação” | UI | CONCLUDED |
 | 09 | Bloco de ativação em “Fontes de IA & Modelos” | UI | CONCLUDED |
 | 10 | Integração no agendador (modo classificador) | Integração | CONCLUDED |
-| 11 | Hardening, docs, pacote e teste manual | Fechamento | IN PROGRESS |
+| 11 | Hardening, docs, pacote e teste manual | Fechamento | CONCLUDED |
 | 12 | Caminho de fine-tuning: manifesto, dataset, eval, registry | Evolução | PENDING |
 | 13 | Taxonomia por intenção, contexto do agente e histórico | Revisão | CONCLUDED |
 
