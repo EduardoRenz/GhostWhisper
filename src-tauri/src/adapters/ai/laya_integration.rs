@@ -114,7 +114,9 @@ fn conversation(state: &str, id: &str) -> ConversationBlock {
 }
 
 fn request(fixture: &Fixture) -> ClassificationRequest {
-    let block = conversation(&fixture.state, &fixture.id);
+    let full_block = conversation(&fixture.state, &fixture.id);
+    let block = crate::domain::suggestion_gate::they_target(&full_block)
+        .unwrap_or_else(|| full_block.clone());
     let context = if fixture.context.trim().is_empty() {
         vec![]
     } else {
@@ -123,6 +125,7 @@ fn request(fixture: &Fixture) -> ClassificationRequest {
     ClassificationRequest {
         session_id: "s1".to_string(),
         block,
+        full_block,
         context,
         locale: fixture.locale.clone(),
         mode_id: "technical_interview".to_string(),
@@ -151,9 +154,13 @@ fn request_with_prior(
     id: &str,
     prior_questions: Vec<crate::domain::suggestion_gate::PriorQuestion>,
 ) -> ClassificationRequest {
+    let full_block = conversation(state, id);
+    let block = crate::domain::suggestion_gate::they_target(&full_block)
+        .unwrap_or_else(|| full_block.clone());
     ClassificationRequest {
         session_id: "s1".to_string(),
-        block: conversation(state, id),
+        block,
+        full_block,
         context: vec![],
         locale: "pt".to_string(),
         mode_id: "technical_interview".to_string(),
@@ -171,7 +178,7 @@ fn classifier(directory: &str) -> SettingsSuggestionCueClassifier {
     let settings = Settings {
         suggestion_classifier_backend: "laya".to_string(),
         suggestion_classifier_sensitivity: "balanced".to_string(),
-        suggestion_classifier_timeout_ms: 10_000,
+        suggestion_classifier_timeout_ms: 30_000,
         ..Settings::default()
     };
     let laya = Arc::new(LayaSuggestionCueClassifier::new(

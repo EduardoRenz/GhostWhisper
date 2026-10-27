@@ -20,3 +20,5 @@
 {"id":"x04","locale":"pt","state":"THEY: hmm","context":"","gap_ms":0,"prior_questions":[],"label_cue":"insufficient_context","label_should_suggest":false}
 {"id":"a05","locale":"pt","state":"THEY: o que é um mutex?\nME: é um mecanismo de exclusão mútua que protege a seção crítica.","context":"","gap_ms":0,"prior_questions":[],"label_cue":"already_answered","label_should_suggest":false}
 {"id":"n05","locale":"pt","state":"ME: o mutex protege a seção crítica e evita condição de corrida.","context":"THEY: o que é um mutex?","gap_ms":0,"prior_questions":[],"label_cue":"no_action","label_should_suggest":false}
+{"id":"n06","locale":"pt","state":"ME: podemos revisar o escopo.\nTHEY: eu acho que o prazo está curto e o escopo deveria ser menor.","context":"","gap_ms":0,"prior_questions":[],"label_cue":"no_action","label_should_suggest":false}
+{"id":"c05","locale":"pt","state":"ME: podemos revisar o escopo.\nTHEY: eu acho que o prazo está curto. o que você acha","context":"","gap_ms":0,"prior_questions":[],"label_cue":"comment","label_should_suggest":true}

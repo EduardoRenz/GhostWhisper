@@ -145,7 +145,7 @@ cd src-tauri
 cargo test --lib eval_heuristic_baseline_on_fixtures -- --ignored --nocapture
 ```
 
-Resultado de 2026-10-26 (22 blocos; 5 em `already_answered`/`no_action`, 4 nas demais):
+Resultado de 2026-10-27 (24 blocos; 5 `comment`, 6 `no_action`, 5 `already_answered`, 4 `question`/`insufficient_context`):
 
 ```text
 Decisão: 100.0% · FP: 0.0% · FN: 0.0% · cue: 100.0% · p50/p95: 0 ms
@@ -161,7 +161,7 @@ LAYA_ONNX_DIR=src-tauri/resources/laya/multilingual \
   cargo test --lib eval_laya_on_fixtures --features laya -- --ignored --nocapture
 ```
 
-Resultado de 2026-10-26 (22 blocos, prompt com contexto do agente, limiar 0,50):
+Resultado de 2026-10-27 (24 blocos, prompt com contexto/alvo, limiar 0,50):
 
 ```text
 Decisão: 60.0% · FP: 25.0% · FN: 62.5%
@@ -183,7 +183,7 @@ usa o Laya como classificador contextual, com duas guardas determinísticas:
   as regras locais decidem; caso contrário, a decisão positiva do Laya é
   preservada.
 
-Resultado no teste de integração (22 fixtures):
+Resultado no teste de integração (24 fixtures):
 
 ```text
 Decisão: 100.0% · FP: 0.0% · FN: 0.0% · cue: 100.0% · p95: 599 ms

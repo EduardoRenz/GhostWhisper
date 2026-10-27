@@ -2132,8 +2132,10 @@ uma nota de revisão.
   faixa 8–20) numa janela de até 5 min/120 segmentos. Além de `blocks` e
   `adaptive`, o escopo **`they_only`** só classifica quando THEY fala por
   último e envia ao modelo apenas os turnos de THEY do bloco atual (as falas do
-  ME não disparam sugestão). **Não existe mais sonda de bloco aberto** —
-  silêncio e hesitação saíram da taxonomia.
+  ME não disparam sugestão). Em todos os escopos, o **contexto** enviado ao
+  modelo tem ME+THEY, mas o **alvo** é só o trecho de THEY desde a última fala
+  de ME; o prompt separa `[CONTEXTO]` e `[ALVO]`. **Não existe mais sonda de
+  bloco aberto** — silêncio e hesitação saíram da taxonomia.
 - **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco é a
   menor unidade que contém pergunta/resposta, mas a decisão de “já respondida”
   precisa de mais fio de conversa.
@@ -2148,7 +2150,9 @@ uma nota de revisão.
 - **Decisão:** a porta `SuggestionCueClassifier` devolve `cue` com **5
   categorias**:
   - `question` — THEY fez uma pergunta que ME deve responder;
-  - `comment` — THEY fez um ponto/opinião que convida ME a comentar;
+  - `comment` — THEY pediu **explicitamente** a opinião/comentário de ME
+    (“o que você acha?”, “concorda?”, “qual sua leitura?”). Uma opinião,
+    afirmação, explicação ou comentário solto de THEY é `no_action`;
   - `already_answered` — a pergunta atual repete uma pergunta já respondida
     no histórico recente ou ME já respondeu no próprio bloco;
   - `no_action` — conversa casual, explicação, cumprimento ou fala sem

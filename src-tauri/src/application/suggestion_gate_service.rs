@@ -13,8 +13,9 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use crate::domain::settings::Settings;
 use crate::domain::suggestion_gate::{
-    build_blocks, decide, question_title, BlockConfig, ClassifierSensitivity, ConversationBlock,
-    GateDecision, GateSkipReason, GateTick, HeuristicConfig, PriorQuestion, SuggestionCue,
+    build_blocks, decide, question_title, they_target, BlockConfig, ClassifierSensitivity,
+    ConversationBlock, GateDecision, GateSkipReason, GateTick, HeuristicConfig, PriorQuestion,
+    SuggestionCue,
 };
 use crate::domain::transcription::Speaker;
 use crate::ports::clock::Clock;
@@ -302,34 +303,12 @@ impl SuggestionGate for SuggestionGateService {
             return Err(SuggestionGateError::NoBlock);
         };
 
-        // No escopo `they_only`, o classificador recebe só os turnos de THEY do
-        // bloco atual. O histórico/contexto anteriores continuam completos.
-        let mut classification_block = block.clone();
-        if config.they_only {
-            // Só o que THEY disse depois da última fala de ME: uma pergunta
-            // anterior já respondida não pode voltar como pendente só porque o
-            // ME foi removido da projeção.
-            let start = block
-                .turns
-                .iter()
-                .rposition(|turn| turn.speaker == Speaker::Me)
-                .map(|index| index + 1)
-                .unwrap_or(0);
-            classification_block.turns = block.turns[start..]
-                .iter()
-                .filter(|turn| turn.speaker == Speaker::They)
-                .cloned()
-                .collect();
-            classification_block.me_chars = 0;
-            classification_block.they_chars = classification_block
-                .turns
-                .iter()
-                .map(|turn| turn.text.chars().count())
-                .sum();
-        }
+        // O alvo é só o que THEY falou desde a última fala de ME. O bloco
+        // completo continua disponível em `full_block` como contexto.
+        let target = they_target(block).ok_or(SuggestionGateError::NoBlock)?;
 
         if let Some(cached) = self.lock_state().last.get(session_id) {
-            if cached.block_id == block.id {
+            if cached.block_id == target.id {
                 return Ok(cached.clone());
             }
         }
@@ -344,7 +323,8 @@ impl SuggestionGate for SuggestionGateService {
             .unwrap_or_default();
         let request = ClassificationRequest {
             session_id: session_id.to_string(),
-            block: classification_block.clone(),
+            block: target.clone(),
+            full_block: block.clone(),
             context,
             locale: config.locale.clone(),
             mode_id: config.mode_id.clone(),
@@ -364,19 +344,14 @@ impl SuggestionGate for SuggestionGateService {
 
         match self.classifier.classify(&request) {
             Ok(outcome) => {
-                let outcome = attach_metadata(
-                    outcome,
-                    &classification_block,
-                    wall_now,
-                    self.classifier.backend_id(),
-                );
+                let outcome =
+                    attach_metadata(outcome, block, wall_now, self.classifier.backend_id());
                 {
                     let mut state = self.lock_state();
                     if outcome.cue.can_suggest() {
-                        state.question_titles.insert(
-                            outcome.block_id.clone(),
-                            question_title(&classification_block),
-                        );
+                        state
+                            .question_titles
+                            .insert(outcome.block_id.clone(), question_title(&target));
                     } else {
                         state.question_titles.remove(&outcome.block_id);
                     }
@@ -387,7 +362,7 @@ impl SuggestionGate for SuggestionGateService {
                         remember_answered(
                             &mut state,
                             session_id,
-                            question_title(&classification_block),
+                            question_title(&target),
                             &outcome.block_id,
                             now,
                             config.answered_questions,
@@ -629,20 +604,21 @@ mod tests {
     }
 
     fn seed_exchange(repo: &InMemoryTranscriptionsRepository) {
+        // Termina em THEY: o alvo do classificador é a pergunta/convite pendente.
         repo.insert(&segment("a", Speaker::Me, "vamos revisar o plano", 0, 500))
             .unwrap();
         repo.insert(&segment(
             "b",
-            Speaker::They,
-            "podemos revisar agora?",
+            Speaker::Me,
+            "sim, podemos revisar",
             1_000,
             1_500,
         ))
         .unwrap();
         repo.insert(&segment(
             "c",
-            Speaker::Me,
-            "sim, podemos revisar",
+            Speaker::They,
+            "podemos revisar agora?",
             2_000,
             2_500,
         ))
@@ -694,8 +670,8 @@ mod tests {
         let repo = Arc::new(InMemoryTranscriptionsRepository::new());
         repo.insert(&segment(
             "a",
-            Speaker::Me,
-            "Eu não tenho certeza, deixa eu pensar",
+            Speaker::They,
+            "o que você acha do banco?",
             0,
             5_000,
         ))
@@ -713,6 +689,12 @@ mod tests {
         let result = gate.classify_latest("s1").expect("adaptive");
         assert_eq!(result.cue, SuggestionCue::Comment);
         assert!(!classifier.requests()[0].block.has_both_speakers());
+        assert!(!classifier.requests()[0].full_block.has_both_speakers());
+        assert!(classifier.requests()[0]
+            .block
+            .turns
+            .iter()
+            .all(|turn| turn.speaker == Speaker::They));
 
         // O escopo padrão (blocos) continua exigindo os dois falantes.
         let gate_blocks = service_at(
@@ -848,7 +830,12 @@ mod tests {
         assert_eq!(result.block_id, "blk_s1_0_2500_c");
         assert_eq!(result.session_id, "s1");
         assert_eq!(classifier.requests().len(), 1);
-        assert!(classifier.requests()[0].block.has_both_speakers());
+        assert!(classifier.requests()[0].full_block.has_both_speakers());
+        assert!(classifier.requests()[0]
+            .block
+            .turns
+            .iter()
+            .all(|turn| turn.speaker == Speaker::They));
         assert!(classifier.requests()[0].prior_questions.is_empty());
 
         let events = publisher.events();
@@ -1239,22 +1226,24 @@ mod tests {
         classifier.push_outcome(outcome(SuggestionCue::AlreadyAnswered, false));
         classifier.push_outcome(outcome(SuggestionCue::Question, true));
         let repo = Arc::new(InMemoryTranscriptionsRepository::new());
-        repo.insert(&segment("a", Speaker::They, "o que é um mutex?", 0, 500))
+        repo.insert(&segment("a", Speaker::Me, "vamos revisar", 0, 500))
             .unwrap();
         repo.insert(&segment(
             "b",
-            Speaker::Me,
-            "é um mecanismo de exclusão mútua",
+            Speaker::They,
+            "o que é um mutex?",
             1_000,
             2_000,
         ))
         .unwrap();
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
         let gate = service_at(
             classifier.clone(),
             repo.clone(),
             Arc::new(FixedClock(20_000)),
             Arc::new(RecordingPublisher::default()),
-            config(),
+            cfg,
         );
 
         let first = gate.classify_latest("s1").expect("primeira");
@@ -1332,6 +1321,7 @@ mod tests {
             2_500,
             3_000,
         );
+        add("s3", Speaker::They, "e o próximo passo?", 3_500, 4_000);
         add("s4", Speaker::Me, "vamos revisar o cronograma", 0, 1_000);
         add("s4", Speaker::They, "concordo com o plano", 1_500, 2_000);
 

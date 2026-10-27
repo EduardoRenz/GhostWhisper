@@ -737,3 +737,32 @@ Aumentar o timeout para 10 s no Avançado evita esse primeiro aviso.
   inicial de ~1,2 GB do ONNX e evitar “Falha” repetida.
 - Logs locais em `<app_data>/logs/ghostwhisper.log`, com consulta em
   Configurações → Geral & HUD → Logs.
+
+
+## 2026-10-27 — Contexto e alvo separados no classificador
+
+- **IDs:** BR-093/BR-094 · **Issues:** ISS-066/ISS-068 · **Task:** 13
+- `ClassificationRequest` agora tem `full_block` (ME+THEY) e `block` (alvo:
+  turnos de THEY desde a última fala de ME).
+- O serviço usa `they_target` em todos os escopos; bloco terminando em ME não
+  gera classificação.
+- O prompt do Laya separa `[CONTEXTO — ME e THEY]` e
+  `[ALVO — última fala de THEY ainda não respondida]`, com instrução explícita
+  para nunca responder falas do ME.
+- O heurístico compara o alvo e a fala completa de THEY com o histórico, para
+  não perder pergunta fragmentada.
+- Regressão do mutex/fila e as 22 fixtures continuam 100% no caminho efetivo;
+  Laya bruto subiu de ~64% para ~73% de decisão com o novo estado.
+
+
+## 2026-10-27 — `comment` só com convite explícito
+
+- **IDs:** BR-094 · **Issues:** ISS-069 · **Task:** 13
+- `comment` deixou de significar “THEY expressou uma opinião” e passou a exigir
+  convite explícito para ME falar. Afirmação/explicação/opinião solta vira
+  `no_action`.
+- Heurístico: marcadores fortes valem sozinhos; fracos (`faz sentido`,
+  `concorda`) exigem pergunta. O Laya só mantém `comment` se as regras também
+  detectarem convite.
+- Fixtures: 24 no total (5 `comment`, 6 `no_action`); heurístico e caminho
+  efetivo em 100% de decisão/cue. Laya bruto segue como POC.

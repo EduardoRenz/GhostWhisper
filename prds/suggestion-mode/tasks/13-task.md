@@ -32,8 +32,9 @@ blocos anteriores.
   limpa. O título é a fala completa de THEY (pergunta pode estar fragmentada).
 - [x] `suggestion_answered_questions` (padrão 5, faixa 0–20) e
   `suggestion_context_blocks` (piso 8, teto 20; janela 5 min/120 segmentos).
-- [x] Heurístico novo: pergunta, convite de comentário, small talk/explicação,
-  resposta no mesmo bloco e similaridade Jaccard ≥ 0,60 para repetição.
+- [x] Heurístico novo: pergunta, convite **explícito** de comentário, small
+  talk/explicação, resposta no mesmo bloco e similaridade Jaccard ≥ 0,60 para
+  repetição. Opinião solta de THEY vira `no_action`.
 - [x] Prompt do Laya com agente + histórico; taxonomia de 5 opções.
 - [x] Guarda determinística no seletor: já respondida vence o Laya; abstenção/
   `no_action` cede às regras quando há sinal positivo; `already_answered`
@@ -57,6 +58,8 @@ blocos anteriores.
 - `repeated_question_overrides_a_positive_laya_decision`
 - `a_generated_comment_also_enters_the_answered_history`
 - `repeated_comment_invitation_is_already_answered`
+- `a_mere_statement_is_not_a_comment_invitation`
+- `a_laya_comment_without_an_explicit_invitation_is_ignored`
 - `laya_integration_marks_a_repeated_mutex_question_as_already_answered`
 - `me_last_turn_is_not_a_suggestion_opportunity`
 - `a_block_ending_in_me_never_uses_a_positive_laya_decision`

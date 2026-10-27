@@ -112,6 +112,7 @@ mod tests {
         ClassificationRequest {
             session_id: "s1".to_string(),
             block: block(),
+            full_block: block(),
             context: vec![],
             locale: "pt".to_string(),
             mode_id: "default".to_string(),

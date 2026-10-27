@@ -105,7 +105,7 @@ impl SuggestionCueClassifier for SettingsSuggestionCueClassifier {
         // conduzindo a fala. O Laya às vezes ainda vê uma pergunta anterior e
         // sugere; as regras locais são a guarda determinística.
         if request
-            .block
+            .full_block
             .turns
             .last()
             .is_some_and(|turn| turn.speaker == Speaker::Me)
@@ -118,6 +118,11 @@ impl SuggestionCueClassifier for SettingsSuggestionCueClassifier {
         // Sem evidência determinística de repetição, o Laya não pode “inventar”
         // already_answered (isso suprime uma pergunta válida).
         if outcome.cue == SuggestionCue::AlreadyAnswered {
+            return Ok(fallback);
+        }
+        // Comentário só vale quando as regras também viram um convite
+        // explícito. Uma opinião/afirmação de THEY não é oportunidade.
+        if outcome.cue == SuggestionCue::Comment && fallback.cue != SuggestionCue::Comment {
             return Ok(fallback);
         }
         // Convite de comentário detectado pelas regras vence uma pergunta
@@ -160,23 +165,25 @@ mod tests {
     use crate::domain::transcription::Speaker;
 
     fn request() -> ClassificationRequest {
-        ClassificationRequest {
+        let block = ConversationBlock {
+            id: "blk_1".to_string(),
             session_id: "s1".to_string(),
-            block: ConversationBlock {
-                id: "blk_1".to_string(),
-                session_id: "s1".to_string(),
+            start_ms: 0,
+            end_ms: 1_000,
+            turns: vec![BlockTurn {
+                speaker: Speaker::They,
+                text: "pode explicar?".to_string(),
                 start_ms: 0,
                 end_ms: 1_000,
-                turns: vec![BlockTurn {
-                    speaker: Speaker::They,
-                    text: "pode explicar?".to_string(),
-                    start_ms: 0,
-                    end_ms: 1_000,
-                }],
-                me_chars: 10,
-                they_chars: 12,
-                is_open: false,
-            },
+            }],
+            me_chars: 10,
+            they_chars: 12,
+            is_open: false,
+        };
+        ClassificationRequest {
+            session_id: "s1".to_string(),
+            block: block.clone(),
+            full_block: block,
             context: vec![],
             locale: "pt".to_string(),
             mode_id: "default".to_string(),
@@ -337,7 +344,27 @@ mod tests {
                 end_ms: 2_000,
             },
         ];
+        request.full_block = request.block.clone();
         let result = classifier.classify(&request).expect("guarda");
+        assert_eq!(result.cue, SuggestionCue::NoAction);
+        assert!(!result.should_suggest);
+    }
+
+    #[test]
+    fn a_laya_comment_without_an_explicit_invitation_is_ignored() {
+        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
+        let mut no_action = outcome("heuristic");
+        no_action.cue = SuggestionCue::NoAction;
+        no_action.should_suggest = false;
+        heuristic.push_outcome(no_action);
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        let mut comment = outcome("laya");
+        comment.cue = SuggestionCue::Comment;
+        laya.push_outcome(comment);
+
+        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
+        let result = classifier.classify(&request()).expect("guarda");
         assert_eq!(result.cue, SuggestionCue::NoAction);
         assert!(!result.should_suggest);
     }

@@ -9,7 +9,8 @@
 #![allow(dead_code)]
 
 use crate::domain::suggestion_gate::{
-    heuristic_cue, ConversationBlock, HeuristicConfig, SuggestionCue,
+    heuristic_cue, is_repeated_question, question_text, ConversationBlock, HeuristicConfig,
+    SuggestionCue,
 };
 use crate::domain::transcription::Speaker;
 use crate::ports::suggestion_cue_classifier::{
@@ -79,7 +80,34 @@ impl SuggestionCueClassifier for HeuristicSuggestionCueClassifier {
         request: &ClassificationRequest,
     ) -> std::result::Result<ClassificationOutcome, ClassifierError> {
         let block = &request.block;
-        let cue = heuristic_cue(block, &self.config, &request.prior_questions);
+        let mut cue = heuristic_cue(block, &self.config, &request.prior_questions);
+
+        // O alvo pode ser só o último fragmento de THEY. Para "já respondida",
+        // compara também a pergunta completa do bloco (com todos os turnos de
+        // THEY), senão uma pergunta fragmentada escapa do histórico.
+        if matches!(cue, SuggestionCue::Question | SuggestionCue::Comment) {
+            let they_text = request
+                .full_block
+                .turns
+                .iter()
+                .filter(|turn| turn.speaker == Speaker::They)
+                .map(|turn| turn.text.trim())
+                .filter(|text| !text.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let mut candidates: Vec<String> = Vec::new();
+            if let Some(question) = question_text(&request.full_block) {
+                candidates.push(question);
+            }
+            if !they_text.is_empty() {
+                candidates.push(they_text);
+            }
+            if candidates.iter().any(|candidate| {
+                is_repeated_question(candidate, &request.prior_questions, &self.config)
+            }) {
+                cue = SuggestionCue::AlreadyAnswered;
+            }
+        }
         Ok(ClassificationOutcome {
             block_id: block.id.clone(),
             session_id: block.session_id.clone(),
@@ -137,7 +165,8 @@ mod tests {
     ) -> ClassificationRequest {
         ClassificationRequest {
             session_id: "s1".to_string(),
-            block,
+            block: block.clone(),
+            full_block: block,
             context: vec![],
             locale: "pt".to_string(),
             mode_id: "default".to_string(),

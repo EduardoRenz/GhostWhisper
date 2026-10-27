@@ -478,6 +478,42 @@ pub fn question_title(block: &ConversationBlock) -> String {
     raw.chars().take(180).collect()
 }
 
+/// Projeção do bloco para o **alvo**: falas de THEY desde a última fala de ME.
+///
+/// Retorna `None` quando o último turno não é de THEY: nesse caso não há
+/// pergunta/convite pendente para o copiloto responder. O bloco completo
+/// (com ME+THEY) continua disponível como contexto.
+pub fn they_target(block: &ConversationBlock) -> Option<ConversationBlock> {
+    if block.turns.last().map(|turn| turn.speaker) != Some(Speaker::They) {
+        return None;
+    }
+    let start = block
+        .turns
+        .iter()
+        .rposition(|turn| turn.speaker == Speaker::Me)
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let turns: Vec<BlockTurn> = block.turns[start..]
+        .iter()
+        .filter(|turn| turn.speaker == Speaker::They)
+        .cloned()
+        .collect();
+    if turns.is_empty() {
+        return None;
+    }
+    let they_chars = turns.iter().map(|turn| turn.text.chars().count()).sum();
+    Some(ConversationBlock {
+        id: block.id.clone(),
+        session_id: block.session_id.clone(),
+        start_ms: block.start_ms,
+        end_ms: block.end_ms,
+        turns,
+        me_chars: 0,
+        they_chars,
+        is_open: block.is_open,
+    })
+}
+
 /// ME já respondeu dentro do próprio bloco depois da última pergunta de THEY.
 fn answered_in_block(block: &ConversationBlock) -> bool {
     let Some(last_question) = block
@@ -533,9 +569,13 @@ fn is_small_talk(block: &ConversationBlock) -> bool {
         })
 }
 
-/// THEY convidou ME a comentar/opinar (sem ser uma pergunta direta).
+/// THEY convidou ME **explicitamente** a comentar/opinar.
+///
+/// Comentário não é “THEY expressou uma opinião”: é um convite claro para ME
+/// falar. Por isso os marcadores fortes valem sozinhos; os fracos (concorda,
+/// faz sentido, e você) só valem com pergunta.
 fn invites_comment(text: &str) -> bool {
-    const MARKERS: [&str; 28] = [
+    const STRONG: [&str; 32] = [
         "o que você acha",
         "o que acha",
         "o que vocês acham",
@@ -548,25 +588,39 @@ fn invites_comment(text: &str) -> bool {
         "alguma consideração",
         "quer acrescentar",
         "pode comentar",
-        "faz sentido",
-        "concorda",
-        "concordam",
-        "e você",
         "what do you think",
         "what's your take",
         "what is your take",
         "your thoughts",
         "your opinion",
-        "do you agree",
-        "does that make sense",
         "any comments",
         "would you add",
         "how about you",
         "thoughts?",
         "agree?",
+        "qual a sua leitura",
+        "como você vê",
+        "faz sentido para você",
+        "faz sentido pra você",
+        "faz sentido para vocês",
+        "você concorda",
+        "concorda com",
+        "do you agree",
+        "would you agree",
+        "does that make sense to you",
+    ];
+    const WEAK: [&str; 5] = [
+        "faz sentido",
+        "concorda",
+        "concordam",
+        "e você",
+        "does that make sense",
     ];
     let lower = text.to_lowercase();
-    MARKERS.iter().any(|marker| lower.contains(marker))
+    if STRONG.iter().any(|marker| lower.contains(marker)) {
+        return true;
+    }
+    has_question_mark(text) && WEAK.iter().any(|marker| lower.contains(marker))
 }
 
 fn word_set(text: &str) -> std::collections::HashSet<String> {
@@ -1048,6 +1102,27 @@ mod tests {
     }
 
     #[test]
+    fn they_target_keeps_only_they_turns_after_the_last_me() {
+        let block = block_with_turns(vec![
+            ("a", Speaker::Me, "minha resposta", 0, 500),
+            ("b", Speaker::They, "primeira pergunta?", 600, 900),
+            ("c", Speaker::Me, "resposta", 1_000, 1_300),
+            ("d", Speaker::They, "pergunta atual?", 1_400, 1_700),
+        ]);
+        let target = they_target(&block).expect("alvo");
+        assert_eq!(target.turns.len(), 1);
+        assert_eq!(target.turns[0].text, "pergunta atual?");
+        assert_eq!(target.me_chars, 0);
+        assert_eq!(target.id, block.id);
+
+        let ends_me = block_with_turns(vec![
+            ("e", Speaker::They, "pergunta?", 0, 300),
+            ("f", Speaker::Me, "resposta", 400, 700),
+        ]);
+        assert!(they_target(&ends_me).is_none());
+    }
+
+    #[test]
     fn adaptive_scope_accepts_single_speaker_blocks() {
         let me_only = block_with_turns(vec![("a", Speaker::Me, "deixa eu pensar aqui", 0, 5_000)]);
         assert!(!me_only.is_classifiable_with(8, false));
@@ -1344,6 +1419,54 @@ mod tests {
         assert_eq!(
             heuristic_cue(&me_only, &heuristic_config(), &[]),
             SuggestionCue::NoAction
+        );
+    }
+
+    #[test]
+    fn a_mere_statement_is_not_a_comment_invitation() {
+        let statement = block_with_turns(vec![
+            ("a", Speaker::Me, "podemos revisar o escopo", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "eu acho que o prazo está curto e o escopo deveria ser menor.",
+                1_000,
+                2_000,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&statement, &heuristic_config(), &[]),
+            SuggestionCue::NoAction
+        );
+
+        let weak_without_question = block_with_turns(vec![
+            ("c", Speaker::Me, "podemos revisar o escopo", 0, 500),
+            (
+                "d",
+                Speaker::They,
+                "eu acho que o prazo está curto. faz sentido.",
+                1_000,
+                2_000,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&weak_without_question, &heuristic_config(), &[]),
+            SuggestionCue::NoAction
+        );
+
+        let explicit = block_with_turns(vec![
+            ("e", Speaker::Me, "podemos revisar o escopo", 0, 500),
+            (
+                "f",
+                Speaker::They,
+                "eu acho que o prazo está curto. o que você acha",
+                1_000,
+                2_000,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&explicit, &heuristic_config(), &[]),
+            SuggestionCue::Comment
         );
     }
 

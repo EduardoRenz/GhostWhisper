@@ -232,3 +232,48 @@ Modelo:
   `src-tauri/src/lib.rs`, `src-tauri/src/ipc/log_commands.rs`,
   `src/features/settings/LogsSettings.tsx`.
 - **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-068 — Laya confundia resposta do ME com pergunta pendente
+
+- **Severidade:** Alta · **Status:** FIXED (2026-10-27)
+- **Sintoma:** o classificador às vezes sugeria uma resposta para a própria
+  resposta do ME, ou reabria uma pergunta já respondida.
+- **Causa raiz:** o bloco enviado ao modelo misturava ME+THEY e não separava o
+  alvo; o Laya via a resposta do ME e a pergunta anterior no mesmo texto.
+- **Correção:** `full_block` (ME+THEY) para contexto e `block` (THEY desde a
+  última fala de ME) para o alvo; prompt com `[CONTEXTO]`/`[ALVO]`; serviço
+  retorna `NoBlock` quando o último turno é ME; heurístico compara também a
+  fala completa de THEY contra o histórico.
+- **Testes:** `they_target_keeps_only_they_turns_after_the_last_me`,
+  `they_only_does_not_reopen_a_question_answered_before_the_last_they_turn`,
+  `render_prompt_state_separates_context_and_target`,
+  `laya_integration_marks_a_repeated_mutex_question_as_already_answered`.
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`,
+  `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`,
+  `src-tauri/src/adapters/ai/heuristic_suggestion_cue_classifier.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+
+## ISS-069 — `comment` disparava em opinião que não pedia comentário
+
+- **Severidade:** Média · **Status:** FIXED (2026-10-27)
+- **Sintoma:** THEY fazia uma afirmação/opinião e o copiloto sugeria um
+  comentário mesmo sem convite explícito.
+- **Causa raiz:** o heurístico aceitava marcadores fracos (`faz sentido`,
+  `concorda`) sem pergunta, e o Laya podia escolher `comment` sozinho. A
+  definição de `comment` não deixava claro que é um **convite**, não uma
+  opinião.
+- **Correção:** `comment` agora exige convite explícito. Marcadores fortes
+  (“o que você acha”, “qual sua leitura”, “faz sentido para você”, “do you
+  agree”) valem sozinhos; fracos (“faz sentido”, “concorda”) exigem `?`. O
+  Laya só mantém `comment` se as regras também virem convite. Prompt do Laya
+  atualizado com a distinção “opinião = no_action”.
+- **Testes:** `a_mere_statement_is_not_a_comment_invitation`,
+  `a_laya_comment_without_an_explicit_invitation_is_ignored`, fixtures `n06`
+  (afirmação) e `c05` (convite explícito).
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/adapters/ai/settings_suggestion_cue_classifier.rs`,
+  `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`.
+- **Task:** [`tasks/13-task.md`](tasks/13-task.md)

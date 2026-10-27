@@ -17,8 +17,10 @@ use crate::domain::suggestion_gate::{ConversationBlock, PriorQuestion, Suggestio
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClassificationRequest {
     pub session_id: String,
-    /// Bloco mais recente (fechado ou aberto na sonda de hesitação).
+    /// Alvo da classificação: falas de THEY desde a última fala de ME.
     pub block: ConversationBlock,
+    /// Bloco completo selecionado, com ME+THEY (contexto do modelo).
+    pub full_block: ConversationBlock,
     /// Blocos anteriores, do mais antigo para o mais novo.
     pub context: Vec<ConversationBlock>,
     /// Idioma da interface/transcrição (`pt`, `en`, …).
@@ -167,6 +169,7 @@ mod tests {
         let request = ClassificationRequest {
             session_id: "s1".to_string(),
             block: block(),
+            full_block: block(),
             context: vec![],
             locale: "pt".to_string(),
             mode_id: "default".to_string(),
