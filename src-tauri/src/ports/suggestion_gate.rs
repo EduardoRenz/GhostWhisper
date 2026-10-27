@@ -23,14 +23,13 @@ pub struct SuggestionGateConfig {
     pub allowed_cues: Vec<SuggestionCue>,
     pub context_blocks: usize,
     /// Janela de falas carregadas a cada classificação.
+    ///
+    /// Maior que o antigo para o classificador enxergar o fio da conversa e
+    /// reconhecer perguntas repetidas.
     pub window_ms: i64,
     pub max_segments: usize,
-    pub probe_open_block: bool,
-    pub hesitation_probe_ms: i64,
-    /// Palavras mínimas na fala de ME para a sonda.
-    pub probe_min_words: usize,
-    /// Intervalo mínimo entre duas sondas da mesma sessão.
-    pub probe_throttle_ms: i64,
+    /// Quantas perguntas já respondidas entram no histórico do classificador.
+    pub answered_questions: usize,
     /// Idioma passado ao classificador.
     pub locale: String,
     /// Agente selecionado (contexto do classificador).
@@ -50,13 +49,10 @@ impl Default for SuggestionGateConfig {
             confidence_min: 0.70,
             cooldown_ms: 15_000,
             allowed_cues: Vec::new(),
-            context_blocks: 3,
-            window_ms: 180_000,
-            max_segments: 40,
-            probe_open_block: true,
-            hesitation_probe_ms: 4_000,
-            probe_min_words: 3,
-            probe_throttle_ms: 2_000,
+            context_blocks: 8,
+            window_ms: 300_000,
+            max_segments: 120,
+            answered_questions: 5,
             locale: "pt".to_string(),
             mode_id: "default".to_string(),
             mode_context: String::new(),
@@ -85,25 +81,11 @@ pub enum SuggestionGateError {
 
 /// Classifica blocos e decide se a classificação pode gerar sugestão.
 pub trait SuggestionGate: Send + Sync {
-    /// Classifica o bloco mais recente.
-    ///
-    /// `force_open` usa o bloco aberto (sonda de hesitação) mesmo sem os dois
-    /// falantes. Sem `force_open`, escolhe o último bloco fechado e
-    /// classificável.
+    /// Classifica o bloco mais recente e classificável.
     fn classify_latest(
         &self,
         session_id: &str,
-        force_open: bool,
     ) -> std::result::Result<ClassificationOutcome, SuggestionGateError>;
-
-    /// Sonda o bloco **aberto** para hesitação de ME (BR-094).
-    ///
-    /// Devolve `None` quando a sonda está desligada, o bloco não é elegível
-    /// (último falante, palavras, duração ou throttle) ou não houve fala nova.
-    /// Default no-op para dobras de teste.
-    fn probe_open(&self, _session_id: &str) -> GateResult<Option<ClassificationOutcome>> {
-        Ok(None)
-    }
 
     /// Última classificação da sessão (memória; não chama o classificador).
     fn last(&self, session_id: &str) -> Option<ClassificationOutcome>;

@@ -13,9 +13,8 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use crate::domain::settings::Settings;
 use crate::domain::suggestion_gate::{
-    build_blocks, decide, open_probe_eligible, BlockConfig, ClassifierSensitivity,
-    ConversationBlock, GateDecision, GateSkipReason, GateTick, HeuristicConfig, OpenProbeConfig,
-    SuggestionCue,
+    build_blocks, decide, question_title, BlockConfig, ClassifierSensitivity, ConversationBlock,
+    GateDecision, GateSkipReason, GateTick, HeuristicConfig, PriorQuestion, SuggestionCue,
 };
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::{
@@ -85,12 +84,11 @@ pub fn config_from_settings(settings: &Settings) -> SuggestionGateConfig {
         cooldown_ms: i64::from(settings.suggestion_classifier_cooldown_secs) * 1_000,
         allowed_cues,
         context_blocks: settings.suggestion_context_blocks as usize,
-        window_ms: 180_000,
-        max_segments: 40,
-        probe_open_block: settings.suggestion_probe_open_block,
-        hesitation_probe_ms: i64::from(settings.suggestion_hesitation_probe_ms),
-        probe_min_words: 3,
-        probe_throttle_ms: 2_000,
+        // Janela maior: o modelo precisa de fio de conversa para reconhecer
+        // uma pergunta repetida e entender o contexto do agente.
+        window_ms: 300_000,
+        max_segments: 120,
+        answered_questions: settings.suggestion_answered_questions as usize,
         locale: settings
             .ui_language
             .clone()
@@ -116,8 +114,11 @@ struct GateState {
     generated: HashMap<String, Generated>,
     /// Decisão positiva aguardando o cooldown.
     pending: HashMap<String, ClassificationOutcome>,
-    /// Última sonda de bloco aberto por sessão (throttle).
-    last_probe: HashMap<String, i64>,
+    /// Perguntas já respondidas (mais recentes primeiro), por sessão.
+    answered_questions: HashMap<String, Vec<PriorQuestion>>,
+    /// Título da pergunta do bloco, aguardando `mark_generated` confirmar a
+    /// resposta. Sem isso, uma classificação sem geração não entra no histórico.
+    question_titles: HashMap<String, String>,
 }
 
 /// Implementa o gate sobre as portas resolvidas.
@@ -207,16 +208,9 @@ impl SuggestionGateService {
 
     fn last_block(
         blocks: &[ConversationBlock],
-        force_open: bool,
         min_chars: usize,
         allow_single_speaker: bool,
     ) -> Option<(usize, &ConversationBlock)> {
-        if force_open {
-            return blocks
-                .len()
-                .checked_sub(1)
-                .and_then(|index| blocks.get(index).map(|block| (index, block)));
-        }
         blocks
             .iter()
             .enumerate()
@@ -243,57 +237,37 @@ fn attach_metadata(
     outcome.normalized()
 }
 
-impl SuggestionGate for SuggestionGateService {
-    fn probe_open(&self, session_id: &str) -> GateResult<Option<ClassificationOutcome>> {
-        let config = self.config();
-        let now = self.relative_now(session_id);
-        let since = now.saturating_sub(config.window_ms.max(0));
-        let segments = self
-            .transcriptions
-            .list_recent_by_session(session_id, since, config.max_segments)
-            .map_err(|error| SuggestionGateError::Repository(error.to_string()))?;
-        let blocks = build_blocks(session_id, &segments, &config.block, now);
-        let Some(block) = blocks.last() else {
-            return Ok(None);
-        };
-
-        let last_probe = {
-            let state = self.lock_state();
-            state.last_probe.get(session_id).copied()
-        };
-        let probe_config = OpenProbeConfig {
-            enabled: config.probe_open_block,
-            hesitation_allowed: config.allows(SuggestionCue::Hesitation),
-            min_words: config.probe_min_words,
-            hesitation_ms: config.hesitation_probe_ms,
-            throttle_ms: config.probe_throttle_ms,
-        };
-        if !open_probe_eligible(block, now, last_probe, &probe_config) {
-            return Ok(None);
-        }
-
-        // Sem fala nova desde a última classificação deste bloco: não paga
-        // outra inferência (o id muda quando entra um segmento novo).
-        if self
-            .lock_state()
-            .last
-            .get(session_id)
-            .is_some_and(|last| last.block_id == block.id)
-        {
-            return Ok(None);
-        }
-
-        self.lock_state()
-            .last_probe
-            .insert(session_id.to_string(), now);
-        self.classify_latest(session_id, true).map(Some)
+fn remember_answered(
+    state: &mut GateState,
+    session_id: &str,
+    title: String,
+    block_id: &str,
+    at_ms: i64,
+    limit: usize,
+) {
+    if title.trim().is_empty() || limit == 0 {
+        return;
     }
+    let history = state
+        .answered_questions
+        .entry(session_id.to_string())
+        .or_default();
+    let normalized = title.to_lowercase();
+    history.retain(|prior| prior.title.to_lowercase() != normalized);
+    history.insert(
+        0,
+        PriorQuestion {
+            title,
+            block_id: block_id.to_string(),
+            answered_at_ms: at_ms,
+        }
+        .normalized(),
+    );
+    history.truncate(limit);
+}
 
-    fn classify_latest(
-        &self,
-        session_id: &str,
-        force_open: bool,
-    ) -> GateResult<ClassificationOutcome> {
+impl SuggestionGate for SuggestionGateService {
+    fn classify_latest(&self, session_id: &str) -> GateResult<ClassificationOutcome> {
         let config = self.config();
         let wall_now = self.clock.now_ms();
         let now = self.relative_now(session_id);
@@ -304,25 +278,26 @@ impl SuggestionGate for SuggestionGateService {
             .map_err(|error| SuggestionGateError::Repository(error.to_string()))?;
         let blocks = build_blocks(session_id, &segments, &config.block, now);
 
-        let Some((index, block)) = Self::last_block(
-            &blocks,
-            force_open,
-            config.block.min_chars,
-            config.allow_single_speaker,
-        ) else {
+        let Some((index, block)) =
+            Self::last_block(&blocks, config.block.min_chars, config.allow_single_speaker)
+        else {
             return Err(SuggestionGateError::NoBlock);
         };
 
-        if !force_open {
-            if let Some(cached) = self.lock_state().last.get(session_id) {
-                if cached.block_id == block.id {
-                    return Ok(cached.clone());
-                }
+        if let Some(cached) = self.lock_state().last.get(session_id) {
+            if cached.block_id == block.id {
+                return Ok(cached.clone());
             }
         }
 
         let context_start = index.saturating_sub(config.context_blocks);
         let context = blocks[context_start..index].to_vec();
+        let prior_questions = self
+            .lock_state()
+            .answered_questions
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default();
         let request = ClassificationRequest {
             session_id: session_id.to_string(),
             block: block.clone(),
@@ -331,7 +306,7 @@ impl SuggestionGate for SuggestionGateService {
             mode_id: config.mode_id.clone(),
             mode_context: config.mode_context.clone(),
             allow_single_speaker: config.allow_single_speaker,
-            is_open_probe: force_open,
+            prior_questions,
             now_ms: now,
         };
 
@@ -347,9 +322,30 @@ impl SuggestionGate for SuggestionGateService {
             Ok(outcome) => {
                 let outcome =
                     attach_metadata(outcome, block, wall_now, self.classifier.backend_id());
-                self.lock_state()
-                    .last
-                    .insert(session_id.to_string(), outcome.clone());
+                {
+                    let mut state = self.lock_state();
+                    if outcome.cue.can_suggest() {
+                        state
+                            .question_titles
+                            .insert(outcome.block_id.clone(), question_title(block));
+                    } else {
+                        state.question_titles.remove(&outcome.block_id);
+                    }
+                    if outcome.cue == SuggestionCue::AlreadyAnswered {
+                        // A pergunta foi respondida mesmo sem gerar sugestão
+                        // (ex.: ME respondeu antes do copiloto). Registra para
+                        // que uma repetição futura não seja sugerida.
+                        remember_answered(
+                            &mut state,
+                            session_id,
+                            question_title(block),
+                            &outcome.block_id,
+                            now,
+                            config.answered_questions,
+                        );
+                    }
+                    state.last.insert(session_id.to_string(), outcome.clone());
+                }
                 self.publish(
                     session_id,
                     SuggestionClassifierState::Ready,
@@ -439,13 +435,19 @@ impl SuggestionGate for SuggestionGateService {
     }
 
     fn mark_generated(&self, session_id: &str, block_id: &str, at_ms: i64) {
-        self.lock_state().generated.insert(
+        let limit = self.config().answered_questions;
+        let mut state = self.lock_state();
+        state.generated.insert(
             session_id.to_string(),
             Generated {
                 block_id: block_id.to_string(),
                 at_ms,
             },
         );
+        let Some(title) = state.question_titles.remove(block_id) else {
+            return;
+        };
+        remember_answered(&mut state, session_id, title, block_id, at_ms, limit);
     }
 
     fn reconfigure(&self, config: SuggestionGateConfig) {
@@ -460,7 +462,8 @@ impl SuggestionGate for SuggestionGateService {
         state.last.remove(session_id);
         state.generated.remove(session_id);
         state.pending.remove(session_id);
-        state.last_probe.remove(session_id);
+        state.answered_questions.remove(session_id);
+        state.question_titles.clear();
     }
 }
 
@@ -473,7 +476,7 @@ mod tests {
     use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
     use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
-    use crate::adapters::system::system_clock::{FixedClock, MutableClock};
+    use crate::adapters::system::system_clock::FixedClock;
     use crate::domain::audio::AudioLevel;
     use crate::domain::session::{Session, SessionStatus};
     use crate::domain::suggestion_gate::{SuggestionCue, SuggestionMode};
@@ -534,7 +537,7 @@ mod tests {
                 max_block_ms: 100_000,
                 max_turns: 10,
                 min_chars: 1,
-                context_blocks: 3,
+                context_blocks: 8,
             },
             ..SuggestionGateConfig::default()
         }
@@ -629,7 +632,7 @@ mod tests {
             config(),
         );
 
-        let result = gate.classify_latest("s1", false).expect("classificação");
+        let result = gate.classify_latest("s1").expect("classificação");
         assert_eq!(result.block_id, "blk_s1_0_2500_c");
         assert_eq!(result.classified_at_ms, 1_790_000_010_000);
     }
@@ -637,7 +640,7 @@ mod tests {
     #[test]
     fn adaptive_scope_classifies_a_single_speaker_block() {
         let classifier = Arc::new(FakeSuggestionCueClassifier::new());
-        classifier.push_outcome(outcome(SuggestionCue::Hesitation, true));
+        classifier.push_outcome(outcome(SuggestionCue::Comment, true));
         let repo = Arc::new(InMemoryTranscriptionsRepository::new());
         repo.insert(&segment(
             "a",
@@ -657,8 +660,8 @@ mod tests {
             Arc::new(RecordingPublisher::default()),
             adaptive,
         );
-        let result = gate.classify_latest("s1", false).expect("adaptive");
-        assert_eq!(result.cue, SuggestionCue::Hesitation);
+        let result = gate.classify_latest("s1").expect("adaptive");
+        assert_eq!(result.cue, SuggestionCue::Comment);
         assert!(!classifier.requests()[0].block.has_both_speakers());
 
         // O escopo padrão (blocos) continua exigindo os dois falantes.
@@ -670,7 +673,7 @@ mod tests {
             config(),
         );
         assert!(matches!(
-            gate_blocks.classify_latest("s1", false),
+            gate_blocks.classify_latest("s1"),
             Err(SuggestionGateError::NoBlock)
         ));
     }
@@ -707,13 +710,13 @@ mod tests {
         let publisher = Arc::new(RecordingPublisher::default());
         let gate = service(classifier.clone(), repo, publisher.clone());
 
-        let result = gate.classify_latest("s1", false).expect("classificação");
+        let result = gate.classify_latest("s1").expect("classificação");
         assert_eq!(result.cue, SuggestionCue::Question);
         assert_eq!(result.block_id, "blk_s1_0_2500_c");
         assert_eq!(result.session_id, "s1");
         assert_eq!(classifier.requests().len(), 1);
         assert!(classifier.requests()[0].block.has_both_speakers());
-        assert!(!classifier.requests()[0].is_open_probe);
+        assert!(classifier.requests()[0].prior_questions.is_empty());
 
         let events = publisher.events();
         assert_eq!(events.len(), 2);
@@ -733,24 +736,10 @@ mod tests {
             Arc::new(RecordingPublisher::default()),
         );
 
-        let first = gate.classify_latest("s1", false).expect("primeira");
-        let second = gate.classify_latest("s1", false).expect("cache");
+        let first = gate.classify_latest("s1").expect("primeira");
+        let second = gate.classify_latest("s1").expect("cache");
         assert_eq!(first, second);
         assert_eq!(classifier.requests().len(), 1);
-    }
-
-    fn probe_config() -> SuggestionGateConfig {
-        SuggestionGateConfig {
-            block: crate::domain::suggestion_gate::BlockConfig {
-                gap_ms: 3_000,
-                ..config().block
-            },
-            probe_open_block: true,
-            hesitation_probe_ms: 4_000,
-            probe_min_words: 3,
-            probe_throttle_ms: 2_000,
-            ..config()
-        }
     }
 
     fn service_at(
@@ -768,130 +757,6 @@ mod tests {
             publisher,
             config,
         )
-    }
-
-    fn seed_open_hesitation(repo: &InMemoryTranscriptionsRepository) {
-        repo.insert(&segment("a", Speaker::They, "certo", 0, 500))
-            .unwrap();
-        repo.insert(&segment(
-            "b",
-            Speaker::Me,
-            "é... tipo assim... eu acho",
-            1_000,
-            6_000,
-        ))
-        .unwrap();
-    }
-
-    #[test]
-    fn open_probe_triggers_hesitation_and_is_throttled() {
-        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
-        classifier.push_outcome(outcome(SuggestionCue::Hesitation, true));
-        classifier.push_outcome(outcome(SuggestionCue::Hesitation, true));
-        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
-        seed_open_hesitation(&repo);
-        let clock = Arc::new(MutableClock::new(6_500));
-        let gate = service_at(
-            classifier.clone(),
-            repo.clone(),
-            clock.clone(),
-            Arc::new(RecordingPublisher::default()),
-            probe_config(),
-        );
-
-        let first = gate.probe_open("s1").expect("sonda").expect("outcome");
-        assert_eq!(first.cue, SuggestionCue::Hesitation);
-        assert_eq!(classifier.requests().len(), 1);
-        assert!(classifier.requests()[0].is_open_probe);
-        assert!(classifier.requests()[0].block.is_open);
-
-        // Mesmo bloco, sem fala nova: não classifica de novo.
-        assert!(gate.probe_open("s1").expect("sonda").is_none());
-        assert_eq!(classifier.requests().len(), 1);
-
-        // Fala nova muda o id, mas o throttle de 2 s segura.
-        repo.insert(&segment(
-            "c",
-            Speaker::Me,
-            "e aí... como eu digo",
-            6_200,
-            6_400,
-        ))
-        .unwrap();
-        assert!(gate.probe_open("s1").expect("sonda").is_none());
-        assert_eq!(classifier.requests().len(), 1);
-
-        clock.advance(2_100);
-        let second = gate.probe_open("s1").expect("sonda").expect("outcome");
-        assert_eq!(second.cue, SuggestionCue::Hesitation);
-        assert_eq!(classifier.requests().len(), 2);
-    }
-
-    #[test]
-    fn open_probe_respects_settings_and_closed_blocks() {
-        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
-        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
-        seed_open_hesitation(&repo);
-
-        let mut disabled = probe_config();
-        disabled.probe_open_block = false;
-        let gate = service_at(
-            classifier.clone(),
-            repo.clone(),
-            Arc::new(MutableClock::new(6_500)),
-            Arc::new(RecordingPublisher::default()),
-            disabled,
-        );
-        assert!(gate.probe_open("s1").expect("sonda").is_none());
-
-        let mut no_hesitation = probe_config();
-        no_hesitation.allowed_cues = vec![SuggestionCue::Question];
-        let gate = service_at(
-            classifier.clone(),
-            repo.clone(),
-            Arc::new(MutableClock::new(6_500)),
-            Arc::new(RecordingPublisher::default()),
-            no_hesitation,
-        );
-        assert!(gate.probe_open("s1").expect("sonda").is_none());
-        assert!(classifier.requests().is_empty());
-
-        // O bloco já fechou pelo gap: a sonda não roda.
-        let gate = service_at(
-            classifier.clone(),
-            repo,
-            Arc::new(MutableClock::new(10_000)),
-            Arc::new(RecordingPublisher::default()),
-            probe_config(),
-        );
-        assert!(gate.probe_open("s1").expect("sonda").is_none());
-        assert!(classifier.requests().is_empty());
-    }
-
-    #[test]
-    fn force_open_probes_the_open_block() {
-        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
-        classifier.push_outcome(outcome(SuggestionCue::Hesitation, true));
-        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
-        repo.insert(&segment(
-            "a",
-            Speaker::Me,
-            "eu estava pensando que...",
-            0,
-            9_500,
-        ))
-        .unwrap();
-        let gate = service(
-            classifier.clone(),
-            repo,
-            Arc::new(RecordingPublisher::default()),
-        );
-
-        let result = gate.classify_latest("s1", true).expect("sonda");
-        assert_eq!(result.cue, SuggestionCue::Hesitation);
-        assert_eq!(classifier.requests().len(), 1);
-        assert!(classifier.requests()[0].is_open_probe);
-        assert!(classifier.requests()[0].block.is_open);
     }
 
     #[test]
@@ -919,7 +784,7 @@ mod tests {
         config.context_blocks = 1;
         gate.reconfigure(config);
 
-        let result = gate.classify_latest("s1", false).expect("classificação");
+        let result = gate.classify_latest("s1").expect("classificação");
         assert_eq!(result.block_id, "blk_s1_7000_8500_e");
         assert_eq!(classifier.requests().len(), 1);
         assert_eq!(classifier.requests()[0].context.len(), 1);
@@ -928,16 +793,16 @@ mod tests {
     #[test]
     fn last_classification_survives_no_suggestion() {
         let classifier = Arc::new(FakeSuggestionCueClassifier::new());
-        classifier.push_outcome(outcome(SuggestionCue::NoSuggestion, false));
+        classifier.push_outcome(outcome(SuggestionCue::NoAction, false));
         let repo = Arc::new(InMemoryTranscriptionsRepository::new());
         seed_exchange(&repo);
         let gate = service(classifier, repo, Arc::new(RecordingPublisher::default()));
 
-        let result = gate.classify_latest("s1", false).expect("classificação");
+        let result = gate.classify_latest("s1").expect("classificação");
         assert!(!result.should_suggest);
         assert_eq!(
             gate.last("s1").map(|last| last.cue),
-            Some(SuggestionCue::NoSuggestion)
+            Some(SuggestionCue::NoAction)
         );
     }
 
@@ -949,11 +814,22 @@ mod tests {
         let repo = Arc::new(InMemoryTranscriptionsRepository::new());
         seed_exchange(&repo);
         let publisher = Arc::new(RecordingPublisher::default());
-        let gate = service(classifier, repo, publisher.clone());
+        let gate = service(classifier, repo.clone(), publisher.clone());
 
-        let first = gate.classify_latest("s1", false).expect("primeira");
+        let first = gate.classify_latest("s1").expect("primeira");
+        // Fala nova muda o id do bloco e força uma nova inferência (o erro).
+        repo.insert(&segment("f", Speaker::Me, "podemos seguir", 7_000, 7_500))
+            .unwrap();
+        repo.insert(&segment(
+            "g",
+            Speaker::They,
+            "e o próximo passo?",
+            8_000,
+            8_500,
+        ))
+        .unwrap();
         assert!(matches!(
-            gate.classify_latest("s1", true),
+            gate.classify_latest("s1"),
             Err(SuggestionGateError::Classifier(_))
         ));
         assert_eq!(gate.last("s1"), Some(first));
@@ -985,7 +861,7 @@ mod tests {
         );
 
         let mut config = gate.config();
-        config.allowed_cues = vec![SuggestionCue::Hesitation];
+        config.allowed_cues = vec![SuggestionCue::Comment];
         gate.reconfigure(config);
         assert_eq!(
             gate.should_generate(&blocked, 10_000, false),
@@ -1109,6 +985,168 @@ mod tests {
     }
 
     #[test]
+    fn generated_question_enters_the_answered_history() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment(
+            "a",
+            Speaker::Me,
+            "o desconto padrão é 10%",
+            0,
+            500,
+        ))
+        .unwrap();
+        repo.insert(&segment(
+            "b",
+            Speaker::They,
+            "e o desconto para 50 licenças?",
+            1_000,
+            1_500,
+        ))
+        .unwrap();
+        let gate = service_at(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            config(),
+        );
+
+        let first = gate.classify_latest("s1").expect("primeira");
+        gate.mark_generated("s1", &first.block_id, 10_000);
+        // Só depois de responder a primeira pergunta entra um bloco novo.
+        repo.insert(&segment("c", Speaker::Me, "podemos seguir", 3_000, 3_500))
+            .unwrap();
+        repo.insert(&segment(
+            "d",
+            Speaker::They,
+            "e o prazo da segunda fase?",
+            4_000,
+            4_500,
+        ))
+        .unwrap();
+        let _second = gate.classify_latest("s1").expect("segunda");
+
+        let requests = classifier.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].prior_questions.len(), 1);
+        assert!(requests[1].prior_questions[0]
+            .title
+            .contains("desconto para 50"));
+        assert_eq!(requests[1].prior_questions[0].block_id, first.block_id);
+    }
+
+    #[test]
+    fn a_generated_comment_also_enters_the_answered_history() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Comment, true));
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::Me, "o mutex é um bloqueio", 0, 500))
+            .unwrap();
+        repo.insert(&segment(
+            "b",
+            Speaker::They,
+            "o mutex é a mesma coisa que uma fila",
+            1_000,
+            2_000,
+        ))
+        .unwrap();
+        repo.insert(&segment(
+            "c",
+            Speaker::They,
+            "quais são as diferenças?",
+            2_500,
+            3_000,
+        ))
+        .unwrap();
+        let gate = service_at(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(FixedClock(20_000)),
+            Arc::new(RecordingPublisher::default()),
+            config(),
+        );
+
+        let first = gate.classify_latest("s1").expect("primeira");
+        assert_eq!(first.cue, SuggestionCue::Comment);
+        gate.mark_generated("s1", &first.block_id, 10_000);
+
+        repo.insert(&segment(
+            "d",
+            Speaker::They,
+            "o mutex é a mesma coisa que o mutex",
+            10_000,
+            11_000,
+        ))
+        .unwrap();
+        repo.insert(&segment("e", Speaker::Me, "não é uma fila", 11_500, 12_000))
+            .unwrap();
+        repo.insert(&segment(
+            "f",
+            Speaker::They,
+            "uma fila. quais são as diferenças?",
+            12_500,
+            13_000,
+        ))
+        .unwrap();
+        let _second = gate.classify_latest("s1").expect("segunda");
+
+        let requests = classifier.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].prior_questions.len(), 1);
+        assert!(requests[1].prior_questions[0].title.contains("diferenças"));
+    }
+
+    #[test]
+    fn an_already_answered_block_enters_history_without_generation() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::AlreadyAnswered, false));
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment("a", Speaker::They, "o que é um mutex?", 0, 500))
+            .unwrap();
+        repo.insert(&segment(
+            "b",
+            Speaker::Me,
+            "é um mecanismo de exclusão mútua",
+            1_000,
+            2_000,
+        ))
+        .unwrap();
+        let gate = service_at(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(FixedClock(20_000)),
+            Arc::new(RecordingPublisher::default()),
+            config(),
+        );
+
+        let first = gate.classify_latest("s1").expect("primeira");
+        assert_eq!(first.cue, SuggestionCue::AlreadyAnswered);
+        // Sem `mark_generated`: a resposta do ME já conta como respondida.
+        assert!(gate.last("s1").is_some());
+
+        repo.insert(&segment("c", Speaker::Me, "podemos seguir", 5_000, 5_500))
+            .unwrap();
+        repo.insert(&segment(
+            "d",
+            Speaker::They,
+            "e o que é uma fila?",
+            6_000,
+            6_500,
+        ))
+        .unwrap();
+        let _second = gate.classify_latest("s1").expect("segunda");
+        let requests = classifier.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].prior_questions.len(), 1);
+        assert!(requests[1].prior_questions[0].title.contains("mutex"));
+    }
+
+    #[test]
     fn settings_map_to_the_gate_config() {
         let defaults = crate::domain::settings::Settings::default();
         let config = config_from_settings(&defaults);
@@ -1118,7 +1156,7 @@ mod tests {
         assert!(config.allowed_cues.is_empty());
         assert_eq!(config.block.gap_ms, 3_000);
         assert_eq!(config.block.max_turns, 12);
-        assert_eq!(config.context_blocks, 3);
+        assert_eq!(config.context_blocks, 8);
 
         let high = crate::domain::settings::Settings {
             suggestion_classifier_sensitivity: "high".into(),
@@ -1129,7 +1167,7 @@ mod tests {
         assert_eq!(config.confidence_min, 0.55);
         assert_eq!(
             config.allowed_cues,
-            vec![SuggestionCue::Question, SuggestionCue::Invitation]
+            vec![SuggestionCue::Question, SuggestionCue::Comment]
         );
     }
 
@@ -1174,7 +1212,7 @@ mod tests {
         );
 
         for session in ["s1", "s2", "s3", "s4"] {
-            let outcome = gate.classify_latest(session, false).expect("classificação");
+            let outcome = gate.classify_latest(session).expect("classificação");
             let decision = gate.should_generate(&outcome, 10_000, false);
             println!(
                 "[{session}] cue={} should_suggest={} confidence={:.2} decision={decision:?}",

@@ -1,8 +1,8 @@
 //! Escolha do outcome de um tick do modo classificador (BR-092/BR-094).
 //!
-//! Ordem: sonda de bloco aberto (hesitação) → bloco fechado → fallback. O
-//! agendador só gera quando o gate manda; esta função concentra a decisão de
-//! **qual** classificação usar e quando cair no timer por erro do classificador.
+//! Reusa uma decisão pendente ou classifica o bloco fechado mais recente; em
+//! erro, cai no timer se configurado. Não existe mais sonda de bloco aberto:
+//! silêncio/hesitação saíram da taxonomia.
 
 use crate::ports::suggestion_cue_classifier::ClassificationOutcome;
 use crate::ports::suggestion_gate::{SuggestionGate, SuggestionGateError};
@@ -38,22 +38,7 @@ pub fn classify_once(
         return ClassifierTick::Classified(pending);
     }
 
-    let probe = match gate.probe_open(session_id) {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            tracing::debug!("sonda do classificador indisponível: {error}");
-            return if fallback_auto {
-                ClassifierTick::FallbackAuto
-            } else {
-                ClassifierTick::Skip
-            };
-        }
-    };
-    if let Some(outcome) = probe {
-        return ClassifierTick::Classified(outcome);
-    }
-
-    match gate.classify_latest(session_id, false) {
+    match gate.classify_latest(session_id) {
         Ok(outcome) => ClassifierTick::Classified(outcome),
         Err(SuggestionGateError::NoBlock) => ClassifierTick::Skip,
         Err(error) => {
@@ -94,13 +79,6 @@ mod tests {
     }
 
     #[derive(Clone)]
-    enum Probe {
-        Nothing,
-        Outcome(ClassificationOutcome),
-        Error,
-    }
-
-    #[derive(Clone)]
     enum Closed {
         Outcome(ClassificationOutcome),
         NoBlock,
@@ -108,7 +86,6 @@ mod tests {
     }
 
     struct FakeGate {
-        probe: Probe,
         closed: Closed,
         pending: Option<ClassificationOutcome>,
     }
@@ -117,26 +94,12 @@ mod tests {
         fn classify_latest(
             &self,
             _session_id: &str,
-            _force_open: bool,
         ) -> std::result::Result<ClassificationOutcome, SuggestionGateError> {
             match &self.closed {
                 Closed::Outcome(outcome) => Ok(outcome.clone()),
                 Closed::NoBlock => Err(SuggestionGateError::NoBlock),
                 Closed::Error => Err(SuggestionGateError::Classifier(
                     crate::ports::suggestion_cue_classifier::ClassifierError::Unavailable,
-                )),
-            }
-        }
-
-        fn probe_open(
-            &self,
-            _session_id: &str,
-        ) -> std::result::Result<Option<ClassificationOutcome>, SuggestionGateError> {
-            match &self.probe {
-                Probe::Nothing => Ok(None),
-                Probe::Outcome(outcome) => Ok(Some(outcome.clone())),
-                Probe::Error => Err(SuggestionGateError::Classifier(
-                    crate::ports::suggestion_cue_classifier::ClassifierError::Timeout,
                 )),
             }
         }
@@ -168,22 +131,8 @@ mod tests {
     }
 
     #[test]
-    fn prefers_the_open_probe() {
+    fn uses_the_closed_block_when_there_is_no_pending() {
         let gate = FakeGate {
-            probe: Probe::Outcome(outcome(SuggestionCue::Hesitation)),
-            closed: Closed::Outcome(outcome(SuggestionCue::Question)),
-            pending: None,
-        };
-        assert_eq!(
-            classify_once(&gate, "s1", false),
-            ClassifierTick::Classified(outcome(SuggestionCue::Hesitation))
-        );
-    }
-
-    #[test]
-    fn uses_the_closed_block_when_the_probe_has_nothing() {
-        let gate = FakeGate {
-            probe: Probe::Nothing,
             closed: Closed::Outcome(outcome(SuggestionCue::Question)),
             pending: None,
         };
@@ -196,7 +145,6 @@ mod tests {
     #[test]
     fn no_block_is_skip_not_failure() {
         let gate = FakeGate {
-            probe: Probe::Nothing,
             closed: Closed::NoBlock,
             pending: None,
         };
@@ -205,36 +153,20 @@ mod tests {
     }
 
     #[test]
-    fn probe_error_skips_by_default_and_falls_back_when_configured() {
-        let gate = FakeGate {
-            probe: Probe::Error,
-            closed: Closed::Outcome(outcome(SuggestionCue::Question)),
-            pending: None,
-        };
-        assert_eq!(classify_once(&gate, "s1", false), ClassifierTick::Skip);
-        assert_eq!(
-            classify_once(&gate, "s1", true),
-            ClassifierTick::FallbackAuto
-        );
-    }
-
-    #[test]
     fn reuses_a_pending_positive_decision_before_classifying() {
         let gate = FakeGate {
-            probe: Probe::Nothing,
             closed: Closed::NoBlock,
-            pending: Some(outcome(SuggestionCue::Hesitation)),
+            pending: Some(outcome(SuggestionCue::Comment)),
         };
         assert_eq!(
             classify_once(&gate, "s1", false),
-            ClassifierTick::Classified(outcome(SuggestionCue::Hesitation))
+            ClassifierTick::Classified(outcome(SuggestionCue::Comment))
         );
     }
 
     #[test]
     fn closed_error_skips_by_default_and_falls_back_when_configured() {
         let gate = FakeGate {
-            probe: Probe::Nothing,
             closed: Closed::Error,
             pending: None,
         };

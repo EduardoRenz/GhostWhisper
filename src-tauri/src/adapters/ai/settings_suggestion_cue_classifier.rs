@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::domain::suggestion_gate::SuggestionCue;
+use crate::domain::transcription::Speaker;
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::suggestion_cue_classifier::{
     ClassificationOutcome, ClassificationRequest, ClassifierError, SuggestionCueClassifier,
@@ -89,14 +90,56 @@ impl SuggestionCueClassifier for SettingsSuggestionCueClassifier {
     ) -> std::result::Result<ClassificationOutcome, ClassifierError> {
         let (backend, classifier) = self.select();
         let outcome = classifier.classify(request)?;
-        if backend == ClassifierBackend::Laya && outcome.cue == SuggestionCue::InsufficientContext {
-            // O Laya multilingual é não calibrado e abstém em hesitações com
-            // confiança 0,4–0,6. Se as regras locais têm um sinal positivo,
-            // usá-las evita “contexto insuficiente” em casos óbvios.
-            let fallback = self.heuristic.classify(request)?;
-            if fallback.should_suggest {
-                return Ok(fallback);
-            }
+        if backend != ClassifierBackend::Laya {
+            return Ok(outcome);
+        }
+
+        // O Laya multilingual é zero-shot e não calibrado. As regras locais
+        // entram como guarda determinística:
+        // - pergunta repetida: nunca sugerir de novo (`already_answered`);
+        // - Laya abstém ou diz `no_action`: se as regras veem pergunta/convite,
+        //   usar as regras (recall);
+        // - Laya positivo: preservar a decisão contextual do modelo.
+        let fallback = self.heuristic.classify(request)?;
+        // Bloco terminando em ME significa que ele já respondeu/está
+        // conduzindo a fala. O Laya às vezes ainda vê uma pergunta anterior e
+        // sugere; as regras locais são a guarda determinística.
+        if request
+            .block
+            .turns
+            .last()
+            .is_some_and(|turn| turn.speaker == Speaker::Me)
+        {
+            return Ok(fallback);
+        }
+        if fallback.cue == SuggestionCue::AlreadyAnswered {
+            return Ok(fallback);
+        }
+        // Sem evidência determinística de repetição, o Laya não pode “inventar”
+        // already_answered (isso suprime uma pergunta válida).
+        if outcome.cue == SuggestionCue::AlreadyAnswered {
+            return Ok(fallback);
+        }
+        // Convite de comentário detectado pelas regras vence uma pergunta
+        // retórica do Laya (ambos são positivos; o foco muda).
+        if fallback.cue == SuggestionCue::Comment && outcome.cue == SuggestionCue::Question {
+            return Ok(fallback);
+        }
+        if matches!(
+            outcome.cue,
+            SuggestionCue::InsufficientContext | SuggestionCue::NoAction
+        ) && fallback.should_suggest
+        {
+            return Ok(fallback);
+        }
+        if outcome.cue == SuggestionCue::InsufficientContext {
+            return Ok(fallback);
+        }
+        // Bloco curto é abstenção pelas regras, mesmo que o Laya tente decidir.
+        if outcome.cue == SuggestionCue::NoAction
+            && fallback.cue == SuggestionCue::InsufficientContext
+        {
+            return Ok(fallback);
         }
         Ok(outcome)
     }
@@ -139,7 +182,7 @@ mod tests {
             mode_id: "default".to_string(),
             mode_context: String::new(),
             allow_single_speaker: false,
-            is_open_probe: false,
+            prior_questions: vec![],
             now_ms: 1_000,
         }
     }
@@ -189,6 +232,7 @@ mod tests {
     #[test]
     fn uses_laya_when_selected_and_available() {
         let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
+        heuristic.push_outcome(outcome("heuristic"));
         let laya = Arc::new(FakeSuggestionCueClassifier::new());
         laya.push_outcome(outcome("laya"));
         let classifier = SettingsSuggestionCueClassifier::new(
@@ -199,7 +243,7 @@ mod tests {
 
         let result = classifier.classify(&request()).expect("laya");
         assert_eq!(result.backend, "laya");
-        assert!(heuristic.requests().is_empty());
+        assert_eq!(heuristic.requests().len(), 1);
         assert_eq!(laya.requests().len(), 1);
     }
 
@@ -219,7 +263,7 @@ mod tests {
     fn falls_back_to_heuristic_when_laya_abstains() {
         let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
         let mut heuristic_outcome = outcome("heuristic");
-        heuristic_outcome.cue = SuggestionCue::Hesitation;
+        heuristic_outcome.cue = SuggestionCue::Comment;
         heuristic_outcome.should_suggest = true;
         heuristic.push_outcome(heuristic_outcome);
 
@@ -237,8 +281,65 @@ mod tests {
         );
         let result = classifier.classify(&request()).expect("fallback");
         assert_eq!(result.backend, "heuristic");
-        assert_eq!(result.cue, SuggestionCue::Hesitation);
+        assert_eq!(result.cue, SuggestionCue::Comment);
         assert!(result.should_suggest);
+    }
+
+    #[test]
+    fn repeated_question_overrides_a_positive_laya_decision() {
+        use crate::domain::suggestion_gate::PriorQuestion;
+
+        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
+        let mut answered = outcome("heuristic");
+        answered.cue = SuggestionCue::AlreadyAnswered;
+        answered.should_suggest = false;
+        heuristic.push_outcome(answered);
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome("laya"));
+
+        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
+        let mut request = request();
+        request.prior_questions = vec![PriorQuestion {
+            title: "pode explicar?".to_string(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1,
+        }];
+        let result = classifier.classify(&request).expect("guarda");
+        assert_eq!(result.cue, SuggestionCue::AlreadyAnswered);
+        assert!(!result.should_suggest);
+    }
+
+    #[test]
+    fn a_block_ending_in_me_never_uses_a_positive_laya_decision() {
+        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
+        let mut no_action = outcome("heuristic");
+        no_action.cue = SuggestionCue::NoAction;
+        no_action.should_suggest = false;
+        heuristic.push_outcome(no_action);
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome("laya")); // Laya diz Question.
+
+        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
+        let mut request = request();
+        request.block.turns = vec![
+            crate::domain::suggestion_gate::BlockTurn {
+                speaker: Speaker::They,
+                text: "o que é um mutex?".to_string(),
+                start_ms: 0,
+                end_ms: 500,
+            },
+            crate::domain::suggestion_gate::BlockTurn {
+                speaker: Speaker::Me,
+                text: "é um mecanismo de exclusão mútua".to_string(),
+                start_ms: 1_000,
+                end_ms: 2_000,
+            },
+        ];
+        let result = classifier.classify(&request).expect("guarda");
+        assert_eq!(result.cue, SuggestionCue::NoAction);
+        assert!(!result.should_suggest);
     }
 
     #[test]

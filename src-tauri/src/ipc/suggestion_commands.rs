@@ -135,7 +135,7 @@ pub fn suggestion_classify_now(
 ) -> Result<ClassificationOutcome> {
     state
         .suggestion_gate
-        .classify_latest(&session_id, false)
+        .classify_latest(&session_id)
         .map_err(|error| match error {
             SuggestionGateError::NoBlock => GhostWhisperError::NoClassifiableBlock,
             other => GhostWhisperError::Other(other.to_string()),

@@ -198,7 +198,7 @@ classificação da sessão:
 Estados:
 
 - **Classificador nunca rodou:** “Nenhuma classificação ainda. O classificador
-  roda quando um bloco com os dois falantes fecha.”
+  roda quando um bloco fecha com contexto suficiente.”
 - **Modo automático:** “Modo automático: o classificador está desligado.” + link
   para Configurações.
 - **Erro/timeout:** “Classificador indisponível: …” + “Tentar de novo”.
@@ -213,25 +213,26 @@ Configurações, mas não é escondida automaticamente.
 
 | Cue | Significado | Gera sugestão? |
 |---|---|---|
-| `question` | THEY fez uma pergunta direta ou pediu esclarecimento | Sim, se confiança ≥ limiar |
-| `hesitation` | ME está travando, repetindo, se corrigindo, enrolando ou sem terminar | Sim, se confiança ≥ limiar |
-| `lost_thread` | ME perdeu o fio do assunto ou não sabe o que dizer | Sim, se confiança ≥ limiar |
-| `invitation` | THEY fez um ponto que claramente convida ME a responder | Sim, se confiança ≥ limiar |
-| `silence` | ME falou e a conversa ficou em silêncio | Sim, se confiança ≥ limiar |
-| `no_suggestion` | Nada útil a acrescentar | **Não** |
+| `question` | THEY fez uma pergunta que ME ainda não respondeu | Sim, se confiança ≥ limiar |
+| `comment` | THEY fez um ponto/opinião e convida ME a comentar | Sim, se confiança ≥ limiar |
+| `already_answered` | A pergunta repete uma já respondida no histórico recente (ou ME já respondeu no bloco) | **Não** |
+| `no_action` | Conversa casual, explicação, cumprimento ou fala sem pergunta/convite | **Não** |
 | `insufficient_context` | Bloco curto/ambíguo ou classificador absteve | **Não** |
 
-- O usuário pode **desligar categorias** que não quer que gerem sugestão
-  (ex.: `invitation` em reuniões mais formais).
-- `no_suggestion` e `insufficient_context` **nunca** geram sugestão.
+- **Não existe mais** `hesitation`, `silence`, `lost_thread` nem `invitation`.
+- O usuário pode **desligar** `question` e/ou `comment`.
+- `already_answered`, `no_action` e `insufficient_context` **nunca** geram.
 - A confiança é comparada com o limiar derivado da **Sensibilidade**:
 
-| Sensibilidade | Limiar | Cues habilitadas por padrão |
-|---|---|---|
-| **Baixa** | 0,85 | `question`, `hesitation` |
-| **Balanceada** (padrão) | 0,70 | `question`, `hesitation`, `lost_thread`, `silence` |
-| **Alta** | 0,55 | todas as positivas (inclui `invitation`) |
+| Sensibilidade | Limiar (heurístico) | Limiar (Laya) | Cues habilitadas |
+|---|---|---|---|
+| **Baixa** | 0,85 | 0,75 | `question`, `comment` |
+| **Balanceada** (padrão) | 0,70 | 0,50 | `question`, `comment` |
+| **Alta** | 0,55 | 0,35 | `question`, `comment` |
 
+- O classificador recebe o **contexto do agente selecionado** (nome, categoria,
+  contexto fixo e foco) e as **últimas 5 perguntas já respondidas** (título
+  curto). O histórico é configurável em 0–20 (`suggestion_answered_questions`).
 - O “Avançado” pode **desligar** cues individualmente; a allowlist efetiva é
   `preset da sensibilidade ∩ toggles do usuário`. O limiar exato é mostrado como
   leitura, não como segundo campo editável (fonte única = sensibilidade).
@@ -264,15 +265,14 @@ existindo, mas é **fallback de dev**, não o fluxo do usuário final.
 
 - **CU-01 — Pergunta do outro lado:** THEY pergunta algo; o classificador marca
   `question`; a sugestão aparece com foco na resposta.
-- **CU-02 — Hesitação:** ME começa a responder, enche de “é…”, repete ou se
-  corrige; o classificador marca `hesitation` e o copiloto oferece uma
-  continuação.
-- **CU-03 — Perda do fio:** ME muda de assunto ou não sabe onde estava; o
-  classificador marca `lost_thread` e a sugestão ajuda a retomar.
-- **CU-04 — Silêncio:** ME termina de falar e ninguém continua; após o silêncio
-  configurado, o classificador marca `silence` e sugere uma próxima fala.
-- **CU-05 — Nada a sugerir:** o bloco é conversa fiada ou já coberto; o
-  classificador marca `no_suggestion` e a faixa mostra isso, sem gastar LLM.
+- **CU-02 — Ponto a comentar:** THEY defende uma opinião e pergunta o que ME
+  acha; o classificador marca `comment` e a sugestão comenta o ponto.
+- **CU-03 — Pergunta já respondida:** THEY repete uma pergunta já respondida
+  nas últimas 5; o classificador marca `already_answered` e não gasta LLM.
+- **CU-04 — Conversa casual/explicação:** o bloco é small talk ou alguém
+  explicando; o classificador marca `no_action` e a faixa mostra isso.
+- **CU-05 — Contexto curto:** o bloco não tem conteúdo suficiente; o
+  classificador marca `insufficient_context` e não gera.
 - **CU-06 — Diagnóstico/POC:** o usuário abre Fontes de IA & Modelos → card
   “Modelo de classificação” → Avançado, testa um bloco, vê
   cue/confiança/latência e decide se o backend está bom.
@@ -318,19 +318,12 @@ tick 1s
 - **Bloco novo antes do cooldown:** substitui a decisão pendente; se o novo
   bloco for negativo, a pendência é limpa.
 
-### 5.3 Sonda de bloco aberto (hesitação)
+### 5.3 Histórico e contexto ampliado
 
-Para pegar a hesitação **enquanto ME ainda fala**, o classificador pode rodar
-sobre o bloco aberto:
-
-- após `hesitation_probe_ms` (padrão 4 s) de fala contínua de ME;
-- com pelo menos 3 palavras;
-- no máximo a cada 2 s;
-- só quando `probe_open_block = true` e a cue `hesitation` está habilitada;
-- se a cue for `hesitation`, a sugestão pode sair mesmo com `isMeSpeaking`.
-
-Essa sonda é a transposição do `evaluateHesitation` do Perssua (BR-015), mas
-**pelo classificador escolhido**, não por um prompt fixo.
+Não existe mais sonda de bloco aberto. O gate lê no mínimo **8 blocos
+anteriores** (até 5 min/120 segmentos) e mantém, por sessão, os títulos das
+perguntas que geraram sugestão. Uma pergunta repetida vira `already_answered`
+sem chamar o gerador.
 
 ### 5.4 Decisão negativa
 
@@ -454,10 +447,10 @@ Como usuário, quero escolher como o copiloto decide quando sugerir.
 
 Como usuário, quero que o copiloto só sugira quando houver um motivo real.
 
-- **CA-02.1** Um bloco só é classificado quando tem ME e THEY e está fechado
-  (ou é sonda de hesitação).
-- **CA-02.2** `question`, `hesitation`, `lost_thread`, `invitation` e `silence`
-  podem gerar sugestão; `no_suggestion` e `insufficient_context` nunca.
+- **CA-02.1** Um bloco só é classificado quando está fechado e tem contexto
+  suficiente (ME+THEY no escopo `blocks`; qualquer falante no `adaptive`).
+- **CA-02.2** `question` e `comment` podem gerar sugestão; `already_answered`,
+  `no_action` e `insufficient_context` nunca.
 - **CA-02.3** Confiança abaixo do limiar não gera.
 - **CA-02.4** O mesmo bloco não gera duas sugestões.
 - **CA-02.5** Cooldown é frequência mínima, não a decisão; decisão positiva
@@ -628,12 +621,10 @@ let questions = QuestionSet::new().with(
     Question::choice(
         "Qual é o próximo movimento do copiloto?",
         [
-            ("question", "THEY fez uma pergunta direta ou pediu esclarecimento."),
-            ("hesitation", "ME está travando, repetindo, se corrigindo ou sem terminar."),
-            ("lost_thread", "ME perdeu o fio da conversa ou não sabe o que dizer."),
-            ("invitation", "THEY fez um ponto que convida ME a responder."),
-            ("silence", "ME parou de falar e a conversa ficou em silêncio."),
-            ("no_suggestion", "Nada útil a acrescentar; ficar em silêncio."),
+            ("question", "THEY fez uma pergunta que ME ainda não respondeu."),
+            ("comment", "THEY fez um ponto/opinião e convida ME a comentar."),
+            ("already_answered", "A pergunta repete uma já respondida no histórico recente."),
+            ("no_action", "Conversa casual, explicação ou fala sem pergunta/convite."),
             ("insufficient_context", "Contexto insuficiente para decidir."),
         ],
     )?,
@@ -658,7 +649,7 @@ let abstained = answer.abstention() == Some("abstained")
     || answer.low_confidence();
 let should_suggest = !abstained
     && confidence >= min_confidence
-    && !matches!(cue, "no_suggestion" | "insufficient_context");
+    && !matches!(cue, "already_answered" | "no_action" | "insufficient_context");
 ```
 
 Mapeamento para o domínio:
@@ -925,11 +916,12 @@ R14):
   `suggestion_auto_refresh` é o interruptor mestre; migração de settings antigos
   para `auto`; nenhuma troca silenciosa.
 - **BR-093 — Blocos de conversa:** só falas finalizadas; fechamento por silêncio,
-  duração ou turnos; bloco classificável exige ME e THEY; sonda de hesitação
-  pode usar bloco aberto.
-- **BR-094 — Classificador de cue:** porta `SuggestionCueClassifier`; cues
-  `question`, `hesitation`, `lost_thread`, `invitation`, `silence`,
-  `no_suggestion`, `insufficient_context`; confiança/limiar; timeout; privacidade.
+  duração ou turnos; contexto de 8–20 blocos; sem sonda de bloco aberto.
+- **BR-094 — Classificador por intenção:** porta `SuggestionCueClassifier`; cues
+  `question`, `comment`, `already_answered`, `no_action`,
+  `insufficient_context`; confiança/limiar; timeout; privacidade.
+- **BR-101 — Histórico de perguntas respondidas:** últimas 5 (0–20) entram no
+  prompt e na checagem de repetição.
 - **BR-095 — Última classificação:** sempre visível por padrão; cue, decisão,
   confiança, evidência, bloco, backend e latência; não bloqueia a geração.
 - **BR-096 — Cabeçalho adaptativo:** automático mostra timer; classificador

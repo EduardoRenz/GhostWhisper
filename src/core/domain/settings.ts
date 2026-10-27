@@ -204,12 +204,10 @@ export interface Settings {
   suggestion_block_max_turns: number;
   /** Blocos anteriores no contexto. */
   suggestion_context_blocks: number;
+  /** Perguntas já respondidas no histórico (0–20). */
+  suggestion_answered_questions: number;
   /** Cues permitidas (vazio = todas as positivas). */
   suggestion_allowed_cues: SuggestionCue[];
-  /** Sonda de bloco aberto. */
-  suggestion_probe_open_block: boolean;
-  /** Fala contínua que habilita a sonda. */
-  suggestion_hesitation_probe_ms: number;
   /** Posição da janela de sugestões. */
   suggestions_position: [number, number] | null;
   /** Tamanho (px físicos) da janela de sugestões. */
@@ -503,10 +501,9 @@ export const defaultSettings = (): Settings => ({
   suggestion_block_gap_ms: 3_000,
   suggestion_block_max_ms: 45_000,
   suggestion_block_max_turns: 12,
-  suggestion_context_blocks: 3,
+  suggestion_context_blocks: 8,
+  suggestion_answered_questions: 5,
   suggestion_allowed_cues: [],
-  suggestion_probe_open_block: true,
-  suggestion_hesitation_probe_ms: 4_000,
   suggestions_position: null,
   suggestions_size: null,
   chat_position: null,

@@ -117,7 +117,7 @@ mod tests {
             mode_id: "default".to_string(),
             mode_context: String::new(),
             allow_single_speaker: false,
-            is_open_probe: false,
+            prior_questions: vec![],
             now_ms: 1_000,
         }
     }
@@ -163,14 +163,14 @@ mod tests {
 
         let first = request();
         let mut second = request();
-        second.is_open_probe = true;
+        second.allow_single_speaker = true;
         let _ = fake.classify(&first);
         let _ = fake.classify(&second);
 
         let requests = fake.requests();
         assert_eq!(requests.len(), 2);
-        assert!(!requests[0].is_open_probe);
-        assert!(requests[1].is_open_probe);
+        assert!(!requests[0].allow_single_speaker);
+        assert!(requests[1].allow_single_speaker);
     }
 
     #[test]

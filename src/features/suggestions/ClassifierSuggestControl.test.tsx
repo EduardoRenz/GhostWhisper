@@ -82,12 +82,12 @@ describe("ClassifierSuggestControl", () => {
   it("mostra a cue negativa sem repetir o texto", () => {
     renderControl({
       classification: classification({
-        cue: "no_suggestion",
+        cue: "no_action",
         should_suggest: false,
       }),
       state: "ready",
     });
-    expect(screen.getByText("Nada a sugerir")).toBeDefined();
+    expect(screen.getByText("Sem ação")).toBeDefined();
   });
 
   it("chama onToggle no clique", () => {

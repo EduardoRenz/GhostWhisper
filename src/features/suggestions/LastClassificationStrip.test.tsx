@@ -116,13 +116,13 @@ describe("LastClassificationStrip", () => {
   it("mostra decisão negativa sem abrir sugestão", () => {
     renderStrip({
       classification: classification({
-        cue: "no_suggestion",
+        cue: "no_action",
         should_suggest: false,
         confidence: 0.6,
       }),
       state: "ready",
     });
-    expect(screen.getByText("Nada a sugerir")).toBeDefined();
+    expect(screen.getByText("Sem ação")).toBeDefined();
     expect(screen.getByText("Não sugerir")).toBeDefined();
   });
 });

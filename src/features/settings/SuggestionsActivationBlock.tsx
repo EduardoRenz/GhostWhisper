@@ -20,13 +20,7 @@ interface SuggestionsActivationBlockProps {
   update: <K extends keyof Settings>(field: K, value: Settings[K]) => void;
 }
 
-const POSITIVE_CUES: SuggestionCue[] = [
-  "question",
-  "hesitation",
-  "lost_thread",
-  "invitation",
-  "silence",
-];
+const POSITIVE_CUES: SuggestionCue[] = ["question", "comment"];
 
 type TestState =
   | { kind: "idle" }
@@ -448,12 +442,27 @@ export function SuggestionsActivationBlock({
               <span>{t("suggestion_block_context")}</span>
               <input
                 type="number"
-                min={0}
-                max={5}
+                min={8}
+                max={20}
                 value={settings.suggestion_context_blocks}
                 onChange={(event) =>
                   update(
                     "suggestion_context_blocks",
+                    Number(event.target.value),
+                  )
+                }
+              />
+            </label>
+            <label className="settings__field">
+              <span>{t("suggestion_answered_questions")}</span>
+              <input
+                type="number"
+                min={0}
+                max={20}
+                value={settings.suggestion_answered_questions}
+                onChange={(event) =>
+                  update(
+                    "suggestion_answered_questions",
                     Number(event.target.value),
                   )
                 }
@@ -478,19 +487,6 @@ export function SuggestionsActivationBlock({
           </div>
 
           <div className="settings__grid">
-            <label className="settings__toggle-row">
-              <input
-                type="checkbox"
-                checked={settings.suggestion_probe_open_block}
-                onChange={(event) =>
-                  update(
-                    "suggestion_probe_open_block",
-                    event.target.checked,
-                  )
-                }
-              />
-              <span>{t("suggestion_probe_open_block")}</span>
-            </label>
             <label className="settings__toggle-row">
               <input
                 type="checkbox"

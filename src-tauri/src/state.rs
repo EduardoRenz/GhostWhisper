@@ -622,7 +622,6 @@ mod tests {
         fn classify_latest(
             &self,
             _session_id: &str,
-            _force_open: bool,
         ) -> std::result::Result<ClassificationOutcome, SuggestionGateError> {
             Err(SuggestionGateError::NoBlock)
         }

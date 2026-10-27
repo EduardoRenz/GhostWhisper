@@ -20,6 +20,7 @@ usuário (PRD §16).
 | 10 | Integração no agendador (modo classificador) | Integração | CONCLUDED |
 | 11 | Hardening, docs, pacote e teste manual | Fechamento | IN PROGRESS |
 | 12 | Caminho de fine-tuning: manifesto, dataset, eval, registry | Evolução | PENDING |
+| 13 | Taxonomia por intenção, contexto do agente e histórico | Revisão | CONCLUDED |
 
 ## Fases
 
@@ -44,8 +45,11 @@ Fase 5 — Integração
 Fase 6 — Fechamento
   10 ─▶ 11
 
-Fase 7 — Evolução (fine-tuning)
-  06/09/11 ─▶ 12
+Fase 7 — Revisão de taxonomia
+  10/11 ─▶ 13
+
+Fase 8 — Evolução (fine-tuning na taxonomia nova)
+  06/13 ─▶ 12
 ```
 
 ## Dependências detalhadas
@@ -65,7 +69,9 @@ Fase 7 — Evolução (fine-tuning)
 - **09** depende de 04/05/06/08 (bloco de ativação, model manager, faixa).
 - **10** depende de 03/04/05/06/07/08; é o único que mexe no agendador.
 - **11** fecha tudo.
-- **12** depende de 06/09/11; é evolução (fine-tuning), não bloqueia o MVP.
+- **13** revisa a taxonomia em 05/06/10/11: 5 cues, agente, histórico e
+  contexto ampliado. Não muda o modo automático.
+- **12** depende de 06/09/11/13; é evolução (fine-tuning), não bloqueia o MVP.
 
 ## Ordem de execução recomendada
 
@@ -78,7 +84,8 @@ Fase 7 — Evolução (fine-tuning)
    estiverem estáveis.
 6. **10** (agendador) por último na integração.
 7. **11** (hardening/docs/pacote).
-8. **12** (fine-tuning) quando o modelo base estiver estável.
+8. **13** (taxonomia por intenção; substitui a de 7 cues).
+9. **12** (fine-tuning) quando o modelo base estiver estável.
 
 ## Definição de pronto (geral)
 
@@ -91,7 +98,7 @@ Fase 7 — Evolução (fine-tuning)
   status.
 - `memory.md` deste PRD com entrada `## YYYY-MM-DD — …` (`IDs:`/`Refs:`).
 - `business-rules.md` atualizado quando a task criar/alterar regra
-  (`BR-092`…`BR-100`, escrita única — R14).
+  (`BR-092`…`BR-101`, escrita única — R14).
 - `issues.md` atualizado se a task encontrar bug/limitação (`ISS-059+`).
 
 ## Gate da POC (task 06)

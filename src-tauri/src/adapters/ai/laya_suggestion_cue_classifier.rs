@@ -6,9 +6,10 @@
 //! testável (`choice` + confiança + abstenção). O binding ao engine entra em
 //! [`LayaPredictor`] quando o artefato existir — nada de Python em runtime.
 //!
-//! Decisão: **uma** pergunta `choice` chamada `cue` com as 7 categorias. O
-//! `noul` não é usado (o model card documenta viés de rótulo). A decisão final
-//! é `cue` + `answer_confidence` + abstenção, nunca um segundo modelo.
+//! Decisão: **uma** pergunta `choice` chamada `cue` com 5 categorias. O `noul`
+//! não é usado (o model card documenta viés de rótulo). A decisão final é
+//! `cue` + `answer_confidence` + abstenção; a taxonomia nova removeu
+//! silêncio/hesitação e separa pergunta, comentário, já respondida e sem ação.
 
 #![allow(dead_code)]
 
@@ -26,17 +27,14 @@ use crate::ports::suggestion_cue_classifier::{
 pub const CUE_QUESTION: &str = "cue";
 
 /// Pergunta enviada ao modelo (o prompt real vem do SDK/tokenizer).
-pub const CUE_QUESTION_TEXT: &str =
-    "Qual é o momento da conversa e a IA deve sugerir uma resposta agora?";
+pub const CUE_QUESTION_TEXT: &str = "Você é um copiloto de reunião. Leia o contexto e o bloco mais recente. Classifique o bloco em exatamente uma opção: question (THEY fez uma pergunta que ME deve responder), comment (THEY fez um ponto/opinião e convida ME a comentar), already_answered (a pergunta atual já foi respondida no histórico recente ou pelo próprio ME neste bloco), no_action (conversa casual, alguém explicando algo, cumprimento ou fala sem pergunta/convite) ou insufficient_context (texto curto demais para decidir). Não existe mais classificação de silêncio ou hesitação.";
 
-/// As 7 categorias, na ordem do `Question::choice`.
-pub const CUE_OPTIONS: [(&str, SuggestionCue); 7] = [
+/// As 5 categorias, na ordem do `Question::choice`.
+pub const CUE_OPTIONS: [(&str, SuggestionCue); 5] = [
     ("question", SuggestionCue::Question),
-    ("hesitation", SuggestionCue::Hesitation),
-    ("lost_thread", SuggestionCue::LostThread),
-    ("invitation", SuggestionCue::Invitation),
-    ("silence", SuggestionCue::Silence),
-    ("no_suggestion", SuggestionCue::NoSuggestion),
+    ("comment", SuggestionCue::Comment),
+    ("already_answered", SuggestionCue::AlreadyAnswered),
+    ("no_action", SuggestionCue::NoAction),
     ("insufficient_context", SuggestionCue::InsufficientContext),
 ];
 
@@ -46,12 +44,18 @@ pub const CUE_OPTIONS: [(&str, SuggestionCue); 7] = [
 /// separar `hesitation` de `lost_thread`, `silence` de `no_suggestion`, etc.
 pub fn cue_option_description(label: &str) -> &'static str {
     match label {
-        "question" => "THEY asked a question or requested clarification that ME should answer.",
-        "hesitation" => "ME is stalling, repeating, self-correcting, trailing off, or unsure.",
-        "lost_thread" => "ME lost the thread or does not know what to say next.",
-        "invitation" => "THEY invited ME to speak, give an opinion, or add something.",
-        "silence" => "ME spoke and the conversation went silent; a prompt could help.",
-        "no_suggestion" => "The conversation is flowing; no suggestion is needed.",
+        "question" => {
+            "THEY asked ME a direct question or requested an explanation that ME has not answered yet."
+        }
+        "comment" => {
+            "THEY shared a point, opinion, or proposal and invited ME to comment, agree, or add."
+        }
+        "already_answered" => {
+            "The current question repeats a question already answered in the recent history, or ME already answered it in this block."
+        }
+        "no_action" => {
+            "Casual conversation, small talk, or someone explaining something; there is no question or comment opportunity for ME."
+        }
         "insufficient_context" => "Too little context to decide.",
         _ => "",
     }
@@ -240,22 +244,20 @@ pub fn render_state(context: &[ConversationBlock], block: &ConversationBlock) ->
 fn focus_for_cue(cue: SuggestionCue) -> Option<String> {
     let text = match cue {
         SuggestionCue::Question => "responder à pergunta",
-        SuggestionCue::Hesitation => "continuar a frase",
-        SuggestionCue::Silence => "puxar a próxima fala",
-        SuggestionCue::LostThread => "retomar o fio",
-        SuggestionCue::Invitation => "responder ao convite",
-        SuggestionCue::NoSuggestion | SuggestionCue::InsufficientContext => return None,
+        SuggestionCue::Comment => "comentar o ponto",
+        SuggestionCue::AlreadyAnswered
+        | SuggestionCue::NoAction
+        | SuggestionCue::InsufficientContext => return None,
     };
     Some(text.to_string())
 }
 
 fn evidence_for(block: &ConversationBlock, cue: SuggestionCue) -> String {
     let preferred = match cue {
-        SuggestionCue::Question | SuggestionCue::Invitation => Some(Speaker::They),
-        SuggestionCue::Hesitation | SuggestionCue::Silence | SuggestionCue::LostThread => {
-            Some(Speaker::Me)
+        SuggestionCue::Question | SuggestionCue::Comment | SuggestionCue::AlreadyAnswered => {
+            Some(Speaker::They)
         }
-        _ => None,
+        SuggestionCue::NoAction | SuggestionCue::InsufficientContext => None,
     };
     let turn = preferred
         .and_then(|speaker| {
@@ -344,12 +346,21 @@ impl LayaSuggestionCueClassifier {
     }
 
     fn input(&self, request: &ClassificationRequest) -> LayaInput {
-        let question = if request.mode_context.trim().is_empty() {
-            CUE_QUESTION_TEXT.to_string()
-        } else {
-            let context: String = request.mode_context.chars().take(600).collect();
-            format!("{CUE_QUESTION_TEXT}\n\n[Agente]\n{context}")
-        };
+        let mut question = CUE_QUESTION_TEXT.to_string();
+        if !request.mode_context.trim().is_empty() {
+            let context: String = request.mode_context.chars().take(800).collect();
+            question.push_str("\n\n[Agente selecionado]\n");
+            question.push_str(&context);
+        }
+        if !request.prior_questions.is_empty() {
+            question.push_str("\n\n[Perguntas já respondidas recentemente]\n");
+            for (index, prior) in request.prior_questions.iter().enumerate() {
+                question.push_str(&format!("{}. {}\n", index + 1, prior.title.trim()));
+            }
+            question.push_str(
+                "Se o bloco atual repetir uma dessas perguntas, escolha already_answered.",
+            );
+        }
         LayaInput {
             state: render_state(&request.context, &request.block),
             question,
@@ -463,8 +474,8 @@ mod tests {
             locale: "pt".to_string(),
             mode_id: "default".to_string(),
             mode_context: String::new(),
-            allow_single_speaker: false,
-            is_open_probe: false,
+            allow_single_speaker: true,
+            prior_questions: vec![],
             now_ms: 10_000,
         }
     }
@@ -589,7 +600,7 @@ mod tests {
 
     #[test]
     fn laya_low_confidence_abstains() {
-        let mut low = prediction("invitation", 0.3);
+        let mut low = prediction("comment", 0.3);
         low.low_confidence = true;
         let classifier = LayaSuggestionCueClassifier::new(
             Box::new(FakePredictor::new(low)),
@@ -604,15 +615,15 @@ mod tests {
     }
 
     #[test]
-    fn laya_should_suggest_is_false_for_no_suggestion() {
+    fn laya_should_suggest_is_false_for_no_action() {
         let classifier = LayaSuggestionCueClassifier::new(
-            Box::new(FakePredictor::new(prediction("no_suggestion", 0.99))),
+            Box::new(FakePredictor::new(prediction("no_action", 0.99))),
             LayaClassifierConfig::default(),
         );
         let outcome = classifier
             .classify(&request(block(vec![(Speaker::Me, "combinado")])))
             .expect("classificação");
-        assert_eq!(outcome.cue, SuggestionCue::NoSuggestion);
+        assert_eq!(outcome.cue, SuggestionCue::NoAction);
         assert!(!outcome.should_suggest);
         assert!(!outcome.abstained);
         assert!(outcome.focus.is_none());
@@ -776,9 +787,10 @@ mod tests {
             cue_from_choice("  QUESTION "),
             Some(SuggestionCue::Question)
         );
+        assert_eq!(cue_from_choice("comment"), Some(SuggestionCue::Comment));
         assert_eq!(
-            cue_from_choice("lost_thread"),
-            Some(SuggestionCue::LostThread)
+            cue_from_choice("already_answered"),
+            Some(SuggestionCue::AlreadyAnswered)
         );
         assert_eq!(cue_from_choice("noul"), None);
     }
@@ -794,6 +806,8 @@ mod tests {
         context: String,
         #[serde(default)]
         gap_ms: i64,
+        #[serde(default)]
+        prior_questions: Vec<String>,
         label_cue: String,
         label_should_suggest: bool,
     }
@@ -865,7 +879,8 @@ mod tests {
                     state: fixture.context.clone(),
                     context: String::new(),
                     gap_ms: 0,
-                    label_cue: "no_suggestion".to_string(),
+                    prior_questions: Vec::new(),
+                    label_cue: "no_action".to_string(),
                     label_should_suggest: false,
                 },
                 "ctx",
@@ -878,8 +893,16 @@ mod tests {
             locale: fixture.locale.clone(),
             mode_id: "default".to_string(),
             mode_context: String::new(),
-            allow_single_speaker: false,
-            is_open_probe: false,
+            allow_single_speaker: true,
+            prior_questions: fixture
+                .prior_questions
+                .iter()
+                .map(|title| crate::domain::suggestion_gate::PriorQuestion {
+                    title: title.clone(),
+                    block_id: "blk_prior".to_string(),
+                    answered_at_ms: 0,
+                })
+                .collect(),
             now_ms: (fixture.state.lines().count() as i64)
                 .saturating_sub(1)
                 .saturating_mul(1_000)
@@ -892,7 +915,7 @@ mod tests {
     #[test]
     fn laya_eval_fixture_shape() {
         let fixtures = fixtures();
-        assert!(fixtures.len() >= 24, "mínimo de 24 blocos");
+        assert!(fixtures.len() >= 20, "mínimo de 20 blocos");
         let mut counts = std::collections::HashMap::new();
         for fixture in &fixtures {
             let cue = cue_from_choice(&fixture.label_cue)
@@ -1078,7 +1101,7 @@ mod tests {
         let classifier = LayaSuggestionCueClassifier::new(
             Box::new(predictor),
             LayaClassifierConfig {
-                threshold: 0.70,
+                threshold: 0.50,
                 timeout_ms: 10_000,
                 model: "multilingual".to_string(),
             },

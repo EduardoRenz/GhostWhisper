@@ -137,11 +137,9 @@ export type SuggestionMode = "auto" | "classifier";
 /** Cue do classificador de blocos (BR-094). */
 export type SuggestionCue =
   | "question"
-  | "hesitation"
-  | "lost_thread"
-  | "invitation"
-  | "silence"
-  | "no_suggestion"
+  | "comment"
+  | "already_answered"
+  | "no_action"
   | "insufficient_context";
 
 /** Sensibilidade do classificador (BR-097). */

@@ -50,11 +50,13 @@ export function ClassifierSuggestControl({
               : classification?.should_suggest
                 ? t("suggestion_classifier_will_suggest", { cue: cue ?? "" })
                 : classification
-                  ? classification.cue === "no_suggestion"
-                    ? t("suggestion_cue_no_suggestion")
-                    : classification.cue === "insufficient_context"
-                      ? t("suggestion_cue_insufficient_context")
-                      : t("suggestion_classifier_nothing", { cue: cue ?? "" })
+                  ? classification.cue === "no_action"
+                    ? t("suggestion_cue_no_action")
+                    : classification.cue === "already_answered"
+                      ? t("suggestion_cue_already_answered")
+                      : classification.cue === "insufficient_context"
+                        ? t("suggestion_cue_insufficient_context")
+                        : t("suggestion_classifier_nothing", { cue: cue ?? "" })
                   : t("suggestion_classifier_awaiting");
 
   const title = paused

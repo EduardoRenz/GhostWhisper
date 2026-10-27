@@ -2,7 +2,15 @@
 
 Especificação técnica do PRD [`../prd.md`](../prd.md). Cobre o domínio de blocos,
 a porta do classificador, o gate no agendador, os eventos/IPC, a UI e a POC Laya.
-Contrato de produto em **BR-092**…**BR-098**.
+Contrato de produto em **BR-092**…**BR-101**.
+
+> **Revisão 2026-10-26 (taxonomia por intenção):** as cues antigas
+> `hesitation`/`lost_thread`/`invitation`/`silence`/`no_suggestion` foram
+> substituídas por `question`, `comment`, `already_answered`, `no_action` e
+> `insufficient_context`. Não existe mais sonda de bloco aberto. O
+> classificador recebe o contexto do agente e as últimas 5 perguntas
+> respondidas (BR-094/BR-101). Seções históricas abaixo foram ajustadas onde
+> o contrato mudou.
 
 ---
 
@@ -165,27 +173,30 @@ Regras:
 ### 2.2 Heurística automática (backend `heuristic`)
 
 ```rust
-pub fn heuristic_cue(block: &ConversationBlock, config: &HeuristicConfig) -> SuggestionCue
+pub fn heuristic_cue(
+    block: &ConversationBlock,
+    config: &HeuristicConfig,
+    prior_questions: &[PriorQuestion],
+) -> SuggestionCue
 ```
 
 Ordem de precedência:
 
-1. **`insufficient_context`** — menos de 3 palavras no total, ou sem os dois
-   falantes (quando o bloco exige ambos).
-2. **`question`** — alguma fala de THEY termina/contém `?` ou `？`; regex
-   `/[?？]/u`, paridade com o Perssua (BR-015).
-3. **`hesitation`** — ME tem ≥ 3 palavras e pelo menos um sinal:
-   - filler (`um`, `uh`, `hmm`, `like`, `basically`, `well`, `tipo`, `é`, `ahn`);
-   - repetição adjacente (`the the`, `eu eu`);
-   - autocorreção (`I mean`, `actually`, `wait`, `quer dizer`, `na verdade`,
-     `espera`);
-   - reticências/trailing (`...`, `…`) após ≥ 4 s de fala.
-4. **`silence`** — bloco fechado, último turno é ME, e o gap até `now_ms` é
-   ≥ `silence_ms` (default 3 s).
-5. **`no_suggestion`** — caso contrário.
+1. **`insufficient_context`** — menos de 3 palavras no total.
+2. **`no_action`** — small talk (cumprimento/agradecimento) ou fala sem
+   pergunta/convite.
+3. **`already_answered`** — a última pergunta de THEY já foi respondida no
+   próprio bloco (ME falou depois) ou tem similaridade Jaccard ≥ 0,60 com uma
+   pergunta do histórico.
+4. **`question`** — a última fala de THEY tem `?`/`？`, começa com palavra
+   interrogativa ou é um pedido (“me explica”, “walk me through”, …).
+5. **`comment`** — THEY não perguntou, mas convidou a comentar (“o que você
+   acha”, “concorda”, “faz sentido”, “your take”, …).
+6. **`no_action`** — caso contrário (explicação, afirmação, conversa).
 
-`lost_thread` e `invitation` são exclusivos do backend de IA; o heurístico não
-tenta adivinhar.
+O heurístico não tenta adivinhar `already_answered` por contexto semântico
+profundo; a similaridade lexical é a guarda determinística. O Laya decide o
+resto quando tem sinal positivo.
 
 ---
 
@@ -416,16 +427,13 @@ if decision == Generate:
     publish generating=false + fresh state
 ```
 
-Sonda de bloco aberto:
+Histórico e contexto:
 
-- se `probe_open_block && cue "hesitation" habilitada`;
-- ME está falando há ≥ `hesitation_probe_ms` (4 s);
-- bloco aberto tem ≥ 3 palavras;
-- último probe há ≥ 2 s;
-- chama `classify_latest(session, true)`;
-- se `cue = hesitation` e `should_suggest`, o gate pode gerar mesmo com
-  `isMeSpeaking` (esse estado precisa ser passado ao gate como
-  `is_me_speaking`; no modo classificador, a sonda é a exceção explícita).
+- o gate carrega no mínimo 8 blocos anteriores (janela de 5 min/120 segmentos);
+- mantém por sessão os títulos das perguntas que geraram sugestão;
+- envia até `suggestion_answered_questions` (padrão 5) no
+  `ClassificationRequest.prior_questions`;
+- o Laya injeta os títulos no prompt; o heurístico compara similaridade.
 
 O scheduler **não** deve classificar a cada tick: usa `last_classified_block_id`
 e o `block_id` determinístico.
@@ -524,11 +532,9 @@ pub fn suggestion_classify_now(
 export type SuggestionMode = "auto" | "classifier";
 export type SuggestionCue =
   | "question"
-  | "hesitation"
-  | "lost_thread"
-  | "invitation"
-  | "silence"
-  | "no_suggestion"
+  | "comment"
+  | "already_answered"
+  | "no_action"
   | "insufficient_context";
 
 export interface SuggestionClassification {
@@ -615,21 +621,19 @@ pub suggestion_block_max_ms: u32, // 45000
 pub suggestion_block_max_turns: u32, // 12
 
 #[serde(default = "default_context_blocks")]
-pub suggestion_context_blocks: u32, // 3
+pub suggestion_context_blocks: u32, // 8 (faixa 8–20)
+
+#[serde(default = "default_answered_questions")]
+pub suggestion_answered_questions: u32, // 5 (faixa 0–20)
 
 #[serde(default = "default_allowed_cues")]
 pub suggestion_allowed_cues: Vec<SuggestionCue>,
-
-#[serde(default = "default_enabled")]
-pub suggestion_probe_open_block: bool, // true
-
-#[serde(default = "default_probe_ms")]
-pub suggestion_hesitation_probe_ms: u32, // 4000
 ```
 
 - `sanitize()`: clamps de todos os campos; caminho vazio → usa env; checkpoint
   desconhecido → `multilingual`; cues desconhecidas são descartadas;
-  `no_suggestion`/`insufficient_context` nunca entram na allowlist.
+  `already_answered`/`no_action`/`insufficient_context` nunca entram na
+  allowlist.
 - `suggestion_auto_refresh` continua no struct; é o interruptor mestre.
 - Sem token; a única URL é o catálogo de modelos. O Laya roda in-process via
   `laya-onnx`; o modelo é local.
@@ -795,11 +799,9 @@ suggestion_block_max_turns
 suggestion_block_context
 suggestion_cues_title
 suggestion_cue_question
-suggestion_cue_hesitation
-suggestion_cue_lost_thread
-suggestion_cue_invitation
-suggestion_cue_silence
-suggestion_cue_no_suggestion
+suggestion_cue_comment
+suggestion_cue_already_answered
+suggestion_cue_no_action
 suggestion_cue_insufficient_context
 suggestion_last_classification
 suggestion_last_classification_empty

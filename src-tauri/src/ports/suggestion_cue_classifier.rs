@@ -11,7 +11,7 @@
 
 use serde::Serialize;
 
-use crate::domain::suggestion_gate::{ConversationBlock, SuggestionCue};
+use crate::domain::suggestion_gate::{ConversationBlock, PriorQuestion, SuggestionCue};
 
 /// Pedido de classificação de um bloco.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,9 +29,9 @@ pub struct ClassificationRequest {
     pub mode_context: String,
     /// Classifica bloco de um falante só (escopo adaptativo).
     pub allow_single_speaker: bool,
-    /// `true` quando é a sonda de bloco aberto (hesitação).
-    pub is_open_probe: bool,
-    /// Instante da classificação (ms desde a época), para o silêncio/idade.
+    /// Perguntas já respondidas na sessão (mais recentes primeiro).
+    pub prior_questions: Vec<PriorQuestion>,
+    /// Instante da classificação (ms desde o início da sessão).
     pub now_ms: i64,
 }
 
@@ -172,12 +172,12 @@ mod tests {
             mode_id: "default".to_string(),
             mode_context: String::new(),
             allow_single_speaker: false,
-            is_open_probe: false,
+            prior_questions: vec![],
             now_ms: 1_000,
         };
         assert_eq!(request.block.id, "blk_1");
         assert_eq!(request.locale, "pt");
-        assert!(!request.is_open_probe);
+        assert!(request.prior_questions.is_empty());
     }
 
     #[test]
@@ -185,7 +185,7 @@ mod tests {
         let mut outcome = outcome();
         outcome.confidence = 2.5;
         outcome.evidence = "x".repeat(200);
-        outcome.cue = SuggestionCue::NoSuggestion;
+        outcome.cue = SuggestionCue::NoAction;
         outcome.should_suggest = true;
 
         let normalized = outcome.normalized();

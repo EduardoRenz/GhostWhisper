@@ -333,16 +333,13 @@ pub struct Settings {
     /// Blocos anteriores no contexto do classificador.
     #[serde(default = "default_context_blocks")]
     pub suggestion_context_blocks: u32,
+    /// Quantas perguntas já respondidas entram no histórico do classificador.
+    #[serde(default = "default_answered_questions")]
+    pub suggestion_answered_questions: u32,
     /// Cues permitidas (vazio = todas as positivas). Strings para tolerar
     /// settings antigas/desconhecidas e sanitizar sem falhar o parse.
     #[serde(default)]
     pub suggestion_allowed_cues: Vec<String>,
-    /// Sonda de bloco aberto para hesitação.
-    #[serde(default = "default_enabled")]
-    pub suggestion_probe_open_block: bool,
-    /// Fala contínua de ME que habilita a sonda de hesitação.
-    #[serde(default = "default_hesitation_probe_ms")]
-    pub suggestion_hesitation_probe_ms: u32,
     /// Posição da janela de sugestões.
     #[serde(default)]
     pub suggestions_position: Option<(i32, i32)>,
@@ -595,9 +592,8 @@ impl Default for Settings {
             suggestion_block_max_ms: default_block_max_ms(),
             suggestion_block_max_turns: default_block_max_turns(),
             suggestion_context_blocks: default_context_blocks(),
+            suggestion_answered_questions: default_answered_questions(),
             suggestion_allowed_cues: Vec::new(),
-            suggestion_probe_open_block: true,
-            suggestion_hesitation_probe_ms: default_hesitation_probe_ms(),
             suggestions_position: None,
             suggestions_size: None,
             chat_position: None,
@@ -771,11 +767,11 @@ fn default_block_max_turns() -> u32 {
 }
 
 fn default_context_blocks() -> u32 {
-    3
+    8
 }
 
-fn default_hesitation_probe_ms() -> u32 {
-    4_000
+fn default_answered_questions() -> u32 {
+    5
 }
 
 fn default_dwell_ms() -> u32 {
@@ -984,14 +980,14 @@ impl Settings {
                 "turnos do bloco devem ficar entre 2 e 24".to_string(),
             ));
         }
-        if !(0..=5).contains(&self.suggestion_context_blocks) {
+        if !(8..=20).contains(&self.suggestion_context_blocks) {
             return Err(GhostWhisperError::Config(
-                "contexto do classificador deve ficar entre 0 e 5 blocos".to_string(),
+                "contexto do classificador deve ficar entre 8 e 20 blocos".to_string(),
             ));
         }
-        if !(2_000..=10_000).contains(&self.suggestion_hesitation_probe_ms) {
+        if !(0..=20).contains(&self.suggestion_answered_questions) {
             return Err(GhostWhisperError::Config(
-                "sonda de hesitação deve ficar entre 2000 e 10000 ms".to_string(),
+                "histórico de perguntas deve ficar entre 0 e 20".to_string(),
             ));
         }
         if !(MIN_DWELL_MS..=MAX_DWELL_MS).contains(&self.dwell_ms) {
@@ -1162,9 +1158,10 @@ impl Settings {
         self.suggestion_block_gap_ms = self.suggestion_block_gap_ms.clamp(1_000, 10_000);
         self.suggestion_block_max_ms = self.suggestion_block_max_ms.clamp(10_000, 120_000);
         self.suggestion_block_max_turns = self.suggestion_block_max_turns.clamp(2, 24);
-        self.suggestion_context_blocks = self.suggestion_context_blocks.clamp(0, 5);
-        self.suggestion_hesitation_probe_ms =
-            self.suggestion_hesitation_probe_ms.clamp(2_000, 10_000);
+        // A taxonomia nova depende de fio de conversa: o piso sobe para 8
+        // blocos (settings antigas com 3 são migradas no próximo save/load).
+        self.suggestion_context_blocks = self.suggestion_context_blocks.clamp(8, 20);
+        self.suggestion_answered_questions = self.suggestion_answered_questions.clamp(0, 20);
         let mut allowed = Vec::new();
         for value in &self.suggestion_allowed_cues {
             let Some(cue) = SuggestionCue::from_str(value) else {
@@ -1680,9 +1677,8 @@ mod tests {
             "suggestion_block_max_ms",
             "suggestion_block_max_turns",
             "suggestion_context_blocks",
+            "suggestion_answered_questions",
             "suggestion_allowed_cues",
-            "suggestion_probe_open_block",
-            "suggestion_hesitation_probe_ms",
         ] {
             object.remove(key);
         }
@@ -1695,6 +1691,8 @@ mod tests {
         assert!(!parsed.suggestion_classifier_auto_download);
         assert_eq!(parsed.suggestion_classifier_cooldown_secs, 15);
         assert_eq!(parsed.suggestion_block_gap_ms, 3_000);
+        assert_eq!(parsed.suggestion_context_blocks, 8);
+        assert_eq!(parsed.suggestion_answered_questions, 5);
         assert!(parsed.suggestion_allowed_cues.is_empty());
         assert!(parsed.validate().is_ok());
     }
@@ -1715,10 +1713,11 @@ mod tests {
             suggestion_block_max_ms: 1,
             suggestion_block_max_turns: 1,
             suggestion_context_blocks: 99,
-            suggestion_hesitation_probe_ms: 1,
+            suggestion_answered_questions: 99,
             suggestion_allowed_cues: vec![
                 "question".into(),
                 "question".into(),
+                "invitation".into(),
                 "no_suggestion".into(),
                 "insufficient_context".into(),
                 "nope".into(),
@@ -1741,9 +1740,12 @@ mod tests {
         assert_eq!(dirty.suggestion_block_gap_ms, 1_000);
         assert_eq!(dirty.suggestion_block_max_ms, 10_000);
         assert_eq!(dirty.suggestion_block_max_turns, 2);
-        assert_eq!(dirty.suggestion_context_blocks, 5);
-        assert_eq!(dirty.suggestion_hesitation_probe_ms, 2_000);
-        assert_eq!(dirty.suggestion_allowed_cues, vec!["question".to_string()]);
+        assert_eq!(dirty.suggestion_context_blocks, 20);
+        assert_eq!(dirty.suggestion_answered_questions, 20);
+        assert_eq!(
+            dirty.suggestion_allowed_cues,
+            vec!["question".to_string(), "comment".to_string()]
+        );
         assert!(dirty.validate().is_ok());
     }
 

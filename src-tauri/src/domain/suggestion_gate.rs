@@ -98,23 +98,12 @@ impl ClassifierSensitivity {
     }
 
     /// Preset de cues positivas (o avançado pode restringir).
+    ///
+    /// A taxonomia nova só tem duas decisões acionáveis: responder a uma
+    /// pergunta ou comentar um ponto. A sensibilidade muda apenas o limiar de
+    /// confiança, não as categorias.
     pub fn default_allowed_cues(self) -> &'static [SuggestionCue] {
-        match self {
-            Self::Low => &[SuggestionCue::Question, SuggestionCue::Hesitation],
-            Self::Balanced => &[
-                SuggestionCue::Question,
-                SuggestionCue::Hesitation,
-                SuggestionCue::LostThread,
-                SuggestionCue::Silence,
-            ],
-            Self::High => &[
-                SuggestionCue::Question,
-                SuggestionCue::Hesitation,
-                SuggestionCue::LostThread,
-                SuggestionCue::Invitation,
-                SuggestionCue::Silence,
-            ],
-        }
+        &[SuggestionCue::Question, SuggestionCue::Comment]
     }
 }
 
@@ -122,18 +111,15 @@ impl ClassifierSensitivity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SuggestionCue {
-    /// THEY fez uma pergunta direta ou pediu esclarecimento.
+    /// THEY fez uma pergunta que ME ainda não respondeu.
     Question,
-    /// ME está travando, repetindo, se corrigindo ou sem terminar.
-    Hesitation,
-    /// ME perdeu o fio da conversa ou não sabe o que dizer.
-    LostThread,
-    /// THEY fez um ponto que convida ME a responder.
-    Invitation,
-    /// ME falou e a conversa ficou em silêncio.
-    Silence,
-    /// Nada útil a acrescentar.
-    NoSuggestion,
+    /// THEY fez um ponto/opinião que convida ME a comentar.
+    Comment,
+    /// A pergunta atual repete uma pergunta já respondida no histórico
+    /// recente (ou ME já respondeu dentro do próprio bloco).
+    AlreadyAnswered,
+    /// Conversa casual, explicação ou fala sem pergunta/convite: não intervir.
+    NoAction,
     /// Contexto insuficiente/abstenção.
     InsufficientContext,
 }
@@ -143,32 +129,51 @@ impl SuggestionCue {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Question => "question",
-            Self::Hesitation => "hesitation",
-            Self::LostThread => "lost_thread",
-            Self::Invitation => "invitation",
-            Self::Silence => "silence",
-            Self::NoSuggestion => "no_suggestion",
+            Self::Comment => "comment",
+            Self::AlreadyAnswered => "already_answered",
+            Self::NoAction => "no_action",
             Self::InsufficientContext => "insufficient_context",
         }
     }
 
     /// Converte do valor persistido.
+    ///
+    /// Aceita os nomes antigos para não quebrar settings salvas: `invitation`
+    /// vira `comment`; `no_suggestion` vira `no_action`; as cues removidas de
+    /// hesitação/silêncio são descartadas (o sanitize mantém só positivas).
     pub fn from_str(value: &str) -> Option<Self> {
         match value.trim().to_lowercase().as_str() {
             "question" => Some(Self::Question),
-            "hesitation" => Some(Self::Hesitation),
-            "lost_thread" => Some(Self::LostThread),
-            "invitation" => Some(Self::Invitation),
-            "silence" => Some(Self::Silence),
-            "no_suggestion" => Some(Self::NoSuggestion),
+            "comment" | "invitation" => Some(Self::Comment),
+            "already_answered" => Some(Self::AlreadyAnswered),
+            "no_action" | "no_suggestion" => Some(Self::NoAction),
             "insufficient_context" => Some(Self::InsufficientContext),
             _ => None,
         }
     }
 
-    /// As duas categorias negativas nunca geram sugestão.
+    /// Só pergunta e comentário geram sugestão.
     pub fn can_suggest(self) -> bool {
-        !matches!(self, Self::NoSuggestion | Self::InsufficientContext)
+        matches!(self, Self::Question | Self::Comment)
+    }
+}
+
+/// Uma pergunta já respondida que o classificador usa para detectar repetição.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PriorQuestion {
+    /// Título curto (a própria pergunta, truncada).
+    pub title: String,
+    /// Bloco que originou a pergunta.
+    pub block_id: String,
+    /// Instante (ms da sessão) em que a sugestão foi gerada.
+    pub answered_at_ms: i64,
+}
+
+impl PriorQuestion {
+    /// Título seguro para prompt/UI (≤ 180 caracteres).
+    pub fn normalized(mut self) -> Self {
+        self.title = self.title.chars().take(180).collect();
+        self
     }
 }
 
@@ -245,28 +250,27 @@ impl Default for BlockConfig {
             max_block_ms: 45_000,
             max_turns: 12,
             min_chars: 8,
-            context_blocks: 3,
+            // A classificação precisa de mais histórico para detectar perguntas
+            // repetidas e entender o fio da conversa.
+            context_blocks: 8,
         }
     }
 }
 
 /// Regras do backend heurístico (sem IA).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HeuristicConfig {
-    /// Silêncio depois de ME que caracteriza `silence`.
-    pub silence_ms: i64,
     /// Palavras mínimas para tentar classificar.
     pub min_words: usize,
-    /// Fala contínua de ME que habilita o sinal de trailing off.
-    pub hesitation_min_speech_ms: i64,
+    /// Similaridade Jaccard mínima para considerar uma pergunta repetida.
+    pub repeated_question_similarity: f32,
 }
 
 impl Default for HeuristicConfig {
     fn default() -> Self {
         Self {
-            silence_ms: 3_000,
             min_words: 3,
-            hesitation_min_speech_ms: 4_000,
+            repeated_question_similarity: 0.60,
         }
     }
 }
@@ -402,95 +406,218 @@ fn has_question_mark(text: &str) -> bool {
     text.contains('?') || text.contains('？')
 }
 
-fn has_filler(words: &[String]) -> bool {
-    const FILLERS: [&str; 12] = [
-        "um",
-        "uh",
-        "hmm",
-        "like",
-        "basically",
-        "well",
-        "tipo",
-        "ah",
-        "eh",
-        "ahn",
-        "é",
-        "né",
+fn is_question_text(text: &str) -> bool {
+    if has_question_mark(text) {
+        return true;
+    }
+    let lower = text.to_lowercase();
+    let words = normalized_words(text);
+    let Some(first) = words.first().map(String::as_str) else {
+        return false;
+    };
+    const LEADING: [&str; 26] = [
+        "qual", "quais", "quando", "onde", "quem", "quanto", "quantos", "quantas", "porque",
+        "what", "how", "why", "when", "where", "who", "which", "can", "could", "would", "should",
+        "do", "does", "did", "is", "are", "will",
     ];
-    words
+    if LEADING.contains(&first) {
+        return true;
+    }
+    const REQUESTS: [&str; 12] = [
+        "me explica",
+        "me conta",
+        "me diz",
+        "fale sobre",
+        "pode falar",
+        "pode detalhar",
+        "walk me through",
+        "tell me",
+        "explain",
+        "describe",
+        "give me an example",
+        "show me",
+    ];
+    REQUESTS.iter().any(|marker| lower.contains(marker))
+}
+
+/// A última pergunta feita por THEY no bloco.
+pub fn question_text(block: &ConversationBlock) -> Option<String> {
+    block
+        .turns
         .iter()
-        .any(|word| FILLERS.iter().any(|filler| word == filler))
+        .rev()
+        .filter(|turn| turn.speaker == Speaker::They)
+        .find(|turn| is_question_text(&turn.text))
+        .map(|turn| turn.text.trim().to_string())
+        .filter(|text| !text.is_empty())
 }
 
-fn has_adjacent_repeat(words: &[String]) -> bool {
-    words
-        .windows(2)
-        .any(|pair| pair[0] == pair[1] && pair[0].len() > 1)
-}
-
-fn has_self_correction(text: &str) -> bool {
-    const MARKERS: [&str; 11] = [
-        "i mean",
-        "actually",
-        "wait",
-        "quer dizer",
-        "na verdade",
-        "espera",
-        "digo",
-        "ou melhor",
-        "como é que fala",
-        "how can i say",
-        "what's the word",
-    ];
-    let lower = text.to_lowercase();
-    MARKERS.iter().any(|marker| lower.contains(marker))
-}
-
-/// Incerteza explícita (“não tenho certeza”, “deixa eu pensar”).
+/// Título curto do bloco para o histórico de já respondidas.
 ///
-/// É o sinal de hesitação que aparece **sem** uma pergunta de THEY; por isso
-/// também vale para o bloco aberto de ME (sonda).
-fn has_uncertainty(text: &str) -> bool {
-    const MARKERS: [&str; 18] = [
-        "não tenho certeza",
-        "nao tenho certeza",
-        "não sei",
-        "nao sei",
-        "deixa eu pensar",
-        "deixa eu ver",
-        "vou pensar",
-        "não lembro",
-        "nao lembro",
-        "estou pensando",
-        "como é que",
-        "i'm not sure",
-        "i am not sure",
-        "not sure",
-        "let me think",
-        "let me see",
-        "i don't know",
-        "i dont know",
-    ];
-    let lower = text.to_lowercase();
-    MARKERS.iter().any(|marker| lower.contains(marker))
+/// Usa a fala completa de THEY (não só a última pergunta): a pergunta real pode
+/// estar dividida em vários turnos ou vir depois de uma explicação. Se não
+/// houver THEY, usa a última fala.
+pub fn question_title(block: &ConversationBlock) -> String {
+    let they_text = block
+        .turns
+        .iter()
+        .filter(|turn| turn.speaker == Speaker::They)
+        .map(|turn| turn.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let raw = if they_text.is_empty() {
+        block
+            .turns
+            .last()
+            .map(|turn| turn.text.trim().to_string())
+            .unwrap_or_default()
+    } else {
+        they_text
+    };
+    raw.chars().take(180).collect()
 }
 
-fn has_trailing_off(text: &str, me_speech_ms: i64, min_speech_ms: i64) -> bool {
-    if me_speech_ms < min_speech_ms {
+/// ME já respondeu dentro do próprio bloco depois da última pergunta de THEY.
+fn answered_in_block(block: &ConversationBlock) -> bool {
+    let Some(last_question) = block
+        .turns
+        .iter()
+        .rposition(|turn| turn.speaker == Speaker::They && is_question_text(&turn.text))
+    else {
+        return false;
+    };
+    block.turns[last_question + 1..]
+        .iter()
+        .any(|turn| turn.speaker == Speaker::Me && !normalized_words(&turn.text).is_empty())
+}
+
+/// Conversa social curta (cumprimento/agradecimento) não é oportunidade.
+fn is_small_talk(block: &ConversationBlock) -> bool {
+    let they_text = block
+        .turns
+        .iter()
+        .filter(|turn| turn.speaker == Speaker::They)
+        .map(|turn| turn.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let words = normalized_words(&they_text);
+    if words.is_empty() || words.len() > 12 {
         return false;
     }
-    let trimmed = text.trim_end();
-    trimmed.ends_with("...") || trimmed.ends_with('…')
+    const SOCIAL: [&str; 33] = [
+        "bom", "boa", "dia", "tarde", "noite", "tudo", "bem", "ótimo", "otimo", "e", "você",
+        "voce", "obrigado", "obrigada", "de", "nada", "até", "ate", "logo", "como", "vai", "how",
+        "are", "you", "good", "morning", "thank", "thanks", "too", "nice", "to", "meet", "am",
+    ];
+    let substantive = words
+        .iter()
+        .filter(|word| !SOCIAL.contains(&word.as_str()))
+        .count();
+    substantive == 0
+        && words.iter().any(|word| {
+            matches!(
+                word.as_str(),
+                "tudo"
+                    | "ótimo"
+                    | "otimo"
+                    | "obrigado"
+                    | "obrigada"
+                    | "você"
+                    | "voce"
+                    | "thanks"
+                    | "thank"
+                    | "how"
+                    | "nice"
+            )
+        })
 }
 
-/// Backend heurístico local: pergunta, hesitação, silêncio ou nada.
+/// THEY convidou ME a comentar/opinar (sem ser uma pergunta direta).
+fn invites_comment(text: &str) -> bool {
+    const MARKERS: [&str; 28] = [
+        "o que você acha",
+        "o que acha",
+        "o que vocês acham",
+        "qual sua opinião",
+        "qual é a sua opinião",
+        "sua opinião",
+        "seu ponto de vista",
+        "seu comentário",
+        "algum comentário",
+        "alguma consideração",
+        "quer acrescentar",
+        "pode comentar",
+        "faz sentido",
+        "concorda",
+        "concordam",
+        "e você",
+        "what do you think",
+        "what's your take",
+        "what is your take",
+        "your thoughts",
+        "your opinion",
+        "do you agree",
+        "does that make sense",
+        "any comments",
+        "would you add",
+        "how about you",
+        "thoughts?",
+        "agree?",
+    ];
+    let lower = text.to_lowercase();
+    MARKERS.iter().any(|marker| lower.contains(marker))
+}
+
+fn word_set(text: &str) -> std::collections::HashSet<String> {
+    normalized_words(text)
+        .into_iter()
+        .filter(|word| word.chars().count() > 2)
+        .collect()
+}
+
+fn jaccard(
+    left: &std::collections::HashSet<String>,
+    right: &std::collections::HashSet<String>,
+) -> f32 {
+    if left.is_empty() || right.is_empty() {
+        return 0.0;
+    }
+    let intersection = left.intersection(right).count() as f32;
+    let union = left.union(right).count() as f32;
+    intersection / union
+}
+
+/// `true` quando a pergunta atual repete uma pergunta já respondida.
+pub fn is_repeated_question(
+    question: &str,
+    prior_questions: &[PriorQuestion],
+    config: &HeuristicConfig,
+) -> bool {
+    let current = word_set(question);
+    if current.is_empty() {
+        return false;
+    }
+    let normalized_current = normalized_words(question).join(" ");
+    prior_questions.iter().any(|prior| {
+        if normalized_words(&prior.title).join(" ") == normalized_current {
+            return true;
+        }
+        let previous = word_set(&prior.title);
+        jaccard(&current, &previous) >= config.repeated_question_similarity
+    })
+}
+
+/// Backend heurístico local.
 ///
-/// `lost_thread` e `invitation` são exclusivos do classificador de IA; o
-/// heurístico não tenta adivinhar.
+/// A decisão é binária: responder a uma pergunta (`question`) ou comentar um
+/// ponto (`comment`). Perguntas repetidas viram `already_answered`; conversa
+/// casual/explicação vira `no_action`; bloco curto vira
+/// `insufficient_context`. Não há mais silence/hesitation.
 pub fn heuristic_cue(
     block: &ConversationBlock,
-    now_ms: i64,
     config: &HeuristicConfig,
+    prior_questions: &[PriorQuestion],
 ) -> SuggestionCue {
     let total_words: usize = block
         .turns
@@ -501,6 +628,25 @@ pub fn heuristic_cue(
     if total_words < config.min_words {
         return SuggestionCue::InsufficientContext;
     }
+    if is_small_talk(block) {
+        return SuggestionCue::NoAction;
+    }
+
+    // Se ME é o último a falar, ele já está respondendo/conduzindo: não há
+    // pergunta pendente de THEY para o copiloto responder. Sem silêncio ou
+    // hesitação na taxonomia, isso é `no_action` (ou `already_answered` se a
+    // pergunta de THEY veio antes da resposta de ME neste bloco).
+    if block
+        .turns
+        .last()
+        .is_some_and(|turn| turn.speaker == Speaker::Me)
+    {
+        return if answered_in_block(block) {
+            SuggestionCue::AlreadyAnswered
+        } else {
+            SuggestionCue::NoAction
+        };
+    }
 
     let they_text = block
         .turns
@@ -509,129 +655,35 @@ pub fn heuristic_cue(
         .map(|turn| turn.text.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    if has_question_mark(&they_text) {
+
+    let question = question_text(block);
+    let invitation = invites_comment(&they_text);
+
+    // A deduplicação vale para as duas cues acionáveis. O título guardado é a
+    // pergunta (quando existe) ou a última fala de THEY (convite de comentário).
+    if question.is_some() || invitation {
+        if answered_in_block(block) {
+            return SuggestionCue::AlreadyAnswered;
+        }
+        // Compara a pergunta isolada e o bloco inteiro de THEY: a pergunta pode
+        // estar fragmentada em vários turnos ("... uma fila. Quais são...").
+        let repeated = question
+            .iter()
+            .chain(std::iter::once(&they_text))
+            .any(|candidate| is_repeated_question(candidate, prior_questions, config));
+        if repeated {
+            return SuggestionCue::AlreadyAnswered;
+        }
+    }
+
+    // Convite a comentar/opinar vence pergunta retórica ("o que você acha?").
+    if invitation {
+        return SuggestionCue::Comment;
+    }
+    if question.is_some() {
         return SuggestionCue::Question;
     }
-
-    let me_text = block
-        .turns
-        .iter()
-        .filter(|turn| turn.speaker == Speaker::Me)
-        .map(|turn| turn.text.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let me_words = normalized_words(&me_text);
-    let me_speech_ms: i64 = block
-        .turns
-        .iter()
-        .filter(|turn| turn.speaker == Speaker::Me)
-        .map(|turn| turn.end_ms.saturating_sub(turn.start_ms).max(0))
-        .sum();
-
-    // Hesitação pode existir num bloco só de ME: é o caso da sonda aberta
-    // (BR-093). Por isso ela é avaliada antes da exigência dos dois falantes.
-    let hesitation = me_words.len() >= config.min_words
-        && (has_filler(&me_words)
-            || has_adjacent_repeat(&me_words)
-            || has_self_correction(&me_text)
-            || has_uncertainty(&me_text)
-            || has_trailing_off(&me_text, me_speech_ms, config.hesitation_min_speech_ms));
-    if hesitation {
-        return SuggestionCue::Hesitation;
-    }
-
-    if !block.has_both_speakers() {
-        return SuggestionCue::InsufficientContext;
-    }
-
-    let last_is_me = block
-        .turns
-        .last()
-        .is_some_and(|turn| turn.speaker == Speaker::Me);
-    let silent = now_ms.saturating_sub(block.end_ms) >= config.silence_ms;
-    if !block.is_open && last_is_me && silent {
-        return SuggestionCue::Silence;
-    }
-
-    SuggestionCue::NoSuggestion
-}
-
-/// Regras da sonda de bloco aberto (hesitação com ME ainda falando).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OpenProbeConfig {
-    /// `suggestion_probe_open_block`.
-    pub enabled: bool,
-    /// A cue `hesitation` está na allowlist.
-    pub hesitation_allowed: bool,
-    /// Palavras mínimas na fala de ME.
-    pub min_words: usize,
-    /// Duração mínima da fala contínua de ME.
-    pub hesitation_ms: i64,
-    /// Intervalo mínimo entre duas sondas da mesma sessão.
-    pub throttle_ms: i64,
-}
-
-impl Default for OpenProbeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            hesitation_allowed: true,
-            min_words: 3,
-            hesitation_ms: 4_000,
-            throttle_ms: 2_000,
-        }
-    }
-}
-
-/// `true` quando o bloco aberto deve ser sondado agora.
-///
-/// A sonda só roda com ME no fim do bloco, fala contínua de ME com o mínimo de
-/// palavras/duração e fora do throttle. O bloco precisa estar **aberto** (o
-/// silêncio ainda não o fechou); um bloco fechado é classificado pelo caminho
-/// normal.
-pub fn open_probe_eligible(
-    block: &ConversationBlock,
-    now_ms: i64,
-    last_probe_ms: Option<i64>,
-    config: &OpenProbeConfig,
-) -> bool {
-    if !config.enabled || !config.hesitation_allowed || !block.is_open {
-        return false;
-    }
-    let Some(last) = block.turns.last() else {
-        return false;
-    };
-    if last.speaker != Speaker::Me {
-        return false;
-    }
-
-    let mut words = 0_usize;
-    let mut run_start: Option<i64> = None;
-    let mut run_end = 0_i64;
-    for turn in block.turns.iter().rev() {
-        if turn.speaker != Speaker::Me {
-            break;
-        }
-        words += normalized_words(&turn.text).len();
-        run_start = Some(turn.start_ms);
-        run_end = run_end.max(turn.end_ms);
-    }
-
-    let Some(run_start) = run_start else {
-        return false;
-    };
-    if words < config.min_words {
-        return false;
-    }
-    if run_end.saturating_sub(run_start) < config.hesitation_ms.max(0) {
-        return false;
-    }
-    if let Some(last_probe) = last_probe_ms {
-        if now_ms.saturating_sub(last_probe) < config.throttle_ms.max(0) {
-            return false;
-        }
-    }
-    true
+    SuggestionCue::NoAction
 }
 
 /// Motivo de uma decisão negativa do gate.
@@ -876,12 +928,18 @@ mod tests {
 
         assert_eq!(SuggestionCue::Question.as_str(), "question");
         assert_eq!(
-            SuggestionCue::from_str("lost_thread"),
-            Some(SuggestionCue::LostThread)
+            SuggestionCue::from_str("invitation"),
+            Some(SuggestionCue::Comment)
+        );
+        assert_eq!(
+            SuggestionCue::from_str("no_suggestion"),
+            Some(SuggestionCue::NoAction)
         );
         assert_eq!(SuggestionCue::from_str("nope"), None);
         assert!(SuggestionCue::Question.can_suggest());
-        assert!(!SuggestionCue::NoSuggestion.can_suggest());
+        assert!(SuggestionCue::Comment.can_suggest());
+        assert!(!SuggestionCue::AlreadyAnswered.can_suggest());
+        assert!(!SuggestionCue::NoAction.can_suggest());
         assert!(!SuggestionCue::InsufficientContext.can_suggest());
     }
 
@@ -1003,64 +1061,12 @@ mod tests {
         assert!(!too_short.is_classifiable_with(8, true));
     }
 
-    #[test]
-    fn open_probe_requires_me_hesitating_in_an_open_block() {
-        let config = OpenProbeConfig::default();
-        let eligible = open_block(vec![
-            (Speaker::They, "certo", 0, 500),
-            (Speaker::Me, "é... tipo assim... eu acho", 1_000, 5_500),
-        ]);
-        assert!(eligible.is_open);
-        assert!(open_probe_eligible(&eligible, 6_000, None, &config));
-
-        let they_last = open_block(vec![
-            (Speaker::Me, "fala longa do usuário", 0, 4_500),
-            (Speaker::They, "ok", 5_000, 5_500),
-        ]);
-        assert!(!open_probe_eligible(&they_last, 6_000, None, &config));
-
-        let short = open_block(vec![
-            (Speaker::They, "certo", 0, 500),
-            (Speaker::Me, "é... tipo assim", 6_000, 7_000),
-        ]);
-        assert!(!open_probe_eligible(&short, 7_400, None, &config));
-
-        let few_words = open_block(vec![
-            (Speaker::They, "certo", 0, 500),
-            (Speaker::Me, "é... ahn", 1_000, 5_500),
-        ]);
-        assert!(!open_probe_eligible(&few_words, 6_000, None, &config));
-
-        let closed = open_block(vec![
-            (Speaker::They, "certo", 0, 500),
-            (Speaker::Me, "é... tipo assim... eu acho", 1_000, 5_500),
-        ]);
-        let closed = ConversationBlock {
-            is_open: false,
-            ..closed
-        };
-        assert!(!open_probe_eligible(&closed, 6_000, None, &config));
-
-        assert!(!open_probe_eligible(&eligible, 7_000, Some(6_000), &config));
-        assert!(open_probe_eligible(&eligible, 8_000, Some(6_000), &config));
-        assert!(!open_probe_eligible(
-            &eligible,
-            8_000,
-            None,
-            &OpenProbeConfig {
-                enabled: false,
-                ..config
-            }
-        ));
-        assert!(!open_probe_eligible(
-            &eligible,
-            8_000,
-            None,
-            &OpenProbeConfig {
-                hesitation_allowed: false,
-                ..config
-            }
-        ));
+    fn prior(title: &str) -> PriorQuestion {
+        PriorQuestion {
+            title: title.to_string(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1_000,
+        }
     }
 
     #[test]
@@ -1070,7 +1076,7 @@ mod tests {
             ("b", Speaker::They, "pode explicar melhor?", 1_000, 1_500),
         ]);
         assert_eq!(
-            heuristic_cue(&pt, 2_000, &heuristic_config()),
+            heuristic_cue(&pt, &heuristic_config(), &[]),
             SuggestionCue::Question
         );
 
@@ -1079,155 +1085,278 @@ mod tests {
             ("b", Speaker::They, "can you explain it?", 1_000, 1_500),
         ]);
         assert_eq!(
-            heuristic_cue(&en, 2_000, &heuristic_config()),
+            heuristic_cue(&en, &heuristic_config(), &[]),
+            SuggestionCue::Question
+        );
+
+        let request = block_with_turns(vec![(
+            "a",
+            Speaker::They,
+            "me explica como o cache invalida",
+            0,
+            1_500,
+        )]);
+        assert_eq!(
+            heuristic_cue(&request, &heuristic_config(), &[]),
             SuggestionCue::Question
         );
     }
 
     #[test]
-    fn heuristic_detects_hesitation_fillers_and_self_correction() {
-        let pt = block_with_turns(vec![
-            ("a", Speaker::Me, "é, tipo assim, eu acho", 0, 2_000),
-            ("b", Speaker::They, "certo", 2_500, 2_800),
-        ]);
-        assert_eq!(
-            heuristic_cue(&pt, 3_000, &heuristic_config()),
-            SuggestionCue::Hesitation
-        );
-
-        let en = block_with_turns(vec![
-            ("a", Speaker::Me, "i mean, actually, wait", 0, 2_000),
-            ("b", Speaker::They, "ok", 2_500, 2_800),
-        ]);
-        assert_eq!(
-            heuristic_cue(&en, 3_000, &heuristic_config()),
-            SuggestionCue::Hesitation
-        );
-    }
-
-    #[test]
-    fn heuristic_detects_trailing_off_after_long_speech() {
-        let long = block_with_turns(vec![
-            ("a", Speaker::Me, "eu estava pensando que...", 0, 5_000),
-            ("b", Speaker::They, "sim", 5_500, 5_800),
-        ]);
-        assert_eq!(
-            heuristic_cue(&long, 6_000, &heuristic_config()),
-            SuggestionCue::Hesitation
-        );
-
-        let short = block_with_turns(vec![
-            ("a", Speaker::Me, "eu estava pensando que...", 0, 1_000),
-            ("b", Speaker::They, "sim", 1_500, 1_800),
-        ]);
-        assert_eq!(
-            heuristic_cue(&short, 2_000, &heuristic_config()),
-            SuggestionCue::NoSuggestion
-        );
-    }
-
-    #[test]
-    fn heuristic_detects_silence_after_me() {
+    fn greeting_does_not_hide_a_real_question() {
         let block = block_with_turns(vec![
-            ("a", Speaker::Me, "vamos seguir com o plano", 0, 500),
-            ("b", Speaker::They, "certo", 1_000, 1_200),
-            ("c", Speaker::Me, "entao podemos fechar assim", 1_500, 2_000),
-        ]);
-        // `build_blocks` recebeu now=10_000, então o bloco já está fechado.
-        assert_eq!(
-            heuristic_cue(&block, 6_000, &heuristic_config()),
-            SuggestionCue::Silence
-        );
-    }
-
-    #[test]
-    fn heuristic_detects_uncertainty_in_me_only_block() {
-        let block = block_with_turns(vec![
-            ("a", Speaker::Me, "Eu não tenho certeza.", 28_680, 32_182),
+            ("a", Speaker::Me, "bom dia", 0, 500),
             (
                 "b",
-                Speaker::Me,
-                "Teza, mas deixa eu pensar.",
-                32_182,
-                34_187,
+                Speaker::They,
+                "bom dia, tudo bem? qual é o prazo da entrega?",
+                1_000,
+                1_800,
             ),
         ]);
         assert_eq!(
-            heuristic_cue(&block, 35_000, &heuristic_config()),
-            SuggestionCue::Hesitation
+            heuristic_cue(&block, &heuristic_config(), &[]),
+            SuggestionCue::Question
         );
     }
 
     #[test]
-    fn heuristic_me_only_without_markers_is_insufficient() {
-        let block = block_with_turns(vec![(
-            "a",
-            Speaker::Me,
-            "Beleza, vamos começar então.",
-            12,
-            3_680,
-        )]);
-        assert_eq!(
-            heuristic_cue(&block, 5_000, &heuristic_config()),
-            SuggestionCue::InsufficientContext
-        );
-    }
-
-    #[test]
-    fn heuristic_returns_no_suggestion_for_fluent_exchange() {
+    fn heuristic_detects_comment_invitation() {
         let block = block_with_turns(vec![
-            ("a", Speaker::Me, "vamos revisar o cronograma", 0, 1_000),
-            ("b", Speaker::They, "concordo com o plano", 1_500, 2_000),
+            ("a", Speaker::Me, "podemos priorizar a migração", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "eu acho que o banco é o gargalo. o que você acha?",
+                1_000,
+                1_800,
+            ),
+        ]);
+        // A pergunta é retórica/convite, não um pedido de resposta factual:
+        // ainda assim é uma oportunidade de comentar.
+        assert_eq!(
+            heuristic_cue(&block, &heuristic_config(), &[]),
+            SuggestionCue::Comment
+        );
+
+        let comment = block_with_turns(vec![
+            ("a", Speaker::Me, "podemos priorizar a migração", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "eu acho que devemos cortar escopo para cumprir a data. concorda?",
+                1_000,
+                1_800,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&comment, &heuristic_config(), &[]),
+            SuggestionCue::Comment
+        );
+
+        let invitation = block_with_turns(vec![
+            ("a", Speaker::Me, "podemos priorizar a migração", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "eu acho que o banco é o gargalo. qual sua opinião?",
+                1_000,
+                1_800,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&invitation, &heuristic_config(), &[]),
+            SuggestionCue::Comment
+        );
+
+        let statement = block_with_turns(vec![
+            ("a", Speaker::Me, "podemos priorizar a migração", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "eu acho que o banco é o gargalo. faz sentido para você?",
+                1_000,
+                1_800,
+            ),
+        ]);
+        // "faz sentido" é convite; a pergunta também tem "?".
+        assert_eq!(
+            heuristic_cue(&statement, &heuristic_config(), &[]),
+            SuggestionCue::Comment
+        );
+    }
+
+    #[test]
+    fn heuristic_marks_a_repeated_question_as_already_answered() {
+        let block = block_with_turns(vec![
+            ("a", Speaker::Me, "o desconto é 10%", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "e o desconto para 50 licenças, como fica?",
+                1_000,
+                1_500,
+            ),
+        ]);
+        let answered = vec![prior("e o desconto para 50 licenças, como fica?")];
+        assert_eq!(
+            heuristic_cue(&block, &heuristic_config(), &answered),
+            SuggestionCue::AlreadyAnswered
+        );
+
+        let unrelated = vec![prior("qual é o prazo da segunda fase?")];
+        assert_eq!(
+            heuristic_cue(&block, &heuristic_config(), &unrelated),
+            SuggestionCue::Question
+        );
+    }
+
+    #[test]
+    fn heuristic_marks_a_question_answered_in_the_same_block() {
+        let block = block_with_turns(vec![
+            ("a", Speaker::They, "qual é o prazo?", 0, 500),
+            ("b", Speaker::Me, "entrego na sexta", 1_000, 1_500),
+        ]);
+        assert_eq!(
+            heuristic_cue(&block, &heuristic_config(), &[]),
+            SuggestionCue::AlreadyAnswered
+        );
+    }
+
+    #[test]
+    fn repeated_comment_invitation_is_already_answered() {
+        let first = block_with_turns(vec![
+            (
+                "a",
+                Speaker::Me,
+                "o mutex é um bloqueio, não uma fila",
+                0,
+                1_000,
+            ),
+            (
+                "b",
+                Speaker::They,
+                "Você mencionou o mutex para controlar o acesso concorrente. Mas me diga, o mutex é a mesma coisa que uma fila.",
+                1_200,
+                3_000,
+            ),
             (
                 "c",
-                Speaker::Me,
-                "fechamos os proximos passos",
-                2_500,
+                Speaker::They,
+                "Quais são as diferenças entre eles e em quais situações você utilizaria cada um?",
+                3_500,
+                4_000,
+            ),
+        ]);
+        let title = question_title(&first);
+        let prior = vec![PriorQuestion {
+            title,
+            block_id: first.id.clone(),
+            answered_at_ms: 10_000,
+        }];
+
+        let second = block_with_turns(vec![
+            (
+                "d",
+                Speaker::They,
+                "Você mencionou o mutex para controlar o acesso concorrente. Mas me diga, o mutex é a mesma coisa que o mutex.",
+                0,
+                2_000,
+            ),
+            ("e", Speaker::Me, "não, ele é um bloqueio", 2_500, 3_000),
+            (
+                "f",
+                Speaker::They,
+                "uma fila. Quais são as diferenças entre eles e em quais situações você utilizaria cada um?",
+                3_500,
+                5_000,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&second, &heuristic_config(), &prior),
+            SuggestionCue::AlreadyAnswered
+        );
+    }
+
+    #[test]
+    fn heuristic_returns_no_action_for_casual_or_explanation() {
+        let casual = block_with_turns(vec![
+            ("a", Speaker::Me, "bom dia, tudo bem?", 0, 500),
+            ("b", Speaker::They, "tudo ótimo, e você?", 1_000, 1_500),
+        ]);
+        assert_eq!(
+            heuristic_cue(&casual, &heuristic_config(), &[]),
+            SuggestionCue::NoAction
+        );
+
+        let explanation = block_with_turns(vec![
+            ("a", Speaker::Me, "como funciona?", 0, 500),
+            (
+                "b",
+                Speaker::They,
+                "o sistema usa filas para desacoplar os serviços e retenta falhas.",
+                1_000,
                 3_000,
             ),
         ]);
         assert_eq!(
-            heuristic_cue(&block, 4_000, &heuristic_config()),
-            SuggestionCue::NoSuggestion
+            heuristic_cue(&explanation, &heuristic_config(), &[]),
+            SuggestionCue::NoAction
+        );
+
+        let me_only = block_with_turns(vec![(
+            "a",
+            Speaker::Me,
+            "eu estou explicando o desenho da arquitetura para o time",
+            0,
+            3_000,
+        )]);
+        assert_eq!(
+            heuristic_cue(&me_only, &heuristic_config(), &[]),
+            SuggestionCue::NoAction
         );
     }
 
     #[test]
-    fn heuristic_returns_insufficient_context_for_short_or_one_sided_block() {
+    fn me_last_turn_is_not_a_suggestion_opportunity() {
+        let answer = block_with_turns(vec![
+            ("a", Speaker::They, "o que é um mutex?", 0, 500),
+            (
+                "b",
+                Speaker::Me,
+                "é um mecanismo de exclusão mútua que protege a seção crítica",
+                1_000,
+                2_000,
+            ),
+        ]);
+        assert_eq!(
+            heuristic_cue(&answer, &heuristic_config(), &[]),
+            SuggestionCue::AlreadyAnswered
+        );
+
+        let me_only = block_with_turns(vec![(
+            "c",
+            Speaker::Me,
+            "o mutex protege a seção crítica e evita condição de corrida",
+            0,
+            2_000,
+        )]);
+        assert_eq!(
+            heuristic_cue(&me_only, &heuristic_config(), &[]),
+            SuggestionCue::NoAction
+        );
+    }
+
+    #[test]
+    fn heuristic_returns_insufficient_context_for_short_blocks() {
         let short = block_with_turns(vec![
             ("a", Speaker::Me, "oi", 0, 100),
             ("b", Speaker::They, "ok", 200, 300),
         ]);
         assert_eq!(
-            heuristic_cue(&short, 1_000, &heuristic_config()),
+            heuristic_cue(&short, &heuristic_config(), &[]),
             SuggestionCue::InsufficientContext
         );
-
-        let one_sided =
-            block_with_turns(vec![("a", Speaker::Me, "eu falei uma frase longa", 0, 500)]);
-        assert_eq!(
-            heuristic_cue(&one_sided, 1_000, &heuristic_config()),
-            SuggestionCue::InsufficientContext
-        );
-    }
-
-    #[test]
-    fn heuristic_never_returns_lost_thread_or_invitation() {
-        let fixtures = vec![
-            block_with_turns(vec![
-                ("a", Speaker::Me, "vamos revisar o cronograma", 0, 500),
-                ("b", Speaker::They, "concordo com o plano", 1_000, 1_500),
-            ]),
-            block_with_turns(vec![
-                ("a", Speaker::Me, "é, tipo assim", 0, 2_000),
-                ("b", Speaker::They, "certo", 2_500, 2_800),
-            ]),
-        ];
-        for block in fixtures {
-            let cue = heuristic_cue(&block, 5_000, &heuristic_config());
-            assert_ne!(cue, SuggestionCue::LostThread);
-            assert_ne!(cue, SuggestionCue::Invitation);
-        }
     }
 
     #[test]
@@ -1263,7 +1392,7 @@ mod tests {
         );
 
         let negative_cue = GateTick {
-            cue: SuggestionCue::NoSuggestion,
+            cue: SuggestionCue::NoAction,
             ..gate_tick()
         };
         assert_eq!(

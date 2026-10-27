@@ -36,32 +36,30 @@ impl Default for HeuristicSuggestionCueClassifier {
 fn confidence(cue: SuggestionCue) -> f32 {
     match cue {
         SuggestionCue::Question => 0.90,
-        SuggestionCue::Hesitation => 0.80,
-        SuggestionCue::Silence => 0.75,
-        SuggestionCue::NoSuggestion => 0.60,
+        SuggestionCue::Comment => 0.86,
+        SuggestionCue::AlreadyAnswered => 0.90,
+        SuggestionCue::NoAction => 0.60,
         SuggestionCue::InsufficientContext => 0.40,
-        // O heurístico não devolve estas cues; valor conservador para completar.
-        SuggestionCue::LostThread | SuggestionCue::Invitation => 0.50,
     }
 }
 
 fn focus(cue: SuggestionCue) -> Option<String> {
     let text = match cue {
         SuggestionCue::Question => "responder à pergunta",
-        SuggestionCue::Hesitation => "continuar a frase",
-        SuggestionCue::Silence => "puxar a próxima fala",
-        SuggestionCue::LostThread => "retomar o fio",
-        SuggestionCue::Invitation => "responder ao convite",
-        SuggestionCue::NoSuggestion | SuggestionCue::InsufficientContext => return None,
+        SuggestionCue::Comment => "comentar o ponto",
+        SuggestionCue::AlreadyAnswered
+        | SuggestionCue::NoAction
+        | SuggestionCue::InsufficientContext => return None,
     };
     Some(text.to_string())
 }
 
 fn evidence(block: &ConversationBlock, cue: SuggestionCue) -> String {
     let speaker = match cue {
-        SuggestionCue::Question => Some(Speaker::They),
-        SuggestionCue::Hesitation | SuggestionCue::Silence => Some(Speaker::Me),
-        _ => None,
+        SuggestionCue::Question | SuggestionCue::Comment | SuggestionCue::AlreadyAnswered => {
+            Some(Speaker::They)
+        }
+        SuggestionCue::NoAction | SuggestionCue::InsufficientContext => None,
     };
     let turn = speaker
         .and_then(|speaker| {
@@ -81,7 +79,7 @@ impl SuggestionCueClassifier for HeuristicSuggestionCueClassifier {
         request: &ClassificationRequest,
     ) -> std::result::Result<ClassificationOutcome, ClassifierError> {
         let block = &request.block;
-        let cue = heuristic_cue(block, request.now_ms, &self.config);
+        let cue = heuristic_cue(block, &self.config, &request.prior_questions);
         Ok(ClassificationOutcome {
             block_id: block.id.clone(),
             session_id: block.session_id.clone(),
@@ -110,7 +108,7 @@ impl SuggestionCueClassifier for HeuristicSuggestionCueClassifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::suggestion_gate::BlockTurn;
+    use crate::domain::suggestion_gate::{BlockTurn, PriorQuestion};
 
     fn block(turns: Vec<(Speaker, &str, i64, i64)>, is_open: bool) -> ConversationBlock {
         ConversationBlock {
@@ -133,7 +131,10 @@ mod tests {
         }
     }
 
-    fn request(block: ConversationBlock, now_ms: i64) -> ClassificationRequest {
+    fn request(
+        block: ConversationBlock,
+        prior_questions: Vec<PriorQuestion>,
+    ) -> ClassificationRequest {
         ClassificationRequest {
             session_id: "s1".to_string(),
             block,
@@ -141,9 +142,17 @@ mod tests {
             locale: "pt".to_string(),
             mode_id: "default".to_string(),
             mode_context: String::new(),
-            allow_single_speaker: false,
-            is_open_probe: false,
-            now_ms,
+            allow_single_speaker: true,
+            prior_questions,
+            now_ms: 10_000,
+        }
+    }
+
+    fn prior(title: &str) -> PriorQuestion {
+        PriorQuestion {
+            title: title.to_string(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1_000,
         }
     }
 
@@ -158,7 +167,7 @@ mod tests {
             false,
         );
         let outcome = classifier
-            .classify(&request(block, 10_000))
+            .classify(&request(block, vec![]))
             .expect("classificação");
         assert_eq!(outcome.cue, SuggestionCue::Question);
         assert!(outcome.should_suggest);
@@ -169,61 +178,105 @@ mod tests {
     }
 
     #[test]
-    fn detects_hesitation_with_me_evidence() {
+    fn detects_comment_invitation() {
         let classifier = HeuristicSuggestionCueClassifier::default();
         let block = block(
             vec![
-                (Speaker::Me, "é, tipo assim, eu acho", 0, 2_000),
-                (Speaker::They, "certo", 2_500, 2_800),
+                (Speaker::Me, "podemos priorizar a migração", 0, 500),
+                (
+                    Speaker::They,
+                    "eu acho que o banco é o gargalo. o que você acha",
+                    1_000,
+                    1_800,
+                ),
             ],
             false,
         );
         let outcome = classifier
-            .classify(&request(block, 3_000))
+            .classify(&request(block, vec![]))
             .expect("classificação");
-        assert_eq!(outcome.cue, SuggestionCue::Hesitation);
-        assert!(outcome.evidence.contains("tipo assim"));
-        assert_eq!(outcome.focus.as_deref(), Some("continuar a frase"));
-        assert_eq!(outcome.confidence, 0.80);
+        assert_eq!(outcome.cue, SuggestionCue::Comment);
+        assert!(outcome.should_suggest);
+        assert_eq!(outcome.focus.as_deref(), Some("comentar o ponto"));
+        assert_eq!(outcome.confidence, 0.86);
     }
 
     #[test]
-    fn detects_silence_after_me() {
+    fn repeated_question_is_already_answered() {
         let classifier = HeuristicSuggestionCueClassifier::default();
         let block = block(
             vec![
-                (Speaker::Me, "vamos seguir com o plano", 0, 500),
-                (Speaker::They, "certo", 1_000, 1_200),
-                (Speaker::Me, "entao podemos fechar assim", 1_500, 2_000),
+                (Speaker::Me, "o desconto é 10%", 0, 500),
+                (
+                    Speaker::They,
+                    "e o desconto para 50 licenças, como fica?",
+                    1_000,
+                    1_500,
+                ),
             ],
             false,
         );
         let outcome = classifier
-            .classify(&request(block, 6_000))
+            .classify(&request(
+                block,
+                vec![prior("e o desconto para 50 licenças, como fica?")],
+            ))
             .expect("classificação");
-        assert_eq!(outcome.cue, SuggestionCue::Silence);
-        assert_eq!(outcome.focus.as_deref(), Some("puxar a próxima fala"));
-        assert_eq!(outcome.confidence, 0.75);
-    }
-
-    #[test]
-    fn fluent_exchange_is_no_suggestion() {
-        let classifier = HeuristicSuggestionCueClassifier::default();
-        let block = block(
-            vec![
-                (Speaker::Me, "vamos revisar o cronograma", 0, 1_000),
-                (Speaker::They, "concordo com o plano", 1_500, 2_000),
-                (Speaker::Me, "fechamos os proximos passos", 2_500, 3_000),
-            ],
-            false,
-        );
-        let outcome = classifier
-            .classify(&request(block, 4_000))
-            .expect("classificação");
-        assert_eq!(outcome.cue, SuggestionCue::NoSuggestion);
+        assert_eq!(outcome.cue, SuggestionCue::AlreadyAnswered);
         assert!(!outcome.should_suggest);
         assert!(outcome.focus.is_none());
-        assert_eq!(outcome.confidence, 0.60);
+    }
+
+    #[test]
+    fn question_answered_in_the_same_block_is_already_answered() {
+        let classifier = HeuristicSuggestionCueClassifier::default();
+        let block = block(
+            vec![
+                (Speaker::They, "qual é o prazo?", 0, 500),
+                (Speaker::Me, "entrego na sexta", 1_000, 1_500),
+            ],
+            false,
+        );
+        let outcome = classifier
+            .classify(&request(block, vec![]))
+            .expect("classificação");
+        assert_eq!(outcome.cue, SuggestionCue::AlreadyAnswered);
+        assert!(!outcome.should_suggest);
+    }
+
+    #[test]
+    fn casual_conversation_and_explanations_are_no_action() {
+        let classifier = HeuristicSuggestionCueClassifier::default();
+        let casual = block(
+            vec![
+                (Speaker::Me, "bom dia, tudo bem?", 0, 500),
+                (Speaker::They, "tudo ótimo, e você?", 1_000, 1_500),
+            ],
+            false,
+        );
+        let outcome = classifier
+            .classify(&request(casual, vec![]))
+            .expect("classificação");
+        assert_eq!(outcome.cue, SuggestionCue::NoAction);
+        assert!(!outcome.should_suggest);
+
+        let explanation = block(
+            vec![
+                (Speaker::Me, "como funciona?", 0, 500),
+                (
+                    Speaker::They,
+                    "o sistema usa filas para desacoplar os serviços e retenta falhas.",
+                    1_000,
+                    3_000,
+                ),
+            ],
+            false,
+        );
+        let outcome = classifier
+            .classify(&request(explanation, vec![]))
+            .expect("classificação");
+        assert_eq!(outcome.cue, SuggestionCue::NoAction);
+        assert!(outcome.focus.is_none());
     }
 
     #[test]
@@ -234,7 +287,7 @@ mod tests {
             false,
         );
         let outcome = classifier
-            .classify(&request(block, 1_000))
+            .classify(&request(block, vec![]))
             .expect("classificação");
         assert_eq!(outcome.cue, SuggestionCue::InsufficientContext);
         assert!(!outcome.should_suggest);

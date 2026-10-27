@@ -13,29 +13,25 @@ use serde::Serialize;
 use crate::domain::suggestion_gate::SuggestionCue;
 
 /// Quantidade de cues do classificador.
-pub const CUE_COUNT: usize = 7;
+pub const CUE_COUNT: usize = 5;
 
 /// Posição estável da cue na matriz de confusão.
 pub fn cue_index(cue: SuggestionCue) -> usize {
     match cue {
         SuggestionCue::Question => 0,
-        SuggestionCue::Hesitation => 1,
-        SuggestionCue::LostThread => 2,
-        SuggestionCue::Invitation => 3,
-        SuggestionCue::Silence => 4,
-        SuggestionCue::NoSuggestion => 5,
-        SuggestionCue::InsufficientContext => 6,
+        SuggestionCue::Comment => 1,
+        SuggestionCue::AlreadyAnswered => 2,
+        SuggestionCue::NoAction => 3,
+        SuggestionCue::InsufficientContext => 4,
     }
 }
 
 /// Rótulos na ordem da matriz/tabela.
 pub const CUE_LABELS: [&str; CUE_COUNT] = [
     "question",
-    "hesitation",
-    "lost_thread",
-    "invitation",
-    "silence",
-    "no_suggestion",
+    "comment",
+    "already_answered",
+    "no_action",
     "insufficient_context",
 ];
 
@@ -215,9 +211,9 @@ mod tests {
     fn perfect_predictions_score_one() {
         let items: Vec<LabeledPrediction> = [
             SuggestionCue::Question,
-            SuggestionCue::Hesitation,
-            SuggestionCue::NoSuggestion,
-            SuggestionCue::Invitation,
+            SuggestionCue::Comment,
+            SuggestionCue::NoAction,
+            SuggestionCue::AlreadyAnswered,
         ]
         .into_iter()
         .map(|cue| item(cue, cue, 10))
@@ -242,9 +238,9 @@ mod tests {
     fn confusion_and_false_positive_are_computed() {
         let items = vec![
             item(SuggestionCue::Question, SuggestionCue::Question, 1),
-            item(SuggestionCue::NoSuggestion, SuggestionCue::Question, 2),
-            item(SuggestionCue::Silence, SuggestionCue::NoSuggestion, 3),
-            item(SuggestionCue::Hesitation, SuggestionCue::Hesitation, 4),
+            item(SuggestionCue::NoAction, SuggestionCue::Question, 2),
+            item(SuggestionCue::AlreadyAnswered, SuggestionCue::NoAction, 3),
+            item(SuggestionCue::Comment, SuggestionCue::Comment, 4),
         ];
         let report = evaluate(&items);
 
@@ -254,16 +250,16 @@ mod tests {
             1
         );
         assert_eq!(
-            report.confusion[cue_index(SuggestionCue::NoSuggestion)]
+            report.confusion[cue_index(SuggestionCue::NoAction)]
                 [cue_index(SuggestionCue::Question)],
             1
         );
-        // 2 corretas de 4 decisões.
-        assert_eq!(report.accuracy, 0.5);
-        // 1 FP (no_suggestion previsto como question) e 1 FN (silence → no_suggestion).
-        assert_eq!(report.false_positive_rate, 1.0);
-        // 1 FN entre 3 exemplos positivos.
-        assert!((report.false_negative_rate - 1.0 / 3.0).abs() < 1e-6);
+        // 3 corretas de 4 decisões.
+        assert_eq!(report.accuracy, 0.75);
+        // 1 FP (no_action previsto como question) e 1 TN.
+        assert_eq!(report.false_positive_rate, 0.5);
+        // Nenhum falso negativo.
+        assert_eq!(report.false_negative_rate, 0.0);
     }
 
     #[test]

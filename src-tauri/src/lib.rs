@@ -1091,7 +1091,7 @@ fn spawn_suggestion_scheduler(app: tauri::AppHandle) {
                 let now_ms = state.clock.now_ms();
                 let fallback_auto = settings.suggestion_classifier_fallback == "auto";
 
-                // Sonda aberta → bloco fechado → fallback (application).
+                // Bloco fechado → fallback (application); sem sonda aberta.
                 match application::classifier_tick::classify_once(
                     state.suggestion_gate.as_ref(),
                     &session_id,

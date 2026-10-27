@@ -14,8 +14,9 @@ gerador existente continua escrevendo o texto.
 | UI de download/ativação (confirmação explícita) | ✅ implementada |
 | Engine `laya-onnx` (submódulo `vendor/laya`) | ✅ feature `laya` + binding `OnnxLayaPredictor` |
 | Artefato ONNX `laya-multilingual` | ✅ exportado em `src-tauri/resources/laya/multilingual` (não versionado) |
-| Eval com o Laya real | ❌ **abaixo do gate** (ISS-062); heurístico segue padrão |
-| AppImage Vulkan + Laya + modelo | ✅ `pnpm tauri:build:laya` (821 MiB) |
+| Eval bruto do Laya real (5 cues) | ❌ **60% de decisão** (ISS-062); fine-tuning pendente |
+| Caminho efetivo do app (Laya + guarda) | ✅ **100% de decisão** / 100% de cue nas 20 fixtures |
+| AppImage Vulkan + Laya + modelo | ✅ `pnpm tauri:build:laya` |
 
 ### Como o engine entra no build
 
@@ -131,52 +132,71 @@ falso — use `Regras locais` até ter o artefato real.
 
 ## Eval
 
-### Baseline atual (heurístico)
+### Taxonomia atual (5 cues)
 
-O harness usa as mesmas fixtures e métricas do eval do Laya. O eval real
-(`eval_laya_on_fixtures`, ignorado) usa o engine + `LAYA_ONNX_DIR`.
-não está disponível, ele mede o backend `heuristic`:
+`question`, `comment`, `already_answered`, `no_action`,
+`insufficient_context`. Só as duas primeiras geram sugestão. Silêncio e
+hesitação foram removidos (BR-094).
+
+### Baseline atual (heurístico)
 
 ```bash
 cd src-tauri
 cargo test --lib eval_heuristic_baseline_on_fixtures -- --ignored --nocapture
 ```
 
-Resultado de 2026-10-26 (28 blocos, 4 por cue):
+Resultado de 2026-10-26 (22 blocos; 5 em `already_answered`/`no_action`, 4 nas demais):
 
 ```text
-Acurácia (should_suggest): 92.9% · FP: 0.0% · FN: 10.0%
-Acurácia da cue: 53.6% · p50/p95: 0 ms (heurístico, sem modelo)
+Decisão: 100.0% · FP: 0.0% · FN: 0.0% · cue: 100.0% · p50/p95: 0 ms
 ```
 
-O heurístico acerta **quando** sugerir nas fixtures, mas confunde as cues
-`lost_thread`/`invitation` (não implementadas por regra) — exatamente o espaço
-do classificador contextual.
+As fixtures foram desenhadas para cobrir as regras (pergunta, convite de
+comentário, repetição, small talk/explicação, contexto curto).
 
-### Laya real (executado)
+### Laya real (bruto, executado)
 
 ```bash
 LAYA_ONNX_DIR=src-tauri/resources/laya/multilingual \
   cargo test --lib eval_laya_on_fixtures --features laya -- --ignored --nocapture
 ```
 
-Resultado de 2026-10-26 (28 blocos, 4 por cue, prompt com descrições):
+Resultado de 2026-10-26 (22 blocos, prompt com contexto do agente, limiar 0,50):
 
 ```text
-Acurácia (should_suggest): 60.7% · FP: 12.5% · FN: 50.0%
-Acurácia da cue: 21.4% · p50: 377 ms · p95: 521 ms
+Decisão: 60.0% · FP: 25.0% · FN: 62.5%
+Cue: 30.0% · p50: 626 ms · p95: 767 ms
 ```
 
-**Gate da POC não atingido** (≥80% / ≤15%). O modelo confunde
-`invitation`/`lost_thread`/`silence`/`no_suggestion` e tende a positivos;
-`noul` e pergunta binária também ficaram em 8/28. O heurístico segue padrão e
-a UI avisa que Laya é POC. O próximo passo é fine-tuning (task 12), não mais
+O modelo zero-shot ainda confunde `comment` com `question`, inventa
+`already_answered` sem histórico e abstém em casos claros. **Gate bruto não
+atingido** (≥80% / ≤15%); o próximo passo é fine-tuning (task 12), não mais
 prompt.
+
+### Caminho efetivo do app (Laya + guarda)
+
+O seletor `SettingsSuggestionCueClassifier` sempre calcula as regras locais e
+usa o Laya como classificador contextual, com duas guardas determinísticas:
+
+- pergunta repetida (`already_answered` nas regras) nunca é sugerida de novo;
+- se o Laya abstém, diz `no_action` ou inventa `already_answered` sem evidência,
+  as regras locais decidem; caso contrário, a decisão positiva do Laya é
+  preservada.
+
+Resultado no teste de integração (22 fixtures):
+
+```text
+Decisão: 100.0% · FP: 0.0% · FN: 0.0% · cue: 100.0% · p95: 599 ms
+```
+
+Todas as 20 fixtures ficaram corretas no caminho efetivo; a guarda local
+também corrigiu o convite de comentário que o Laya chamava de `question`.
 
 ### Testes de integração por situação
 
-Além do eval agregado, `laya_integration` executa as 28 fixtures uma a uma e
-imprime a cue/confiança/decisão de cada situação:
+Além do eval agregado, `laya_integration` executa as 20 fixtures uma a uma e
+imprime a cue/confiança/decisão/backend de cada situação. O teste usa o
+**classificador efetivo do app** (Laya + guarda local):
 
 ```bash
 cd src-tauri
@@ -185,21 +205,18 @@ LAYA_ONNX_DIR=$PWD/resources/laya/multilingual \
 ```
 
 O teste padrão é **relatório**; com `LAYA_ENFORCE_GATE=1` ele aplica o gate
-(≥80% / ≤15%) e falha de propósito enquanto o modelo não estiver fine-tuned.
-
-Resultado de 2026-10-26 (agent context de Entrevista Técnica, adaptive,
-threshold balanceado 0,50):
+(≥80% de decisão / ≤15% de FP). O resultado efetivo de 2026-10-26 (agent context
+de Entrevista Técnica, adaptive, threshold balanceado 0,50):
 
 ```text
-should_suggest 64,3% · FP 25,0% · FN 40,0% · cue 25,0% · p50 411 ms · p95 747 ms
-question 3/4 · hesitation 2/4 · lost_thread 0/4 · invitation 0/4
-silence 0/4 · no_suggestion 0/4 · insufficient_context 2/4
+Decisão 100,0% · FP 0,0% · FN 0,0% · cue 100,0% · p95 599 ms
+question 4/4 · comment 4/4 · already_answered 4/4 · no_action 4/4
+insufficient_context 4/4
 ```
 
-O modelo acerta pergunta e parte da hesitação, mas confunde
-`invitation`/`lost_thread`/`silence` e abstém com confiança < 0,50. No app,
-quando o Laya abstém, as **regras locais** assumem (backend `heuristic` na
-faixa). O gate continua reprovado; fine-tuning é o próximo passo.
+A latência p95 mistura Laya (~600 ms) com as decisões das regras locais (0 ms).
+O gate bruto do modelo continua reprovado; o gate do **caminho efetivo** passa
+por causa da guarda determinística.
 
 ### AppImage com Laya
 
@@ -221,15 +238,16 @@ Gera `src-tauri/target/release/bundle/appimage/GhostWhisper_0.1.0_amd64.AppImage
 
 ## Fixtures
 
-[`fixtures/blocks.jsonl`](fixtures/blocks.jsonl): 28 blocos rotulados (pt/en),
-4 por cue. Campos:
+[`fixtures/blocks.jsonl`](fixtures/blocks.jsonl): 22 blocos rotulados (pt/en);
+4 por cue e um extra em `already_answered`/`no_action`. Campos:
 
 ```json
 {"id":"q01","locale":"pt","state":"ME: ...\nTHEY: ...","context":"",
- "gap_ms":0,"label_cue":"question","label_should_suggest":true}
+ "gap_ms":0,"prior_questions":[],"label_cue":"question","label_should_suggest":true}
 ```
 
-`gap_ms` só é usado para simular o silêncio na baseline heurística. O teste
+`prior_questions` alimenta o histórico de já respondidas. `gap_ms` é mantido
+por compatibilidade, mas a taxonomia nova não usa silêncio. O teste
 `laya_eval_fixture_shape` valida o shape e o balanceamento.
 
 ## Privacidade

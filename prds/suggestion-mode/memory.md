@@ -621,3 +621,80 @@ Aumentar o timeout para 10 s no Avançado evita esse primeiro aviso.
 - Se o Laya abstém (`insufficient_context`), o seletor tenta o heurístico e usa
   se ele tiver um sinal positivo; a faixa mostra `heuristic`.
 - AppImage precisa ser recompilado para levar essas mudanças.
+
+---
+
+## 2026-10-26 — Taxonomia por intenção, agente e histórico (task 13)
+
+- **IDs:** BR-093/BR-094/BR-101 · **Issues:** ISS-062/ISS-064 · **Task:** 13
+
+### Decisão
+- A taxonomia antiga (hesitação/silêncio/perda do fio/convite) foi substituída
+  por 5 cues: `question`, `comment`, `already_answered`, `no_action`,
+  `insufficient_context`. Só pergunta e comentário geram sugestão.
+- O classificador recebe o **agente selecionado** (nome/categoria/contexto/foco)
+  e as **últimas 5 perguntas respondidas** (0–20 configurável), com título
+  curto. O histórico só registra pergunta que realmente gerou sugestão.
+- Contexto ampliado: piso de 8 blocos (até 20), janela de 5 min/120 segmentos.
+- A sonda de bloco aberto foi removida de domínio, porta, serviço, tick,
+  settings, UI e l10n.
+
+### Heurístico
+- Ordem: curto → small talk → já respondida (resposta no bloco ou Jaccard ≥
+  0,60) → pergunta → convite de comentário → sem ação.
+- `no_action` cobre conversa casual, explicação e fala sem oportunidade.
+
+### Laya + guarda
+- Prompt com agente + histórico; opções `question`, `comment`,
+  `already_answered`, `no_action`, `insufficient_context`.
+- O seletor sempre calcula as regras locais. `already_answered` das regras
+  vence; `already_answered` inventado pelo Laya sem evidência cai nas regras;
+  abstenção/`no_action` cede às regras quando há sinal positivo.
+- Eval real: bruto **60%** de decisão / 30% de cue / FP 25% / p95 767 ms;
+  efetivo (Laya+guarda) **100%** de decisão / 100% de cue / FP 0% / p95 599 ms
+  em 20 fixtures. O gate bruto continua reprovado (ISS-062).
+
+### Fixtures e build
+- `poc/laya-classifier/fixtures/blocks.jsonl`: 20 blocos (4 por cue), com
+  `prior_questions` e casos de já respondida.
+- `laya_integration` testa o caminho efetivo e imprime backend por situação;
+  `LAYA_ENFORCE_GATE=1` aplica ≥80% / ≤15%.
+- AppImage recompilado com Vulkan + Laya + modelo; verificação de permissão do
+  `model.onnx.data` mantida.
+
+
+## 2026-10-26 — Correção do “já respondida” em sessão real (ISS-065)
+
+- **IDs:** BR-094/BR-101 · **Issues:** ISS-065 · **Task:** 13
+
+- A sessão real do mutex/fila mostrou a mesma pergunta gerando sugestões em
+  blocos consecutivos. O histórico só era gravado para `question`; quando o
+  Laya classificava o bloco como `comment`, a sugestão era gerada mas o título
+  não entrava no histórico.
+- Correção: **toda cue acionável** (`question`/`comment`) entra no histórico.
+  O título agora é a fala completa de THEY (até 180 chars), não só a última
+  pergunta; a repetição compara a pergunta isolada e o bloco inteiro de THEY.
+- Regressão com o texto real: primeiro bloco `question`, segundo
+  `already_answered` com backend `heuristic`; a suíte de integração continua
+  100% de decisão/cue nas 20 fixtures.
+- Testes: `a_generated_comment_also_enters_the_answered_history`,
+  `repeated_comment_invitation_is_already_answered`,
+  `laya_integration_marks_a_repeated_mutex_question_as_already_answered`.
+
+
+## 2026-10-26 — Sem sugestão na resposta do ME (ISS-066)
+
+- **IDs:** BR-094/BR-101 · **Issues:** ISS-066 · **Task:** 13
+
+- A sessão real mostrou sugestão sobre a resposta do próprio ME. O Laya
+  devolvia `question`/`comment` para um bloco terminando em ME e o seletor
+  preservava o positivo.
+- Guarda nova: **último turno ME ⇒ regras locais decidem**. Se havia pergunta
+  de THEY antes da resposta, `already_answered`; senão `no_action`. Nunca
+  positivo.
+- Um bloco `already_answered` também entra no histórico sem gerar sugestão,
+  então a repetição futura continua bloqueada mesmo quando o ME responde antes
+  do copiloto.
+- Fixtures: 22 no total (5 `already_answered`, 5 `no_action`), incluindo `a05`
+  (pergunta + resposta no mesmo bloco) e `n05` (ME-only). Integração efetiva
+  segue 100% de decisão/cue.

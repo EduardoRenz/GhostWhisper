@@ -2122,36 +2122,47 @@ uma nota de revisão.
 - **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto; implementação em
   [`suggestion-mode/tasks/`](suggestion-mode/tasks/_tasks.md))
 
-## BR-093 — Blocos de conversa
+## BR-093 — Blocos de conversa e contexto ampliado
 
 - **Decisão:** a unidade de decisão é um **bloco de conversa** montado só com
   falas finalizadas: fecha por silêncio (`block_gap_ms`), duração máxima ou nº
   de turnos. No escopo **`blocks`** o bloco classificável exige ME + THEY; no
   escopo **`adaptive`** (padrão do classificador) basta um falante com conteúdo.
-  A sonda de hesitação pode usar o bloco aberto (após `hesitation_probe_ms`,
-  mínimo de 3 palavras, throttle de 2 s).
-- **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco com os
-  dois falantes é a menor unidade que contém pergunta/resposta/hesitação.
+  O classificador lê no mínimo **8 blocos anteriores** (`suggestion_context_blocks`,
+  faixa 8–20) numa janela de até 5 min/120 segmentos. **Não existe mais sonda
+  de bloco aberto** — silêncio e hesitação saíram da taxonomia.
+- **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco é a
+  menor unidade que contém pergunta/resposta, mas a decisão de “já respondida”
+  precisa de mais fio de conversa.
 - **Consequência:** o `block_id` é determinístico; o mesmo bloco não gera duas
   sugestões. O algoritmo é puro e testável (`domain/suggestion_gate.rs`). O
-  escopo `adaptive` usa o agente selecionado como contexto e evita esperar uma
-  resposta de THEY para hesitação/silêncio.
-- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto)
+  escopo `adaptive` usa o agente selecionado como contexto e não espera uma
+  resposta de THEY para decidir.
+- **Data:** 2026-10-26 · **Status:** Ativa (revisada na taxonomia por intenção)
 
-## BR-094 — Classificador de cue
+## BR-094 — Classificador por intenção
 
-- **Decisão:** a porta `SuggestionCueClassifier` devolve `cue`
-  (`question`, `hesitation`, `lost_thread`, `invitation`, `silence`,
-  `no_suggestion`, `insufficient_context`), `should_suggest`, `confidence`,
-  `evidence`, `focus`, `backend`, `model` e `latency_ms`. O classificador
-  **decide**; o gerador existente **escreve**. Confiança abaixo do limiar,
-  `no_suggestion` e `insufficient_context` nunca geram.
-- **Motivo:** separar o gate barato/rápido da geração cara; manter o contrato
-  dos agentes intacto.
-- **Consequência:** `should_suggest` no Laya é derivado da `choice` + confiança +
-  abstenção (não de `noul`); o limiar vem da sensibilidade
-  (0,85/0,70/0,55). Timeout/erro não geram por padrão.
-- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto)
+- **Decisão:** a porta `SuggestionCueClassifier` devolve `cue` com **5
+  categorias**:
+  - `question` — THEY fez uma pergunta que ME deve responder;
+  - `comment` — THEY fez um ponto/opinião que convida ME a comentar;
+  - `already_answered` — a pergunta atual repete uma pergunta já respondida
+    no histórico recente ou ME já respondeu no próprio bloco;
+  - `no_action` — conversa casual, explicação, cumprimento ou fala sem
+    pergunta/convite;
+  - `insufficient_context` — bloco curto/ambíguo ou abstenção.
+  Só `question` e `comment` geram sugestão. `should_suggest`, `confidence`,
+  `evidence`, `focus`, `backend`, `model` e `latency_ms` continuam no contrato.
+- **Motivo:** o usuário quer que o copiloto distinga **responder** de
+  **comentar** e ignore conversa casual/explicações; o modelo zero-shot errava
+  as cues antigas de silêncio/hesitação.
+- **Consequência:** o classificador recebe o **contexto do agente selecionado**
+  e as **últimas N perguntas já respondidas** (título curto, padrão 5). O Laya
+  usa isso no prompt; as regras locais comparam similaridade. Quando o Laya
+  abstém ou inventa `already_answered`, as regras locais atuam como guarda
+  determinística. O limiar vem da sensibilidade (Laya: 0,75/0,50/0,35).
+  Timeout/erro não geram por padrão.
+- **Data:** 2026-10-26 · **Status:** Ativa (substitui a taxonomia de 7 cues)
 
 ## BR-095 — Última classificação sempre visível
 
@@ -2238,3 +2249,18 @@ uma nota de revisão.
   [`suggestion-mode/architecture/fine-tuning.md`](suggestion-mode/architecture/fine-tuning.md).
 - **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto; implementação
   futura na [`suggestion-mode/tasks/12-task.md`](suggestion-mode/tasks/12-task.md))
+
+## BR-101 — Histórico de perguntas respondidas
+
+- **Decisão:** ao gerar uma sugestão para uma cue `question`, o gate guarda um
+  **título curto** da pergunta (≤ 180 caracteres) no histórico da sessão. O
+  classificador recebe as **últimas `suggestion_answered_questions`** (padrão
+  5, faixa 0–20) para decidir `already_answered`. O histórico é memória de
+  sessão; `reset` limpa.
+- **Motivo:** pedido do usuário (2026-10-26) — não repetir sugestões para uma
+  pergunta já respondida e dar contexto ao modelo.
+- **Consequência:** sem LLM extra para “resumir”: o título é a própria pergunta
+  truncada. Uma classificação que não gera sugestão não entra no histórico;
+  só pergunta **respondida** conta. O heuristic também detecta repetição por
+  Jaccard (≥ 0,60) e resposta dentro do mesmo bloco.
+- **Data:** 2026-10-26 · **Status:** Ativa
