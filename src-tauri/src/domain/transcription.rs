@@ -301,7 +301,7 @@ fn trailing_loop(words: &[&str]) -> Option<PhraseLoop> {
             break;
         }
         for phrase_len in 1..=max_phrase {
-            if region.len() % phrase_len != 0 {
+            if !region.len().is_multiple_of(phrase_len) {
                 continue;
             }
             let repeats = region.len() / phrase_len;

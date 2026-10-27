@@ -1,7 +1,12 @@
 /** Tipos de configuração do GhostWhisper (espelham `domain::settings` no core). */
 
 import { defaultBindings, type ShortcutBinding } from "./shortcuts";
-import type { AssistantMode } from "./assistant";
+import type {
+  AssistantMode,
+  ClassifierSensitivity,
+  SuggestionCue,
+  SuggestionMode,
+} from "./assistant";
 import type { UiLanguage } from "../l10n";
 
 /** Provedores de LLM suportados (BYO key). */
@@ -163,6 +168,46 @@ export interface Settings {
   suggestion_auto_refresh: boolean;
   /** Intervalo das sugestões automáticas (segundos). */
   suggestion_interval_secs: number;
+  /** Estratégia de disparo: automático ou classificador. */
+  suggestion_mode: SuggestionMode;
+  /** Escopo do classificador: blocos ME+THEY ou adaptativo. */
+  suggestion_scope: "blocks" | "adaptive" | "they_only";
+  /** Mostra a faixa de última classificação. */
+  suggestion_show_classification: boolean;
+  /** Backend do classificador. */
+  suggestion_classifier_backend: "heuristic" | "laya";
+  /** Sensibilidade (deriva o limiar). */
+  suggestion_classifier_sensitivity: ClassifierSensitivity;
+  /** Modelo do model manager. */
+  suggestion_classifier_model_id: string;
+  /** Versão ativa (vazio = a ativa no cache). */
+  suggestion_classifier_model_version: string;
+  /** Override de dev para o diretório ONNX. */
+  suggestion_classifier_model_path: string;
+  /** Catálogo de modelos. */
+  suggestion_classifier_model_catalog_url: string;
+  /** Nunca baixar sem ação explícita. */
+  suggestion_classifier_auto_download: boolean;
+  /** Checkpoint Laya (só multilingual; English não é exposto). */
+  suggestion_classifier_checkpoint: "multilingual";
+  /** Cooldown mínimo do classificador. */
+  suggestion_classifier_cooldown_secs: number;
+  /** Timeout do classificador. */
+  suggestion_classifier_timeout_ms: number;
+  /** Em erro: não sugerir ou cair no automático. */
+  suggestion_classifier_fallback: "skip" | "auto";
+  /** Silêncio que fecha um bloco. */
+  suggestion_block_gap_ms: number;
+  /** Duração máxima do bloco. */
+  suggestion_block_max_ms: number;
+  /** Turnos máximos do bloco. */
+  suggestion_block_max_turns: number;
+  /** Blocos anteriores no contexto. */
+  suggestion_context_blocks: number;
+  /** Perguntas já respondidas no histórico (0–20). */
+  suggestion_answered_questions: number;
+  /** Cues permitidas (vazio = todas as positivas). */
+  suggestion_allowed_cues: SuggestionCue[];
   /** Posição da janela de sugestões. */
   suggestions_position: [number, number] | null;
   /** Tamanho (px físicos) da janela de sugestões. */
@@ -437,7 +482,28 @@ export const defaultSettings = (): Settings => ({
   summary_auto_refresh: true,
   summary_interval_secs: 30,
   suggestion_auto_refresh: true,
-  suggestion_interval_secs: 20,
+  suggestion_interval_secs: 15,
+  suggestion_mode: "auto",
+  suggestion_scope: "adaptive",
+  suggestion_show_classification: true,
+  suggestion_classifier_backend: "heuristic",
+  suggestion_classifier_sensitivity: "balanced",
+  suggestion_classifier_model_id: "laya-multilingual",
+  suggestion_classifier_model_version: "",
+  suggestion_classifier_model_path: "",
+  suggestion_classifier_model_catalog_url:
+    "https://downloads.ghostwhisper.app/laya/catalog.json",
+  suggestion_classifier_auto_download: false,
+  suggestion_classifier_checkpoint: "multilingual",
+  suggestion_classifier_cooldown_secs: 15,
+  suggestion_classifier_timeout_ms: 12_000,
+  suggestion_classifier_fallback: "skip",
+  suggestion_block_gap_ms: 3_000,
+  suggestion_block_max_ms: 45_000,
+  suggestion_block_max_turns: 12,
+  suggestion_context_blocks: 8,
+  suggestion_answered_questions: 5,
+  suggestion_allowed_cues: [],
   suggestions_position: null,
   suggestions_size: null,
   chat_position: null,
@@ -471,6 +537,10 @@ export const defaultSettings = (): Settings => ({
 /** Intervalos aceitos pelas atualizações automáticas (segundos). */
 export const MIN_AUTO_INTERVAL_SECS = 10;
 export const MAX_AUTO_INTERVAL_SECS = 120;
+/** Piso do ciclo de sugestões (o resumo continua em 10 s). */
+export const MIN_SUGGESTION_INTERVAL_SECS = 8;
+/** Presets do card “Sugestão por tempo”. */
+export const SUGGESTION_INTERVALS = [8, 15, 30] as const;
 
 /** Drill-hover: padrão e faixa em milissegundos (BR-036, faixa da BR-062). */
 export const DEFAULT_DWELL_MS = 500;
@@ -560,8 +630,6 @@ export function clampAiFontScale(value: number): number {
 
 /** Opções de cadência do resumo automático. */
 export const SUMMARY_INTERVALS = [15, 30, 60, 120] as const;
-/** Opções de cadência das sugestões automáticas. */
-export const SUGGESTION_INTERVALS = [10, 20, 30, 60] as const;
 
 /** `base_url` é obrigatória apenas para endpoints custom. */
 export const providerRequiresBaseUrl = (provider: ProviderKind): boolean =>

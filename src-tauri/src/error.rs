@@ -36,6 +36,15 @@ pub enum GhostWhisperError {
     #[error("ASR ainda não está pronto (modelo carregando)")]
     AsrNotReady,
 
+    /// O modo classificador ainda não tem um bloco elegível.
+    ///
+    /// Não é erro de configuração: falta fala dos dois lados, o bloco ainda
+    /// não fechou pelo silêncio ou não há fala finalizada na janela.
+    #[error(
+        "nenhum bloco classificável ainda: fale dos dois lados e aguarde o silêncio fechar o bloco"
+    )]
+    NoClassifiableBlock,
+
     /// Uma decodificação anterior ainda ocupa o motor (timeout estoura, mas
     /// `full()` não pode ser abortado). O chamador deve tentar depois.
     #[error("ASR ocupado com uma transcrição anterior")]
@@ -69,6 +78,14 @@ mod tests {
         let err = GhostWhisperError::NotImplemented("teste");
         let json = serde_json::to_string(&err).expect("serializa");
         assert_eq!(json, "\"recurso ainda não implementado: teste\"");
+    }
+
+    #[test]
+    fn no_classifiable_block_is_not_a_config_error() {
+        let error = GhostWhisperError::NoClassifiableBlock;
+        let message = error.to_string();
+        assert!(message.contains("fale dos dois lados"));
+        assert!(message.contains("silêncio"));
     }
 
     #[test]

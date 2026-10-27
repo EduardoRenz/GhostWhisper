@@ -65,7 +65,7 @@ impl AudioReference for SharedAudioReference {
         let start = end.saturating_sub(len);
         let available = end - start;
         let mut out = Vec::with_capacity(len);
-        out.extend(std::iter::repeat(0.0).take(len - available));
+        out.extend(std::iter::repeat_n(0.0, len - available));
         out.extend(guard.iter().skip(start).take(available).copied());
         out
     }

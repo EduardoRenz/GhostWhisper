@@ -83,6 +83,28 @@ impl TranscriptionsRepository for LocalTranscriptionsRepository {
         )?;
         Ok(value)
     }
+
+    fn list_recent_by_session(
+        &self,
+        session_id: &str,
+        since_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSegment>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let conn = lock(&self.conn)?;
+        let sql = format!(
+            "SELECT {COLUMNS} FROM transcriptions \
+             WHERE session_id = ?1 AND is_final = 1 AND TRIM(text) <> '' AND end_ms >= ?2 \
+             ORDER BY end_ms DESC, timestamp DESC LIMIT ?3"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![session_id, since_ms, limit as i64], map_segment)?;
+        let mut segments = collect(rows)?;
+        segments.reverse();
+        Ok(segments)
+    }
 }
 
 fn collect(
@@ -161,5 +183,33 @@ mod tests {
         // Cursor barato do agendador (fim da última fala final).
         assert_eq!(repo.latest_final_end_ms("s1").expect("latest"), Some(1_500));
         assert_eq!(repo.latest_final_end_ms("s3").expect("latest"), None);
+    }
+
+    #[test]
+    fn list_recent_filters_finals_and_keeps_chronological_order() {
+        let (repo, _conn) = repo();
+        repo.insert(&segment("1", "s1", "primeira", 1_000)).unwrap();
+        repo.insert(&segment("2", "s1", "segunda", 2_000)).unwrap();
+        let mut preview = segment("3", "s1", "prévia", 3_000);
+        preview.is_final = false;
+        repo.insert(&preview).unwrap();
+        repo.insert(&segment("4", "s1", "   ", 4_000)).unwrap();
+        repo.insert(&segment("5", "s1", "quinta", 5_000)).unwrap();
+        repo.insert(&segment("6", "s2", "outra sessão", 6_000))
+            .unwrap();
+
+        let recent = repo.list_recent_by_session("s1", 0, 2).expect("recent");
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, "2");
+        assert_eq!(recent[1].id, "5");
+
+        let since = repo.list_recent_by_session("s1", 2_501, 10).expect("since");
+        assert_eq!(since.len(), 1);
+        assert_eq!(since[0].id, "5");
+
+        assert!(repo
+            .list_recent_by_session("s1", 0, 0)
+            .expect("limit zero")
+            .is_empty());
     }
 }

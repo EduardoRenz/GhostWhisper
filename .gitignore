@@ -17,6 +17,8 @@ src-tauri/gen/
 .vulkan-sdk/
 src-tauri/target-vulkan/
 src-tauri/resources/libvulkan.so.1
+# Modelo Laya exportado (1,3 GB); não versionar
+src-tauri/resources/laya/
 
 # Examples (AppImages de referência, arquivos grandes)
 examples/

@@ -12,6 +12,7 @@ pub mod audio;
 pub mod events;
 pub mod manual;
 pub mod menu;
+pub mod models;
 pub mod overlay;
 pub mod pending;
 pub mod persistence;

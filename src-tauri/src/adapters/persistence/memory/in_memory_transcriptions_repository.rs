@@ -67,6 +67,30 @@ impl TranscriptionsRepository for InMemoryTranscriptionsRepository {
             .map(|segment| segment.end_ms)
             .max())
     }
+
+    fn list_recent_by_session(
+        &self,
+        session_id: &str,
+        since_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSegment>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let mut segments: Vec<_> = self
+            .all()
+            .into_iter()
+            .filter(|segment| {
+                segment.session_id == session_id
+                    && segment.is_final
+                    && !segment.text.trim().is_empty()
+                    && segment.end_ms >= since_ms
+            })
+            .collect();
+        segments.sort_by_key(|segment| (segment.start_ms, segment.end_ms));
+        let start = segments.len().saturating_sub(limit);
+        Ok(segments.split_off(start))
+    }
 }
 
 #[cfg(test)]
@@ -94,5 +118,29 @@ mod tests {
         repo.insert(&segment("3", 3_000, "  ", true)).unwrap();
         assert_eq!(repo.latest_final_end_ms("s1").expect("latest"), Some(1_500));
         assert_eq!(repo.latest_final_end_ms("s2").expect("latest"), None);
+    }
+
+    #[test]
+    fn list_recent_filters_and_keeps_the_last_n_in_order() {
+        let repo = InMemoryTranscriptionsRepository::new();
+        repo.insert(&segment("1", 1_000, "primeira", true)).unwrap();
+        repo.insert(&segment("2", 2_000, "segunda", true)).unwrap();
+        repo.insert(&segment("3", 3_000, "prévia", false)).unwrap();
+        repo.insert(&segment("4", 4_000, "   ", true)).unwrap();
+        repo.insert(&segment("5", 5_000, "quinta", true)).unwrap();
+
+        let recent = repo.list_recent_by_session("s1", 0, 2).expect("recent");
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, "2");
+        assert_eq!(recent[1].id, "5");
+
+        let since = repo.list_recent_by_session("s1", 2_501, 10).expect("since");
+        assert_eq!(since.len(), 1);
+        assert_eq!(since[0].id, "5");
+
+        assert!(repo
+            .list_recent_by_session("s1", 0, 0)
+            .expect("limit zero")
+            .is_empty());
     }
 }

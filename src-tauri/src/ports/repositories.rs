@@ -43,6 +43,19 @@ pub trait TranscriptionsRepository: Send + Sync {
     /// sessão inteira a cada tick (BR-028). Usa o **fim** do segmento: o
     /// intervalo do auto-sugerir conta a partir de quando a fala terminou.
     fn latest_final_end_ms(&self, session_id: &str) -> Result<Option<i64>>;
+
+    /// Falas finais recentes, em ordem cronológica, para montar os blocos do
+    /// modo classificador (BR-093).
+    ///
+    /// `since_ms` é comparado com o **fim** do segmento; `limit` fica com as
+    /// falas mais recentes (a implementação pode buscar de trás para frente e
+    /// devolver em ordem crescente).
+    fn list_recent_by_session(
+        &self,
+        session_id: &str,
+        since_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSegment>>;
 }
 
 /// Persistência de mensagens da sessão (sugestões da IA).

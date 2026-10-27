@@ -47,9 +47,11 @@ prds/{business-rules.md, <prd>/{prd.md,memory.md,issues.md,architecture,tasks}}
 
 ## Comandos
 ```bash
+git submodule update --init   # vendor/laya; o Cargo resolve mesmo sem a feature
 pnpm install
 pnpm tauri dev        # rodar em desenvolvimento
 pnpm tauri build      # gerar binários (.deb/AppImage)
+pnpm tauri:build:laya # AppImage com Vulkan + engine/modelo Laya (POC)
 cargo test            # testes do core
 cargo clippy          # lint Rust
 pnpm test             # testes do frontend

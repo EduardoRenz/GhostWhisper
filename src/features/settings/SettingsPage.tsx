@@ -36,10 +36,12 @@ import {
 import { AudioTestPanel } from "./AudioTestPanel";
 import { AssistantsSettings } from "./AssistantsSettings";
 import { CadenceSettings } from "./CadenceSettings";
+import { LogsSettings } from "./LogsSettings";
 import { LanguageSettings } from "./LanguageSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import { AiSourcesSettings } from "./AiSourcesSettings";
 import { HudSettings } from "./HudSettings";
+import { SuggestionsActivationBlock } from "./SuggestionsActivationBlock";
 import {
   BoltIcon,
   KeyboardIcon,
@@ -476,12 +478,15 @@ export function SettingsPage() {
 
         <div className="settings__body">
           {tab === "sources" && (
-            <AiSourcesSettings
-              sources={draft.ai_sources}
-              providers={providers}
-              onChange={(sources) => update("ai_sources", sources)}
-              onStatus={setStatus}
-            />
+            <>
+              <SuggestionsActivationBlock settings={draft} update={update} />
+              <AiSourcesSettings
+                sources={draft.ai_sources}
+                providers={providers}
+                onChange={(sources) => update("ai_sources", sources)}
+                onStatus={setStatus}
+              />
+            </>
           )}
 
           {tab === "transcription" && (
@@ -710,6 +715,7 @@ export function SettingsPage() {
               <LanguageSettings settings={draft} update={update} />
               <HudSettings settings={draft} update={update} />
               <CadenceSettings settings={draft} update={update} />
+              <LogsSettings />
             </>
           )}
 

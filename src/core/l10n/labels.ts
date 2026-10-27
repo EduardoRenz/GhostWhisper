@@ -5,6 +5,7 @@
  * valor de domínio para uma chave snake_case válida do catálogo.
  */
 
+import type { SuggestionCue } from "../domain/assistant";
 import type { TranslationKey, TranslationParams } from "./catalog";
 
 /** Função de tradução (o `t` devolvido por `useTranslation`). */
@@ -41,6 +42,11 @@ export function journalOriginKey(
     default:
       return "journal_origin_text";
   }
+}
+
+/** Cue do classificador de sugestões. */
+export function suggestionCueKey(cue: SuggestionCue): TranslationKey {
+  return `suggestion_cue_${cue}` as TranslationKey;
 }
 
 /** Modo de aceleração do ASR. */

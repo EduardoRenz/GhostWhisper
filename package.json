@@ -14,7 +14,9 @@
     "tauri:dev:clean": "bash scripts/tauri-dev-clean.sh",
     "tauri:dev:vulkan": "bash scripts/tauri-dev-vulkan.sh",
     "tauri:build": "bash scripts/tauri-build-linux.sh",
-    "tauri:build:cpu": "bash scripts/tauri-build-cpu.sh"
+    "tauri:build:cpu": "bash scripts/tauri-build-cpu.sh",
+    "tauri:dev:laya": "tauri dev --features laya",
+    "tauri:build:laya": "bash scripts/tauri-build-laya.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -2345,7 +2345,9 @@ mod tests {
             if id == &b"data"[..] {
                 let end = (body + size).min(bytes.len());
                 return bytes[body..end]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
                     .collect();
             }

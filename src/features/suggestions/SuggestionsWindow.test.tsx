@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Suggestion } from "../../core/domain/assistant";
+import type {
+  Suggestion,
+  SuggestionClassification,
+} from "../../core/domain/assistant";
 
 const manual = vi.hoisted(() => ({
   value: {
@@ -50,10 +53,7 @@ vi.mock("../../core/application/useSessionState", () => ({
 
 vi.mock("../../core/application/useSettings", () => ({
   useSettings: () => ({
-    settings: {
-      assistant_mode_id: "meeting",
-      suggestion_auto_refresh: true,
-    },
+    settings: settingsValue.value,
     reload: vi.fn(),
   }),
 }));
@@ -119,6 +119,36 @@ const cadence = vi.hoisted(() => ({
   },
 }));
 
+type ClassifierView = {
+  state: "paused" | "no_session" | "listening" | "analyzing" | "ready" | "error";
+  outcome: SuggestionClassification | null;
+  error: string | null;
+  generating: boolean;
+  classifyNow: () => Promise<void>;
+};
+
+const classifier = vi.hoisted(() => ({
+  value: {
+    state: "listening",
+    outcome: null,
+    error: null,
+    generating: false,
+    classifyNow: vi.fn(async () => {}),
+  } as ClassifierView,
+}));
+
+const settingsValue = vi.hoisted(() => ({
+  value: {
+    assistant_mode_id: "meeting",
+    suggestion_auto_refresh: true,
+    suggestion_mode: "auto" as "auto" | "classifier",
+  },
+}));
+
+vi.mock("../../core/application/useSuggestionClassification", () => ({
+  useSuggestionClassification: () => classifier.value,
+}));
+
 import { SuggestionsWindow } from "./SuggestionsWindow";
 
 const suggestion = (overrides: Partial<Suggestion> = {}): Suggestion => ({
@@ -161,6 +191,14 @@ describe("SuggestionsWindow — feedback da geração", () => {
     manual.value.clear = vi.fn();
     manual.value.refresh = vi.fn();
     cadence.value.generating = false;
+    settingsValue.value.suggestion_mode = "auto";
+    classifier.value = {
+      state: "listening",
+      outcome: null,
+      error: null,
+      generating: false,
+      classifyNow: vi.fn(async () => {}),
+    };
   });
 
   it("não mostra mais o seletor de agente (ele vive no notch — BR-080)", () => {
@@ -251,6 +289,40 @@ describe("SuggestionsWindow — feedback da geração", () => {
     );
     expect(container.querySelector(".auto-control__count")?.textContent).toBe(
       "12s",
+    );
+  });
+
+  it("troca o cronômetro pelo estado do classificador (BR-096)", () => {
+    settingsValue.value.suggestion_mode = "classifier";
+    classifier.value = {
+      state: "ready",
+      outcome: {
+        block_id: "blk_1",
+        session_id: "s1",
+        cue: "question",
+        should_suggest: true,
+        confidence: 0.9,
+        evidence: "pode explicar?",
+        focus: "responder à pergunta",
+        backend: "heuristic",
+        model: null,
+        latency_ms: 0,
+        block_start_ms: 0,
+        block_end_ms: 1_000,
+        turn_count: 2,
+        classified_at_ms: 1_000,
+        abstained: false,
+      },
+      error: null,
+      generating: false,
+      classifyNow: vi.fn(async () => {}),
+    };
+    const { container } = render(<SuggestionsWindow />);
+
+    expect(container.querySelector(".auto-control")).toBeNull();
+    expect(container.querySelector(".classifier-control")).not.toBeNull();
+    expect(container.querySelector(".classifier-control__state")?.textContent).toBe(
+      "Vai sugerir: Pergunta",
     );
   });
 

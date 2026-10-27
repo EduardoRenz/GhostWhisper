@@ -4,6 +4,7 @@ import type {
   AssistantMode,
   ManualSuggestionContext,
   Suggestion,
+  SuggestionClassification,
 } from "../../core/domain/assistant";
 
 /** Lista os agentes embutidos + personalizados (com os prompts). */
@@ -80,3 +81,19 @@ export const llmInsight = (
   sessionId?: string | null,
 ): Promise<Suggestion | undefined> =>
   invokeSafe<Suggestion>("llm_insight", { sessionId: sessionId ?? null });
+
+/** Última classificação da sessão (cache; não chama o classificador). */
+export const suggestionClassificationLast = (
+  sessionId: string,
+): Promise<SuggestionClassification | null | undefined> =>
+  invokeSafe<SuggestionClassification | null>("suggestion_classification_last", {
+    sessionId,
+  });
+
+/** Classifica o bloco mais recente sem gerar sugestão (diagnóstico). */
+export const suggestionClassifyNow = (
+  sessionId: string,
+): Promise<SuggestionClassification | undefined> =>
+  invokeSafe<SuggestionClassification>("suggestion_classify_now", {
+    sessionId,
+  });

@@ -7,6 +7,8 @@ use crate::domain::session::SessionStatus;
 use crate::domain::transcription::Speaker;
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::manual_suggestion_context::ManualSuggestionContext;
+use crate::ports::suggestion_cue_classifier::ClassificationOutcome;
+use crate::ports::suggestion_gate::SuggestionGateError;
 use crate::ports::suggestion_generator::{PinSuggestionRequest, Suggestion, SuggestionRequest};
 use crate::state::AppState;
 
@@ -114,6 +116,30 @@ pub fn suggestion_last(
     session_id: String,
 ) -> Result<Option<Suggestion>> {
     state.suggestions.last_suggestion(&session_id)
+}
+
+/// Última classificação do modo classificador (cache por sessão).
+#[tauri::command(async)]
+pub fn suggestion_classification_last(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Option<ClassificationOutcome>> {
+    Ok(state.suggestion_gate.last(&session_id))
+}
+
+/// Classifica o bloco mais recente **sem gerar sugestão** (diagnóstico/teste).
+#[tauri::command(async)]
+pub fn suggestion_classify_now(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<ClassificationOutcome> {
+    state
+        .suggestion_gate
+        .classify_latest(&session_id)
+        .map_err(|error| match error {
+            SuggestionGateError::NoBlock => GhostWhisperError::NoClassifiableBlock,
+            other => GhostWhisperError::Other(other.to_string()),
+        })
 }
 
 /// Fixa uma sugestão já gerada na conversa (sem chamar o LLM).

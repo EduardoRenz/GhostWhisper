@@ -8,7 +8,8 @@ use crate::domain::recording::RecordingState;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
     EventPublisher, JournalUpdate, LlmSourceUsage, RecordingProgressEvent, SessionStateEvent,
-    SuggestionCadenceEvent, TranscriptActivityEvent,
+    SuggestionCadenceEvent, SuggestionClassificationEvent, SuggestionModelDownloadEvent,
+    TranscriptActivityEvent,
 };
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -27,6 +28,10 @@ pub const SUGGESTION_EVENT: &str = "suggestion";
 pub const ASR_STATUS_EVENT: &str = "asr_status";
 /// Nome do evento de cadencia do auto-sugerir (BR-039).
 pub const SUGGESTION_CADENCE_EVENT: &str = "suggestion_cadence";
+/// Nome do evento da classificação mais recente (BR-095).
+pub const SUGGESTION_CLASSIFICATION_EVENT: &str = "suggestion_classification";
+/// Nome do evento de progresso do model manager (BR-099).
+pub const SUGGESTION_MODEL_DOWNLOAD_EVENT: &str = "suggestion_model_download";
 /// Nome do evento de atividade de transcrição por canal.
 pub const TRANSCRIPT_ACTIVITY_EVENT: &str = "transcript_activity";
 /// Nome do evento de fonte de IA que respondeu (BR-045).
@@ -88,6 +93,14 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_suggestion_cadence(&self, cadence: &SuggestionCadenceEvent) {
         let _ = self.app.emit(SUGGESTION_CADENCE_EVENT, cadence);
+    }
+
+    fn emit_suggestion_classification(&self, event: &SuggestionClassificationEvent) {
+        let _ = self.app.emit(SUGGESTION_CLASSIFICATION_EVENT, event);
+    }
+
+    fn emit_suggestion_model_download(&self, event: &SuggestionModelDownloadEvent) {
+        let _ = self.app.emit(SUGGESTION_MODEL_DOWNLOAD_EVENT, event);
     }
 
     fn emit_transcript_activity(&self, activity: &TranscriptActivityEvent) {

@@ -133,6 +133,7 @@ impl QuickPass {
             context_until_ms: self.context_until_ms,
             message_id: None,
             skipped: false,
+            cue: None,
         });
     }
 }
@@ -318,13 +319,15 @@ impl SuggestionGenerator for SuggestionService {
         // Sugestão manual (BR-041): o contexto vem por parâmetro e é explícito.
         let manual = Self::resolve_manual_context(request.manual_context.clone(), &session.id)?;
         let force = request.force || manual.is_some();
-        let trigger = if manual.is_some() {
-            SuggestionTrigger::Manual
-        } else if request.force {
-            SuggestionTrigger::Now
-        } else {
-            SuggestionTrigger::Auto
-        };
+        let trigger = request.trigger.unwrap_or_else(|| {
+            if manual.is_some() {
+                SuggestionTrigger::Manual
+            } else if request.force {
+                SuggestionTrigger::Now
+            } else {
+                SuggestionTrigger::Auto
+            }
+        });
         let source = manual.as_ref().map(Self::manual_source);
 
         // Contexto **ao vivo**: inclui a fala em andamento, para a sugestão não
@@ -381,6 +384,7 @@ impl SuggestionGenerator for SuggestionService {
                         context_until_ms: recent.until_ms,
                         message_id: None,
                         skipped: true,
+                        cue: None,
                     });
                 }
             }
@@ -401,6 +405,17 @@ impl SuggestionGenerator for SuggestionService {
                 last.as_deref(),
                 extra.as_deref(),
             ),
+        };
+        // O classificador só decide **quando** sugerir; a cue/foco entram como
+        // contexto curto para o gerador (nunca como instrução que sobrepõe o
+        // contrato do agente).
+        let user = match request.cue {
+            Some(cue) => format!(
+                "{user}\n\n<classificador_trigger>\nCue: {}\nFoco: {}\n</classificador_trigger>",
+                cue.as_str(),
+                request.focus.as_deref().unwrap_or("")
+            ),
+            None => user,
         };
         let (max_tokens, temperature) = sampling(&mode);
 
@@ -463,6 +478,7 @@ impl SuggestionGenerator for SuggestionService {
                     context_until_ms: until_ms,
                     message_id: None,
                     skipped: false,
+                    cue: request.cue,
                 });
             }
         };
@@ -509,6 +525,7 @@ impl SuggestionGenerator for SuggestionService {
             context_until_ms: recent.until_ms,
             message_id,
             skipped: false,
+            cue: request.cue,
         };
         self.remember(&session.id, &suggestion);
         Ok(suggestion)
@@ -559,6 +576,7 @@ impl SuggestionGenerator for SuggestionService {
             context_until_ms: at_ms,
             message_id: Some(message_id),
             skipped: false,
+            cue: None,
         })
     }
 

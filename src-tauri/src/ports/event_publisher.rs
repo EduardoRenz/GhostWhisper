@@ -6,6 +6,7 @@ use crate::domain::audio::AudioLevel;
 use crate::domain::recording::RecordingState;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::session_controller::AudioChannel;
+use crate::ports::suggestion_cue_classifier::ClassificationOutcome;
 use crate::ports::suggestion_generator::Suggestion;
 
 /// Estado da sessão publicado para a UI.
@@ -48,6 +49,63 @@ pub struct SuggestionCadenceEvent {
     /// feedback imediato de que a sugestão começou a ser gerada, antes do
     /// primeiro evento `suggestion`.
     pub generating: bool,
+}
+
+/// Estado do classificador de sugestões (BR-095).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuggestionClassifierState {
+    // TODO(task 10): remover os allows quando o scheduler publicar estes estados.
+    #[allow(dead_code)]
+    Paused,
+    #[allow(dead_code)]
+    NoSession,
+    #[allow(dead_code)]
+    Listening,
+    Analyzing,
+    Ready,
+    Error,
+}
+
+/// Classificação mais recente publicada para a UI (BR-095).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SuggestionClassificationEvent {
+    pub session_id: String,
+    pub state: SuggestionClassifierState,
+    pub outcome: Option<ClassificationOutcome>,
+    pub error: Option<String>,
+    pub generating: bool,
+}
+
+/// Fase do download/instalação de um modelo do classificador (BR-099).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuggestionModelDownloadPhase {
+    Downloading,
+    Verifying,
+    Installing,
+    Ready,
+    Failed,
+}
+
+/// Progresso do model manager publicado para a UI.
+///
+/// O evento é emitido arquivo a arquivo; `bytes_done`/`bytes_total` somam o
+/// artefato inteiro (não só o arquivo atual), para uma barra estável.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SuggestionModelDownloadEvent {
+    pub model_id: String,
+    pub version: String,
+    pub phase: SuggestionModelDownloadPhase,
+    /// Arquivo relativo atual (`model.onnx`).
+    pub file: Option<String>,
+    /// Índice 1-based do arquivo atual.
+    pub file_index: usize,
+    pub file_count: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    /// Erro (só em `failed`).
+    pub error: Option<String>,
 }
 
 /// Fonte de IA que respondeu a uma chamada (BR-045).
@@ -156,6 +214,15 @@ pub trait EventPublisher: Send + Sync {
     fn emit_suggestion(&self, suggestion: &Suggestion);
     /// Emite a cadência do auto-sugerir (contagem regressiva e anel) — BR-039.
     fn emit_suggestion_cadence(&self, cadence: &SuggestionCadenceEvent);
+    /// Emite a classificação mais recente do modo classificador (BR-095).
+    ///
+    /// Default no-op: fakes que não observam classificação não precisam
+    /// implementar.
+    fn emit_suggestion_classification(&self, _event: &SuggestionClassificationEvent) {}
+    /// Emite o progresso do model manager do classificador (BR-099).
+    ///
+    /// Default no-op: só o adaptador Tauri precisa publicar.
+    fn emit_suggestion_model_download(&self, _event: &SuggestionModelDownloadEvent) {}
     /// Emite o status de preparação do motor de transcrição (download/carga).
     fn emit_asr_status(&self, status: &AsrStatus);
     /// Emite qual fonte de IA respondeu (e se foi fallback) — BR-045.
@@ -168,4 +235,24 @@ pub trait EventPublisher: Send + Sync {
     fn emit_recording_state(&self, _state: &RecordingState) {}
     /// Emite o progresso da finalização da gravação (BR-067).
     fn emit_recording_progress(&self, _progress: &RecordingProgressEvent) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classification_event_serializes_snake_case() {
+        let event = SuggestionClassificationEvent {
+            session_id: "s1".to_string(),
+            state: SuggestionClassifierState::NoSession,
+            outcome: None,
+            error: Some("sem sessão".to_string()),
+            generating: false,
+        };
+        let json = serde_json::to_value(event).expect("json");
+        assert_eq!(json["state"], "no_session");
+        assert_eq!(json["outcome"], serde_json::Value::Null);
+        assert_eq!(json["generating"], false);
+    }
 }

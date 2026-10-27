@@ -2106,3 +2106,168 @@ uma nota de revisão.
 - **Detalhes:** [`suggestions/issues.md`](suggestions/issues.md) (ISS-048),
   [`suggestions/tasks/10-task.md`](suggestions/tasks/10-task.md).
 - **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)
+
+## BR-092 — Modo de sugestão: automático ou classificador
+
+- **Decisão:** `Settings.suggestion_mode` é `auto` | `classifier`.
+  `suggestion_auto_refresh` continua sendo o **interruptor mestre** (desligado =
+  sem sugestões automáticas). Settings antigos sem `suggestion_mode` carregam
+  como `auto`; nenhuma instalação troca de modo silenciosamente.
+- **Motivo:** pedido do usuário (2026-10-26) — o timer fixo não distingue
+  pergunta, hesitação, silêncio ou conversa fiada; o usuário quer escolher uma
+  estratégia semântica.
+- **Consequência:** o modo automático preserva a cadência/cooldown atuais; o
+  classificador decide por blocos e só chama o gerador em decisão positiva.
+  O contrato completo está em [`suggestion-mode/prd.md`](suggestion-mode/prd.md).
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto; implementação em
+  [`suggestion-mode/tasks/`](suggestion-mode/tasks/_tasks.md))
+
+## BR-093 — Blocos de conversa e contexto ampliado
+
+- **Decisão:** a unidade de decisão é um **bloco de conversa** montado só com
+  falas finalizadas: fecha por silêncio (`block_gap_ms`), duração máxima ou nº
+  de turnos. No escopo **`blocks`** o bloco classificável exige ME + THEY; no
+  escopo **`adaptive`** (padrão do classificador) basta um falante com conteúdo.
+  O classificador lê no mínimo **8 blocos anteriores** (`suggestion_context_blocks`,
+  faixa 8–20) numa janela de até 5 min/120 segmentos. Além de `blocks` e
+  `adaptive`, o escopo **`they_only`** só classifica quando THEY fala por
+  último e envia ao modelo apenas os turnos de THEY do bloco atual (as falas do
+  ME não disparam sugestão). Em todos os escopos, o **contexto** enviado ao
+  modelo tem ME+THEY, mas o **alvo** é só o trecho de THEY desde a última fala
+  de ME; o prompt separa `[CONTEXTO]` e `[ALVO]`. **Não existe mais sonda de
+  bloco aberto** — silêncio e hesitação saíram da taxonomia.
+- **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco é a
+  menor unidade que contém pergunta/resposta, mas a decisão de “já respondida”
+  precisa de mais fio de conversa.
+- **Consequência:** o `block_id` é determinístico; o mesmo bloco não gera duas
+  sugestões. O algoritmo é puro e testável (`domain/suggestion_gate.rs`). O
+  escopo `adaptive` usa o agente selecionado como contexto e não espera uma
+  resposta de THEY para decidir.
+- **Data:** 2026-10-26 · **Status:** Ativa (revisada na taxonomia por intenção)
+
+## BR-094 — Classificador por intenção
+
+- **Decisão:** a porta `SuggestionCueClassifier` devolve `cue` com **5
+  categorias**:
+  - `question` — THEY fez uma pergunta que ME deve responder;
+  - `comment` — THEY pediu **explicitamente** a opinião/comentário de ME
+    (“o que você acha?”, “concorda?”, “qual sua leitura?”). Uma opinião,
+    afirmação, explicação ou comentário solto de THEY é `no_action`;
+  - `already_answered` — a pergunta atual repete uma pergunta já respondida
+    no histórico recente ou ME já respondeu no próprio bloco;
+  - `no_action` — conversa casual, explicação, cumprimento ou fala sem
+    pergunta/convite;
+  - `insufficient_context` — bloco curto/ambíguo ou abstenção.
+  Só `question` e `comment` geram sugestão. `should_suggest`, `confidence`,
+  `evidence`, `focus`, `backend`, `model` e `latency_ms` continuam no contrato.
+- **Motivo:** o usuário quer que o copiloto distinga **responder** de
+  **comentar** e ignore conversa casual/explicações; o modelo zero-shot errava
+  as cues antigas de silêncio/hesitação.
+- **Consequência:** o classificador recebe o **contexto do agente selecionado**
+  e as **últimas N perguntas já respondidas** (título curto, padrão 5). O Laya
+  usa isso no prompt; as regras locais comparam similaridade. Quando o Laya
+  abstém ou inventa `already_answered`, as regras locais atuam como guarda
+  determinística. O limiar vem da sensibilidade (Laya: 0,75/0,50/0,35).
+  Timeout/erro não geram por padrão.
+- **Data:** 2026-10-26 · **Status:** Ativa (substitui a taxonomia de 7 cues)
+
+## BR-095 — Última classificação sempre visível
+
+- **Decisão:** a janela de Sugestões mostra uma faixa persistente com a última
+  classificação da sessão: cue, decisão, confiança, evidência curta, bloco,
+  backend/modelo/latência e tempo relativo. Ela aparece mesmo quando a decisão
+  foi **não sugerir** e não bloqueia a geração.
+- **Motivo:** o usuário precisa entender por que uma sugestão apareceu ou não;
+  o Perssua não expõe essa decisão de forma persistente.
+- **Consequência:** a classificação é publicada por evento e hidratada ao abrir
+  a janela; é memória por sessão no POC (persistência é evolução).
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto)
+
+## BR-096 — Cabeçalho adaptativo
+
+- **Decisão:** no modo automático, o cabeçalho mantém o anel/cronômetro; no modo
+  classificador, mostra o estado do classificador (ouvindo/analisando/vai
+  sugerir/nada a sugerir/pausado/sem escuta/falha) e **não** mostra cronômetro.
+  “Sugerir agora” continua disponível e ignora o classificador.
+- **Motivo:** o cronômetro deixa de ser a decisão no modo classificador; a UI
+  precisa refletir a estratégia real.
+- **Consequência:** o controle de pausa continua mexendo só no interruptor
+  mestre; o modo é preservado.
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto)
+
+## BR-097 — Configuração no topo de “Fontes de IA & Modelos”
+
+- **Decisão:** o modo de ativação vive no topo da aba **“Fontes de IA &
+  Modelos”**, em dois cards selecionáveis (Modelo de classificação vs. Sugestão
+  por tempo), com toggle mestre, modelo selecionado, status e sensibilidade no
+  card do classificador, e cadência 8/15/30 no card de tempo. O avançado
+  (model manager, blocos, categorias, timeout, teste) fica em drawer/modal.
+  Não há aba “Sugestões” no MVP; o card de sugestões sai de “Geral & HUD”.
+- **Motivo:** pedido do usuário (2026-10-26) — o modelo é uma fonte de IA; o
+  bloco fica no lugar onde ele já escolhe modelos, sem uma 7ª aba.
+- **Consequência:** a aba `sources` é renomeada para “Fontes de IA & Modelos”;
+  se o avançado crescer, a aba “Sugestões” é uma evolução, não um requisito.
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto)
+
+## BR-098 — Laya como classificador no backend Rust
+
+- **Decisão:** o classificador Laya usa o modelo
+  `convaiinnovations/laya-multilingual` e o SDK Rust **`laya-onnx`** atrás da
+  feature Cargo `laya`; runtime 100% local em ONNX Runtime, sem Python, sem
+  `laya-serve` e sem HTTP. O build padrão não inclui o crate/modelo.
+- **Motivo:** pedido do usuário (2026-10-26) — rodar o SDK dentro do projeto
+  Rust; o modelo multilingual cobre pt/en; o roteador de eventos do app aay.sh
+  não serve (classifica notificações e cria cards).
+- **Consequência:** `laya-onnx` exige Rust ≥ 1.88 (edition 2024) e `ort` 2.x; o
+  modelo ONNX (~1,2 GB) fica fora do bundle. Só o checkpoint **multilingual**
+  é exposto (cobre pt/en e ocupa menos espaço); o English-only não aparece na
+  UI. O gate de adoção é acurácia ≥ 80%, FP ≤ 15%, p95 ≤ 1 s CPU / 300 ms GPU.
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto; POC na
+  [`suggestion-mode/tasks/06-task.md`](suggestion-mode/tasks/06-task.md))
+
+## BR-099 — Artefato e model manager do classificador
+
+- **Decisão:** o modelo é um artefato ONNX **versionado** com `manifest.json`
+  (`model_version`, `base_checkpoint`, `files[]` com SHA-256 por arquivo,
+  tamanho, licença, calibração, métricas), publicado no release/download server.
+  O app baixa **sob confirmação**, grava `.part` por arquivo, verifica cada
+  checksum, instala atomicamente e troca o ponteiro `current`;
+  “Apagar”/“Ativar”/rollback são explícitos. Sem download silencioso e sem
+  Python na máquina do usuário.
+- **Motivo:** usuário final não pode depender de checkout/export; o modelo de
+  1,2 GB não cabe no bundle.
+- **Consequência:** `ClassifierModelManager` é porta com adaptador local;
+  `suggestion_classifier_auto_download=false` por padrão. O caminho
+  `model_path`/`LAYA_ONNX_DIR` é override de dev.
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto)
+
+## BR-100 — Caminho de fine-tuning preparado
+
+- **Decisão:** um modelo fine-tuned entra pelo **mesmo layout ONNX**, pela mesma
+  pergunta `cue` e pelo mesmo `manifest.json`/eval do modelo base; o app só
+  troca a `model_version`/ponteiro. A ativação exige eval aprovado e calibração
+  registrada; rollback mantém a versão anterior. Qualquer captura de dados para
+  treino é **opt-in, local e anonimizada**; nada sai da máquina sem
+  consentimento explícito.
+- **Motivo:** pedido do usuário (2026-10-26) — o fine-tuning virá depois; o
+  contrato não pode exigir refatoração.
+- **Consequência:** o model manager e a UI já aceitam versões base/fine-tuned;
+  o treino em si fica para um PRD futuro. Detalhes em
+  [`suggestion-mode/architecture/fine-tuning.md`](suggestion-mode/architecture/fine-tuning.md).
+- **Data:** 2026-10-26 · **Status:** Ativa (decisão de produto; implementação
+  futura na [`suggestion-mode/tasks/12-task.md`](suggestion-mode/tasks/12-task.md))
+
+## BR-101 — Histórico de perguntas respondidas
+
+- **Decisão:** ao gerar uma sugestão para uma cue `question`, o gate guarda um
+  **título curto** da pergunta (≤ 180 caracteres) no histórico da sessão. O
+  classificador recebe as **últimas `suggestion_answered_questions`** (padrão
+  5, faixa 0–20) para decidir `already_answered`. O histórico é memória de
+  sessão; `reset` limpa.
+- **Motivo:** pedido do usuário (2026-10-26) — não repetir sugestões para uma
+  pergunta já respondida e dar contexto ao modelo.
+- **Consequência:** sem LLM extra para “resumir”: o título é a própria pergunta
+  truncada. Uma classificação que não gera sugestão não entra no histórico;
+  só pergunta **respondida** conta. O heuristic também detecta repetição por
+  Jaccard (≥ 0,60) e resposta dentro do mesmo bloco.
+- **Data:** 2026-10-26 · **Status:** Ativa
