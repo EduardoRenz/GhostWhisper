@@ -779,3 +779,25 @@ Aumentar o timeout para 10 s no Avançado evita esse primeiro aviso.
 - Testes de domínio e serviço cobrem ruído curto + resposta real.
 - Sessões com sobreposição de timestamps (pergunta longa de THEY e ME curto no
   meio) continuam um caso a observar; o alvo usa a ordem dos turnos finais.
+
+
+## 2026-10-27 — Hesitação curta do ME não interrompe a pergunta
+
+- **IDs:** BR-093/BR-094 · **Issues:** ISS-071 · **Task:** 13
+- “Hmmm, deixa eu pensar” era contado como resposta (3+ palavras), zerava o
+  alvo e impedia a análise.
+- O alvo agora ignora expressões de espera sem conteúdo (“deixa eu pensar”,
+  “deixa eu ver”, “vou pensar”, “let me think”, “espera”). Se houver conteúdo
+  depois (“deixa eu pensar, a resposta é B”), conta como resposta.
+- Testes de domínio e serviço cobrem hesitação, resposta curta de múltipla
+  escolha e “não sei”.
+
+
+## 2026-10-27 — Bloco aberto dispara sugestão (conversa contínua)
+
+- **IDs:** BR-093 · **Issues:** ISS-072 · **Task:** 13
+- O gate não espera mais o gap de 3 s para classificar: 300 ms depois da
+  última fala finalizada, o bloco aberto já é analisado.
+- O gap continua sendo usado para fechar blocos/contexto; a conversa contínua
+  não fica sem sugestão.
+- Cache por alvo/`block_id` e cooldown evitam repetir a mesma ponta.

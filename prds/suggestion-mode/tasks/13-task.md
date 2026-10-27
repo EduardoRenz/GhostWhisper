@@ -40,8 +40,8 @@ blocos anteriores.
   `no_action` cede às regras quando há sinal positivo; `already_answered`
   inventado sem histórico cai nas regras; bloco terminando em ME nunca aceita
   decisão positiva do Laya.
-- [x] Remover sonda de bloco aberto (domínio, porta, serviço, tick, settings,
-  UI e l10n).
+- [x] Remover a sonda de hesitação; em vez dela, classificar o bloco aberto
+  300 ms após a última fala finalizada (conversa contínua).
 - [x] Fixtures de 20 blocos (4 por cue), incluindo `prior_questions` e
   `already_answered`.
 - [x] Teste de integração com Laya real no **caminho efetivo** (Laya + guarda).
@@ -60,6 +60,8 @@ blocos anteriores.
 - `repeated_comment_invitation_is_already_answered`
 - `a_mere_statement_is_not_a_comment_invitation`
 - `short_me_noise_does_not_hide_the_they_question`
+- `thinking_filler_does_not_block_the_they_question`
+- `an_open_block_is_classified_after_the_bubble_settles`
 - `short_me_noise_does_not_block_the_they_question`
 - `a_laya_comment_without_an_explicit_invitation_is_ignored`
 - `laya_integration_marks_a_repeated_mutex_question_as_already_answered`

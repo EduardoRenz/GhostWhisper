@@ -2142,8 +2142,10 @@ uma nota de revisão.
   modelo tem ME+THEY, mas o **alvo** é só o trecho de THEY desde a última fala
   **com conteúdo** de ME; fala curta de ME (< 3 palavras, “ok”, “tchau”, ruído)
   é ignorada e não bloqueia a pergunta. O prompt separa `[CONTEXTO]` e `[ALVO]`.
-  **Não existe mais sonda de bloco aberto** — silêncio e hesitação saíram da
-  taxonomia.
+  **Bloco aberto também dispara:** assim que uma fala finalizada assenta
+  (300 ms), o gate classifica o alvo sem esperar o silêncio de 3 s. O gap
+  continua servindo para montar contexto/fechar blocos, não para segurar a
+  sugestão em conversa contínua. Não existe mais sonda de hesitação.
 - **Motivo:** classificar a conversa inteira é caro e ruidoso; um bloco é a
   menor unidade que contém pergunta/resposta, mas a decisão de “já respondida”
   precisa de mais fio de conversa.
