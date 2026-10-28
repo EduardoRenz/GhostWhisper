@@ -57,6 +57,15 @@ cargo clippy          # lint Rust
 pnpm test             # testes do frontend
 ```
 
+## Versionamento
+- A versão é única nos três manifestos: `package.json`,
+  `src-tauri/tauri.conf.json` e `src-tauri/Cargo.toml`. O `Cargo.lock` acompanha.
+- Bump: `./scripts/bump-version.sh X.Y.Z` (atualiza os três, o README e roda
+  `cargo check` para o lock). Não edite só um deles.
+- O nome do AppImage/deb usa a versão dos manifestos; faça o bump **antes** do
+  `pnpm build:final` da release.
+- Próxima release planejada: **0.2.0**.
+
 ## Regras rápidas
 - **Perssua é a referência de produto:** ao decidir *como* resolver algo, priorize
   a solução que o Perssua já usa (produto maduro); transpomos só a tecnologia

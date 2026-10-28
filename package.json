@@ -1,7 +1,7 @@
 {
   "name": "ghostwhisper",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Copiloto de reunião open-source, Linux-first e local-only",
   "type": "module",
   "scripts": {
@@ -17,7 +17,8 @@
     "tauri:build:cpu": "bash scripts/tauri-build-cpu.sh",
     "tauri:dev:laya": "tauri dev --features laya",
     "tauri:build:laya": "bash scripts/tauri-build-laya.sh",
-    "build:final": "bash scripts/build-final.sh"
+    "build:final": "bash scripts/build-final.sh",
+    "bump:version": "bash scripts/bump-version.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
