@@ -4,15 +4,16 @@
 //! o backend nas configurações sem reiniciar o app. Este decorador lê a
 //! configuração a cada bloco e delega:
 //!
-//! - `heuristic` → regras locais;
-//! - `laya` com engine disponível → Laya;
-//! - `laya` sem engine (build sem `laya`/modelo ausente) → heurístico, com um
-//!   único aviso no log. A UI mostra o backend efetivo no `outcome.backend`.
+//! - `laya` (recomendado/efetivo) → Laya; a guarda **lexical** (Jaccard) de
+//!   `already_answered` roda antes, independente de idioma (R23);
+//! - `laya` sem engine (build sem `laya`/modelo ausente) → `Unavailable` (não
+//!   cai em palavras-chave);
+//! - `heuristic` → backend legado “Regras locais”, em remoção (ISS-078/task 16).
+//!   A UI mostra o backend efetivo no `outcome.backend`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::domain::suggestion_gate::SuggestionCue;
 use crate::ports::settings_store::SettingsStore;
 use crate::ports::suggestion_cue_classifier::{
     ClassificationOutcome, ClassificationRequest, ClassifierError, SuggestionCueClassifier,
@@ -57,28 +58,13 @@ impl SettingsSuggestionCueClassifier {
         }
     }
 
-    fn select(&self) -> (ClassifierBackend, &dyn SuggestionCueClassifier) {
-        let backend = self
+    fn selected_backend(&self) -> ClassifierBackend {
+        let value = self
             .settings
             .load()
-            .map(|settings| {
-                ClassifierBackend::from_settings(&settings.suggestion_classifier_backend)
-            })
-            .unwrap_or(ClassifierBackend::Heuristic);
-        match backend {
-            ClassifierBackend::Laya => match self.laya.as_deref() {
-                Some(laya) => (ClassifierBackend::Laya, laya),
-                None => {
-                    if !self.warned.swap(true, Ordering::Relaxed) {
-                        tracing::warn!(
-                            "backend Laya indisponível neste build/modelo; usando regras locais"
-                        );
-                    }
-                    (ClassifierBackend::Heuristic, self.heuristic.as_ref())
-                }
-            },
-            ClassifierBackend::Heuristic => (ClassifierBackend::Heuristic, self.heuristic.as_ref()),
-        }
+            .map(|settings| settings.suggestion_classifier_backend)
+            .unwrap_or_else(|_| "heuristic".to_string());
+        ClassifierBackend::from_settings(&value)
     }
 }
 
@@ -87,54 +73,27 @@ impl SuggestionCueClassifier for SettingsSuggestionCueClassifier {
         &self,
         request: &ClassificationRequest,
     ) -> std::result::Result<ClassificationOutcome, ClassifierError> {
-        let (backend, classifier) = self.select();
-        let outcome = classifier.classify(request)?;
-        if backend != ClassifierBackend::Laya {
-            return Ok(outcome);
+        let backend = self.selected_backend();
+        if backend == ClassifierBackend::Heuristic {
+            return self.heuristic.classify(request);
         }
 
-        // O Laya multilingual é zero-shot e não calibrado. As regras locais
-        // entram como guarda determinística:
-        // - pergunta repetida: nunca sugerir de novo (`already_answered`);
-        // - Laya abstém ou diz `no_action`: se as regras veem pergunta/convite,
-        //   usar as regras (recall);
-        // - Laya positivo: preservar a decisão contextual do modelo.
-        let fallback = self.heuristic.classify(request)?;
-        if fallback.cue == SuggestionCue::AlreadyAnswered {
-            return Ok(fallback);
+        let Some(laya) = self.laya.as_deref() else {
+            if !self.warned.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    "backend Laya indisponível neste build/modelo; nenhuma sugestão será gerada"
+                );
+            }
+            return Err(ClassifierError::Unavailable);
+        };
+
+        // Guarda **independente de idioma** para pergunta repetida: similaridade
+        // lexical (Jaccard) contra o histórico. O modelo zero-shot não é
+        // confiável em `already_answered`; o resto da decisão é do Laya (R23).
+        if let Some(outcome) = self.heuristic.already_answered(request) {
+            return Ok(outcome);
         }
-        // Sem evidência determinística de repetição, o Laya não pode “inventar”
-        // already_answered (isso suprime uma pergunta válida).
-        if outcome.cue == SuggestionCue::AlreadyAnswered {
-            return Ok(fallback);
-        }
-        // Comentário só vale quando as regras também viram um convite
-        // explícito. Uma opinião/afirmação de THEY não é oportunidade.
-        if outcome.cue == SuggestionCue::Comment && fallback.cue != SuggestionCue::Comment {
-            return Ok(fallback);
-        }
-        // Convite de comentário detectado pelas regras vence uma pergunta
-        // retórica do Laya (ambos são positivos; o foco muda).
-        if fallback.cue == SuggestionCue::Comment && outcome.cue == SuggestionCue::Question {
-            return Ok(fallback);
-        }
-        if matches!(
-            outcome.cue,
-            SuggestionCue::InsufficientContext | SuggestionCue::NoAction
-        ) && fallback.should_suggest
-        {
-            return Ok(fallback);
-        }
-        if outcome.cue == SuggestionCue::InsufficientContext {
-            return Ok(fallback);
-        }
-        // Bloco curto é abstenção pelas regras, mesmo que o Laya tente decidir.
-        if outcome.cue == SuggestionCue::NoAction
-            && fallback.cue == SuggestionCue::InsufficientContext
-        {
-            return Ok(fallback);
-        }
-        Ok(outcome)
+        laya.classify(request)
     }
 
     fn backend_id(&self) -> &'static str {
@@ -238,24 +197,24 @@ mod tests {
 
         let result = classifier.classify(&request()).expect("laya");
         assert_eq!(result.backend, "laya");
-        assert_eq!(heuristic.requests().len(), 1);
+        // R23: o heurístico não participa da decisão positiva do Laya.
+        assert_eq!(heuristic.requests().len(), 0);
         assert_eq!(laya.requests().len(), 1);
     }
 
     #[test]
-    fn falls_back_to_the_heuristic_when_laya_is_unavailable() {
+    fn errors_when_laya_is_unavailable_instead_of_using_keywords() {
         let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
         heuristic.push_outcome(outcome("heuristic"));
         let classifier =
             SettingsSuggestionCueClassifier::new(store("laya"), heuristic.clone(), None);
 
-        let result = classifier.classify(&request()).expect("fallback");
-        assert_eq!(result.backend, "heuristic");
-        assert_eq!(heuristic.requests().len(), 1);
+        assert!(classifier.classify(&request()).is_err());
+        assert_eq!(heuristic.requests().len(), 0);
     }
 
     #[test]
-    fn falls_back_to_heuristic_when_laya_abstains() {
+    fn does_not_override_laya_abstention_with_keywords() {
         let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
         let mut heuristic_outcome = outcome("heuristic");
         heuristic_outcome.cue = SuggestionCue::Comment;
@@ -274,26 +233,26 @@ mod tests {
             heuristic.clone(),
             Some(laya.clone()),
         );
-        let result = classifier.classify(&request()).expect("fallback");
-        assert_eq!(result.backend, "heuristic");
-        assert_eq!(result.cue, SuggestionCue::Comment);
-        assert!(result.should_suggest);
+        let result = classifier.classify(&request()).expect("laya");
+        assert_eq!(result.backend, "laya");
+        assert_eq!(result.cue, SuggestionCue::InsufficientContext);
+        assert!(!result.should_suggest);
+        assert_eq!(heuristic.requests().len(), 0);
     }
 
     #[test]
     fn repeated_question_overrides_a_positive_laya_decision() {
+        use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
         use crate::domain::suggestion_gate::PriorQuestion;
-
-        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
-        let mut answered = outcome("heuristic");
-        answered.cue = SuggestionCue::AlreadyAnswered;
-        answered.should_suggest = false;
-        heuristic.push_outcome(answered);
 
         let laya = Arc::new(FakeSuggestionCueClassifier::new());
         laya.push_outcome(outcome("laya"));
 
-        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
+        let classifier = SettingsSuggestionCueClassifier::new(
+            store("laya"),
+            Arc::new(HeuristicSuggestionCueClassifier::default()),
+            Some(laya),
+        );
         let mut request = request();
         request.prior_questions = vec![PriorQuestion {
             title: "pode explicar?".to_string(),
@@ -303,6 +262,180 @@ mod tests {
         let result = classifier.classify(&request).expect("guarda");
         assert_eq!(result.cue, SuggestionCue::AlreadyAnswered);
         assert!(!result.should_suggest);
+    }
+
+    #[test]
+    fn a_long_repeated_question_with_a_different_start_overrides_laya() {
+        use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
+        use crate::domain::suggestion_gate::PriorQuestion;
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome("laya"));
+        let classifier = SettingsSuggestionCueClassifier::new(
+            store("laya"),
+            Arc::new(HeuristicSuggestionCueClassifier::default()),
+            Some(laya.clone()),
+        );
+
+        // Sessão `5f8595a7…`: a repetição começa no meio da pergunta e o
+        // histórico guardou só a segunda metade (ISS-081).
+        let second_half = "você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou HAPROXY.";
+        let repeated = "web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo, onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS ALB, e uma solução própria, como Enginix ou Haproxy.";
+        let mut request = request();
+        request.block.turns = vec![BlockTurn {
+            speaker: Speaker::They,
+            text: repeated.to_string(),
+            start_ms: 0,
+            end_ms: 40_000,
+        }];
+        request.block.end_ms = 40_000;
+        request.block.they_chars = repeated.chars().count();
+        request.full_block = request.block.clone();
+        request.prior_questions = vec![PriorQuestion {
+            title: second_half.chars().take(180).collect(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1,
+        }];
+
+        let result = classifier.classify(&request).expect("guarda");
+        assert_eq!(result.cue, SuggestionCue::AlreadyAnswered);
+        assert_eq!(result.backend, "heuristic");
+        assert!(
+            laya.requests().is_empty(),
+            "a guarda não deve chamar o Laya"
+        );
+    }
+
+    #[test]
+    fn the_tail_of_a_repeated_question_overrides_laya() {
+        use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
+        use crate::domain::suggestion_gate::PriorQuestion;
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome("laya"));
+        let classifier = SettingsSuggestionCueClassifier::new(
+            store("laya"),
+            Arc::new(HeuristicSuggestionCueClassifier::default()),
+            Some(laya.clone()),
+        );
+
+        // Sessão `5f8595a7…`: a pergunta do amigo/dinheiro voltou só como
+        // cauda; a contenção lexical reconhece o fragmento (ISS-081).
+        let full = "Seguinte, um amigo te pede dinheiro emprestado toda semana e nunca devolve. O que você faz? A, continue emprestando porque é seu amigo. B, para de emprestar e conversa com ele com sinceridade. C, ignora e muda de assunto.";
+        let tail = "Estar e conversa com ele com sinceridade. C. Ignora e muda de assunto.";
+        let mut request = request();
+        request.block.turns = vec![BlockTurn {
+            speaker: Speaker::They,
+            text: tail.to_string(),
+            start_ms: 0,
+            end_ms: 20_000,
+        }];
+        request.block.end_ms = 20_000;
+        request.block.they_chars = tail.chars().count();
+        request.full_block = request.block.clone();
+        request.prior_questions = vec![PriorQuestion {
+            title: full.to_string(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1,
+        }];
+
+        let result = classifier.classify(&request).expect("guarda");
+        assert_eq!(result.cue, SuggestionCue::AlreadyAnswered);
+        assert_eq!(result.backend, "heuristic");
+        assert!(
+            laya.requests().is_empty(),
+            "a guarda não deve chamar o Laya"
+        );
+    }
+
+    #[test]
+    fn an_unrelated_question_still_reaches_laya() {
+        use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
+        use crate::domain::suggestion_gate::PriorQuestion;
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome("laya"));
+        let classifier = SettingsSuggestionCueClassifier::new(
+            store("laya"),
+            Arc::new(HeuristicSuggestionCueClassifier::default()),
+            Some(laya.clone()),
+        );
+        let mut request = request();
+        request.block.turns = vec![BlockTurn {
+            speaker: Speaker::They,
+            text: "Como você projetaria um sistema de filas com garantia de entrega?".to_string(),
+            start_ms: 0,
+            end_ms: 5_000,
+        }];
+        request.block.end_ms = 5_000;
+        request.full_block = request.block.clone();
+        request.prior_questions = vec![PriorQuestion {
+            title: "Seguinte, um amigo te pede dinheiro emprestado toda semana e nunca devolve. O que você faz?".to_string(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1,
+        }];
+
+        let result = classifier.classify(&request).expect("laya");
+        assert_eq!(result.cue, SuggestionCue::Question);
+        assert_eq!(result.backend, "laya");
+        assert_eq!(laya.requests().len(), 1);
+    }
+
+    #[test]
+    fn a_positive_laya_decision_is_not_overridden_by_a_heuristic() {
+        // R23: a guarda não pode trocar uma decisão positiva do modelo por uma
+        // regra de palavras. Só `already_answered` (Jaccard) entra antes do Laya.
+        let heuristic = Arc::new(FakeSuggestionCueClassifier::new());
+        let mut negative = outcome("heuristic");
+        negative.cue = SuggestionCue::NoAction;
+        negative.should_suggest = false;
+        heuristic.push_outcome(negative);
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome("laya"));
+
+        let classifier = SettingsSuggestionCueClassifier::new(store("laya"), heuristic, Some(laya));
+        let result = classifier.classify(&request()).expect("laya");
+        assert_eq!(result.cue, SuggestionCue::Question);
+        assert!(result.should_suggest);
+    }
+
+    #[test]
+    fn real_heuristic_guard_marks_a_long_repeated_question_when_laya_says_comment() {
+        use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
+        use crate::domain::suggestion_gate::PriorQuestion;
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        let mut positive = outcome("laya");
+        positive.cue = SuggestionCue::Comment;
+        laya.push_outcome(positive);
+
+        let classifier = SettingsSuggestionCueClassifier::new(
+            store("laya"),
+            Arc::new(HeuristicSuggestionCueClassifier::default()),
+            Some(laya),
+        );
+
+        let repeated = "Pergunta Dissertativa Load balancer. Você precisa construir uma aplicação web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo? Explique também a diferença entre usar um load balancer gerenciado na nuvem e uma solução própria.";
+        let mut request = request();
+        request.block.turns = vec![BlockTurn {
+            speaker: Speaker::They,
+            text: repeated.to_string(),
+            start_ms: 0,
+            end_ms: 40_000,
+        }];
+        request.block.end_ms = 40_000;
+        request.block.they_chars = repeated.chars().count();
+        request.full_block = request.block.clone();
+        request.prior_questions = vec![PriorQuestion {
+            title: "Pergunta Dissertativa Load Balancer. Você precisa construir uma aplicação que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde".to_string(),
+            block_id: "blk_old".to_string(),
+            answered_at_ms: 1,
+        }];
+
+        let result = classifier.classify(&request).expect("guarda");
+        assert_eq!(result.cue, SuggestionCue::AlreadyAnswered);
+        assert_eq!(result.backend, "heuristic");
     }
 
     #[test]

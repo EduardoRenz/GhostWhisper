@@ -186,17 +186,30 @@ Ordem de precedência:
 2. **`no_action`** — small talk (cumprimento/agradecimento) ou fala sem
    pergunta/convite.
 3. **`already_answered`** — a última pergunta de THEY já foi respondida no
-   próprio bloco (ME falou depois) ou tem similaridade Jaccard ≥ 0,60 com uma
-   pergunta do histórico.
-4. **`question`** — a última fala de THEY tem `?`/`？`, começa com palavra
-   interrogativa ou é um pedido (“me explica”, “walk me through”, …).
-5. **`comment`** — THEY não perguntou, mas convidou a comentar (“o que você
-   acha”, “concorda”, “faz sentido”, “your take”, …).
-6. **`no_action`** — caso contrário (explicação, afirmação, conversa).
+   próprio bloco (ME falou depois) ou repete uma pergunta do histórico. A
+   comparação é lexical e independente de idioma (R23): Jaccard do texto
+   completo (≥ 0,60), maior Jaccard entre janelas deslizantes (24 tokens, passo
+   6) e contenção (`|A∩B|/min(|A|,|B|)` ≥ 0,75, com ≥ 6 tokens em comum e ≥ 8
+   no lado menor) para cauda/fragmento. O histórico guarda a pergunta do bloco
+   inteiro (até 600 caracteres) e o prompt mostra até 180 por item
+   (ISS-081/task 18; a janela fixa da ISS-076 foi removida).
+4. **`question`** — regra **legada** do backend “Regras locais”: `?`, palavra
+   interrogativa ou pedido. **Não adicione novas palavras/idiomas** (R23); esse
+   backend será removido (ISS-078/task 16).
+5. **`comment`** — regra legada por convite explícito.
+6. **`no_action`** — caso contrário.
 
-O heurístico não tenta adivinhar `already_answered` por contexto semântico
-profundo; a similaridade lexical é a guarda determinística. O Laya decide o
-resto quando tem sinal positivo.
+**Caminho efetivo (Laya, R23):** o modelo multilíngue decide
+`question`/`comment`/`no_action`/`insufficient_context` lendo a **conversa
+inteira** (sem separar contexto/alvo) com prompt genérico (sem exemplos/palavras
+de idioma). O alvo é construído por `target_across_blocks`, que junta blocos
+contíguos divididos por tempo (pergunta longa em vários turnos); um ME não
+significativo **depois** do alvo não impede, um ME antes (resposta) impede
+(ISS-080/task 17). O contexto do agente é só **nome/categoria/contexto** — o
+`suggestion_prompt` de geração não vai ao classificador. Só `already_answered`
+usa a similaridade lexical (Jaccard) do histórico, que não codifica idioma. Laya
+indisponível/abstenção ⇒ não sugerir. As inclusões de palavras-chave foram
+revertidas (ISS-077/task 15).
 
 ---
 
@@ -432,7 +445,11 @@ Histórico e contexto:
 - o gate carrega no mínimo 8 blocos anteriores (janela de 5 min/120 segmentos);
 - mantém por sessão os títulos das perguntas que geraram sugestão;
 - envia até `suggestion_answered_questions` (padrão 5) no
-  `ClassificationRequest.prior_questions`;
+  `ClassificationRequest.prior_questions` (usado pelo Jaccard; o prompt também
+  recebe a lista, mas a decisão `already_answered` é da guarda lexical);
+- o alvo junta blocos contíguos (`target_across_blocks`) e o Laya lê o contexto
+  + bloco atual inteiros (sem `[CONTEXTO]/[ALVO]`), para uma pergunta longa não
+  ser classificada por um fragmento;
 - o Laya injeta os títulos no prompt; o heurístico compara similaridade.
 
 O scheduler **não** deve classificar a cada tick: usa `last_classified_block_id`

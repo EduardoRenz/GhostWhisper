@@ -801,3 +801,145 @@ Aumentar o timeout para 10 s no Avançado evita esse primeiro aviso.
 - O gap continua sendo usado para fechar blocos/contexto; a conversa contínua
   não fica sem sugestão.
 - Cache por alvo/`block_id` e cooldown evitam repetir a mesma ponta.
+
+## 2026-10-27 — `already_answered` com janela de 180 nos dois lados
+
+- **IDs:** ISS-076, BR-101, T14 · **Refs:** [`issues.md`](issues.md),
+  [`../business-rules.md`](../business-rules.md) BR-101,
+  [`tasks/14-task.md`](tasks/14-task.md)
+
+### Sintoma
+Na sessão real de 18:19, a mesma pergunta de *load balancer* foi feita três
+vezes, com a resposta do ME no meio, e o classificador nunca devolveu
+`already_answered` (caía em `comment`/`question`).
+
+### Causa
+O histórico guarda o título truncado em **180 caracteres**
+(`PriorQuestion::normalized`), mas `is_repeated_question` comparava com a
+pergunta atual **inteira** (400+). O Jaccard caía para ~0,51, abaixo do limiar
+de 0,60 — perguntas longas nunca casavam. A guarda efetiva de
+`already_answered` é o heurístico (o Laya zero-shot é descartado para não
+suprimir pergunta válida), então a função ficava desligada na prática.
+
+### Decisão
+- `QUESTION_TITLE_MAX_CHARS = 180` compartilhado por `question_title` e
+  `is_repeated_question`.
+- `is_repeated_question` trunca a pergunta atual na mesma janela antes do
+  Jaccard e da comparação exata.
+- Nada muda no prompt do Laya nem na política da guarda.
+
+### Entregue
+- `src-tauri/src/domain/suggestion_gate.rs`: janela única.
+- Testes: domínio com pergunta longa repetida (falharia antes) + gate ponta a
+  ponta com pergunta → resposta do ME em bloco separado → repetição.
+
+### Verificação
+- `cargo test --lib` **837 ✓** (11 ignorados) · clippy `-D warnings` ✓ ·
+  `pnpm test` **520 ✓** · `tsc --noEmit` ✓.
+
+
+## 2026-10-27 — Pergunta longa sem `?`: conversa inteira + prompt (sem palavras-chave)
+
+- **IDs:** ISS-077, BR-094, T15 · **R23/R24** · **Refs:** [`issues.md`](issues.md),
+  [`tasks/15-task.md`](tasks/15-task.md)
+
+### Sintoma
+Nas sessões `606de489…` (load balancer) e `0e882d0a…` (arquitetura), THEY fez
+uma pergunta clara e a classificação caiu em `no_action` (60%).
+
+### Causa
+1. O caminho Laya era sobrescrito pela guarda heurística de palavras-chave, que
+   não reconhecia a pergunta sem `?`/com o interrogativo no meio.
+2. O `build_blocks` dividia a pergunta no limite de 45 s; o alvo era o último
+   fragmento e o estado do prompt separava `[CONTEXTO]`/`[ALVO]`.
+
+### Decisão (R23/R24)
+- **R23**: sem listas de palavras-chave ou regras de idioma, inclusive como
+  guarda/fallback. As inclusões de keywords foram revertidas.
+- **R24**: toda sessão reportada vira teste de integração/regressão com os
+  turnos reais; itera no prompt/modelo até acertar.
+- `target_across_blocks` junta blocos contíguos (divisão por tempo) e o alvo
+  leva a pergunta inteira.
+- O estado do Laya é a **conversa inteira** (contexto + bloco atual), sem
+  marcadores; o prompt é curto e genérico (inglês), sem exemplos/palavras.
+- A guarda heurística sai do caminho Laya; `question`/`comment`/`no_action` são
+  do modelo. Só `already_answered` usa Jaccard de tokens (independente de
+  idioma).
+- Laya indisponível ⇒ **não sugerir** (não cai em keywords).
+- Testes reais com Laya (`LAYA_ONNX_DIR`): as duas perguntas → `question`; a
+  repetida → `already_answered` (Jaccard).
+- Débito: o backend “Regras locais” ainda é keyword-based e será removido
+  (ISS-078/task 16).
+
+### Verificação
+- `cargo test --features laya -- --ignored laya_integration` **5 ✓** (3
+  regressões + mutex + relatório).
+- `cargo test --lib` **841 ✓** (11 ignorados) · clippy `-D warnings` ✓ · fmt ✓.
+- O relatório das 24 fixtures antigas continua como diagnóstico (acurácia bruta
+  do Laya baixa; fine-tuning na ISS-062), não como gate de release.
+
+## 2026-10-27 — Última pergunta: contexto de geração e alvo entre blocos
+
+- **IDs:** ISS-080, BR-094, T17 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/17-task.md`](tasks/17-task.md)
+
+### Sintoma
+Sessão `5984de1d…` (22:02), janela de Sugestões aberta: só a pergunta da
+carteira foi classificada; amigo/dinheiro e arquitetura não geraram sugestão. A
+arquitetura veio em 3 finais e o ME só falou “deixa eu pensar” no fim.
+
+### Causa
+1. `selected_mode_context` mandava ao Laya o `suggestion_prompt` de **geração**
+   (500 chars, “write the exact words ME should say”), enviesando o cue.
+2. `target_across_blocks` desistia quando o bloco atual tinha ME; o alvo ficava
+   só no último turno.
+
+### Decisão
+- Contexto do agente no classificador = nome/categoria/contexto; **sem** o
+  prompt de geração.
+- `target_across_blocks` junta blocos contíguos quando o alvo começa no primeiro
+  turno; ME não significativo depois não impede; ME antes (resposta) impede.
+- Testes reais com Laya da sessão `5984de1d…` (arquitetura e amigo/dinheiro) →
+  `question`; os testes anteriores continuam.
+- Gate de janela inalterado (só classifica com a janela aberta, escolha do
+  usuário).
+
+### Verificação
+- Laya **7 ✓** (inclui as 2 regressões novas) · `cargo test --lib` **844 ✓** ·
+  frontend **521 ✓** · clippy/fmt/tsc ✓.
+
+## 2026-10-28 — `already_answered`: repetição deslocada e fragmento
+
+- **IDs:** ISS-081, BR-101, T18 · **Refs:** [`issues.md`](issues.md),
+  [`../business-rules.md`](../business-rules.md) BR-101,
+  [`tasks/18-task.md`](tasks/18-task.md)
+
+### Sintoma
+Sessão `5f8595a7…` (01:37–01:44): as 7 sugestões geradas saíram como
+`question`; nenhuma repetição virou `already_answered`. Load balancer e
+amigo/dinheiro foram sugeridos de novo.
+
+### Causa
+1. `is_repeated_question` truncava os dois lados nos primeiros 180 caracteres:
+   load balancer começava no meio (Jaccard ~0,22) e amigo/dinheiro vinha só como
+   cauda (Jaccard ~0,12).
+2. O histórico guardava `question_title(&target)`; um ME curto no meio
+   ("e pode perguntar então") cortava a pergunta e guardava só a 2ª metade.
+3. Só Jaccard simétrico, sem contenção para fragmento/cauda.
+
+### Decisão
+- Histórico guarda o bloco inteiro (`question_title(&full_block)`) até 600
+  caracteres; prompt do Laya mostra até 180.
+- Matching: Jaccard do texto completo, maior Jaccard entre janelas deslizantes
+  (24 tokens, passo 6) e contenção ≥ 0,75 (≥ 6 tokens em comum, ≥ 8 no lado
+  menor).
+- A guarda avalia alvo e bloco inteiro; sem palavras-chave/idioma (R23).
+- A 1ª carteira continua fora do histórico: não gerou sugestão (BR-101).
+
+### Verificação
+- Domínio: load balancer deslocado, cauda do amigo/dinheiro, fragmento da
+  carteira, negativos.
+- Adaptador: Laya devolve `question` e a guarda sobrescreve nas duas repetições.
+- Gate ponta a ponta com os segmentos reais de `5f8595a7…` (R24).
+- `cargo test --lib` **851 ✓** (11 ignorados) · Laya **9 ✓** · frontend **521 ✓**
+  · clippy/fmt/tsc ✓.

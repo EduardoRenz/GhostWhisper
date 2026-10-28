@@ -8,7 +8,8 @@ Histórico deste PRD no formato fixo do
 | Palavra-chave | `rg -n -i 'bolha' prds/chat/memory.md` |
 | Entrada do dia | `rg -n '^## 2026-10-18' prds/chat/memory.md` |
 | Por ID | `rg -n 'ISS-018\|BR-021\|BR-022\|BR-026' prds/chat/memory.md` |
-| Teto da bolha | `rg -n -i 'teto da bolha\|continuação' prds/chat/memory.md` |
+| Bolha / uma fala por bolha | `rg -n -i 'teto da bolha\|uma fala finalizada\|split de 180' prds/chat/memory.md` |
+| Corte de sobreposição | `rg -n -i 'sobreposição\|ISS-075' prds/chat/memory.md` |
 | Janelas de chat/histórico | `rg -n -i 'janela de chat\|janela de histórico\|toggle único' prds/chat/memory.md` |
 | Transcrição ao Vivo | `rg -n -i 'transcrição ao vivo\|largura total\|microfone/outros' prds/chat/memory.md` |
 | Sugestão manual | `rg -n -i 'sugestão manual\|manual_context\|contexto por parâmetro' prds/chat/memory.md` |
@@ -468,3 +469,116 @@ usava `x11_get_server_time`; o foco nunca tinha recebido o mesmo tratamento.
   do usuário para o Mutter; a validação válida é com o teclado real.
 - `should_refocus` (4 estados), `AskWindow.test.tsx`; `cargo test --lib`
   **693 ✓**, clippy `-D warnings` ✓.
+
+## 2026-10-27 — Uma fala finalizada é uma bolha (o split de 180 saiu)
+
+- **IDs:** ISS-073, BR-102, T19 · **Refs:** [`issues.md`](issues.md),
+  [`../business-rules.md`](../business-rules.md) BR-102,
+  [`tasks/19-task.md`](tasks/19-task.md)
+
+### Sintoma
+Depois da ISS-031, falas longas ainda apareciam como várias bolhas "quebradas"
+enquanto o turno estava aberto. O usuário: *"às vezes múltiplas bolhas quebradas
+ficam sendo processadas. O que eu quero é que existisse bolhas menores, mas
+processamento concluído."*
+
+### Causa
+A BR-031 aplicava o teto de 180 caracteres (`splitSpeechText`) na fala finalizada
+**e na prévia**. Era um corte de **exibição**, não um commit: não existia "ouvir
+um pedaço → processar → commitar → continuar". A prévia era re-cortada a cada
+atualização do Whisper e as partes pareciam mensagens fechadas. O usuário pediu
+que, sem esse commit, a fala ficasse inteira.
+
+### Decisão
+- **Removido** o split de 180: `MAX_SPEECH_BUBBLE_CHARS`, `splitSpeechText`,
+  `chopAtWords`, `continues` e `source_text` saíram do domínio.
+- Fala **finalizada** = uma bolha com o texto inteiro; fala **em andamento** =
+  uma bolha por falante, com Streaming. O único corte que permanece é o de
+  **sobreposição** dos canais (BR-043).
+- IA, tradução e copiar usam o texto da própria bolha; a prévia não tem IA.
+- Commit em blocos ("ouvir → processar → commitar → continuar") **não é
+  possível** hoje sem degradar o ASR: o pipeline só fecha no silêncio (1 s), no
+  teto de 25 s ou no experimento de pontuação forte rejeitado (ISS-058). O
+  caminho por prefixo autoritativo ficou registrado como experimento futuro na
+  ISS-074 (`precision-and-performance`).
+- Trade-off aceito: a bolha pode ficar alta (até ~25 s); sem recolhimento
+  automático.
+
+### Entregue
+- `src/core/domain/chat.ts`: `SpeechBubble` sem `continues`/`source_text`;
+  timeline e histórico com uma bolha por fala (só a sobreposição divide).
+- `ChatView`: prévia única; IA/tradução/cópia com o texto da bolha.
+- `ChatBubble`: prop `continues` removida; header e ações sempre na bolha.
+- CSS: `.chat__row--continues` removido.
+
+### Verificação
+- Anti-regressão (falhariam antes): `chat.test.ts` ("a fala finalizada continua
+  em uma bolha só", "a prévia longa fica em uma única linha em andamento") e
+  `ChatView.test.tsx` ("mantém a fala longa em uma bolha só", "mantém a prévia
+  longa em uma bolha só").
+- `pnpm test` **517 ✓** (82 arquivos) · `tsc --noEmit` ✓ · `pnpm build` ✓.
+
+## 2026-10-27 — Corte de sobreposição conservador (fim das bolhas de 1–5 caracteres)
+
+- **IDs:** ISS-075, BR-043, T20 · **Refs:** [`issues.md`](issues.md),
+  [`../business-rules.md`](../business-rules.md) BR-043,
+  [`tasks/20-task.md`](tasks/20-task.md)
+
+### Sintoma
+*"Algumas vezes a transcrição picou em muitos balões, com frases curtas demais e
+imprecisas."* Na sessão `911fcf10…` (17:15), 24 falas finais viravam **30
+bolhas** na tela.
+
+### Causa
+`splitSpeechSpans` cortava a fala longa em **qualquer** início do outro canal,
+sem exigir fala longa, interrupção real ou partes legíveis. Saíam bolhas de
+`"e"` (1c), `"vez."` (4c), `"79."` (3c), `"Ei,"` (3c) e
+`"Beleza!"`/`"Seguim!"`. O texto no banco estava inteiro — o corte era só de
+exibição.
+
+### Decisão
+- Só dividir fala com **≥ 80 caracteres e ≥ 6 s**.
+- Só considerar interrupção do outro canal com **≥ 1,5 s**.
+- Exigir **≥ 20 caracteres e ≥ 3 palavras** em todas as partes; senão, manter a
+  fala inteira.
+- BR-043 revisada; nada no ASR/banco.
+
+### Entregue
+- `src/core/domain/chat.ts`: limiares `MIN_OVERLAP_*` em `splitSpeechSpans`.
+- Testes: fala curta + outro canal; interjeição curta; sobra sem contexto; caso
+  positivo de intercalação (ao vivo e histórico).
+
+### Verificação
+- Simulação com os dados reais: **30 → 25** bolhas na `911fcf10…` e **11 → 9** na
+  `a60933ea…`; os fragmentos de 1–5 caracteres somem.
+- `pnpm test` **520 ✓** (82 arquivos) · `tsc --noEmit` ✓ · `pnpm build` ✓.
+
+## 2026-10-27 — Fim da fala, não fim do turno: ordem cronológica no chat
+
+- **IDs:** ISS-079, BR-043, T21 · **Refs:** [`issues.md`](issues.md),
+  [`../business-rules.md`](../business-rules.md) BR-043,
+  [`tasks/21-task.md`](tasks/21-task.md)
+
+### Sintoma
+Na sessão `5984de1d…`, a fala do usuário (“Está bom, deixa eu pensar…”)
+aparecia antes do restante da pergunta do THEY (“…sugerir melhorias.”), embora a
+pergunta tivesse terminado antes.
+
+### Causa
+`publish_turn` gravava `end_ms = start_ms + cut_ms`; `cut_ms` é o fim do
+turno/buffer, não da fala. O `DecodedTurn.speech_end_ms` era calculado e
+ignorado. O THEY t7 ia até 127,937 s no banco, mas a fala terminou ~122,5 s; o ME
+começou em 122,765 s. O corte de sobreposição acreditava na sobreposição falsa.
+
+### Decisão
+- `publish_turn` recebe `speech_end_ms` e grava
+  `end_ms = start + speech_end.clamp(0, cut)`; prévia, final, promoção do VAD e
+  fallback usam o mesmo fim.
+- O overlap/linha temporal/classificador passam a usar o fim real.
+- Sessões antigas não são corrigidas (sem áudio).
+
+### Verificação
+- Pipeline: `EarlyEndAsr` (fala 500 ms, cut 2 s) → `end_ms=500`.
+- Chat: caso real (THEY termina antes do ME) → uma bolha de THEY, ME depois,
+  sem `#ov`.
+- `cargo test --lib` **844 ✓** · `pnpm test` **521 ✓** · clippy/fmt/tsc ✓.

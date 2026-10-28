@@ -3,7 +3,9 @@
 - **Status:** CONCLUDED
 - **Depende de:** 09, 10
 - **Habilita:** 12
-- **Issues:** — · **BR:** BR-040, BR-031
+- **Issues:** — · **BR:** BR-040, BR-031 (revogada pela BR-102/task 19)
+- **Nota:** o teto de 180/continuação citado abaixo é **histórico**; foi removido
+  pela [`19-task.md`](19-task.md) (ISS-073). Vale a BR-102.
 - **Refs:** [`../prd.md`](../prd.md) §9, [`../architecture/transcription-panel.md`](../architecture/transcription-panel.md) §3
 
 ## Objetivo
@@ -19,6 +21,10 @@ quem falou vem do **rótulo colorido + nome + hora**:
 
 Continua valendo o teto de 180 caracteres com continuação (BR-031), agora em
 cartões de largura total.
+
+> **Revisado (2026-10-27, task 19):** o teto de 180 e a continuação foram
+> removidos; uma fala finalizada é uma bolha só (BR-102). O texto abaixo é o
+> registro histórico da v0.2.
 
 ## Entregáveis
 

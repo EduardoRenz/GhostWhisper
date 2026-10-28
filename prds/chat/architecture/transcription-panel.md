@@ -109,20 +109,19 @@ pelo usuário (2026-10-19); o contrato em
 
 - Borda/fundo cyan (`rgba(0,242,254,.35)` / `.06`), sem `opacity` global.
 - Rótulo: `Microfone`/`Outros` + **"Falando agora…"** em `--oh-text-muted`.
-- À direita: pill **Streaming** com ponto cyan; só na **última** parte do split.
-- Texto com caret `▌` (CSS) na última parte; sem ação de IA.
+- À direita: pill **Streaming** com ponto cyan, na única bolha em andamento.
+- Texto com caret `▌` (CSS); sem ação de IA.
+- É **uma** bolha por falante, mesmo com texto longo — a prévia nunca é dividida
+  em continuações (BR-102).
 - O `…` de digitação existente pode continuar como reforço, desde que não
   duplique o selo.
 
 ### 3.3 Texto completo para a IA
 
-- `buildChatTimeline` continua dividindo a fala em partes de 180 caracteres
-  (BR-031), mas cada `SpeechBubble` carrega `source_text` = texto **inteiro** do
-  segmento.
-- A ação de IA só aparece na **primeira** parte (`!continues`) e envia
-  `source_text`, não o pedaço visível.
-- O histórico não precisa de `source_text` para a IA, mas mantém o campo para
-  simetria do domínio.
+- Cada `SpeechBubble` já carrega o texto **inteiro** da fala: não há split de
+  exibição (BR-102).
+- A ação de IA aparece na fala finalizada e envia o texto da própria bolha.
+- Tradução e copiar também usam o texto da bolha; a prévia não oferece a IA.
 
 ### 3.4 Intercalação por sobreposição (task 16)
 
@@ -140,15 +139,22 @@ Outros                  [== 10,001–20 s ==]
 
 - `splitSpeechSpans` encontra os `start_ms` do outro falante dentro de
   `[start, end]` e divide o texto em partes proporcionais ao tempo.
+- **Corte conservador (revisão 2026-10-27, ISS-075/task 20):** só divide fala
+  com **≥ 80 caracteres e ≥ 6 s**; só considera interrupção do outro canal com
+  **≥ 1,5 s**; e só divide se **todas as partes** tiverem **≥ 20 caracteres e
+  ≥ 3 palavras**. Senão, a fala fica inteira. Antes, qualquer início do outro
+  canal fatiava em pedaços de 1–5 caracteres (`"e"`, `"vez."`, `"Ei,"`).
 - O corte prefere fim de frase (`[.!?…\n]`) e, depois, espaço; se não houver
   corte seguro, a fala fica inteira.
 - A primeira parte mantém `at_ms`; as seguintes entram em `boundary + 1` para o
   desempate colocar a fala nova no meio. Cada parte é uma bolha normal (rótulo e
-  hora), não uma continuação silenciosa.
+  hora), não um pedaço sem rótulo.
 - O `buildChatTimeline` aplica no ao vivo; o `bubblesFromTimeline` aplica no
   histórico usando `end_ms` da `TimelineEntry`.
 - É um corte de **exibição**: o ASR, o banco e o export continuam com a fala
   inteira (o export é uma lista por item, sem as partes).
+- O `end_ms` do segmento é o **fim real da fala** (VAD/whisper), não o cut do
+  turno; é ele que decide se há sobreposição (ISS-079/task 21).
 
 ## 4. Handoff do contexto (task 12)
 
@@ -396,7 +402,7 @@ store (core) ──panel_open──▶ panel_opened
 |---|---|
 | Rodapé sem "Latência: 48ms · WebRTC" | não medimos latência e o produto não usa WebRTC; mostrar dado falso seria pior. O espaço mostra o motor/estado real |
 | Hora de parede `HH:MM:SS` na UI, com `at_ms` relativo no banco | o print mostra hora de parede; o dado persistido continua relativo à sessão (BR-019) |
-| Ação de IA só em fala finalizada e só na primeira parte do split | o texto da prévia ainda muda; a continuação é a mesma mensagem |
+| Ação de IA só em fala finalizada (nunca na prévia) | o texto da prévia ainda muda; a bolha final é a mensagem fechada |
 | Geração manual só no clique de "Gerar sugestão manual" | evita custo/LLM surpresa ao abrir a janela; o print/fluxo pede ação do usuário |
 | Contexto manual não persiste entre reinícios | é contexto de UI/sessão; sem schema novo (BR-002/BR-004) |
 | Manual **espera** o automático em vez de cancelá-lo | não há token de cancelamento no `LlmController`; esperar evita streams intercalados e chamadas concorrentes. Cancelamento/abort fica para task própria |
@@ -424,7 +430,7 @@ store (core) ──panel_open──▶ panel_opened
 - `formatMessageClock`: hora de parede, fallback `mm:ss`, zeros à esquerda.
 - `speakerLabel`: Microfone/Outros.
 - `ChatView`/`ChatBubble`: largura total, rótulos/cores, hora, Streaming, ação de
-  IA só em finalizada/primeira parte, texto completo no `source_text`.
+  IA só em fala finalizada; a prévia não é dividida (BR-102).
 - `HistoryPanel`: mesmo cartão e hora, sem ação de IA.
 - `useManualSuggestionContext`: busca no mount/`panel_opened`, troca de sessão.
 - `useSuggestions`: não gera ao abrir com contexto; `generateManual` envia o

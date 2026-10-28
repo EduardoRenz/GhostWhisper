@@ -74,6 +74,18 @@ fn evidence(block: &ConversationBlock, cue: SuggestionCue) -> String {
     turn.map(|turn| turn.text.clone()).unwrap_or_default()
 }
 
+/// Junta os turnos de THEY de um bloco (a pergunta pode estar fragmentada).
+fn they_text(block: &ConversationBlock) -> String {
+    block
+        .turns
+        .iter()
+        .filter(|turn| turn.speaker == Speaker::They)
+        .map(|turn| turn.text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl SuggestionCueClassifier for HeuristicSuggestionCueClassifier {
     fn classify(
         &self,
@@ -86,21 +98,15 @@ impl SuggestionCueClassifier for HeuristicSuggestionCueClassifier {
         // compara também a pergunta completa do bloco (com todos os turnos de
         // THEY), senão uma pergunta fragmentada escapa do histórico.
         if matches!(cue, SuggestionCue::Question | SuggestionCue::Comment) {
-            let they_text = request
-                .full_block
-                .turns
-                .iter()
-                .filter(|turn| turn.speaker == Speaker::They)
-                .map(|turn| turn.text.trim())
-                .filter(|text| !text.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ");
             let mut candidates: Vec<String> = Vec::new();
-            if let Some(question) = question_text(&request.full_block) {
-                candidates.push(question);
-            }
-            if !they_text.is_empty() {
-                candidates.push(they_text);
+            for source in [&request.block, &request.full_block] {
+                if let Some(question) = question_text(source) {
+                    candidates.push(question);
+                }
+                let text = they_text(source);
+                if !text.is_empty() {
+                    candidates.push(text);
+                }
             }
             if candidates.iter().any(|candidate| {
                 is_repeated_question(candidate, &request.prior_questions, &self.config)
@@ -130,6 +136,42 @@ impl SuggestionCueClassifier for HeuristicSuggestionCueClassifier {
 
     fn backend_id(&self) -> &'static str {
         "heuristic"
+    }
+
+    fn already_answered(&self, request: &ClassificationRequest) -> Option<ClassificationOutcome> {
+        if request.prior_questions.is_empty() {
+            return None;
+        }
+        // Compara o alvo e o bloco inteiro: uma pergunta repetida pode vir
+        // deslocada (introdução a mais) ou só como cauda/fragmento. A
+        // comparação é lexical, sem listas de palavras/idioma (R23/ISS-081).
+        let candidates = [they_text(&request.block), they_text(&request.full_block)];
+        let matched = candidates.iter().find(|text| {
+            !text.is_empty() && is_repeated_question(text, &request.prior_questions, &self.config)
+        })?;
+        let evidence = matched.clone();
+        Some(
+            ClassificationOutcome {
+                block_id: request.block.id.clone(),
+                session_id: request.session_id.clone(),
+                cue: crate::domain::suggestion_gate::SuggestionCue::AlreadyAnswered,
+                should_suggest: false,
+                confidence: confidence(
+                    crate::domain::suggestion_gate::SuggestionCue::AlreadyAnswered,
+                ),
+                evidence,
+                focus: None,
+                backend: "heuristic".to_string(),
+                model: None,
+                latency_ms: 0,
+                block_start_ms: request.block.start_ms,
+                block_end_ms: request.block.end_ms,
+                turn_count: request.block.turns.len(),
+                classified_at_ms: request.now_ms,
+                abstained: false,
+            }
+            .normalized(),
+        )
     }
 }
 

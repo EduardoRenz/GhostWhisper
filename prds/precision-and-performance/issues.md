@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-062**.
+único no repositório). Próximo ID livre: **ISS-083**.
 
 > `ISS-022` permanece reservada pelo PRD [`assistant`](../assistant/issues.md);
 > esta PRD começa em `ISS-023` para não colidir.
@@ -20,6 +20,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ISS-059 | Prompt instrucional vazava para a transcrição (frases sem sentido) | Alta | FIXED |
 | ISS-060 | Balão do ME passava à frente do turno longo do THEY (relógio por canal + prévia no fim) | Alta | FIXED |
 | ISS-061 | Encerramento antes da GPU condenava o próximo boot à CPU (10× mais lento) | Alta | FIXED |
+| ISS-074 | Fala contínua não tem commit em blocos (bolhas menores exigem cortar áudio) | Média | OPEN |
 
 ---
 
@@ -181,6 +182,29 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 - **Task:** [`tasks/07-task.md`](tasks/07-task.md)
 
 ---
+
+## ISS-074 — Fala contínua não tem commit em blocos (limitação de bolhas menores)
+
+- **Severidade:** Média · **Status:** OPEN (experimento — sem implementação)
+- **Sintoma:** falas contínuas (o Interlocutor falando sem pausas) só fecham o
+  turno no silêncio (1 s) ou no teto de 25 s. A bolha final fica longa e não há
+  como "ouvir um pedaço → processar → commitar → continuar" para produzir bolhas
+  menores que já nasçam concluídas.
+- **Causa raiz:** o pipeline só tem fronteiras seguras em pausas. O fechamento
+  antecipado por pontuação forte + 0,7 s (`silence_sentence_ms`) foi avaliado e
+  rejeitado (ISS-058): mais turnos sem contexto, mais erros de fronteira e fila.
+  O teto de 25 s corta no meio da fala. Ver a BR-102 (uma fala finalizada = uma
+  bolha) e a decisão do PRD `chat` (ISS-073).
+- **Caminho proposto (não implementado):** decode final do buffer, commit do
+  **prefixo autoritativo** usando `start_timestamp`/`end_timestamp` dos segmentos
+  do Whisper (manter o áudio do último segmento, com sobreposição de ~0,5–1 s,
+  para re-decodificar no próximo bloco). Ligado por env, default **off**.
+- **Riscos:** repetir/perder palavra na emenda; um beam por bloco (custo/latência);
+  mais turnos no banco e no gate de sugestões.
+- **Aceite do experimento:** A/B manual em fala contínua com o mesmo áudio;
+  nenhuma palavra perdida/repetida; p95 do commit ≤ ~2,5 s; só então avaliar
+  ligar por padrão.
+- **Task:** [`tasks/08-task.md`](tasks/08-task.md)
 
 <!--
 Modelo:

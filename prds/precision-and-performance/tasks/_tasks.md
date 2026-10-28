@@ -14,6 +14,7 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 | 05 | Prompt como contexto: default vazio, migração e aviso na UI | L2 | IN PROGRESS |
 | 06 | Commit por frase (etapa 3): avaliada e rejeitada — código removido | L3 | CANCELED |
 | 07 | Ordem entre canais (relógio + prévia no lugar) e GPU sem falso positivo | L4 | IN PROGRESS |
+| 08 | Commit em blocos por prefixo autoritativo (experimento opt-in, A/B) | E4 | PENDING |
 
 ## Dependências
 
@@ -28,6 +29,9 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 - 04 depende de 03 (reuso do final + VAD nativo) e da fila global do ASR; não
   depende do provider em nuvem. É a **etapa 1** do plano de latência; a etapa 2
   (commit otimista + correção) e a 3 (commit por frase) ainda não estão criadas.
+- 08 é um **experimento** posterior à 04, hoje só especificado (ISS-074): commit
+  por prefixo autoritativo para bolhas menores que já nascem concluídas. Default
+  off; só liga com A/B aprovado. Ver [`08-task.md`](08-task.md).
 - 05 é independente (prompt/idioma) e depende só de 01 para o contrato do
   `whisper_prompt`; a UI usa o mesmo campo.
 - 06 depende de 03 (reuso do final/VAD) e 04 (métrica). Foi implementada como

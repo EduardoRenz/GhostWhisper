@@ -13,9 +13,9 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use crate::domain::settings::Settings;
 use crate::domain::suggestion_gate::{
-    build_blocks, decide, question_title, they_target, BlockConfig, ClassifierSensitivity,
-    ConversationBlock, GateDecision, GateSkipReason, GateTick, HeuristicConfig, PriorQuestion,
-    SuggestionCue,
+    build_blocks, decide, question_title, target_across_blocks, they_target, BlockConfig,
+    ClassifierSensitivity, ConversationBlock, GateDecision, GateSkipReason, GateTick,
+    HeuristicConfig, PriorQuestion, SuggestionCue,
 };
 use crate::ports::clock::Clock;
 use crate::ports::event_publisher::{
@@ -48,14 +48,13 @@ fn selected_mode_context(settings: &Settings) -> String {
     }) else {
         return String::new();
     };
-    let mut parts = vec![format!("Agente: {} ({})", mode.name, mode.category)];
+    let mut parts = vec![format!("Agent: {} ({})", mode.name, mode.category)];
     if !mode.context.trim().is_empty() {
-        parts.push(format!("Contexto do agente: {}", mode.context.trim()));
+        parts.push(format!("Agent context: {}", mode.context.trim()));
     }
-    if !mode.suggestion_prompt.trim().is_empty() {
-        let focus: String = mode.suggestion_prompt.chars().take(500).collect();
-        parts.push(format!("Foco do agente: {focus}"));
-    }
+    // O `suggestion_prompt` é instrução de **geração**, não de classificação.
+    // Passá-lo ao Laya (500 chars de "write the exact words ME should say")
+    // enviesava o cue e fazia perguntas virarem no_action (ISS-079).
     parts.join("\n")
 }
 
@@ -330,10 +329,24 @@ impl SuggestionGate for SuggestionGateService {
             return Err(SuggestionGateError::NoBlock);
         }
 
-        // O alvo é só o que THEY falou desde a última fala de ME. O bloco
-        // completo continua disponível em `full_block` como contexto.
-        let target =
-            they_target(block, config.heuristic.min_words).ok_or(SuggestionGateError::NoBlock)?;
+        // O alvo é o que THEY falou desde a última fala significativa de ME.
+        // Uma pergunta longa pode ter sido dividida em dois blocos (limite de
+        // tempo do `build_blocks`): junta os blocos contíguos para o
+        // classificador ver a pergunta inteira, não só o último turno.
+        let (target, full_block, start_index) = match target_across_blocks(
+            &blocks,
+            index,
+            config.heuristic.min_words,
+            config.block.max_turns,
+            config.block.gap_ms,
+        ) {
+            Some((target, full, start)) => (target, full, start),
+            None => {
+                let target = they_target(block, config.heuristic.min_words)
+                    .ok_or(SuggestionGateError::NoBlock)?;
+                (target, block.clone(), index)
+            }
+        };
 
         if let Some(cached) = self.lock_state().last.get(session_id) {
             if cached.block_id == target.id {
@@ -341,8 +354,8 @@ impl SuggestionGate for SuggestionGateService {
             }
         }
 
-        let context_start = index.saturating_sub(config.context_blocks);
-        let context = blocks[context_start..index].to_vec();
+        let context_start = start_index.saturating_sub(config.context_blocks);
+        let context = blocks[context_start..start_index].to_vec();
         let prior_questions = self
             .lock_state()
             .answered_questions
@@ -352,7 +365,7 @@ impl SuggestionGate for SuggestionGateService {
         let request = ClassificationRequest {
             session_id: session_id.to_string(),
             block: target.clone(),
-            full_block: block.clone(),
+            full_block: full_block.clone(),
             context,
             locale: config.locale.clone(),
             mode_id: config.mode_id.clone(),
@@ -377,9 +390,13 @@ impl SuggestionGate for SuggestionGateService {
                 {
                     let mut state = self.lock_state();
                     if outcome.cue.can_suggest() {
+                        // O histórico guarda a pergunta do bloco inteiro, não só
+                        // o alvo: um ME curto no meio ("e pode perguntar então")
+                        // cortava a pergunta em duas e a repetição não era
+                        // reconhecida (ISS-081).
                         state
                             .question_titles
-                            .insert(outcome.block_id.clone(), question_title(&target));
+                            .insert(outcome.block_id.clone(), question_title(&full_block));
                     } else {
                         state.question_titles.remove(&outcome.block_id);
                     }
@@ -390,7 +407,7 @@ impl SuggestionGate for SuggestionGateService {
                         remember_answered(
                             &mut state,
                             session_id,
-                            question_title(&target),
+                            question_title(&full_block),
                             &outcome.block_id,
                             now,
                             config.answered_questions,
@@ -945,6 +962,10 @@ mod tests {
         let config = config_from_settings(&settings);
         assert!(config.allow_single_speaker);
         assert!(config.mode_context.contains("Entrevista Técnica"));
+        // Instrução de geração não pode ir para o classificador.
+        assert!(!config
+            .mode_context
+            .contains("live technical-interview copilot"));
         assert_eq!(config.confidence_min, 0.50);
 
         let heuristic = Settings {
@@ -1305,6 +1326,95 @@ mod tests {
     }
 
     #[test]
+    fn a_repeated_question_from_the_real_2026_10_28_session_is_already_answered() {
+        // Regressão da sessão `5f8595a7…` (2026-10-28): a 1ª sugestão guardou
+        // só a segunda metade da pergunta do load balancer (o ME "e pode
+        // perguntar então" cortou o alvo). A repetição, que começa no meio da
+        // pergunta, tem de virar `already_answered` na guarda do Laya (ISS-081).
+        use crate::adapters::ai::settings_suggestion_cue_classifier::SettingsSuggestionCueClassifier;
+        use crate::adapters::settings::memory::InMemorySettingsStore;
+        use crate::domain::settings::Settings;
+
+        let laya = Arc::new(FakeSuggestionCueClassifier::new());
+        laya.push_outcome(outcome(SuggestionCue::Question, true));
+        let settings = Arc::new(InMemorySettingsStore::with_settings(Settings {
+            suggestion_classifier_backend: "laya".to_string(),
+            ..Settings::default()
+        }));
+        let classifier = Arc::new(SettingsSuggestionCueClassifier::new(
+            settings,
+            Arc::new(HeuristicSuggestionCueClassifier::default()),
+            Some(laya.clone()),
+        ));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        let first_half = "Pergunta dissertativa. Load balancer. Você precisa construir uma aplicação web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você está?";
+        let second_half = "você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou HAPROXY.";
+        let repeated = "web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo, onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS ALB, e uma solução própria, como Enginix ou Haproxy.";
+
+        repo.insert(&segment(
+            "me0",
+            Speaker::Me,
+            "Muito bem, vamos lá.",
+            0,
+            5_000,
+        ))
+        .unwrap();
+        repo.insert(&segment("t1", Speaker::They, first_half, 2_000, 10_000))
+            .unwrap();
+        repo.insert(&segment(
+            "me1",
+            Speaker::Me,
+            "e pode perguntar então.",
+            3_000,
+            4_000,
+        ))
+        .unwrap();
+        repo.insert(&segment("t2", Speaker::They, second_half, 10_000, 20_000))
+            .unwrap();
+        let gate = SuggestionGateService::new(
+            classifier,
+            repo.clone(),
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(60_000)),
+            Arc::new(RecordingPublisher::default()),
+            config(),
+        );
+
+        let first = gate.classify_latest("s1").expect("primeira");
+        assert_eq!(first.cue, SuggestionCue::Question);
+        gate.mark_generated("s1", &first.block_id, 60_000);
+        let history = gate
+            .lock_state()
+            .answered_questions
+            .get("s1")
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].title.contains("Load balancer"));
+        assert!(
+            history[0].title.contains("você colocaria"),
+            "o histórico precisa guardar as duas metades: {}",
+            history[0].title
+        );
+
+        repo.insert(&segment(
+            "me2",
+            Speaker::Me,
+            "Ah, colocaria um bloco de balance entre os clientes e as instâncias.",
+            21_000,
+            25_000,
+        ))
+        .unwrap();
+        repo.insert(&segment("t3", Speaker::They, repeated, 25_000, 40_000))
+            .unwrap();
+
+        let second = gate.classify_latest("s1").expect("segunda");
+        assert_eq!(second.cue, SuggestionCue::AlreadyAnswered);
+        assert_eq!(second.backend, "heuristic");
+        assert_eq!(laya.requests().len(), 1, "a guarda não deve chamar o Laya");
+    }
+
+    #[test]
     fn a_generated_comment_also_enters_the_answered_history() {
         let classifier = Arc::new(FakeSuggestionCueClassifier::new());
         classifier.push_outcome(outcome(SuggestionCue::Comment, true));
@@ -1412,6 +1522,131 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[1].prior_questions.len(), 1);
         assert!(requests[1].prior_questions[0].title.contains("mutex"));
+    }
+
+    #[test]
+    fn a_repeated_question_in_a_later_block_is_already_answered() {
+        // Regressão da sessão real de 2026-10-27 18:19: a mesma pergunta de
+        // load balancer foi feita 3 vezes, com a resposta do ME no meio, e o
+        // classificador nunca devolveu `already_answered`.
+        let classifier = Arc::new(HeuristicSuggestionCueClassifier::default());
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        let q1 = "Pergunta Dissertativa Load Balancer. Você precisa construir uma aplicação que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você colocaria o Load Balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo? Explique também a diferença entre usar um Load Balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou Haproxy.";
+        let q2 = "Pergunta Dissertativa Load balancer. Você precisa construir uma aplicação web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo? Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS e uma solução própria, como Enginex ou Habit.";
+        let answer = "É, na real eu colocaria um load balancer na entrada depois de DNS e antes de instâncias de back-end, distribuir o tráfico e remover instâncias não saudáveis via health checks.";
+
+        repo.insert(&segment("q1", Speaker::They, q1, 91_000, 141_000))
+            .unwrap();
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        let gate = SuggestionGateService::new(
+            classifier,
+            repo.clone(),
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(300_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        let first = gate.classify_latest("s1").expect("primeira");
+        assert!(first.cue.can_suggest(), "primeira pergunta deve sugerir");
+        gate.mark_generated("s1", &first.block_id, 141_000);
+        assert!(
+            gate.lock_state()
+                .answered_questions
+                .get("s1")
+                .is_some_and(|history| !history.is_empty()),
+            "a primeira pergunta deveria entrar no histórico"
+        );
+
+        repo.insert(&segment("answer", Speaker::Me, answer, 153_000, 174_000))
+            .unwrap();
+        repo.insert(&segment("q2", Speaker::They, q2, 191_000, 226_000))
+            .unwrap();
+        let second = gate.classify_latest("s1").expect("segunda");
+        assert_eq!(
+            second.cue,
+            SuggestionCue::AlreadyAnswered,
+            "a pergunta repetida deveria ser already_answered"
+        );
+    }
+
+    #[test]
+    fn load_balancer_question_sends_the_full_question_to_the_classifier() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        let segs = [
+            ("me0", Speaker::Me, "Vamos lá, vamos para o meu sete-over.", 90, 4_142),
+            ("t0", Speaker::They, "Pergunta Dissertativa. Load balancer. Você precisa construir uma aplicação web", 1_963, 26_963),
+            ("me1", Speaker::Me, "vamos começar a ouvir.", 7_214, 9_433),
+            ("t1", Speaker::They, "receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo.", 26_963, 33_963),
+            ("t2", Speaker::They, "o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou HAPROXY.", 33_963, 51_883),
+        ];
+        for (id, speaker, text, start, end) in segs {
+            repo.insert(&segment(id, speaker, text, start, end))
+                .unwrap();
+        }
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        let gate = SuggestionGateService::new(
+            classifier.clone(),
+            repo,
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(80_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        gate.classify_latest("s1").expect("classificação");
+        let requests = classifier.requests();
+        assert_eq!(requests.len(), 1);
+        let texts: Vec<&str> = requests[0]
+            .block
+            .turns
+            .iter()
+            .map(|turn| turn.text.as_str())
+            .collect();
+        assert!(texts.iter().any(|text| text.contains("quais ferramentas")));
+    }
+
+    #[test]
+    fn architecture_question_sends_all_they_turns_to_the_classifier() {
+        // Sessão `0e882d0a…` (19:41): a pergunta de arquitetura veio em 4 turnos
+        // de THEY e o `build_blocks` divide no limite de tempo. O gate precisa
+        // juntar os blocos contíguos e mandar a pergunta inteira ao classificador.
+        let segments = [
+            ("me", Speaker::Me, "Muito bem, vamos começar então.", 50, 8_966),
+            ("they0", Speaker::They, "e aí", 1_907, 13_811),
+            ("they1", Speaker::They, "Pergunta de certativa. Arquitetura de software. Imagine que você é o tech lead de uma aplicação financeira que processa transferências bancárias. Dois clientes tentam transferir dinheiro da mesma conta ao mesmo tempo.", 13_919, 38_919),
+            ("they2", Speaker::They, "como você projetaria essa...", 38_919, 41_951),
+            ("they3", Speaker::They, "a solução para garantir consistência dos dados e evitar problemas de concorrência. Responda como se estivesse em uma entrevista técnica. Depois, vou avaliar sua resposta e sugerir melhorias.", 41_951, 53_983),
+        ];
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        for (id, speaker, text, start, end) in segments {
+            repo.insert(&segment(id, speaker, text, start, end))
+                .unwrap();
+        }
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        cfg.block.max_block_ms = 45_000;
+        let gate = SuggestionGateService::new(
+            classifier.clone(),
+            repo,
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(60_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        gate.classify_latest("s1").expect("classificação");
+        let requests = classifier.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].block.turns.len(),
+            4,
+            "o alvo precisa levar os 4 turnos de THEY, não só o último"
+        );
+        assert_eq!(requests[0].full_block.turns.len(), 5);
     }
 
     #[test]

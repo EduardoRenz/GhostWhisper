@@ -161,7 +161,10 @@ impl SuggestionCue {
 /// Uma pergunta já respondida que o classificador usa para detectar repetição.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PriorQuestion {
-    /// Título curto (a própria pergunta, truncada).
+    /// Texto da pergunta para a comparação de repetição.
+    ///
+    /// O prompt do classificador mostra só os primeiros `QUESTION_PROMPT_MAX_CHARS`
+    /// caracteres; o texto completo fica aqui para o matching (ISS-081).
     pub title: String,
     /// Bloco que originou a pergunta.
     pub block_id: String,
@@ -170,9 +173,13 @@ pub struct PriorQuestion {
 }
 
 impl PriorQuestion {
-    /// Título seguro para prompt/UI (≤ 180 caracteres).
+    /// Texto seguro para o histórico de comparação.
     pub fn normalized(mut self) -> Self {
-        self.title = self.title.chars().take(180).collect();
+        self.title = self
+            .title
+            .chars()
+            .take(QUESTION_HISTORY_MAX_CHARS)
+            .collect();
         self
     }
 }
@@ -452,11 +459,32 @@ pub fn question_text(block: &ConversationBlock) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-/// Título curto do bloco para o histórico de já respondidas.
+/// Teto do texto guardado no histórico para comparar repetições.
+///
+/// É maior que o trecho exibido no prompt: a pergunta inteira precisa estar no
+/// histórico para o Jaccard não ser diluído por um começo diferente (ISS-081).
+pub const QUESTION_HISTORY_MAX_CHARS: usize = 600;
+
+/// Trecho de cada pergunta já respondida mostrado no prompt do classificador.
+pub const QUESTION_PROMPT_MAX_CHARS: usize = 180;
+
+/// Janela (em tokens de conteúdo) do Jaccard deslizante.
+const REPEAT_WINDOW_TOKENS: usize = 24;
+/// Passo das janelas deslizantes.
+const REPEAT_WINDOW_STRIDE: usize = 6;
+/// Contenção mínima para reconhecer uma cauda/fragmento de pergunta repetida.
+const REPEAT_CONTAINMENT_MIN: f32 = 0.75;
+/// Tokens de conteúdo mínimos no lado menor para a contenção valer.
+const REPEAT_CONTAINMENT_MIN_TOKENS: usize = 8;
+/// Tokens em comum mínimos para a contenção valer.
+const REPEAT_CONTAINMENT_MIN_SHARED: usize = 6;
+
+/// Texto do bloco para o histórico de já respondidas.
 ///
 /// Usa a fala completa de THEY (não só a última pergunta): a pergunta real pode
-/// estar dividida em vários turnos ou vir depois de uma explicação. Se não
-/// houver THEY, usa a última fala.
+/// estar dividida em vários turnos ou vir depois de uma explicação. O texto é
+/// guardado até `QUESTION_HISTORY_MAX_CHARS` para a comparação; o prompt usa um
+/// trecho menor. Se não houver THEY, usa a última fala.
 pub fn question_title(block: &ConversationBlock) -> String {
     let they_text = block
         .turns
@@ -475,7 +503,7 @@ pub fn question_title(block: &ConversationBlock) -> String {
     } else {
         they_text
     };
-    raw.chars().take(180).collect()
+    raw.chars().take(QUESTION_HISTORY_MAX_CHARS).collect()
 }
 
 /// Fala de ME que conta como resposta (e não como ruído/backchannel curto).
@@ -604,6 +632,84 @@ pub fn they_target(block: &ConversationBlock, min_me_words: usize) -> Option<Con
     })
 }
 
+/// Junta o alvo com os blocos anteriores **contíguos** quando a divisão foi só
+/// por tempo/tamanho e a fronteira continua em THEY.
+///
+/// O `build_blocks` corta um bloco ao passar de `max_block_ms`; uma pergunta
+/// longa (ou uma fala de THEY sem pausa) pode virar dois blocos. O classificador
+/// precisa ver a pergunta inteira: o alvo é a sequência de turnos de THEY desde
+/// a última fala significativa de ME, mesmo atravessando blocos. Só junta quando
+/// a distância entre os blocos é menor que `gap_ms` (divisão por tamanho, não por
+/// pausa) e sem ME no bloco atual.
+///
+/// Devolve `(alvo, bloco completo, índice do primeiro bloco usado)`.
+pub fn target_across_blocks(
+    blocks: &[ConversationBlock],
+    index: usize,
+    min_me_words: usize,
+    max_turns: usize,
+    gap_ms: i64,
+) -> Option<(ConversationBlock, ConversationBlock, usize)> {
+    let current = blocks.get(index)?;
+    let mut target = they_target(current, min_me_words)?;
+    // Só junta quando o alvo começa no **primeiro turno do bloco**. Se houver um
+    // ME antes do alvo, ele é a fronteira (resposta/novo turno) e não se junta;
+    // um ME depois do alvo (ex.: "deixa eu pensar") não impede.
+    let first_block_start = current.turns.first()?.start_ms;
+    if target.turns.first().map(|turn| turn.start_ms) != Some(first_block_start) {
+        return None;
+    }
+    let mut full = current.clone();
+    let mut start_index = index;
+
+    while start_index > 0 {
+        let prev = &blocks[start_index - 1];
+        // A fronteira precisa continuar em THEY (sem resposta de ME no meio).
+        if prev.turns.last().map(|turn| turn.speaker) != Some(Speaker::They) {
+            break;
+        }
+        // Pausa real (bloco novo por gap) não junta; só divisão por tamanho.
+        if full.start_ms.saturating_sub(prev.end_ms) >= gap_ms {
+            break;
+        }
+        let Some(prev_target) = they_target(prev, min_me_words) else {
+            break;
+        };
+        if target.turns.len() + prev_target.turns.len() > max_turns {
+            break;
+        }
+        let start = prev_target.start_ms;
+        let they_chars = target.they_chars + prev_target.they_chars;
+        let mut turns = prev_target.turns;
+        turns.extend(target.turns);
+        target.turns = turns;
+        target.start_ms = start;
+        target.they_chars = they_chars;
+        full = combine_blocks(prev, &full);
+        start_index -= 1;
+    }
+
+    Some((target, full, start_index))
+}
+
+fn combine_blocks(prev: &ConversationBlock, current: &ConversationBlock) -> ConversationBlock {
+    ConversationBlock {
+        id: current.id.clone(),
+        session_id: current.session_id.clone(),
+        start_ms: prev.start_ms,
+        end_ms: current.end_ms,
+        turns: prev
+            .turns
+            .iter()
+            .chain(current.turns.iter())
+            .cloned()
+            .collect(),
+        me_chars: prev.me_chars + current.me_chars,
+        they_chars: prev.they_chars + current.they_chars,
+        is_open: current.is_open,
+    }
+}
+
 /// ME já respondeu dentro do próprio bloco depois da última pergunta de THEY.
 fn answered_in_block(block: &ConversationBlock) -> bool {
     let Some(last_question) = block
@@ -713,11 +819,15 @@ fn invites_comment(text: &str) -> bool {
     has_question_mark(text) && WEAK.iter().any(|marker| lower.contains(marker))
 }
 
-fn word_set(text: &str) -> std::collections::HashSet<String> {
+fn content_tokens(text: &str) -> Vec<String> {
     normalized_words(text)
         .into_iter()
         .filter(|word| word.chars().count() > 2)
         .collect()
+}
+
+fn word_set(text: &str) -> std::collections::HashSet<String> {
+    content_tokens(text).into_iter().collect()
 }
 
 fn jaccard(
@@ -732,23 +842,84 @@ fn jaccard(
     intersection / union
 }
 
+/// Janelas de tokens de conteúdo, incluindo sempre a última (cauda).
+fn token_windows(tokens: &[String]) -> Vec<&[String]> {
+    if tokens.len() <= REPEAT_WINDOW_TOKENS {
+        return vec![tokens];
+    }
+    let last = tokens.len() - REPEAT_WINDOW_TOKENS;
+    let mut starts: Vec<usize> = (0..=last).step_by(REPEAT_WINDOW_STRIDE).collect();
+    if starts.last().copied() != Some(last) {
+        starts.push(last);
+    }
+    starts
+        .into_iter()
+        .map(|start| &tokens[start..start + REPEAT_WINDOW_TOKENS])
+        .collect()
+}
+
+/// Maior Jaccard entre uma janela de cada lado.
+///
+/// O histórico e a fala atual podem começar em pontos diferentes (uma
+/// introdução a mais, uma repetição que retoma do meio); comparar só os
+/// primeiros 180 caracteres fazia a mesma pergunta escapar (ISS-081).
+fn max_window_jaccard(left: &[String], right: &[String]) -> f32 {
+    let left_windows = token_windows(left);
+    let right_windows = token_windows(right);
+    let mut best = 0.0f32;
+    for left_window in &left_windows {
+        let left_set: std::collections::HashSet<String> = left_window.iter().cloned().collect();
+        for right_window in &right_windows {
+            let right_set: std::collections::HashSet<String> =
+                right_window.iter().cloned().collect();
+            best = best.max(jaccard(&left_set, &right_set));
+        }
+    }
+    best
+}
+
 /// `true` quando a pergunta atual repete uma pergunta já respondida.
+///
+/// Três sinais, todos lexicais e independentes de idioma (R23):
+///
+/// 1. Jaccard do texto inteiro (pergunta longa repetida por inteiro);
+/// 2. maior Jaccard entre janelas deslizantes (repetição deslocada, com uma
+///    introdução a mais ou retomando do meio);
+/// 3. contenção (cauda/fragmento da pergunta), com mínimo de tokens para não
+///    casar um "ok"/"beleza" com qualquer histórico.
 pub fn is_repeated_question(
     question: &str,
     prior_questions: &[PriorQuestion],
     config: &HeuristicConfig,
 ) -> bool {
-    let current = word_set(question);
-    if current.is_empty() {
+    let current_tokens = content_tokens(question);
+    if current_tokens.is_empty() {
         return false;
     }
+    let current = word_set(question);
     let normalized_current = normalized_words(question).join(" ");
     prior_questions.iter().any(|prior| {
+        let previous_tokens = content_tokens(&prior.title);
+        if previous_tokens.is_empty() {
+            return false;
+        }
+        let previous = word_set(&prior.title);
         if normalized_words(&prior.title).join(" ") == normalized_current {
             return true;
         }
-        let previous = word_set(&prior.title);
-        jaccard(&current, &previous) >= config.repeated_question_similarity
+        if jaccard(&current, &previous) >= config.repeated_question_similarity {
+            return true;
+        }
+        if max_window_jaccard(&current_tokens, &previous_tokens)
+            >= config.repeated_question_similarity
+        {
+            return true;
+        }
+        let shared = current.intersection(&previous).count();
+        let shorter = current.len().min(previous.len());
+        shared >= REPEAT_CONTAINMENT_MIN_SHARED
+            && shorter >= REPEAT_CONTAINMENT_MIN_TOKENS
+            && (shared as f32 / shorter as f32) >= REPEAT_CONTAINMENT_MIN
     })
 }
 
@@ -1213,6 +1384,73 @@ mod tests {
     }
 
     #[test]
+    fn target_across_blocks_merges_a_contiguous_they_block_with_a_trailing_filler() {
+        // Uma pergunta longa dividida em dois blocos pelo limite de tempo; o ME
+        // só "deixa eu pensar" depois do último turno de THEY. O alvo precisa
+        // levar a pergunta inteira.
+        let first = block_with_turns(vec![
+            ("me", Speaker::Me, "vamos começar", 0, 500),
+            (
+                "q1",
+                Speaker::They,
+                "primeira parte da pergunta",
+                1_000,
+                2_000,
+            ),
+            (
+                "q2",
+                Speaker::They,
+                "segunda parte da pergunta",
+                2_000,
+                3_000,
+            ),
+        ]);
+        let second = block_with_turns(vec![
+            (
+                "q3",
+                Speaker::They,
+                "terceira parte da pergunta",
+                3_000,
+                4_000,
+            ),
+            ("me2", Speaker::Me, "deixa eu pensar", 4_000, 4_600),
+        ]);
+        let (target, full, start) =
+            target_across_blocks(&[first, second], 1, 3, 12, 1_000).expect("alvo");
+        assert_eq!(start, 0);
+        assert_eq!(target.turns.len(), 3);
+        assert_eq!(target.turns[2].text, "terceira parte da pergunta");
+        assert_eq!(full.turns.len(), 5);
+    }
+
+    #[test]
+    fn target_across_blocks_does_not_cross_a_meaningful_me_answer() {
+        let first = block_with_turns(vec![("q1", Speaker::They, "primeira pergunta?", 0, 1_000)]);
+        let second = block_with_turns(vec![
+            (
+                "me",
+                Speaker::Me,
+                "minha resposta substantiva",
+                1_000,
+                2_000,
+            ),
+            ("q2", Speaker::They, "segunda pergunta?", 2_000, 3_000),
+        ]);
+        assert!(target_across_blocks(&[first, second], 1, 3, 12, 1_000).is_none());
+    }
+
+    #[test]
+    fn target_across_blocks_respects_a_real_pause() {
+        let first = block_with_turns(vec![("q1", Speaker::They, "primeira parte", 0, 1_000)]);
+        let second = block_with_turns(vec![("q2", Speaker::They, "segunda parte", 2_000, 3_000)]);
+        let (target, full, start) =
+            target_across_blocks(&[first, second], 1, 3, 12, 1_000).expect("alvo");
+        assert_eq!(start, 1);
+        assert_eq!(target.turns.len(), 1);
+        assert_eq!(full.turns.len(), 1);
+    }
+
+    #[test]
     fn short_me_noise_does_not_hide_the_they_question() {
         let block = block_with_turns(vec![
             ("a", Speaker::They, "o que você faz?", 0, 1_000),
@@ -1428,6 +1666,104 @@ mod tests {
             heuristic_cue(&block, &heuristic_config(), &unrelated),
             SuggestionCue::Question
         );
+    }
+
+    #[test]
+    fn long_repeated_question_still_matches_a_truncated_history_entry() {
+        // Regressão da sessão real de 2026-10-27: o histórico antigo guardava a
+        // pergunta truncada em 180 caracteres e a pergunta atual chegava
+        // inteira (400+). O Jaccard do texto completo + janelas deslizantes
+        // continua reconhecendo a repetição sem depender da janela fixa
+        // (ISS-076/ISS-081).
+        let first = "Pergunta Dissertativa Load Balancer. Você precisa construir uma aplicação que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você colocaria o Load Balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo?";
+        let repeated = "Pergunta Dissertativa Load balancer. Você precisa construir uma aplicação web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo? Explique também a diferença entre usar um load balancer gerenciado na nuvem e uma solução própria.";
+        let title: String = first.chars().take(180).collect();
+        let block = block_with_turns(vec![("a", Speaker::They, repeated, 1_000, 40_000)]);
+        assert_eq!(
+            heuristic_cue(&block, &heuristic_config(), &[prior(&title)]),
+            SuggestionCue::AlreadyAnswered
+        );
+
+        // Uma pergunta diferente continua sendo pergunta.
+        let other = block_with_turns(vec![(
+            "a",
+            Speaker::They,
+            "Como você projetaria um sistema de filas com garantia de entrega?",
+            1_000,
+            2_000,
+        )]);
+        assert_eq!(
+            heuristic_cue(&other, &heuristic_config(), &[prior(&title)]),
+            SuggestionCue::Question
+        );
+    }
+
+    #[test]
+    fn a_repeated_load_balancer_question_with_a_different_start_is_already_answered() {
+        // Sessão `5f8595a7…` (2026-10-28): a 1ª sugestão guardou só a segunda
+        // metade ("e pode perguntar então" cortou o alvo) e a repetição começou
+        // no meio da pergunta. A janela fixa dava Jaccard 0,22 (ISS-081).
+        let first_half = "Pergunta dissertativa. Load balancer. Você precisa construir uma aplicação web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo. Onde você está?";
+        let second_half = "você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou HAPROXY.";
+        let repeated = "web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo, onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS ALB, e uma solução própria, como Enginix ou Haproxy.";
+
+        // Título antigo (só a segunda metade, truncada em 180).
+        let old_title: String = second_half.chars().take(180).collect();
+        assert!(is_repeated_question(
+            repeated,
+            &[prior(&old_title)],
+            &heuristic_config()
+        ));
+
+        // Título novo (bloco inteiro, com as duas metades).
+        let full = format!("{first_half} {second_half}");
+        assert!(is_repeated_question(
+            repeated,
+            &[prior(&full)],
+            &heuristic_config()
+        ));
+
+        // Uma pergunta diferente não é repetição.
+        assert!(!is_repeated_question(
+            "Como você projetaria um sistema de filas com garantia de entrega?",
+            &[prior(&full)],
+            &heuristic_config()
+        ));
+    }
+
+    #[test]
+    fn the_tail_of_a_suggested_question_is_already_answered() {
+        // Sessão `5f8595a7…`: a pergunta do amigo/dinheiro foi repetida apenas
+        // pela cauda ("... C. Ignora e muda de assunto."). O Jaccard simétrico
+        // não reconhece um fragmento; a contenção reconhece (ISS-081).
+        let full = "Seguinte, um amigo te pede dinheiro emprestado toda semana e nunca devolve. O que você faz? A, continue emprestando porque é seu amigo. B, para de emprestar e conversa com ele com sinceridade. C, ignora e muda de assunto.";
+        let tail = "Estar e conversa com ele com sinceridade. C. Ignora e muda de assunto.";
+        assert!(is_repeated_question(
+            tail,
+            &[prior(full)],
+            &heuristic_config()
+        ));
+
+        // Um reconhecimento curto não pode casar com o histórico.
+        assert!(!is_repeated_question(
+            "Beleza.",
+            &[prior(full)],
+            &heuristic_config()
+        ));
+    }
+
+    #[test]
+    fn a_prefix_fragment_of_a_suggested_question_is_already_answered() {
+        // A carteira da mesma sessão foi repetida em dois blocos; o primeiro
+        // bloco termina no meio da pergunta ("... no chão que").
+        let full = "Claro, vamos lá. Primeira pergunta. Se você encontra uma carteira no chão o que você faz? A. Pega para você. B. Entrega para a polícia. C. Tenta achar o dono pelas redes sociais.";
+        let fragment =
+            "Claro, vamos lá. Primeira pergunta. Se você encontra uma carteira no chão que";
+        assert!(is_repeated_question(
+            fragment,
+            &[prior(full)],
+            &heuristic_config()
+        ));
     }
 
     #[test]

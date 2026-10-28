@@ -255,8 +255,9 @@ uma nota de revisão.
   ser o do print de referência: **largura total** (sem `max-width:75%` e sem
   alinhamento à direita/esquerda), rótulos **Microfone**/**Outros** com cores
   distintas, hora ao lado do nome e ação de IA por fala (BR-041). A **linha
-  temporal** (ordenação, prévia fora da linha, final vence a prévia) e o teto de
-  180 caracteres (BR-031) **não mudam**; o histórico usa o mesmo cartão.
+  temporal** (ordenação, prévia fora da linha, final vence a prévia) e o tamanho
+  da bolha (BR-102, que revogou o teto de 180) **não mudam**; o histórico usa o
+  mesmo cartão.
 - **Data:** 2026-10-18 · **Status:** Ativa (tasks 01/02)
 
 ## BR-022 — Transporte da sessão: toggle único e encerramento confirmado
@@ -444,27 +445,49 @@ uma nota de revisão.
   que o especificava foi removido — o comportamento atual fica como está.
 
 ## BR-031 — Teto da bolha de fala: fala longa continua em bolha seguinte
-- **Decisão:** a bolha de fala tem **teto de 180 caracteres**
-  (`MAX_SPEECH_BUBBLE_CHARS`) e o excedente **continua numa bolha seguinte** da
-  mesma fala (`continues`, id `#N`), sem repetir rótulo nem tempo. A divisão é
-  **pura e determinística** (`splitSpeechText`), aplicada na fala finalizada, na
-  **prévia em andamento** e no **histórico**. O corte prefere o fim da frase
-  (`.!?…`, quebra de linha) e, quando a frase sozinha passa do teto, cai no limite
-  de **palavra** — nunca no meio de uma palavra. É um teto de **exibição**: o texto
-  do ASR e o áudio continuam inteiros, e o `max_turn_ms` (25 s) segue como teto de
-  custo do whisper (BR-029).
-- **Motivo:** o Interlocutor fala sem pausas e o turno só fecha no silêncio (1 s)
-  ou no teto do turno (25 s): a bolha crescia sem limite (ISS-031, reclamação do
-  usuário no teste). O Perssua não sofre disso porque o *commit* em nuvem é de ~2 s;
-  no whisper local, cortar o **áudio** por tempo picaria frase no meio e pioraria a
-  transcrição — cortar a **exibição** não custa nada.
-- **Consequência:** fala curta continua em uma bolha só (caso comum inalterado); a
-  tradução passa a ser por parte da fala; o tamanho da bolha se ajusta editando uma
-  constante no domínio.
-- **Detalhes:** [`chat/tasks/06-task.md`](chat/tasks/06-task.md),
-  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §2–§6,
-  [`chat/issues.md`](chat/issues.md) ISS-031.
-- **Data:** 2026-10-18 · **Status:** Ativa
+
+- **Status:** **Revogada em 2026-10-27** (ISS-073) — substituída pela **BR-102**.
+- **Decisão original (2026-10-18):** a bolha de fala tinha **teto de 180
+  caracteres** (`MAX_SPEECH_BUBBLE_CHARS`) e o excedente continuava numa bolha
+  seguinte da mesma fala (`continues`, id `#N`), sem repetir rótulo nem tempo. A
+  divisão era pura e determinística (`splitSpeechText`), aplicada na fala
+  finalizada, na prévia em andamento e no histórico.
+- **Motivo original:** o Interlocutor fala sem pausas e o turno só fechava no
+  silêncio (1 s) ou no teto do turno (25 s): a bolha crescia sem limite
+  (ISS-031). O Perssua não sofria disso porque o *commit* em nuvem é de ~2 s.
+- **Por que foi revogada:** o corte era só de **exibição** e não correspondia a
+  uma transcrição concluída. Uma fala longa virava várias bolhas parecidas com
+  mensagens fechadas enquanto o turno ainda estava em processamento (e a prévia
+  era cortada do mesmo jeito), dando a impressão de "várias bolhas quebradas
+  sendo processadas". Como o Whisper local não tem um ponto seguro para
+  commitar blocos durante fala contínua (ISS-058), a decisão passou a preferir
+  **uma bolha finalizada por fala**.
+- **Histórico:** [`chat/tasks/06-task.md`](chat/tasks/06-task.md) (substituída
+  pela [`19-task.md`](chat/tasks/19-task.md)).
+
+## BR-102 — Uma fala finalizada é uma bolha; sem divisão por tamanho
+- **Decisão:** toda fala **finalizada** é renderizada em **uma única bolha**,
+  com o texto inteiro; a fala **em andamento** é **uma bolha por falante**, com
+  "Falando agora…" e o selo **Streaming**. Não existe teto de caracteres, nem
+  divisão por tamanho, em nenhum lugar (ao vivo, prévia ou histórico). O único
+  corte permitido é o **de sobreposição** dos canais (BR-043): ele existe para
+  intercalar quem falou no meio, e cada parte vira uma bolha própria com rótulo
+  e hora.
+- **Motivo:** pedido do usuário (2026-10-27) — "uma bolha nunca deve ser dividida
+  apenas por dividir". O corte de 180 caracteres (BR-031) não era um commit:
+  não havia "ouvir um pedaço → processar → commitar → continuar". Fechar turnos
+  menores durante fala contínua degrada a transcrição (ISS-058, tentado em
+  21/10); sem essa possibilidade, a preferência é a bolha final inteira.
+- **Consequência:** a bolha pode ficar alta em falas longas (até ~25 s de fala);
+  isso é aceito. A ação de IA, a tradução e o copiar usam o texto da própria
+  bolha. O caminho para bolhas menores reais fica registrado como experimento
+  futuro (ISS-074, PRD `precision-and-performance`).
+- **Detalhes:** [`chat/prd.md`](chat/prd.md) §4 (US-02/US-10/US-11),
+  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §2,
+  [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
+  §3, [`chat/issues.md`](chat/issues.md) ISS-073,
+  [`chat/tasks/19-task.md`](chat/tasks/19-task.md).
+- **Data:** 2026-10-27 · **Status:** Ativa
 
 ## BR-029 — Engine: GPU/flash attention, modelo por hardware e reuso do passe final
 - **Decisão:** o build declara features de GPU (`vulkan`/`cuda`/`hipblas`/`metal`)
@@ -816,12 +839,11 @@ uma nota de revisão.
     `started_at_ms + at_ms`), com fallback `mm:ss`; o dado persistido continua
     **relativo à sessão** (BR-019);
   - a fala em andamento tem borda/fundo cyan, **"Falando agora…"** e selo
-    **Streaming**; continuação não repete nome/hora; ela ocupa a **posição do
-    seu `start_ms`** na linha do tempo (não fica presa no fim) — assim o turno
-    longo do outro canal continua antes da fala do ME que veio depois e a bolha
-    não pula ao finalizar (ISS-060);
+    **Streaming**; ela ocupa a **posição do** seu `start_ms` na linha do tempo
+    (não fica presa no fim) — assim o turno longo do outro canal continua antes
+    da fala do ME que veio depois e a bolha não pula ao finalizar (ISS-060);
   - cada fala **finalizada** ganha a ação de IA no canto superior direito
-    (BR-041); prévia/continuação não;
+    (BR-041); a prévia não;
   - o rodapé mostra **"Idioma de Entrada:"** + seletor e o **estado real** do
     Whisper à direita. **Não** exibir latência/“WebRTC” inventados;
   - a linha de medidores e o botão de texto "Sugestões" **saem** da aba (o
@@ -833,9 +855,9 @@ uma nota de revisão.
   que preenchem a janela.
 - **Consequência:** a parte visual da BR-021 (alinhamento direita/esquerda e
   `max-width:75%`) é **revisada** para o ao vivo; a linha temporal,
-  prévia/final e o teto de 180 caracteres (BR-031) não mudam. O layout do print
-  é a fonte desta revisão; a evidência Perssua 0.27.5 em
-  [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §3 fica como
+  prévia/final e o tamanho da bolha (BR-102, que revogou o teto de 180) não
+  mudam. O layout do print é a fonte desta revisão; a evidência Perssua 0.27.5
+  em [`chat/architecture/chat-ui.md`](chat/architecture/chat-ui.md) §3 fica como
   histórica. Sem mudança de schema.
 - **Detalhes:** [`chat/prd.md`](chat/prd.md) §9,
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
@@ -926,24 +948,37 @@ uma nota de revisão.
   a linha temporal ficar coerente:
   - o texto é dividido proporcionalmente ao tempo, preferindo fim de frase e,
     depois, fim de palavra; se não houver corte seguro, a fala fica inteira;
+  - **corte conservador (revisão 2026-10-27, ISS-075):** só divide fala com
+    **≥ 80 caracteres e ≥ 6 s**; só considera uma **interrupção com ≥ 1,5 s** de
+    duração; e só divide se **todas as partes** tiverem **≥ 20 caracteres e ≥ 3
+    palavras**. Senão, mantém a fala inteira. Antes, qualquer início do outro
+    canal fatiava a fala em pedaços de 1–5 caracteres ("e", "vez.", "Ei,") e
+    enchia a conversa de bolhas curtas e sem contexto;
   - a primeira parte mantém o tempo original; a nova fala entra no tempo dela; o
     restante entra **1 ms depois**, como uma nova bolha com rótulo/hora (não como
-    continuação silenciosa);
+    um pedaço sem rótulo);
   - vale nos dois sentidos (Microfone/Outros) e no histórico, cuja fala passa a
     carregar `end_ms`;
   - é um corte de **exibição**: ASR, banco e export continuam com a fala
-    inteira.
+    inteira;
+  - o `end_ms` do segmento é o **fim real da fala** (VAD/whisper), não o fim do
+    turno/buffer. Sem isso a fala já encerrada parece sobreposta à próxima do
+    outro canal e a ordem inverte (ISS-079).
 - **Motivo:** relato do usuário — “se os outros estão falando sem parar e eu falo
   em seguida, ele vai jogando minha mensagem atrás”; a fala longa deve ser
-  intercalada pela nova, não engolir a ordem.
+  intercalada pela nova, não engolir a ordem. A revisão veio do relato de
+  2026-10-27: “a transcrição picou em muitos balões, com frases curtas demais”
+  (o caso real `"e"` + `"79."` e `"…primeira"` + `"vez."`).
 - **Consequência:** `splitSpeechSpans` em `core/domain/chat.ts`, usado pelo
   `buildChatTimeline` e `bubblesFromTimeline`; `TimelineKind::Speech` ganha
   `end_ms` (sem schema); o **grip** de arraste passa a ser padrão no canto
   superior direito de todas as janelas de painel.
 - **Detalhes:** [`chat/prd.md`](chat/prd.md) §9 (US-14),
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
-  §3.4, [`chat/tasks/16-task.md`](chat/tasks/16-task.md).
-- **Data:** 2026-10-19 · **Status:** Ativa (task 16 implementada)
+  §3.4, [`chat/tasks/16-task.md`](chat/tasks/16-task.md),
+  [`chat/tasks/20-task.md`](chat/tasks/20-task.md) (revisão conservadora).
+- **Data:** 2026-10-19 · **Revisão:** 2026-10-27 (ISS-075/task 20) · **Status:**
+  Ativa
 
 ## BR-044 — Fontes de IA múltiplas e ordenadas; a primeira é a primária
 
@@ -2173,13 +2208,30 @@ uma nota de revisão.
 - **Motivo:** o usuário quer que o copiloto distinga **responder** de
   **comentar** e ignore conversa casual/explicações; o modelo zero-shot errava
   as cues antigas de silêncio/hesitação.
-- **Consequência:** o classificador recebe o **contexto do agente selecionado**
-  e as **últimas N perguntas já respondidas** (título curto, padrão 5). O Laya
-  usa isso no prompt; as regras locais comparam similaridade. Quando o Laya
-  abstém ou inventa `already_answered`, as regras locais atuam como guarda
-  determinística. O limiar vem da sensibilidade (Laya: 0,75/0,50/0,35).
-  Timeout/erro não geram por padrão.
-- **Data:** 2026-10-26 · **Status:** Ativa (substitui a taxonomia de 7 cues)
+- **Consequência:** o classificador recebe o **contexto do agente selecionado**,
+  a **conversa inteira** (contexto + bloco atual) e as **últimas N perguntas já
+  respondidas** (título curto, padrão 5). O Laya decide pelo prompt multilíngue;
+  **não há listas de palavras-chave/idioma** no caminho efetivo (R23). A única
+  guarda fora do modelo é a similaridade lexical (Jaccard) de
+  `already_answered`, que não codifica idioma. Laya indisponível/abstenção ⇒
+  **não sugerir** (sem fallback por keywords). O limiar vem da sensibilidade
+  (Laya: 0,75/0,50/0,35). Timeout/erro não geram por padrão.
+- **Pergunta longa sem `?` (revisão 2026-10-27, ISS-077/task 15):** o alvo é
+  construído por `target_across_blocks` (junta blocos contíguos divididos por
+  tempo) e o estado do Laya é a conversa inteira, sem separar
+  `[CONTEXTO]/[ALVO]`. A decisão é do modelo; não há regra de `?`, primeira
+  palavra, interrogativos ou imperativos. Os casos reais das sessões
+  `0e882d0a…`, `606de489…` e `5984de1d…` viraram testes de integração com o
+  Laya real (R24).
+- **Contexto do agente (revisão 2026-10-27, ISS-080/task 17):** o classificador
+  recebe só **nome/categoria/contexto** do agente; o `suggestion_prompt` (que é
+  instrução de **geração**) não entra no prompt do Laya. O alvo entre blocos
+  contíguos também junta quando há um ME não significativo **depois** do alvo
+  (“deixa eu pensar”); um ME antes do alvo (resposta) impede.
+- **Débito:** o backend “Regras locais” ainda é keyword-based e será removido
+  (ISS-078/task 16).
+- **Data:** 2026-10-26 · **Revisão:** 2026-10-27 (ISS-077/ISS-078, task 15/16) ·
+  **Status:** Ativa (substitui a taxonomia de 7 cues)
 
 ## BR-095 — Última classificação sempre visível
 
@@ -2269,15 +2321,22 @@ uma nota de revisão.
 
 ## BR-101 — Histórico de perguntas respondidas
 
-- **Decisão:** ao gerar uma sugestão para uma cue `question`, o gate guarda um
-  **título curto** da pergunta (≤ 180 caracteres) no histórico da sessão. O
+- **Decisão:** ao gerar uma sugestão para uma cue `question`, o gate guarda o
+  **texto da pergunta** (até 600 caracteres) no histórico da sessão. O
   classificador recebe as **últimas `suggestion_answered_questions`** (padrão
-  5, faixa 0–20) para decidir `already_answered`. O histórico é memória de
-  sessão; `reset` limpa.
+  5, faixa 0–20) para decidir `already_answered`; no prompt, cada pergunta
+  aparece truncada em 180 caracteres. O histórico é memória de sessão; `reset`
+  limpa.
 - **Motivo:** pedido do usuário (2026-10-26) — não repetir sugestões para uma
   pergunta já respondida e dar contexto ao modelo.
-- **Consequência:** sem LLM extra para “resumir”: o título é a própria pergunta
-  truncada. Uma classificação que não gera sugestão não entra no histórico;
-  só pergunta **respondida** conta. O heuristic também detecta repetição por
-  Jaccard (≥ 0,60) e resposta dentro do mesmo bloco.
-- **Data:** 2026-10-26 · **Status:** Ativa
+- **Consequência:** sem LLM extra para “resumir”: o texto é a própria pergunta.
+  Uma classificação que não gera sugestão não entra no histórico; só pergunta
+  **respondida** conta. O heuristic também detecta repetição e resposta dentro
+  do mesmo bloco. A comparação é lexical e independente de idioma (R23):
+  Jaccard do texto completo (≥ 0,60), **maior Jaccard entre janelas deslizantes**
+  (para repetição que começa em outro ponto) e **contenção**
+  (`|A∩B|/min(|A|,|B|)` ≥ 0,75, com ≥ 6 tokens em comum e ≥ 8 no lado menor)
+  para cauda/fragmento. O histórico guarda o bloco inteiro, não só o alvo
+  (ISS-081/task 18); a janela fixa de 180 caracteres da ISS-076 foi removida.
+- **Data:** 2026-10-26 · **Revisão:** 2026-10-27 (ISS-076/task 14; ISS-081/task
+  18) · **Status:** Ativa

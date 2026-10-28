@@ -23,15 +23,13 @@ interface ChatBubbleProps {
   timeLabel?: string;
   /** Fala ainda em revisão (bolha "em andamento", com indicador `…`). */
   pending?: boolean;
-  /** Última parte da fala em andamento (mostra o selo **Streaming**). */
+  /** Selo **Streaming** na fala em andamento. */
   streaming?: boolean;
-  /** Continuação de uma fala longa (parte seguinte, na mesma conversa). */
-  continues?: boolean;
   /** Mostra o indicador `…` de digitação (padrão: `pending`). */
   typing?: boolean;
   /** Renderiza o texto como Markdown (sugestões da IA — BR-025). */
   markdown?: boolean;
-  /** Copiar o texto (só a sugestão da IA usa). */
+  /** Copiar o texto da bolha (sugestão e fala finalizada). */
   onCopy?: () => void;
   copied?: boolean;
   /** Tradução já obtida para esta fala (mostrada abaixo, sob demanda). */
@@ -53,8 +51,8 @@ interface ChatBubbleProps {
  * cartão de **largura total**, rótulo colorido + hora no topo e o grupo de
  * ações no canto superior direito (tradução + IA).
  *
- * A fala em andamento mostra "Falando agora…" e o selo **Streaming**; a
- * continuação de fala longa (`continues`) não repete rótulo/hora.
+ * A fala em andamento mostra "Falando agora…" e o selo **Streaming**. Cada
+ * fala é uma bolha só: não há divisão por tamanho (BR-102).
  */
 export function ChatBubble({
   text,
@@ -63,7 +61,6 @@ export function ChatBubble({
   timeLabel,
   pending = false,
   streaming = false,
-  continues = false,
   typing,
   markdown = false,
   onCopy,
@@ -80,13 +77,10 @@ export function ChatBubble({
   const [expanded, setExpanded] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const showTyping = typing ?? pending;
-  // A continuação não repete o rótulo, mas ainda pode mostrar o selo Streaming
-  // na última parte da fala em andamento.
-  const showHeader = !continues || (pending && streaming);
-  const hasActions =
-    (onTranslate !== undefined && !continues) ||
-    (onAskAi !== undefined && !pending && !continues) ||
-    (onCopy !== undefined && !continues);
+  // Copiar fica no rodapé (não precisa da linha de ações do topo). A linha do
+  // topo só existe quando há tradução ou IA — evita um bloco vazio no histórico.
+  const hasTopActions =
+    onTranslate !== undefined || (onAskAi !== undefined && !pending);
 
   // Mesma língua não vira linha de tradução (ex.: pt → pt com detecção errada).
   const usableTranslation =
@@ -137,12 +131,9 @@ export function ChatBubble({
 
   return (
     <div
-      className={`chat__row chat__row--${side}${pending ? " chat__row--pending" : ""}${
-        continues ? " chat__row--continues" : ""
-      }`}
+      className={`chat__row chat__row--${side}${pending ? " chat__row--pending" : ""}`}
       data-kind={side}
       data-pending={pending ? "true" : undefined}
-      data-continues={continues ? "true" : undefined}
       title={
         pending
           ? t("chat_transcribing_text_may_still_change")
@@ -150,63 +141,59 @@ export function ChatBubble({
       }
     >
       <div className="chat__bubble">
-        {showHeader && (
-          <div className="chat__top">
-            {!continues && (
-              <div className="chat__label">
-                {side === "ai" && <SparkIcon className="chat__label-icon" />}
-                <span className="chat__speaker">{label}</span>
-                {pending && (
-                  <span className="chat__now" aria-hidden="true">
-                    {t("chat_speaking_now")}
-                  </span>
-                )}
-                {timeLabel && !pending && (
-                  <span className="chat__time" title={t("chat_message_time")}>
-                    {timeLabel}
-                  </span>
-                )}
-                {showTyping && !pending && (
-                  <span className="chat__typing" aria-hidden="true">
-                    …
-                  </span>
-                )}
-              </div>
+        <div className="chat__top">
+          <div className="chat__label">
+            {side === "ai" && <SparkIcon className="chat__label-icon" />}
+            <span className="chat__speaker">{label}</span>
+            {pending && (
+              <span className="chat__now" aria-hidden="true">
+                {t("chat_speaking_now")}
+              </span>
             )}
-
-            {pending ? (
-              <div className="chat__actions">
-                {!continues && translateButton}
-                {streaming && (
-                  <span className="chat__streaming" aria-hidden="true">
-                    <span className="chat__streaming-dot" />
-                    {t("chat_streaming")}
-                  </span>
-                )}
-              </div>
-            ) : (
-              hasActions && (
-                <div className="chat__actions">
-                  {translateButton}
-                  {onAskAi && (
-                    <button
-                      type="button"
-                      className="chat__ai"
-                      data-interactive
-                      disabled={askingAi}
-                      aria-label={t("chat_suggest_ai_message",
-                      )}
-                      title={t("chat_suggest_ai_message")}
-                      onClick={onAskAi}
-                    >
-                      <SparkIcon size={14} />
-                    </button>
-                  )}
-                </div>
-              )
+            {timeLabel && !pending && (
+              <span className="chat__time" title={t("chat_message_time")}>
+                {timeLabel}
+              </span>
+            )}
+            {showTyping && !pending && (
+              <span className="chat__typing" aria-hidden="true">
+                …
+              </span>
             )}
           </div>
-        )}
+
+          {pending ? (
+            <div className="chat__actions">
+              {translateButton}
+              {streaming && (
+                <span className="chat__streaming" aria-hidden="true">
+                  <span className="chat__streaming-dot" />
+                  {t("chat_streaming")}
+                </span>
+              )}
+            </div>
+          ) : (
+            hasTopActions && (
+              <div className="chat__actions">
+                {translateButton}
+                {onAskAi && (
+                  <button
+                    type="button"
+                    className="chat__ai"
+                    data-interactive
+                    disabled={askingAi}
+                    aria-label={t("chat_suggest_ai_message",
+                    )}
+                    title={t("chat_suggest_ai_message")}
+                    onClick={onAskAi}
+                  >
+                    <SparkIcon size={14} />
+                  </button>
+                )}
+              </div>
+            )
+          )}
+        </div>
 
         {markdown ? (
           <div className={`chat__clamp${expanded ? " chat__clamp--open" : ""}`}>
@@ -239,7 +226,7 @@ export function ChatBubble({
           </button>
         )}
 
-        {onCopy && !continues && (
+        {onCopy && (
           <div className="chat__foot">
             <button
               type="button"

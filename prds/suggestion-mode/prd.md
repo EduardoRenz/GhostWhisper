@@ -13,6 +13,15 @@
   [`../precision-and-performance/prd.md`](../precision-and-performance/prd.md),
   [`../mvp/prd.md`](../mvp/prd.md)
 
+> **Revisão 2026-10-27 (R23/R24):** o caminho efetivo do **Laya** não usa listas
+> de palavras-chave/idioma. A decisão vem do modelo com a **conversa inteira**
+> (prompt genérico, sem exemplos/palavras) e o alvo atravessa blocos contíguos
+> (`target_across_blocks`); só `already_answered` usa Jaccard de tokens, que não
+> codifica idioma. O backend “Regras locais” é **legado** e será removido
+> (ISS-078/task 16). As sessões reportadas viraram testes de integração reais com
+> o Laya (R24); o relatório das fixtures é diagnóstico, com fine-tuning na
+> ISS-062.
+
 ---
 
 ## 1. Objetivo
@@ -231,8 +240,10 @@ Configurações, mas não é escondida automaticamente.
 | **Alta** | 0,55 | 0,35 | `question`, `comment` |
 
 - O classificador recebe o **contexto do agente selecionado** (nome, categoria,
-  contexto fixo e foco) e as **últimas 5 perguntas já respondidas** (título
-  curto). O histórico é configurável em 0–20 (`suggestion_answered_questions`).
+  contexto fixo e foco) e as **últimas 5 perguntas já respondidas** (texto da
+  pergunta; no prompt, até 180 caracteres). O histórico é configurável em 0–20
+  (`suggestion_answered_questions`) e a comparação usa o texto completo
+  (ISS-081/task 18).
 - O “Avançado” pode **desligar** cues individualmente; a allowlist efetiva é
   `preset da sensibilidade ∩ toggles do usuário`. O limiar exato é mostrado como
   leitura, não como segundo campo editável (fonte única = sensibilidade).
@@ -321,9 +332,11 @@ tick 1s
 ### 5.3 Histórico e contexto ampliado
 
 Não existe mais sonda de bloco aberto. O gate lê no mínimo **8 blocos
-anteriores** (até 5 min/120 segmentos) e mantém, por sessão, os títulos das
-perguntas que geraram sugestão. Uma pergunta repetida vira `already_answered`
-sem chamar o gerador.
+anteriores** (até 5 min/120 segmentos) e mantém, por sessão, o texto das
+perguntas que geraram sugestão (o bloco inteiro, até 600 caracteres; o prompt
+mostra até 180). A repetição é reconhecida por Jaccard do texto completo,
+janelas deslizantes e contenção (ISS-081/task 18). Uma pergunta repetida vira
+`already_answered` sem chamar o gerador.
 
 ### 5.4 Decisão negativa
 
@@ -832,7 +845,7 @@ O fine-tuning não faz parte deste PRD, mas o contrato precisa nascer pronto:
 | Fine-tuning quebrar o contrato | mesmo layout ONNX + `manifest.json` + eval obrigatório antes de ativar |
 | `laya-onnx` exige Rust ≥ 1.88 | subir o MSRV ou isolar o adaptador; validar no CI |
 | `ort` baixa binário no build | vendorizar/empacotar ONNX Runtime no release; documentar build offline |
-| Modelo pequeno erra nuance/ironia | gate de acurácia; fallback heurístico; modo automático continua padrão |
+| Modelo pequeno erra nuance/ironia | gate de acurácia; fine-tuning (ISS-062); modo automático continua disponível |
 | RAM extra (~1,2 GB) | feature opt-in; carregar sob demanda; descarregar quando trocar para heurístico |
 | Confiança mal calibrada (ECE ~0,31 no multilingual) | usar `answer_confidence`; calibrar limiar nas fixtures |
 | Multilingual mais fraco em English que o checkpoint English | só `multilingual` (cobre pt/en e ocupa menos espaço); English não é exposto |
@@ -896,9 +909,9 @@ O fine-tuning não faz parte deste PRD, mas o contrato precisa nascer pronto:
 | Blocos mal cortados geram decisões ruins | Alto | algoritmo puro e testado; gap/duração/turnos configuráveis; prévia do bloco na faixa |
 | Classificador latente trava o agendador | Médio | timeout; thread separada; `skip` por padrão; estado “Analisando” |
 | Falso positivo incomoda | Alto | limiar de confiança; cooldown; dedupe; modo automático como fallback |
-| Falso negativo perde pergunta | Alto | regra determinística de `?` no heurístico; `question` sempre habilitada por padrão |
+| Falso negativo perde pergunta | Alto | modelo com conversa inteira + prompt genérico; testes de regressão reais (R24); `question` sempre habilitada |
 | Configuração demais confunde | Médio | bloco com presets e “Avançado” em drawer; defaults seguros |
-| Modelo não instalado/hardware insuficiente | Médio | heurístico offline; download opcional; documentar RAM/CPU |
+| Modelo não instalado/hardware insuficiente | Médio | sem sugestão; a UI explicita o motivo; download opcional; remoção do heurístico na task 16 |
 | Download grande/falho | Alto | confirmação, progresso, `.part`, SHA-256, retomada, rollback |
 | Modelo fine-tuned quebra o contrato | Médio | mesmo layout ONNX + manifesto + eval obrigatório |
 | Privacidade | Alto | local por padrão; aviso; sem log de transcrição |

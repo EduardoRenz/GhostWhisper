@@ -118,6 +118,16 @@ pub trait SuggestionCueClassifier: Send + Sync {
 
     /// Identidade do backend para UI/settings; nunca contém segredo.
     fn backend_id(&self) -> &'static str;
+
+    /// Repetição lexical de uma pergunta já respondida (Jaccard de tokens).
+    ///
+    /// É uma decisão **independente de idioma/palavras-chave** (R23): compara os
+    /// tokens do bloco atual com os títulos do histórico. O padrão é `None`; o
+    /// heurístico implementa e o decorador usa como guarda determinística do
+    /// `already_answered` (o modelo zero-shot não é confiável nisso).
+    fn already_answered(&self, _request: &ClassificationRequest) -> Option<ClassificationOutcome> {
+        None
+    }
 }
 
 #[cfg(test)]

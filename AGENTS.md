@@ -71,6 +71,13 @@ pnpm test             # testes do frontend
   (R16/R17).
 - **Documentação é fonte única:** cite arquivos e IDs (`BR-015`, `ISS-011`,
   `12-task`) em vez de duplicar conteúdo (R14, BR-016).
+- **Sessão reportada vira regressão:** resultado inesperado → extraia a conversa
+  da sessão e crie teste de integração/regressão com o prompt/Laya até acertar;
+  proibido palavra-chave/idioma (R23/R24).
+- **Classificação sem palavra-chave/idioma:** decisões do classificador
+  (`question`, `comment`, `already_answered`, `no_action`) usam o modelo
+  multilíngue/sinais estruturais; listas de gatilhos por idioma são proibidas,
+  inclusive como guarda (R23). Se o modelo abstém, não sugerir.
 - **Frontend sempre via l10n:** nenhum texto visível hardcoded. Use
   `t("chave_em_snake_case")` (`src/core/l10n`) com entrada em **pt** e **en**;
   dados do usuário/LLM não são traduzidos (R18–R22, BR-086).

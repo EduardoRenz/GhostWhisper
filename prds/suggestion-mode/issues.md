@@ -3,7 +3,7 @@
 Registry de bugs e limitações deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-064**.
+único no repositório). Próximo ID livre: **ISS-083**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
@@ -12,6 +12,11 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ISS-061 | Heurístico ignorava hesitação em bloco só de ME | Média | FIXED |
 | ISS-062 | Laya zero-shot abaixo do gate de qualidade | Alta | OPEN |
 | ISS-063 | AppImage montava model.onnx.data 0600 root e o engine falhava | Alta | FIXED |
+| ISS-076 | `already_answered` não pegava pergunta longa repetida (janela de 180) | Média | FIXED |
+| ISS-077 | Pergunta longa sem `?` caía em no_action (contexto fragmentado) | Alta | FIXED |
+| ISS-078 | Backend “Regras locais” ainda depende de palavras-chave (viola R23) | Média | OPEN |
+| ISS-080 | Última pergunta não classificada: modo_context de geração + alvo fragmentado | Alta | FIXED |
+| ISS-081 | `already_answered` não reconhece repetição deslocada/fragmento (janela fixa) | Alta | FIXED |
 
 ---
 
@@ -331,3 +336,180 @@ Modelo:
 - **Testes:** `an_open_block_is_classified_after_the_bubble_settles`.
 - **Arquivos:** `src-tauri/src/application/suggestion_gate_service.rs`.
 - **Task:** [`tasks/13-task.md`](tasks/13-task.md)
+
+---
+
+## ISS-076 — `already_answered` não pegava pergunta longa repetida
+
+- **Severidade:** Média · **Status:** FIXED (task 14)
+- **Sintoma:** na sessão real de 2026-10-27 18:19, a mesma pergunta de *load
+  balancer* foi feita três vezes, com a resposta do ME no meio, e o classificador
+  nunca devolveu `already_answered` — caía em `comment`/`question`.
+- **Causa raiz:** `PriorQuestion::normalized` guarda o título da pergunta com
+  **≤ 180 caracteres**, mas `is_repeated_question` comparava esse título com a
+  pergunta atual **inteira** (400+ caracteres). As palavras extras diluíam o
+  Jaccard para ~0,51, abaixo do limiar de 0,60. Em perguntas curtas o bug não
+  aparecia; o questionário da entrevista expôs. A guarda efetiva de
+  `already_answered` é o heurístico (o Laya zero-shot é descartado para não
+  suprimir pergunta válida), então a função ficou desligada na prática.
+- **Correção (task 14):** `is_repeated_question` trunca a pergunta atual na
+  **mesma janela de 180 caracteres** (`QUESTION_TITLE_MAX_CHARS`, compartilhada
+  com `question_title`) antes do Jaccard e da comparação exata.
+- **Testes anti-regressão (R16/R17):** teste de domínio com pergunta longa
+  repetida (falharia antes) + teste ponta a ponta no gate (pergunta → resposta do
+  ME em bloco separado → pergunta repetida = `already_answered`).
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`.
+- **Task:** [`tasks/14-task.md`](tasks/14-task.md)
+- **Dano em dados existentes:** nenhum (histórico é memória de sessão).
+- **Revisão (ISS-081/task 18):** a janela fixa de 180 caracteres nos dois lados
+  foi substituída pelo texto completo + janelas deslizantes + contenção. A
+  janela funcionava para o caso de 2026-10-27, mas falhava quando a repetição
+  começava em outro ponto ou vinha só como cauda.
+
+---
+
+## ISS-077 — Pergunta longa sem `?` caía em `no_action` (contexto fragmentado)
+
+- **Severidade:** Alta · **Status:** FIXED (task 15)
+- **Sintoma:** nas sessões `606de489…` (load balancer) e `0e882d0a…`
+  (arquitetura), THEY fez uma pergunta clara e a classificação caiu em
+  `no_action`. O Whisper não pontuou com `?`, a pergunta veio em vários turnos e
+  o `build_blocks` a dividiu no limite de tempo; o alvo passado ao classificador
+  era só o último fragmento.
+- **Causa raiz (dupla):**
+  1. o caminho efetivo do Laya era **sobrescrito pela guarda heurística** de
+     palavras-chave, que não reconhecia a pergunta sem `?`/com interrogativo no
+     meio do turno; e
+  2. o alvo era o último bloco/fragmento, não a pergunta inteira que atravessava
+     blocos contíguos. O estado do prompt separava `[CONTEXTO]`/`[ALVO]` e o
+     modelo via só o fragmento.
+- **Correção (task 15, R23/R24):**
+  - extraí as conversas reais das duas sessões e criei **testes de
+    integração/regressão com o Laya real** (`LAYA_ONNX_DIR`);
+  - `target_across_blocks` junta blocos **contíguos** (divisão por tempo, não
+    por pausa) para o alvo conter a pergunta inteira;
+  - o estado do Laya passa a ser a **conversa inteira** (contexto + bloco atual,
+    sem marcadores `[CONTEXTO]/[ALVO]`), com prompt curto e genérico (sem
+    exemplos/palavras de idioma);
+  - **removi a guarda heurística do caminho Laya**: a decisão de
+    `question`/`comment`/`no_action` é do modelo; resta apenas a guarda lexical
+    de `already_answered` (Jaccard de tokens, independente de idioma);
+  - Laya indisponível → **não sugerir** (não cai em palavras-chave).
+  As inclusões de palavras-chave foram **revertidas** (violavam R23).
+- **Testes anti-regressão (R16/R17/R24):** três testes reais com Laya:
+  `0e882d0a…` (arquitetura) → `question`; `606de489…` (load balancer) →
+  `question`; pergunta repetida com resposta do ME → `already_answered`
+  (Jaccard). Testes de gate garantem que o alvo leva os 4 turnos de THEY.
+- **Arquivos:** `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`,
+  `src-tauri/src/adapters/ai/laya_integration.rs`,
+  `src-tauri/src/adapters/ai/settings_suggestion_cue_classifier.rs`,
+  `src-tauri/src/adapters/ai/heuristic_suggestion_cue_classifier.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`,
+  `src-tauri/src/domain/suggestion_gate.rs`.
+- **Task:** [`tasks/15-task.md`](tasks/15-task.md)
+- **Dano em dados existentes:** nenhum.
+- **Débito separado:** o backend “Regras locais” ainda é keyword-based; ver
+  **ISS-078** (task 16).
+
+
+---
+
+## ISS-078 — Backend “Regras locais” ainda depende de palavras-chave
+
+- **Severidade:** Média · **Status:** OPEN (task 16)
+- **Sintoma:** o caminho efetivo do Laya já não usa palavras-chave (R23), mas o
+  backend **“Regras locais”** (`HeuristicSuggestionCueClassifier`) ainda decide
+  `question`/`comment`/`no_action` com listas de gatilhos em pt/en.
+- **Causa raiz:** dívida anterior ao R23; o backend é oferecido nas
+  configurações e no fallback de build sem Laya.
+- **Correção proposta (task 16):** remover o backend do seletor e do fallback;
+  migrar `suggestion_classifier_backend=heuristic` para `laya`; sem modelo, não
+  sugerir. Remover `heuristic_cue`/listas de `suggestion_gate.rs` (manter só a
+  guarda Jaccard de `already_answered`, que é independente de idioma).
+- **Task:** [`tasks/16-task.md`](tasks/16-task.md)
+
+---
+
+## ISS-080 — Última pergunta não classificada: modo_context de geração + alvo fragmentado
+
+- **Severidade:** Alta · **Status:** FIXED (task 17)
+- **Sintoma (sessão `5984de1d…`, 22:02):** a janela de Sugestões estava aberta,
+  mas só a primeira pergunta (carteira) foi classificada; a do amigo/dinheiro e
+  a de arquitetura não geraram sugestão. A de arquitetura veio em 3 finais e o
+  ME só falou “Está bom, deixa eu pensar…” no fim.
+- **Causa raiz (dupla):**
+  1. `selected_mode_context` mandava ao Laya o **`suggestion_prompt`** (500
+     caracteres de instrução de **geração**: “write the exact words ME should
+     say…”). Isso enviesava o classificador e podia transformar pergunta em
+     `no_action`;
+  2. `target_across_blocks` retornava `None` quando o bloco atual tinha ME,
+     então o alvo era só o último turno (fragmento), não a pergunta inteira.
+- **Correção (task 17):**
+  - o contexto do agente no classificador passa a ser **nome/categoria/
+    contexto**; o `suggestion_prompt` de geração **não** entra;
+  - `target_across_blocks` junta o bloco anterior quando o **alvo começa no
+    primeiro turno do bloco**, mesmo que exista um ME não significativo depois
+    (“deixa eu pensar”); se houver ME antes do alvo, não junta;
+  - testes reais com Laya da sessão `5984de1d…`: arquitetura e amigo/dinheiro →
+    `question`; a suíte das sessões anteriores continua verde.
+  - O gate de janela **não mudou**: você escolheu classificar só com a janela
+    aberta.
+- **Testes anti-regressão (R16/R17/R24):**
+  `regression_5984de1d_architecture_question_is_question`,
+  `regression_5984de1d_friend_money_question_is_question`,
+  `target_across_blocks_merges_a_contiguous_they_block_with_a_trailing_filler`.
+- **Arquivos:** `src-tauri/src/application/suggestion_gate_service.rs`,
+  `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/adapters/ai/laya_integration.rs`.
+- **Task:** [`tasks/17-task.md`](tasks/17-task.md)
+- **Dano em dados existentes:** nenhum (classificação é memória de sessão).
+
+---
+
+## ISS-081 — `already_answered` não reconhece repetição deslocada/fragmento
+
+- **Severidade:** Alta · **Status:** FIXED (task 18)
+- **Sintoma (sessão `5f8595a7…`, 2026-10-28):** as 7 sugestões geradas saíram
+  como `question`; nenhuma repetição virou `already_answered` mesmo com a janela
+  de Sugestões aberta. A pergunta do load balancer e a do amigo/dinheiro foram
+  repetidas e sugeridas de novo.
+- **Causa raiz (três):**
+  1. `is_repeated_question` truncava os **dois lados** nos primeiros 180
+     caracteres. A repetição do load balancer começava no meio (`web que
+     receberá...`) e o Jaccard caía para ~0,22; a do amigo/dinheiro vinha só
+     como cauda (`... C. Ignora e muda de assunto.`) e o Jaccard caía para
+     ~0,12.
+  2. o histórico guardava `question_title(&target)`. Um ME curto no meio
+     ("e pode perguntar então.") cortava a pergunta e o título ficava só com a
+     segunda metade.
+  3. a comparação era só Jaccard simétrico, sem contenção: fragmento/cauda de
+     uma pergunta longa nunca alcançava 0,60.
+- **Correção (task 18):**
+  - histórico guarda a pergunta do **bloco inteiro** (`question_title(&full_block)`)
+    até 600 caracteres; o prompt do Laya mostra até 180 por item;
+  - `is_repeated_question` compara o texto completo, o **maior Jaccard entre
+    janelas deslizantes** (24 tokens, passo 6) e a **contenção**
+    (`|A∩B|/min(|A|,|B|)` ≥ 0,75, com ≥ 6 tokens em comum e ≥ 8 no lado menor);
+  - a guarda avalia o **alvo** e o **bloco inteiro**, para pegar cauda e
+    repetição deslocada.
+  - Nenhuma lista de palavras/idioma (R23).
+- **Testes anti-regressão (R16/R17/R24):**
+  - domínio: load balancer com começo diferente (título antigo de 180 e novo
+    completo), cauda do amigo/dinheiro, fragmento da carteira, negativos
+    (pergunta diferente e "Beleza.");
+  - adaptador: Laya devolve `question` e a guarda sobrescreve para
+    `already_answered` (as duas repetições reais) e pergunta diferente chega ao
+    Laya;
+  - gate ponta a ponta com os segmentos reais de `5f8595a7…`: o histórico guarda
+    as duas metades e a repetição vira `already_answered`.
+- **Arquivos:** `src-tauri/src/domain/suggestion_gate.rs`,
+  `src-tauri/src/adapters/ai/heuristic_suggestion_cue_classifier.rs`,
+  `src-tauri/src/adapters/ai/settings_suggestion_cue_classifier.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`,
+  `src-tauri/src/adapters/ai/laya_suggestion_cue_classifier.rs`.
+- **Task:** [`tasks/18-task.md`](tasks/18-task.md)
+- **Dano em dados existentes:** nenhum (histórico é memória de sessão).
+- **Fora de escopo:** a 1ª ocorrência da carteira não gerou sugestão (o bloco
+  terminou com ME), então não entrou no histórico — comportamento da BR-101;
+  registrá-la exigiria outra decisão de produto.

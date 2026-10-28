@@ -4,8 +4,6 @@ import {
   buildChatTimeline,
   bubblesFromTimeline,
   splitChatTimeline,
-  splitSpeechText,
-  MAX_SPEECH_BUBBLE_CHARS,
   type ChatBubble,
 } from "./chat";
 import type { InsightSuggestion, TimelineEntry, TranscriptSegment } from "./transcript";
@@ -99,6 +97,167 @@ describe("splitChatTimeline", () => {
         row.kind === "bubble" ? row.bubble.id : row.segment.id,
       ),
     ).toEqual(["they-antes", "they-em-curso", "me-depois"]);
+  });
+
+  it("intercala a fala em andamento no bloco finalizado que ela interrompeu", () => {
+    // Relato de 28/10: o bloco do interlocutor já estava formado e a fala em
+    // andamento (Streaming) ficava atrás dele, mesmo tendo começado no meio.
+    // A prévia precisa servir de fronteira para o bloco finalizado (ISS-082).
+    const theyText = `${"fala longa do interlocutor. ".repeat(8)}`.trim();
+    const { bubbles, pending } = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 1_000,
+        end_ms: 21_000,
+        text: theyText,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 11_000,
+        end_ms: 13_000,
+        final: false,
+        text: "minha fala em andamento",
+      }),
+    ]);
+
+    const rows = buildChatRows(bubbles, pending);
+    expect(
+      rows.map((row) =>
+        row.kind === "bubble" ? row.bubble.id : row.segment.id,
+      ),
+    ).toEqual(["they", "me", "they#ov1"]);
+  });
+
+  it("intercala a prévia real de 28/10 no bloco de load balancer", () => {
+    // Sessão `9e6d8300…`: o interlocutor já tinha o bloco formado (101–121 s)
+    // e o ME começou a falar em 119,462 s. A prévia "Hmmmm…" tem de aparecer
+    // entre as duas partes do bloco, não depois dele (ISS-082).
+    const theyText = "Perfeito, é exatamente isso. Usar uma chave de idem potência e garantir unicidade no banco para não duplicar a transação. Boa resposta! Agora, uma de arquitetura. Onde você colocaria um load balancer se sua aplicação tem várias instâncias de back-end?";
+    const { bubbles, pending } = buildChatTimeline([
+      segment({
+        id: "they6",
+        speaker: "THEY",
+        start_ms: 101_053,
+        end_ms: 121_013,
+        text: theyText,
+      }),
+      segment({
+        id: "me15",
+        speaker: "ME",
+        start_ms: 119_462,
+        end_ms: 123_595,
+        final: false,
+        text: "Hmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      }),
+    ]);
+
+    const rows = buildChatRows(bubbles, pending);
+    expect(
+      rows.map((row) =>
+        row.kind === "bubble" ? row.bubble.id : row.segment.id,
+      ),
+    ).toEqual(["they6", "me15", "they6#ov1"]);
+  });
+
+  it("não parte o bloco finalizado para uma prévia curta ou posterior", () => {
+    const theyText = `${"fala longa do interlocutor. ".repeat(8)}`.trim();
+    const short = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 1_000,
+        end_ms: 21_000,
+        text: theyText,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 11_000,
+        end_ms: 12_000,
+        final: false,
+        text: "hum",
+      }),
+    ]);
+    expect(
+      buildChatRows(short.bubbles, short.pending).map((row) =>
+        row.kind === "bubble" ? row.bubble.id : row.segment.id,
+      ),
+    ).toEqual(["they", "me"]);
+
+    const later = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 1_000,
+        end_ms: 21_000,
+        text: theyText,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 22_000,
+        end_ms: 24_000,
+        final: false,
+        text: "depois do bloco",
+      }),
+    ]);
+    expect(
+      buildChatRows(later.bubbles, later.pending).map((row) =>
+        row.kind === "bubble" ? row.bubble.id : row.segment.id,
+      ),
+    ).toEqual(["they", "me"]);
+  });
+
+  it("mantém a posição da fala quando a prévia vira final", () => {
+    const theyText = `${"fala longa do interlocutor. ".repeat(8)}`.trim();
+    const pending = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 1_000,
+        end_ms: 21_000,
+        text: theyText,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 11_000,
+        end_ms: 13_000,
+        final: false,
+        text: "minha fala",
+      }),
+    ]);
+    const final = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 1_000,
+        end_ms: 21_000,
+        text: theyText,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 11_000,
+        end_ms: 13_000,
+        text: "minha fala",
+      }),
+    ]);
+
+    const ids = (rows: ReturnType<typeof buildChatRows>) =>
+      rows.map((row) => (row.kind === "bubble" ? row.bubble.id : row.segment.id));
+    expect(ids(buildChatRows(pending.bubbles, pending.pending))).toEqual([
+      "they",
+      "me",
+      "they#ov1",
+    ]);
+    expect(ids(buildChatRows(final.bubbles, final.pending))).toEqual([
+      "they",
+      "me",
+      "they#ov1",
+    ]);
   });
 
   it("ao finalizar, a fala não muda de posição (mesmo start_ms)", () => {
@@ -222,78 +381,40 @@ describe("splitChatTimeline", () => {
   });
 });
 
-describe("splitSpeechText", () => {
-  it("deixa fala curta em uma bolha só", () => {
-    expect(splitSpeechText("bom dia")).toEqual(["bom dia"]);
-    expect(splitSpeechText(`  ${"a".repeat(MAX_SPEECH_BUBBLE_CHARS)}  `)).toEqual([
-      "a".repeat(MAX_SPEECH_BUBBLE_CHARS),
-    ]);
-  });
+describe("fala longa (sem divisão por tamanho)", () => {
+  const long = `${"a".repeat(100)}. ${"b".repeat(100)}. ${"c".repeat(100)}.`;
 
-  it("texto em branco não vira bolha", () => {
-    expect(splitSpeechText("")).toEqual([]);
-    expect(splitSpeechText("   \n  ")).toEqual([]);
-  });
-
-  it("quebra no fim da frase antes de estourar o limite", () => {
-    expect(splitSpeechText("Primeira frase. Segunda frase.", 20)).toEqual([
-      "Primeira frase.",
-      "Segunda frase.",
-    ]);
-  });
-
-  it("nunca corta no meio de uma palavra", () => {
-    const text = "palavra ".repeat(40).trim();
-    const parts = splitSpeechText(text, 50);
-
-    expect(parts.length).toBeGreaterThan(1);
-    for (const part of parts) {
-      expect(part.length).toBeLessThanOrEqual(50);
-      // Cada parte é uma sequência inteira de palavras.
-      expect(part).toMatch(/^palavra( palavra)*$/);
-    }
-    expect(parts.join(" ")).toBe(text);
-  });
-
-  it("corta uma palavra maior que o limite no próprio limite", () => {
-    const parts = splitSpeechText("b".repeat(30), 10);
-    expect(parts).toEqual(["b".repeat(10), "b".repeat(10), "b".repeat(10)]);
-  });
-
-  it("trata quebra de linha como fim de parte", () => {
-    const parts = splitSpeechText("linha um\nlinha dois", 12);
-    expect(parts).toEqual(["linha um", "linha dois"]);
-  });
-});
-
-describe("continuação de fala longa", () => {
-  const long = `${"a".repeat(100)}. ${"b".repeat(100)}.`;
-
-  it("a fala finalizada continua em bolhas seguintes", () => {
+  it("a fala finalizada continua em uma bolha só, com o texto inteiro", () => {
+    // Regressão da ISS-065: o teto de 180 caracteres quebrava uma fala em
+    // várias bolhas e dava a impressão de várias mensagens ainda em processamento.
     const { bubbles } = buildChatTimeline([
       segment({ id: "t1", speaker: "THEY", start_ms: 1_000, text: long }),
       segment({ id: "t2", start_ms: 30_000, text: "curta" }),
     ]);
 
-    expect(bubbles.map((item) => item.id)).toEqual(["t1", "t1#1", "t2"]);
-    expect(bubbles[0]).toMatchObject({ continues: false, speaker: "THEY" });
-    // A continuação mantém o tempo da fala original e marca `continues`.
-    expect(bubbles[1]).toMatchObject({ continues: true, at_ms: 1_000 });
-    expect((bubbles[1] as Extract<ChatBubble, { kind: "speech" }>).text).toBe(
-      `${"b".repeat(100)}.`,
-    );
+    expect(bubbles.map((item) => item.id)).toEqual(["t1", "t2"]);
+    expect(bubbles[0]).toMatchObject({ speaker: "THEY", text: long });
+    expect("continues" in (bubbles[0] as object)).toBe(false);
+    expect("source_text" in (bubbles[0] as object)).toBe(false);
   });
 
-  it("a fala em andamento (prévia) é cortada pela mesma regra", () => {
-    // O `pending` sai cru do domínio; quem corta é a view (mesma função).
-    const { pending } = buildChatTimeline([
+  it("a prévia longa fica em uma única linha em andamento, com o texto cru", () => {
+    const { pending, bubbles } = buildChatTimeline([
       segment({ id: "t3", speaker: "THEY", final: false, text: long }),
     ]);
+    expect(bubbles).toHaveLength(0);
     expect(pending).toHaveLength(1);
-    expect(splitSpeechText(pending[0]?.text ?? "")).toHaveLength(2);
+    expect(pending[0]?.text).toBe(long);
+
+    const rows = buildChatRows(bubbles, pending);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "pending" });
+    expect(
+      rows[0]?.kind === "pending" ? rows[0].segment.text : null,
+    ).toBe(long);
   });
 
-  it("o histórico corta falas longas em continuações", () => {
+  it("o histórico mantém a fala longa em uma bolha só", () => {
     const entries: TimelineEntry[] = [
       { kind: "speech", speaker: "THEY", at_ms: 1_000, text: long },
       { kind: "suggestion", at_ms: 2_000, text: "fale do orçamento" },
@@ -302,14 +423,15 @@ describe("continuação de fala longa", () => {
 
     expect(bubbles.map((item) => item.id)).toEqual([
       "speech-1000-0",
-      "speech-1000-0#1",
       "suggestion-2000-1",
     ]);
-    expect(bubbles[1]).toMatchObject({ continues: true, speaker: "THEY" });
-    expect(bubbles[2]?.kind).toBe("suggestion");
-    // Sugestão não é continuação de nada (a marca só existe em fala).
-    expect("continues" in (bubbles[2] as object)).toBe(false);
+    expect(bubbles[0]).toMatchObject({ kind: "speech", text: long });
+    expect(bubbles[1]?.kind).toBe("suggestion");
   });
+
+  // Fala longa o bastante para o corte de sobreposição valer (≥80 caracteres).
+  const longThey =
+    "um dois três quatro cinco seis sete oito nove dez. onze doze treze catorze quinze dezesseis dezessete dezoito dezenove vinte vinte e um vinte e dois vinte e três.";
 
   it("corta a fala longa no início do outro falante e coloca a nova no meio", () => {
     const { bubbles } = buildChatTimeline([
@@ -318,13 +440,13 @@ describe("continuação de fala longa", () => {
         speaker: "THEY",
         start_ms: 0,
         end_ms: 20_000,
-        text: "um dois três quatro cinco seis sete oito nove dez.",
+        text: longThey,
       }),
       segment({
         id: "me",
         speaker: "ME",
         start_ms: 10_000,
-        end_ms: 12_000,
+        end_ms: 20_000,
         text: "minha fala",
       }),
     ]);
@@ -338,9 +460,8 @@ describe("continuação de fala longa", () => {
     expect(speech[1]?.at_ms).toBe(10_000);
     // 1 ms depois do início do outro, para o desempate colocar a fala no meio.
     expect(speech[2]?.at_ms).toBe(10_001);
-    expect(speech[2]?.continues).toBeFalsy();
     expect(speech[0]?.text).toMatch(/^um /);
-    expect(speech[2]?.text).toMatch(/dez\.$/);
+    expect(speech[2]?.text).toMatch(/três\.$/);
   });
 
   it("a intercalação é simétrica (microfone longo e outro falante no meio)", () => {
@@ -350,13 +471,13 @@ describe("continuação de fala longa", () => {
         speaker: "ME",
         start_ms: 0,
         end_ms: 20_000,
-        text: "um dois três quatro cinco seis sete oito nove dez.",
+        text: longThey,
       }),
       segment({
         id: "they",
         speaker: "THEY",
         start_ms: 10_000,
-        end_ms: 12_000,
+        end_ms: 20_000,
         text: "fala do outro",
       }),
     ]);
@@ -368,6 +489,117 @@ describe("continuação de fala longa", () => {
     expect(speech.map((item) => item.id)).toEqual(["me", "they", "me#ov1"]);
     expect(speech[1]?.at_ms).toBe(10_000);
     expect(speech[2]?.at_ms).toBe(10_001);
+  });
+
+  it("não parte uma fala curta só porque o outro canal começou", () => {
+    // Regressão da ISS-075: "vamos lá então vamos começar" (28c, 4s) virava
+    // "vamos lá então" + "vamos começar" só porque o sistema iniciou no meio.
+    const { bubbles } = buildChatTimeline([
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 0,
+        end_ms: 4_000,
+        text: "vamos lá então vamos começar",
+      }),
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 2_000,
+        end_ms: 20_000,
+        text: longThey,
+      }),
+    ]);
+    const mine = bubbles.find(
+      (item) => item.kind === "speech" && item.id === "me",
+    );
+    expect(mine?.kind).toBe("speech");
+    expect(mine?.kind === "speech" ? mine.text : "").toBe(
+      "vamos lá então vamos começar",
+    );
+    expect(bubbles.some((item) => item.id === "me#ov1")).toBe(false);
+  });
+
+  it("ignora interjeição curta ao intercalar (e não deixa sobras de 1–5 caracteres)", () => {
+    // "Ei, ei, ei!" (2,4s) partia a fala do outro canal em "Ei," + "ei, ei!".
+    const { bubbles } = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 0,
+        end_ms: 20_000,
+        text: longThey,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 10_000,
+        end_ms: 11_400,
+        text: "Ei, ei, ei!",
+      }),
+    ]);
+    const speech = bubbles.filter(
+      (item): item is Extract<ChatBubble, { kind: "speech" }> =>
+        item.kind === "speech",
+    );
+    expect(speech.map((item) => item.id)).toEqual(["they", "me"]);
+    expect(speech[0]?.text).toBe(longThey);
+  });
+
+  it("mantém a fala inteira quando o corte deixaria um pedaço sem contexto", () => {
+    // "o homem pisou na lua pela primeira" + "vez." (4c) era o caso real.
+    const withTail = `${longThey} Fim.`;
+    const { bubbles } = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 0,
+        end_ms: 20_000,
+        text: withTail,
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 19_000,
+        end_ms: 24_000,
+        text: "interrupção",
+      }),
+    ]);
+    const speech = bubbles.filter(
+      (item): item is Extract<ChatBubble, { kind: "speech" }> =>
+        item.kind === "speech",
+    );
+    expect(speech.map((item) => item.id)).toEqual(["they", "me"]);
+    expect(speech[0]?.text).toBe(withTail);
+  });
+
+  it("não corta a fala do outro quando ela terminou antes da fala do ME", () => {
+    // Sessão real `5984de1d…`: o fim do turno (buffer) era 127,937 s, mas a fala
+    // do THEY terminou em ~122,5 s; o ME começou em 122,765 s. Com o fim **real
+    // da fala** (ISS-079) não há sobreposição e a ordem é THEY → ME.
+    const { bubbles } = buildChatTimeline([
+      segment({
+        id: "they",
+        speaker: "THEY",
+        start_ms: 113_985,
+        end_ms: 122_500,
+        text: "essa solução para garantir consistência dos dados e evitar problemas de concorrência. Responda como se estivesse em uma entrevista técnica. Depois, vou avaliar sua resposta e sugerir melhorias.",
+      }),
+      segment({
+        id: "me",
+        speaker: "ME",
+        start_ms: 122_765,
+        end_ms: 127_373,
+        text: "Está bom, deixa eu pensar aqui então.",
+      }),
+    ]);
+
+    expect(bubbles.map((item) => item.id)).toEqual(["they", "me"]);
+    expect(bubbles.some((item) => item.id === "they#ov1")).toBe(false);
+    const rows = buildChatRows(bubbles);
+    expect(
+      rows.map((row) => (row.kind === "bubble" ? row.bubble.id : row.segment.id)),
+    ).toEqual(["they", "me"]);
   });
 
   it("não corta falas que não se sobrepõem", () => {
@@ -385,9 +617,9 @@ describe("continuação de fala longa", () => {
         speaker: "THEY",
         at_ms: 0,
         end_ms: 20_000,
-        text: "um dois três quatro cinco seis sete oito nove dez.",
+        text: longThey,
       },
-      { kind: "speech", speaker: "ME", at_ms: 10_000, end_ms: 12_000, text: "minha fala" },
+      { kind: "speech", speaker: "ME", at_ms: 10_000, end_ms: 20_000, text: "minha fala" },
     ];
     const bubbles = bubblesFromTimeline(entries);
 

@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { copyText } from "../../core/application/clipboard";
 import {
   buildChatRows,
-  splitSpeechText,
   type ChatBubble,
 } from "../../core/domain/chat";
 import {
@@ -19,7 +18,7 @@ import { ChatBubble as Bubble } from "./ChatBubble";
 export interface AskAiInput {
   id: string;
   speaker: Speaker;
-  /** Texto inteiro do segmento (antes do split de exibição). */
+  /** Texto inteiro da fala (a bolha nunca é dividida por tamanho — BR-102). */
   text: string;
   atMs: number;
 }
@@ -27,7 +26,7 @@ export interface AskAiInput {
 interface ChatViewProps {
   /** Linha temporal (falas finalizadas + sugestões). */
   bubbles: ChatBubble[];
-  /** Falas ainda em revisão: exibidas **depois** da linha temporal. */
+  /** Falas ainda em revisão: posicionadas pelo tempo, como as finalizadas. */
   pending?: TranscriptSegment[];
   emptyLabel?: string;
   /** Início da sessão: a hora da mensagem usa a hora de parede (BR-040). */
@@ -53,9 +52,10 @@ const NEAR_BOTTOM_PX = 40;
 /**
  * Conversa em cartões de largura total (BR-040).
  *
- * A fala em andamento aparece **no fim**, como cartão próprio — nunca no meio
- * da linha temporal (é o que corrige a leitura errada da ISS-018). A rolagem
- * segue o fim só enquanto o usuário está perto dele.
+ * A fala em andamento é um cartão próprio na posição do seu `start_ms`; se ela
+ * começou no meio de um bloco finalizado, o bloco é dividido para ela aparecer
+ * no lugar certo (ISS-018/ISS-082). A rolagem segue o fim só enquanto o usuário
+ * está perto dele.
  *
  * Memoizada: o painel re-renderiza por eventos de sessão/status e a conversa
  * pode ter centenas de bolhas.
@@ -119,21 +119,19 @@ export const ChatView = memo(function ChatView({
         {rows.map((row) => {
           if (row.kind === "pending") {
             const segment = row.segment;
-            // A prévia cresce enquanto o outro lado fala: mesma regra de teto,
-            // com o `…`/Streaming só na última parte.
-            const parts = splitSpeechText(segment.text);
-            return parts.map((part, index) => (
+            // A fala em andamento é **uma** bolha por falante: o texto ainda
+            // pode mudar, então nada é dividido antes do turno fechar (BR-102).
+            return (
               <Bubble
-                key={`pending-${segment.id}#${index}`}
-                text={part}
+                key={`pending-${segment.id}`}
+                text={segment.text}
                 label={t(speakerLabelKey(segment.speaker))}
                 side={segment.speaker === "ME" ? "me" : "they"}
                 pending
-                streaming={index === parts.length - 1}
-                typing={index === parts.length - 1}
-                continues={index > 0}
+                streaming
+                typing
               />
-            ));
+            );
           }
           const bubble = row.bubble;
           return bubble.kind === "speech" ? (
@@ -142,18 +140,14 @@ export const ChatView = memo(function ChatView({
               text={bubble.text}
               label={t(speakerLabelKey(bubble.speaker))}
               side={bubble.speaker === "ME" ? "me" : "they"}
-              timeLabel={
-                bubble.continues
-                  ? undefined
-                  : formatMessageClock(bubble.at_ms, sessionStartedAtMs)
-              }
+              timeLabel={formatMessageClock(bubble.at_ms, sessionStartedAtMs)}
               onAskAi={
-                onAskAi && !bubble.continues
+                onAskAi
                   ? () =>
                       onAskAi({
                         id: bubble.id,
                         speaker: bubble.speaker,
-                        text: bubble.source_text ?? bubble.text,
+                        text: bubble.text,
                         atMs: bubble.at_ms,
                       })
                   : undefined
@@ -171,7 +165,8 @@ export const ChatView = memo(function ChatView({
                   ? () => onTranslate({ id: bubble.id, text: bubble.text })
                   : undefined
               }
-              continues={bubble.continues}
+              copied={copied === bubble.id}
+              onCopy={() => void onCopy(bubble.id, bubble.text)}
             />
           ) : (
             <Bubble

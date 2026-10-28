@@ -6,6 +6,8 @@
 - **Issues:** — · **BR:** BR-043
 - **Refs:** [`../prd.md`](../prd.md) §9 (US-14),
   [`../architecture/transcription-panel.md`](../architecture/transcription-panel.md) §3.4
+- **Revisão:** a **20** (ISS-075) tornou o corte conservador — só intercala fala
+  longa com interrupção real e partes legíveis.
 
 ## Objetivo
 

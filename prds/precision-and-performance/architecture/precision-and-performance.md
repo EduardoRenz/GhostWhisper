@@ -98,6 +98,12 @@ prévias curtas; fica como opção para turnos longos ou GPUs mais fortes.
   de prévias na pausa (`preview_cutoff_ms`) existem como **experimentos
   opt-in** — desligados após o relato de 21/10. O passe final mantém prioridade
   na fila global (`SpeechGate`). Ver task 04 / ISS-058.
+- **Commit em blocos (experimento, não implementado).** Para que bolhas menores
+  já nasçam **concluídas** (BR-102 do PRD `chat`), a task 08/ISS-074 especifica
+  decodificar o buffer em qualidade final, commitar o **prefixo autoritativo**
+  pelos timestamps dos segmentos e re-decodificar o restante com sobreposição.
+  Fica atrás de env, default **off**, e só liga com A/B aprovado (ISS-058 é o
+  precedente do risco na fronteira).
 
 ### 4.1 Desvios conscientes (R12)
 

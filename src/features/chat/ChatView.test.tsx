@@ -117,35 +117,33 @@ describe("ChatView", () => {
     expect(screen.getByText("Streaming")).toBeDefined();
   });
 
-  it("divide fala longa em continuações, sem repetir rótulo nem tempo", () => {
-    const long = `${"a".repeat(100)}. ${"b".repeat(100)}.`;
-    // Mesmo caminho da tela: a linha temporal corta a fala antes da renderização.
+  it("mantém a fala longa em uma bolha só, com o texto inteiro", () => {
+    const long = `${"a".repeat(100)}. ${"b".repeat(100)}. ${"c".repeat(100)}.`;
+    // Mesmo caminho da tela: a linha temporal entrega a fala inteira.
     const { bubbles } = buildChatTimeline([
       segment({ id: "t1", speaker: "THEY", start_ms: 5_000, text: long }),
     ]);
     render(<ChatView bubbles={bubbles} />);
 
-    const first = screen.getByText(`${"a".repeat(100)}.`);
-    const second = screen.getByText(`${"b".repeat(100)}.`);
-    expect(first.closest(".chat__row")?.className).toContain("chat__row--they");
-    expect(second.closest(".chat__row")?.className).toContain(
-      "chat__row--continues",
-    );
-    // Rótulo e tempo só na primeira parte.
+    const row = screen.getByText(long).closest(".chat__row");
+    expect(row?.className).toContain("chat__row--they");
+    expect(row?.getAttribute("data-continues")).toBeNull();
+    // Rótulo e tempo aparecem uma vez só: é uma mensagem, não várias.
     expect(screen.getAllByText("Outros")).toHaveLength(1);
     expect(screen.getAllByText("00:05")).toHaveLength(1);
   });
 
-  it("corta a prévia longa em continuações, com o `…` só na última", () => {
-    const long = `${"a".repeat(100)}. ${"b".repeat(100)}.`;
+  it("mantém a prévia longa em uma bolha só, com o Streaming nela", () => {
+    // Regressão da ISS-065: a prévia era dividida em N bolhas "quebradas"
+    // enquanto o turno ainda estava sendo transcrito.
+    const long = `${"a".repeat(100)}. ${"b".repeat(100)}. ${"c".repeat(100)}.`;
     render(<ChatView bubbles={[]} pending={[pendingSegment(long, "THEY")]} />);
 
+    const row = screen.getByText(long).closest(".chat__row");
+    expect(row?.className).toContain("chat__row--pending");
+    expect(row?.getAttribute("data-continues")).toBeNull();
     expect(screen.getAllByText("Streaming")).toHaveLength(1);
-    const rows = screen.getAllByText(/^a+\.$|^b+\.$/);
-    expect(rows).toHaveLength(2);
-    expect(rows[1]?.closest(".chat__row")?.className).toContain(
-      "chat__row--continues",
-    );
+    expect(screen.getAllByText("Outros")).toHaveLength(1);
   });
 
   it("mostra o estado vazio", () => {
@@ -154,9 +152,9 @@ describe("ChatView", () => {
     expect(screen.getByText("Sem falas")).toBeDefined();
   });
 
-  it("aciona a IA com o texto inteiro do segmento e só na fala finalizada", () => {
+  it("aciona a IA com o texto da bolha e só na fala finalizada", () => {
     const onAskAi = vi.fn();
-    const long = `${"a".repeat(100)}. ${"b".repeat(100)}.`;
+    const long = `${"a".repeat(100)}. ${"b".repeat(100)}. ${"c".repeat(100)}.`;
     const { bubbles } = buildChatTimeline([
       segment({ id: "t1", speaker: "THEY", start_ms: 5_000, text: long }),
     ]);
@@ -179,6 +177,17 @@ describe("ChatView", () => {
       text: long,
       atMs: 5_000,
     });
+  });
+
+  it("copia o texto inteiro da fala finalizada", async () => {
+    const long = `${"a".repeat(100)}. ${"b".repeat(100)}. ${"c".repeat(100)}.`;
+    render(<ChatView bubbles={[speech("a", "ME", long, 1_000)]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copiar Microfone" }));
+    await waitFor(() => {
+      expect(copyText).toHaveBeenCalledWith(long);
+    });
+    expect(await screen.findByText("Copiado")).toBeDefined();
   });
 
   it("pede tradução ao clicar e alterna a linha traduzida na bolha", () => {

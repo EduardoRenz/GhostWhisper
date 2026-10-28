@@ -683,16 +683,6 @@ body,
   cursor: pointer;
 }
 
-/* Continuação de fala longa: cola no cartão de cima (mesma fala). */
-.chat__row--continues {
-  margin-top: calc(-1 * var(--oh-space-2));
-}
-
-.chat__row--continues .chat__bubble {
-  border-top-left-radius: var(--oh-radius-sm);
-  border-top-right-radius: var(--oh-radius-sm);
-}
-
 @keyframes chat-blink {
   0%,
   100% {

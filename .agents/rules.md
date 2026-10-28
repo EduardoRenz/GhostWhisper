@@ -116,6 +116,28 @@ Convenções específicas:
   provando que a troca re-renderiza. Nunca deixe texto solto "passar" no teste
   só porque o português coincide com o fallback (R16).
 
+## 5.2 Classificação e sugestões (idioma)
+
+- **R23. Nenhuma decisão pode depender de palavras-chave ou de um idioma
+  específico.** Classificação de fala (`question`, `comment`, `already_answered`,
+  `no_action`, `insufficient_context`), detecção de intenção e qualquer
+  heurística de produto usam o **modelo multilíngue**, embeddings ou sinais
+  estruturais (papel ME/THEY, pontuação, tempo, histórico). Listas de gatilhos
+  por idioma (ex.: “quais”, “como você”, “me explica”, “what/how”) são
+  **proibidas**, inclusive como guarda/fallback. Se o modelo abstém, a decisão é
+  **não sugerir** (ou pedir contexto) — nunca inferir por palavra. Similaridade
+  lexical para duplicatas (Jaccard de tokens) é permitida porque **não codifica
+  um idioma**; listas fixas de palavras não são.
+
+- **R24. Resultado inesperado vira teste de regressão com a sessão real.**
+  Quando o usuário reportar uma classificação/transcrição errada, extraia a
+  conversa da sessão reportada (SQLite `transcriptions` e/ou log), crie um teste
+  de integração/regressão com os turnos reais (IDs, tempos e textos) e itere no
+  **prompt/modelo** até o resultado esperado. O teste deve citar a sessão/issue e
+  falhar antes do ajuste. Para o Laya, use `#[ignore]` com `LAYA_ONNX_DIR` e rode
+  `cargo test --features laya -- --ignored`. É proibido resolver com listas de
+  palavras/idioma (R23).
+
 ## 6. Processo (spec-driven)
 
 - Toda mudança relevante começa em `prds/`: PRD → arquitetura → task.

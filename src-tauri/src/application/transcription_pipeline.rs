@@ -103,6 +103,14 @@ enum DecodeMode {
     Worker(mpsc::Sender<DecodeRequest>),
 }
 
+/// Última prévia publicada de um turno (para promoção, retração e fallback).
+struct LastPreview {
+    turn: u64,
+    cut_ms: i64,
+    text: String,
+    speech_end_ms: Option<i64>,
+}
+
 /// Consome áudio de uma fonte e publica segmentos transcritos.
 pub struct TranscriptionPipeline {
     session_id: String,
@@ -168,7 +176,7 @@ pub struct TranscriptionPipeline {
     ///
     /// O corte diz se aquela prévia realmente cobria o fim da fala — a decisão de
     /// fechamento curto não pode confiar em pontuação de um texto antigo.
-    last_preview: Mutex<Option<(u64, i64, String)>>,
+    last_preview: Mutex<Option<LastPreview>>,
     /// Latência do último commit (ms): fim da fala → segmento final publicado.
     ///
     /// `espera de silêncio + decodificação final`. Exposta para teste e para
@@ -447,7 +455,7 @@ impl TranscriptionPipeline {
 
     /// Fecha o turno: consome o áudio, enfileira o passe final autoritativo.
     fn begin_final(&self, turn: u64, base_ms: i64, audio: Vec<f32>, cut_ms: i64) {
-        self.finalize_turn(turn, base_ms, audio, cut_ms, None);
+        self.finalize_turn(turn, base_ms, audio, cut_ms, None, None);
     }
 
     /// Fecha o turno **reusando** o texto da prévia (Perssua: `endedInNoise`).
@@ -462,8 +470,9 @@ impl TranscriptionPipeline {
         audio: Vec<f32>,
         cut_ms: i64,
         text: String,
+        speech_end_ms: Option<i64>,
     ) {
-        self.finalize_turn(turn, base_ms, audio, cut_ms, Some(text));
+        self.finalize_turn(turn, base_ms, audio, cut_ms, Some(text), speech_end_ms);
     }
 
     /// Fecha o turno; `reuse` promove o texto já decodificado a final.
@@ -474,6 +483,7 @@ impl TranscriptionPipeline {
         audio: Vec<f32>,
         cut_ms: i64,
         reuse: Option<String>,
+        reuse_speech_end_ms: Option<i64>,
     ) {
         // O `tick` e o resultado da prévia podem disparar o fechamento do mesmo
         // turno em paralelo; a checagem+registro sob o mesmo lock garante que
@@ -561,7 +571,7 @@ impl TranscriptionPipeline {
                 pending.retain(|pending_turn| *pending_turn != turn);
             }
             self.set_last_decode(0);
-            self.publish_turn(turn, &text, base_ms, cut_ms, true);
+            self.publish_turn(turn, &text, base_ms, cut_ms, reuse_speech_end_ms, true);
             self.note_commit(turn, wait_ms, 0, 0);
             self.publish_activity();
             return;
@@ -610,9 +620,21 @@ impl TranscriptionPipeline {
                             self.publish_activity();
                             return;
                         };
-                        self.publish_turn(turn, &decoded.text, base_ms, cut_ms, false);
+                        self.publish_turn(
+                            turn,
+                            &decoded.text,
+                            base_ms,
+                            cut_ms,
+                            decoded.speech_end_ms,
+                            false,
+                        );
                         if let Ok(mut slot) = self.last_preview.lock() {
-                            *slot = Some((turn, cut_ms, decoded.text.clone()));
+                            *slot = Some(LastPreview {
+                                turn,
+                                cut_ms,
+                                text: decoded.text.clone(),
+                                speech_end_ms: decoded.speech_end_ms,
+                            });
                         }
                         // Perssua (`applyRecognition`): se o VAD do whisper marcou
                         // o fim da fala há ≥ `silence_ms`, o turno terminou — mesmo
@@ -622,7 +644,14 @@ impl TranscriptionPipeline {
                             .is_some_and(|end| cut_ms - end >= self.timings.silence_ms)
                         {
                             // O texto desta prévia já cobre o turno: vira final.
-                            self.begin_final_reusing(turn, base_ms, audio, cut_ms, decoded.text);
+                            self.begin_final_reusing(
+                                turn,
+                                base_ms,
+                                audio,
+                                cut_ms,
+                                decoded.text,
+                                decoded.speech_end_ms,
+                            );
                         }
                     }
                     Err(error) => self.note_failure(quality, error),
@@ -649,7 +678,14 @@ impl TranscriptionPipeline {
                         self.last_attempt_failed.store(false, Ordering::Relaxed);
                         match self.clean(spans) {
                             Some(decoded) => {
-                                self.publish_turn(turn, &decoded.text, base_ms, cut_ms, true);
+                                self.publish_turn(
+                                    turn,
+                                    &decoded.text,
+                                    base_ms,
+                                    cut_ms,
+                                    decoded.speech_end_ms,
+                                    true,
+                                );
                                 self.note_commit(turn, wait_ms, outcome.queue_ms, outcome.wall_ms);
                             }
                             // Final sem texto (alucinação/loop/silêncio): a prévia
@@ -696,15 +732,17 @@ impl TranscriptionPipeline {
         queue_ms: i64,
         asr_ms: u128,
     ) {
-        let text = self.last_preview.lock().ok().and_then(|guard| {
+        let preview = self.last_preview.lock().ok().and_then(|guard| {
             guard
                 .as_ref()
-                .filter(|(t, _, _)| *t == turn)
-                .map(|(_, _, text)| text.clone())
+                .filter(|preview| preview.turn == turn)
+                .map(|preview| (preview.text.clone(), preview.speech_end_ms))
         });
-        let Some(text) = text else { return };
+        let Some((text, speech_end_ms)) = preview else {
+            return;
+        };
         tracing::warn!(turn, "passe final falhou; persistindo a última prévia");
-        self.publish_turn(turn, &text, base_ms, cut_ms, true);
+        self.publish_turn(turn, &text, base_ms, cut_ms, speech_end_ms, true);
         self.note_commit(turn, wait_ms, queue_ms, asr_ms);
     }
 
@@ -753,15 +791,13 @@ impl TranscriptionPipeline {
         self.last_preview
             .lock()
             .map(|guard| {
-                guard
-                    .as_ref()
-                    .is_some_and(|(preview_turn, preview_cut, text)| {
-                        // Mesma prévia que ancorou a cadência: a pontuação é do
-                        // texto que realmente cobriu o fim da fala.
-                        *preview_turn == current
-                            && *preview_cut == last_decode
-                            && ends_with_strong_punctuation(text)
-                    })
+                guard.as_ref().is_some_and(|preview| {
+                    // Mesma prévia que ancorou a cadência: a pontuação é do
+                    // texto que realmente cobriu o fim da fala.
+                    preview.turn == current
+                        && preview.cut_ms == last_decode
+                        && ends_with_strong_punctuation(&preview.text)
+                })
             })
             .unwrap_or(false)
     }
@@ -823,11 +859,7 @@ impl TranscriptionPipeline {
         let showed_preview = self
             .last_preview
             .lock()
-            .map(|guard| {
-                guard
-                    .as_ref()
-                    .is_some_and(|(preview_turn, _, _)| *preview_turn == turn)
-            })
+            .map(|guard| guard.as_ref().is_some_and(|preview| preview.turn == turn))
             .unwrap_or(false);
         if !showed_preview {
             // Nada foi mostrado: não poluir a conversa com um item vazio.
@@ -858,15 +890,31 @@ impl TranscriptionPipeline {
     /// final falharia na chave primária (ISS-018). Continuar uma sessão cria
     /// pipelines novos com `turn` reiniciando em 0, e sem a origem dois turnos de
     /// capturas diferentes também colidiriam.
-    fn publish_turn(&self, turn: u64, text: &str, base_ms: i64, cut_ms: i64, is_final: bool) {
+    fn publish_turn(
+        &self,
+        turn: u64,
+        text: &str,
+        base_ms: i64,
+        cut_ms: i64,
+        speech_end_ms: Option<i64>,
+        is_final: bool,
+    ) {
         let start_ms = self.time_origin_ms + base_ms;
+        // `end_ms` é o **fim da fala** (VAD/whisper), não o fim do turno/buffer.
+        // O buffer carrega silêncio depois da última palavra; usar o cut fazia
+        // uma fala já encerrada parecer sobreposta à próxima do outro canal e
+        // invertia a ordem cronológica no chat (ISS-079).
+        let spoken_ms = speech_end_ms
+            .filter(|end| *end > 0)
+            .unwrap_or(cut_ms)
+            .clamp(0, cut_ms);
         let segment = TranscriptSegment {
             id: self.segment_id(turn),
             session_id: self.session_id.clone(),
             speaker: self.speaker,
             text: text.to_string(),
             start_ms,
-            end_ms: start_ms + cut_ms,
+            end_ms: start_ms + spoken_ms,
             is_final,
         };
         if is_final {
@@ -1762,6 +1810,7 @@ mod tests {
         assert!(segments[1].is_final);
         assert_eq!(segments[0].id, segments[1].id, "mesmo id de turno");
         assert_eq!(segments[1].text, "bom dia");
+        assert_eq!(segments[1].end_ms, 500, "fim real da fala, não o cut");
         assert_eq!(rows.all().len(), 1, "final persistido");
         assert_eq!(pipeline.buffered_samples(), 0, "buffer consumido");
     }
@@ -1969,6 +2018,10 @@ mod tests {
         assert!(!segments[0].is_final);
         assert!(segments[1].is_final);
         assert_eq!(segments[0].id, segments[1].id);
+        // O fim do segmento é o fim **da fala** (500 ms), não o cut do turno
+        // (2 s de áudio). É o que evita a falsa sobreposição no chat (ISS-079).
+        assert_eq!(segments[0].end_ms, 500);
+        assert_eq!(segments[1].end_ms, 500);
     }
 
     #[test]

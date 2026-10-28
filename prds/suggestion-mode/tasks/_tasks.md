@@ -21,6 +21,11 @@ usuário (PRD §16).
 | 11 | Hardening, docs, pacote e teste manual | Fechamento | CONCLUDED |
 | 12 | Caminho de fine-tuning: manifesto, dataset, eval, registry | Evolução | PENDING |
 | 13 | Taxonomia por intenção, contexto do agente e histórico | Revisão | CONCLUDED |
+| 14 | Janela de 180 caracteres no `already_answered` (ISS-076) | Revisão | CONCLUDED |
+| 15 | Pergunta longa sem `?`: contexto inteiro + prompt (ISS-077) | Revisão | CONCLUDED |
+| 16 | Remover o backend “Regras locais” keyword (ISS-078) | Revisão | PENDING |
+| 17 | Última pergunta: contexto do agente e alvo entre blocos (ISS-080) | Revisão | CONCLUDED |
+| 18 | `already_answered`: repetição deslocada/fragmento (ISS-081) | Revisão | CONCLUDED |
 
 ## Fases
 
@@ -46,7 +51,8 @@ Fase 6 — Fechamento
   10 ─▶ 11
 
 Fase 7 — Revisão de taxonomia
-  10/11 ─▶ 13
+  10/11 ─▶ 13 ─▶ 14 ─▶ 15 ─▶ 17 ─▶ 18
+  15 ─▶ 16
 
 Fase 8 — Evolução (fine-tuning na taxonomia nova)
   06/13 ─▶ 12

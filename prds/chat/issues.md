@@ -4,7 +4,7 @@ Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a de
 [`../mvp/issues.md`](../mvp/issues.md) para o ID ser único no repositório).
-Próximo ID livre: **ISS-065**.
+Próximo ID livre: **ISS-083**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
@@ -12,6 +12,10 @@ Próximo ID livre: **ISS-065**.
 | ISS-031 | Bolha de fala crescia sem limite em fala contínua (Interlocutor) | Média | FIXED |
 | ISS-063 | Grip só começava o arraste no segundo clique (janela inativa) | Média | FIXED |
 | ISS-064 | Atalho não ativa a barra de pesquisa com o app inativo | Média | FIXED |
+| ISS-073 | Split de 180 caracteres fragmentava falas e parecia processamento múltiplo | Média | FIXED |
+| ISS-075 | Corte de sobreposição fatiando falas em bolhas de 1–5 caracteres | Média | FIXED |
+| ISS-079 | Fim do segmento usava o cut do turno e invertia a ordem no chat | Média | FIXED |
+| ISS-082 | Fala em andamento ficava atrás do bloco finalizado que ela interrompeu | Média | FIXED |
 
 ---
 
@@ -49,7 +53,7 @@ Próximo ID livre: **ISS-065**.
 
 ## ISS-031 — Bolha de fala crescia sem limite em fala contínua
 
-- **Severidade:** Média · **Status:** FIXED (task 06)
+- **Severidade:** Média · **Status:** FIXED (task 06) — **revogada em 2026-10-27** pela ISS-073/BR-102 (o split de 180 saiu; a fala é uma bolha só).
 - **Sintoma (relato do usuário):** *"ainda estou incomodado com o Interlocutor,
   como eles falam direto sem interrupções, o balão da mensagem cresce demais;
   queria que tivesse um limite do tamanho do balão, e continua em um próximo"*.
@@ -145,3 +149,116 @@ Próximo ID livre: **ISS-065**.
   `src-tauri/src/ipc/mod.rs`, `src-tauri/src/ipc/ask_commands.rs`.
 - **Task:** [`18-task.md`](tasks/18-task.md)
 - **Dano em dados existentes:** nenhum.
+
+---
+
+## ISS-073 — Split de 180 caracteres fragmentava falas e parecia processamento múltiplo
+
+- **Severidade:** Média · **Status:** FIXED (task 19)
+- **Sintoma (relato do usuário):** *"Na época pedi que as bolhas fossem menores,
+  mas no sentido de concluir a transcrição em bolhas menores. (...) às vezes
+  múltiplas bolhas quebradas ficam sendo processadas. O que eu quero é que
+  existisse bolhas menores, mas processamento concluído."*
+- **Causa raiz:** a BR-031 aplicava o teto de 180 caracteres (`splitSpeechText`)
+  na fala finalizada **e na prévia em andamento**. O corte era só de exibição:
+  não havia "ouvir um pedaço → processar → commitar → continuar". Uma fala longa
+  virava várias bolhas com cara de mensagem fechada enquanto o turno ainda estava
+  aberto, e a prévia era re-cortada a cada atualização do Whisper.
+- **Correção (task 19):** o split de 180 foi **removido**. Uma fala finalizada é
+  **uma** bolha com o texto inteiro e a fala em andamento é **uma** bolha por
+  falante (com Streaming). O único corte que permanece é o de sobreposição dos
+  canais (BR-043), que existe para intercalar quem falou no meio. IA, tradução e
+  copiar usam o texto da própria bolha. Nova **BR-102**; BR-031 revogada.
+- **Testes anti-regressão (R16/R17):** `chat.test.ts` ("a fala finalizada continua
+  em uma bolha só", "a prévia longa fica em uma única linha em andamento") e
+  `ChatView.test.tsx` ("mantém a fala longa em uma bolha só", "mantém a prévia
+  longa em uma bolha só"); falhariam no código anterior.
+- **Arquivos:** `src/core/domain/chat.ts`, `src/features/chat/ChatView.tsx`,
+  `src/features/chat/ChatBubble.tsx`, `src/styles/globals.css`,
+  `src/core/domain/chat.test.ts`, `src/features/chat/ChatView.test.tsx`.
+- **Task:** [`19-task.md`](tasks/19-task.md)
+- **Dano em dados existentes:** nenhum (o texto no banco sempre foi inteiro; a
+  divisão era só de renderização).
+
+---
+
+## ISS-075 — Corte de sobreposição fatiando falas em bolhas de 1–5 caracteres
+
+- **Severidade:** Média · **Status:** FIXED (task 20)
+- **Sintoma (relato do usuário):** *"Algumas vezes a transcrição picou em muitos
+  balões, com frases curtas demais e imprecisas"*.
+- **Causa raiz:** `splitSpeechSpans` cortava a fala longa em **qualquer** início
+  do outro canal, sem exigir que a fala fosse longa, que a interrupção tivesse
+  duração real ou que as partes ficassem legíveis. Na sessão `911fcf10…` (17:15),
+  24 falas finais viravam **30 bolhas** na tela, incluindo `"e"` (1 caractere),
+  `"vez."` (4), `"79."` (3), `"Ei,"` (3) e `"Beleza!"`/`"Seguim!"`. Os textos no
+  banco estavam inteiros — o corte era só de exibição.
+- **Correção (task 20):** corte conservador. Só divide fala com **≥ 80
+  caracteres e ≥ 6 s**; só considera interrupção com **≥ 1,5 s**; e só divide se
+  **todas as partes** tiverem **≥ 20 caracteres e ≥ 3 palavras**. Caso contrário,
+  mantém a fala inteira. Na sessão real, cai de 30 para 25 bolhas (e de 11 para 9
+  na última), sem os fragmentos de 1–5 caracteres. BR-043 revisada.
+- **Testes anti-regressão (R16/R17):** "não parte uma fala curta só porque o outro
+  canal começou", "ignora interjeição curta ao intercalar (e não deixa sobras de
+  1–5 caracteres)", "mantém a fala inteira quando o corte deixaria um pedaço sem
+  contexto" e o caso positivo de intercalação (fala longa + interrupção real).
+  Falhariam no código anterior.
+- **Arquivos:** `src/core/domain/chat.ts`, `src/core/domain/chat.test.ts`.
+- **Task:** [`20-task.md`](tasks/20-task.md)
+- **Dano em dados existentes:** nenhum (o texto persistido sempre foi inteiro; a
+  divisão é só de renderização).
+
+---
+
+## ISS-079 — Fim do segmento usava o cut do turno e invertia a ordem no chat
+
+- **Severidade:** Média · **Status:** FIXED (task 21)
+- **Sintoma (sessão `5984de1d…`):** a fala do usuário (“Está bom, deixa eu
+  pensar…”) aparecia **antes** do restante da pergunta do Interlocutor
+  (“…sugerir melhorias.”), embora a pergunta tivesse terminado antes.
+- **Causa raiz:** `TranscriptionPipeline::publish_turn` gravava
+  `end_ms = start_ms + cut_ms`, onde `cut_ms` é o **fim do turno/buffer**, não o
+  fim da fala. O `DecodedTurn.speech_end_ms` (VAD/whisper) era calculado e
+  ignorado. Na sessão, t7 ia até 127,937 s no banco, mas a fala terminou ~122,5 s;
+  o ME começou em 122,765 s. O corte de sobreposição acreditava na sobreposição
+  falsa e inseria a bolha do ME antes do resto.
+- **Correção (task 21):** `publish_turn` recebe `speech_end_ms` e grava
+  `end_ms = start + speech_end.clamp(0, cut)`; prévia, final e promoção do VAD
+  usam o fim real. O overlap, a linha temporal e o classificador passam a usar
+  esse fim.
+- **Testes anti-regressão (R16/R17):** `EarlyEndAsr` (fala 500 ms, cut 2 s) →
+  `end_ms=500` na prévia/final; domínio do chat com o caso real (THEY termina
+  antes do ME) → uma bolha de THEY, ME depois, sem `#ov`.
+- **Arquivos:** `src-tauri/src/application/transcription_pipeline.rs`,
+  `src/core/domain/chat.test.ts`.
+- **Task:** [`tasks/21-task.md`](tasks/21-task.md)
+- **Dano em dados existentes:** sessões antigas mantêm o `end_ms` do turno (o
+  áudio não é gravado; não há como reconstruir com precisão). Vale para novas
+  sessões.
+
+---
+
+## ISS-082 — Fala em andamento ficava atrás do bloco finalizado que ela interrompeu
+
+- **Severidade:** Média · **Status:** FIXED (task 22)
+- **Sintoma (relato de 2026-10-28, sessão `9e6d8300…`):** o bloco do
+  interlocutor já estava formado e a fala do ME em andamento (pill **Streaming**)
+  aparecia **depois** do bloco inteiro, mesmo tendo começado no meio dele.
+- **Causa raiz:** o corte de sobreposição (`splitSpeechSpans`) só considerava
+  falas **finalizadas** como fronteira. A prévia entrava na linha temporal pelo
+  `start_ms` (ISS-018), mas não dividia o bloco finalizado; como o bloco é uma
+  bolha única ancorada no início, a prévia caía depois dele.
+- **Correção (task 22):** as prévias passam a ser passadas como `interruptions`
+  para `splitSpeechSpans`; elas **não** são divididas (continuam uma bolha por
+  falante, BR-102), mas servem de fronteira para o bloco finalizado. O corte
+  conservador (≥ 80 caracteres/6 s, interrupção ≥ 1,5 s, partes ≥ 20
+  caracteres/3 palavras) continua valendo.
+- **Testes anti-regressão (R16/R17/R24):**
+  - `chat.test.ts`: prévia intercalada no bloco (genérico) e o caso real da
+    sessão `9e6d8300…` (THEY 101,053–121,013 s, prévia ME em 119,462 s);
+  - prévia curta (< 1,5 s) e prévia depois do bloco não dividem;
+  - a posição é a mesma antes e depois de a prévia virar final.
+- **Arquivos:** `src/core/domain/chat.ts`, `src/core/domain/chat.test.ts`,
+  `src/features/chat/ChatView.tsx`.
+- **Task:** [`tasks/22-task.md`](tasks/22-task.md)
+- **Dano em dados existentes:** nenhum (corte de exibição).

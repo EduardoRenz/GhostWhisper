@@ -5,8 +5,9 @@
  * em andamento e sugestões da IA numa **única** ordem de tempo. É o que a UI
  * (ao vivo e histórico) consome para montar as bolhas.
  *
- * Regra que corrige a ISS-018: a fala **em andamento** não disputa posição na
- * linha temporal — ela vive depois do último item, como no Perssua.
+ * A fala **em andamento** disputa posição pelo `start_ms` (ISS-018/ISS-082) e
+ * também serve de fronteira: se ela começou no meio de um bloco finalizado, o
+ * bloco é dividido para ela aparecer no lugar certo — não depois dele.
  */
 
 import type {
@@ -25,10 +26,6 @@ export interface SpeechBubble {
   at_ms: number;
   /** Fim da fala (ms); ausente quando a origem não informa (histórico). */
   end_ms?: number;
-  /** Continuação de uma fala longa (mesma fala, parte seguinte). */
-  continues?: boolean;
-  /** Texto inteiro do segmento (antes do split de exibição — BR-041). */
-  source_text?: string;
 }
 
 /** Bolha de sugestão da IA (BR-020). */
@@ -50,77 +47,18 @@ export const SPEAKER_ORDER: Speaker[] = ["ME", "THEY"];
 export const MAX_BUBBLES = 300;
 
 /**
- * Teto de caracteres de uma bolha de fala (≈4–5 linhas no painel).
+ * Limiares do corte de sobreposição (BR-043, revisado pela ISS-075).
  *
- * Fala contínua — Outros falando sem pausas — só fecha o turno no silêncio
- * ou no teto do turno (`max_turn_ms`, 25 s), e a bolha crescia sem fim. O excesso
- * **continua numa bolha seguinte** (`continues`), sem mexer no áudio: a
- * transcrição sai inteira e o corte é só de exibição.
+ * O corte existe para intercalar quem falou no meio — mas partir qualquer fala
+ * em qualquer início do outro canal produzia bolhas de 1–5 caracteres ("e",
+ * "vez.", "Ei,"). Só vale a pena dividir uma fala **longa** por uma
+ * **interrupção real**, e só se todas as partes continuarem legíveis.
  */
-export const MAX_SPEECH_BUBBLE_CHARS = 180;
-
-/**
- * Corta `text` em pedaços de até `limit` caracteres **em fim de palavra**.
- *
- * Usado quando uma única frase não cabe: nunca devolve uma palavra partida (só
- * corta no meio se a "palavra" sozinha já passar do limite, ex.: uma URL).
- */
-function chopAtWords(text: string, limit: number): string[] {
-  const parts: string[] = [];
-  let rest = text.trim();
-  while (rest.length > limit) {
-    // Janela com um caractere a mais: um espaço exatamente no limite conta.
-    const cut = rest.slice(0, limit + 1).lastIndexOf(" ");
-    const end = cut > 0 ? cut : limit;
-    parts.push(rest.slice(0, end).trim());
-    rest = rest.slice(end).trim();
-  }
-  if (rest.length > 0) {
-    parts.push(rest);
-  }
-  return parts;
-}
-
-/**
- * Quebra uma fala em partes de no máximo `limit` caracteres.
- *
- * Prefere o **fim da frase** (`.!?…` ou quebra de linha) e só recorre ao limite de
- * palavra quando a frase sozinha passa do teto — fala curta continua sendo uma
- * bolha só (`["fala"]`), então nada muda no caso comum.
- */
-export function splitSpeechText(
-  text: string,
-  limit: number = MAX_SPEECH_BUBBLE_CHARS,
-): string[] {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) {
-    return [];
-  }
-  if (trimmed.length <= limit) {
-    return [trimmed];
-  }
-
-  // Frases com o terminador junto (o `\n` também separa).
-  const sentences = trimmed.match(/[^.!?…\n]+[.!?…]*\s*|\n+/gu) ?? [trimmed];
-  const parts: string[] = [];
-  let current = "";
-  for (const sentence of sentences) {
-    if (current.length > 0 && (current + sentence).trim().length > limit) {
-      parts.push(current.trim());
-      current = "";
-    }
-    current += sentence;
-    if (current.trim().length > limit) {
-      // A frase (ou o trecho sem pontuação) sozinha passou do teto.
-      parts.push(...chopAtWords(current, limit));
-      current = "";
-    }
-  }
-  if (current.trim().length > 0) {
-    parts.push(current.trim());
-  }
-  return parts.filter((part) => part.length > 0);
-}
+const MIN_OVERLAP_SPEECH_CHARS = 80;
+const MIN_OVERLAP_SPEECH_MS = 6_000;
+const MIN_OVERLAP_INTERRUPTION_MS = 1_500;
+const MIN_OVERLAP_PART_CHARS = 20;
+const MIN_OVERLAP_PART_WORDS = 3;
 
 /** Fala em branco (só ruído/pontuação do ASR) não vira bolha. */
 const hasContent = (text: string): boolean => text.trim().length > 0;
@@ -212,12 +150,26 @@ function splitTextAtRatios(text: string, ratios: number[]): string[] {
  * (preferindo fim de frase/palavra). A parte anterior fica no tempo original; a
  * seguinte começa **1 ms depois** do início do outro falante, para a ordenação
  * colocar a nova fala no meio. Cada parte vira uma bolha própria, com rótulo e
- * hora (o resto não é uma "continuação" silenciosa).
+ * hora.
+ *
+ * O corte é **conservador** (ISS-075): só uma fala longa é dividida, só por uma
+ * interrupção com duração real e só quando todas as partes ficam legíveis. Antes,
+ * qualquer início do outro canal fatiado em pedaços de 1–5 caracteres deixava a
+ * conversa cheia de bolhas curtas e sem contexto.
+ *
+ * As **prévias** (`interruptions`) entram como fronteira, mas não são divididas:
+ * a fala em andamento continua sendo uma bolha só (ISS-082).
  */
-function splitSpeechSpans(spans: SpeechSpan[]): SpeechSpan[] {
+function splitSpeechSpans(
+  spans: SpeechSpan[],
+  interruptions: SpeechSpan[] = [],
+): SpeechSpan[] {
   const ordered = [...spans].sort(
     (a, b) => a.start_ms - b.start_ms || a.id.localeCompare(b.id),
   );
+  // Prévias também interrompem: a fala em andamento tem de entrar no meio do
+  // bloco finalizado que ela interrompeu, não depois dele (ISS-082).
+  const candidates = [...spans, ...interruptions];
   const parts: SpeechSpan[] = [];
 
   for (const span of ordered) {
@@ -226,30 +178,54 @@ function splitSpeechSpans(spans: SpeechSpan[]): SpeechSpan[] {
       continue;
     }
     const end = span.end_ms;
+    const duration =
+      end === undefined || end <= span.start_ms ? 0 : end - span.start_ms;
     const boundaries =
-      end === undefined || end <= span.start_ms
+      duration === 0
         ? []
-        : ordered
-            .filter(
-              (other) =>
-                other.speaker !== span.speaker &&
-                other.start_ms > span.start_ms &&
-                other.start_ms < end,
-            )
+        : candidates
+            .filter((other) => {
+              if (
+                other.speaker === span.speaker ||
+                other.start_ms <= span.start_ms ||
+                other.start_ms >= end!
+              ) {
+                return false;
+              }
+              // Interjeição curta não intercala: só uma interrupção real parte
+              // a fala (sem `end_ms` não dá para saber a duração).
+              const otherEnd = other.end_ms;
+              return (
+                otherEnd !== undefined &&
+                otherEnd - other.start_ms >= MIN_OVERLAP_INTERRUPTION_MS
+              );
+            })
             .map((other) => other.start_ms)
             .filter((value, index, all) => all.indexOf(value) === index)
             .sort((a, b) => a - b);
 
-    if (boundaries.length === 0) {
+    if (
+      duration === 0 ||
+      text.length < MIN_OVERLAP_SPEECH_CHARS ||
+      duration < MIN_OVERLAP_SPEECH_MS ||
+      boundaries.length === 0
+    ) {
       parts.push({ ...span, text });
       continue;
     }
 
-    const duration = end! - span.start_ms;
     const ratios = boundaries.map((boundary) => (boundary - span.start_ms) / duration);
     const texts = splitTextAtRatios(text, ratios);
-    if (texts.length !== boundaries.length + 1) {
-      // Não foi possível cortar sem perder texto: mantém a fala inteira.
+    const hasTinyPart = texts.some((part) => {
+      const trimmed = part.trim();
+      return (
+        trimmed.length < MIN_OVERLAP_PART_CHARS ||
+        trimmed.split(/\s+/u).filter(Boolean).length < MIN_OVERLAP_PART_WORDS
+      );
+    });
+    if (texts.length !== boundaries.length + 1 || hasTinyPart) {
+      // O corte deixaria um pedaço sem contexto (ex.: "vez." ou "e"): mantém a
+      // fala inteira. Melhor uma bolha longa do que duas sem sentido.
       parts.push({ ...span, text });
       continue;
     }
@@ -355,25 +331,30 @@ export function buildChatTimeline(
     start_ms: segment.start_ms,
     end_ms: segment.end_ms,
   }));
+  // A prévia ainda não fechou, mas já é uma fala de outro canal: ela serve de
+  // fronteira para o bloco finalizado (ISS-082).
+  const pendingSpans: SpeechSpan[] = pending.map((segment) => ({
+    id: segment.id,
+    speaker: segment.speaker,
+    text: segment.text,
+    start_ms: segment.start_ms,
+    end_ms: segment.end_ms,
+  }));
 
-  // 1) Corta no início da fala do outro canal (linha do tempo intercalada).
-  // 2) Depois aplica o teto de exibição de 180 caracteres em cada parte.
-  for (const part of splitSpeechSpans(spans)) {
+  // Uma fala finalizada é **uma** bolha: nada é cortado por tamanho (BR-102).
+  // O único corte é o da sobreposição, que intercala quem falou no meio (CA-14).
+  for (const part of splitSpeechSpans(spans, pendingSpans)) {
     const text = part.text.trim();
     if (!hasContent(text)) {
       continue;
     }
-    splitSpeechText(text).forEach((piece, index) => {
-      bubbles.push({
-        kind: "speech",
-        id: index === 0 ? part.id : `${part.id}#${index}`,
-        speaker: part.speaker,
-        text: piece,
-        at_ms: part.start_ms,
-        end_ms: part.end_ms,
-        continues: index > 0,
-        source_text: text,
-      });
+    bubbles.push({
+      kind: "speech",
+      id: part.id,
+      speaker: part.speaker,
+      text,
+      at_ms: part.start_ms,
+      end_ms: part.end_ms,
     });
   }
 
@@ -413,7 +394,7 @@ export function bubblesFromTimeline(
 ): ChatBubble[] {
   const bubbles: ChatBubble[] = [];
 
-  // Falas: mesma regra do ao vivo (corte na sobreposição + teto de 180).
+  // Falas: mesma regra do ao vivo (uma bolha por fala; só a sobreposição divide).
   const spans: SpeechSpan[] = [];
   entries.forEach((entry, index) => {
     if (entry.kind !== "speech" || !hasContent(entry.text)) {
@@ -432,17 +413,13 @@ export function bubblesFromTimeline(
     if (!hasContent(text)) {
       continue;
     }
-    splitSpeechText(text).forEach((piece, partIndex) => {
-      bubbles.push({
-        kind: "speech",
-        id: partIndex === 0 ? part.id : `${part.id}#${partIndex}`,
-        speaker: part.speaker,
-        text: piece,
-        at_ms: part.start_ms,
-        end_ms: part.end_ms,
-        continues: partIndex > 0,
-        source_text: text,
-      });
+    bubbles.push({
+      kind: "speech",
+      id: part.id,
+      speaker: part.speaker,
+      text,
+      at_ms: part.start_ms,
+      end_ms: part.end_ms,
     });
   }
 

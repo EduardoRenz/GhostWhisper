@@ -5,6 +5,9 @@
 - **Habilita:** 13
 - **Issues:** — · **BR:** BR-041
 - **Refs:** [`../prd.md`](../prd.md) §9, [`../architecture/transcription-panel.md`](../architecture/transcription-panel.md) §4–§5
+- **Nota:** o split de 180/`source_text` citado abaixo é **histórico**; foi
+  removido pela [`19-task.md`](19-task.md) (ISS-073). Hoje a IA envia o texto da
+  própria bolha (BR-102).
 
 ## Objetivo
 

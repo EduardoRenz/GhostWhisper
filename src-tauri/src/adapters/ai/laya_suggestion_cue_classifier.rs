@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, sync_channel, Receiver, SyncSender, TrySendError};
 use std::time::{Duration, Instant};
 
-use crate::domain::suggestion_gate::{ConversationBlock, SuggestionCue};
+use crate::domain::suggestion_gate::{ConversationBlock, SuggestionCue, QUESTION_PROMPT_MAX_CHARS};
 use crate::domain::transcription::Speaker;
 use crate::ports::suggestion_cue_classifier::{
     ClassificationOutcome, ClassificationRequest, ClassifierError, SuggestionCueClassifier,
@@ -27,7 +27,7 @@ use crate::ports::suggestion_cue_classifier::{
 pub const CUE_QUESTION: &str = "cue";
 
 /// Pergunta enviada ao modelo (o prompt real vem do SDK/tokenizer).
-pub const CUE_QUESTION_TEXT: &str = "Você é um copiloto de reunião. Leia o [CONTEXTO] com ME e THEY e classifique apenas o [ALVO], que é a última fala de THEY ainda não respondida. ME é o usuário assistido: nunca sugira uma resposta para falas do ME. Escolha exatamente uma opção: question (THEY fez uma pergunta que ME deve responder), comment (THEY pediu EXPLICITAMENTE a opinião/comentário de ME, por exemplo “o que você acha?”, “concorda?”, “qual sua leitura?”), already_answered (a pergunta do ALVO já foi respondida no histórico recente ou pelo próprio ME), no_action (conversa casual, explicação, cumprimento ou fala sem pergunta/convite) ou insufficient_context (texto curto demais para decidir). Não escolha comment só porque THEY expressou uma opinião, explicou algo ou fez uma afirmação: isso é no_action. Não existe mais classificação de silêncio ou hesitação.";
+pub const CUE_QUESTION_TEXT: &str = "ME is the assisted user; THEY is the other side. Read the whole conversation. Classify the last THEY request that ME has not answered. Choose exactly one label: question (THEY asks ME to answer, explain, decide, or solve), comment (THEY explicitly invites ME's opinion or agreement), already_answered (the same question is in [ALREADY ANSWERED] or ME already answered it substantively), no_action (no request or invitation for ME), insufficient_context (too little information). A short acknowledgement, filler, or request to continue is not an answer. Match by meaning; ignore punctuation and specific words. Never suggest a reply for ME.";
 
 /// As 5 categorias, na ordem do `Question::choice`.
 pub const CUE_OPTIONS: [(&str, SuggestionCue); 5] = [
@@ -45,18 +45,18 @@ pub const CUE_OPTIONS: [(&str, SuggestionCue); 5] = [
 pub fn cue_option_description(label: &str) -> &'static str {
     match label {
         "question" => {
-            "THEY asked ME a direct question or requested an explanation that ME has not answered yet."
+            "THEY asks ME to answer, explain, decide, or solve something that ME has not answered yet."
         }
         "comment" => {
-            "THEY explicitly asked for ME's opinion, agreement, or contribution (for example 'what do you think?', 'do you agree?', 'your take?'). A mere statement, opinion, explanation, or rhetorical remark is no_action."
+            "THEY explicitly asks ME for an opinion, agreement, or contribution. A statement, opinion, explanation, or rhetorical remark is no_action."
         }
         "already_answered" => {
-            "The current question repeats a question already answered in the recent history, or ME already answered it in this block."
+            "The [TARGET] repeats a question in [ALREADY ANSWERED], or ME already answered it in [CONTEXT]."
         }
         "no_action" => {
-            "Casual conversation, small talk, or someone explaining something; there is no question or comment opportunity for ME."
+            "Casual conversation, greeting, explanation, or speech with no request or invitation for ME."
         }
-        "insufficient_context" => "Too little context to decide.",
+        "insufficient_context" => "Too little information to decide.",
         _ => "",
     }
 }
@@ -249,39 +249,18 @@ pub fn render_state(context: &[ConversationBlock], block: &ConversationBlock) ->
 pub fn render_prompt_state(
     context: &[ConversationBlock],
     full_block: &ConversationBlock,
-    target: &ConversationBlock,
+    _target: &ConversationBlock,
 ) -> String {
+    // O modelo classifica o **último pedido de THEY** lendo a conversa inteira.
+    // Não separar [CONTEXTO]/[ALVO] evita que um fragmento do bloco (ex.: o
+    // último turno depois de uma divisão por tempo) seja classificado sozinho.
     let mut parts: Vec<String> = context.iter().map(render_block).collect();
-
-    // Mostra o bloco atual só até a última fala de ME; o sufixo de THEY é o
-    // [ALVO], renderizado uma única vez e separado. Assim o modelo vê ME+THEY
-    // sem duplicar a pergunta e sem tratar a resposta do ME como alvo.
-    let target_start = full_block
-        .turns
-        .iter()
-        .rposition(|turn| turn.speaker == Speaker::Me)
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    if target_start > 0 {
-        let prefix = ConversationBlock {
-            turns: full_block.turns[..target_start].to_vec(),
-            ..full_block.clone()
-        };
-        let rendered = render_block(&prefix);
-        if !rendered.is_empty() {
-            parts.push(rendered);
-        }
-    }
-
-    let context_text = parts
+    parts.push(render_block(full_block));
+    let state = parts
         .into_iter()
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("\n---\n");
-    let target_text = render_block(target);
-    let state = format!(
-        "[CONTEXTO — ME e THEY]\n{context_text}\n\n[ALVO — última fala de THEY ainda não respondida]\n{target_text}"
-    );
 
     if state.chars().count() <= MAX_STATE_CHARS {
         return state;
@@ -405,17 +384,22 @@ impl LayaSuggestionCueClassifier {
         let mut question = CUE_QUESTION_TEXT.to_string();
         if !request.mode_context.trim().is_empty() {
             let context: String = request.mode_context.chars().take(800).collect();
-            question.push_str("\n\n[Agente selecionado]\n");
+            question.push_str("\n\n[SELECTED AGENT]\n");
             question.push_str(&context);
         }
         if !request.prior_questions.is_empty() {
-            question.push_str("\n\n[Perguntas já respondidas recentemente]\n");
+            question.push_str("\n\n[ALREADY ANSWERED]\n");
             for (index, prior) in request.prior_questions.iter().enumerate() {
-                question.push_str(&format!("{}. {}\n", index + 1, prior.title.trim()));
+                // O histórico guarda a pergunta inteira para o matching local;
+                // o prompt recebe só o trecho curto (ISS-081).
+                let title: String = prior
+                    .title
+                    .chars()
+                    .take(QUESTION_PROMPT_MAX_CHARS)
+                    .collect();
+                question.push_str(&format!("{}. {}\n", index + 1, title.trim()));
             }
-            question.push_str(
-                "Se o bloco atual repetir uma dessas perguntas, escolha already_answered.",
-            );
+            question.push_str("If the [TARGET] repeats any of these, choose already_answered.");
         }
         LayaInput {
             state: render_prompt_state(&request.context, &request.full_block, &request.block),
@@ -603,10 +587,8 @@ mod tests {
         let input = classifier.input(&request);
         assert!(input.question.contains("Entrevista Técnica"));
         assert!(input.question.contains(CUE_QUESTION_TEXT));
-        assert!(input.state.contains("[CONTEXTO — ME e THEY]"));
-        assert!(input
-            .state
-            .contains("[ALVO — última fala de THEY ainda não respondida]"));
+        assert!(!input.state.contains("[CONTEXT"));
+        assert!(!input.state.contains("[TARGET"));
         assert!(input.state.contains("ME: eu explico"));
         assert!(input.state.contains("THEY: pode detalhar?"));
     }
@@ -846,7 +828,7 @@ mod tests {
     }
 
     #[test]
-    fn render_prompt_state_separates_context_and_target() {
+    fn render_prompt_state_keeps_the_whole_conversation() {
         let context = block(vec![(Speaker::Me, "fala antiga do ME")]);
         let full = block(vec![
             (Speaker::Me, "minha resposta"),
@@ -864,11 +846,46 @@ mod tests {
             ..full.clone()
         };
         let state = render_prompt_state(&[context], &full, &target);
-        assert!(state.contains("[CONTEXTO — ME e THEY]"));
-        assert!(state.contains("[ALVO — última fala de THEY ainda não respondida]"));
+        assert!(!state.contains("[CONTEXT"));
+        assert!(!state.contains("[TARGET"));
+        assert!(state.contains("ME: fala antiga do ME"));
         assert!(state.contains("ME: minha resposta"));
         assert!(state.contains("THEY: e o prazo?"));
-        assert!(state.find("minha resposta") < state.find("[ALVO"));
+        assert!(state.find("fala antiga do ME") < state.find("minha resposta"));
+    }
+
+    #[test]
+    fn render_prompt_state_keeps_all_they_turns_of_a_split_question() {
+        // Sessão real de 19:41: a pergunta de arquitetura veio em 4 turnos de
+        // THEY. O Laya precisa ver todos, não só o último.
+        let full = block(vec![
+            (Speaker::Me, "Muito bem, vamos começar então."),
+            (Speaker::They, "e aí"),
+            (
+                Speaker::They,
+                "Pergunta de certativa. Arquitetura de software. Imagine que você é o tech lead de uma aplicação financeira.",
+            ),
+            (Speaker::They, "como você projetaria essa..."),
+            (
+                Speaker::They,
+                "a solução para garantir consistência dos dados? Responda como se estivesse em uma entrevista técnica.",
+            ),
+        ]);
+        let target = ConversationBlock {
+            turns: full
+                .turns
+                .iter()
+                .filter(|turn| turn.speaker == Speaker::They)
+                .cloned()
+                .collect(),
+            me_chars: 0,
+            they_chars: full.they_chars,
+            ..full.clone()
+        };
+        let state = render_prompt_state(&[], &full, &target);
+        assert_eq!(state.matches("THEY:").count(), 4);
+        assert!(state.contains("como você projetaria"));
+        assert!(state.contains("Responda como se estivesse"));
     }
 
     #[test]

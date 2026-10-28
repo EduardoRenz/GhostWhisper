@@ -81,7 +81,7 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
   sendo transcrito como bolha "em andamento" no fim da lista.
   - **CA-02.1** Segmentos não finalizados **não** entram na linha temporal; são
     exibidos como bolha em andamento (uma por falante, no máximo) **depois** do
-    último item.
+    último item, e **nunca** são divididos em continuações (BR-102).
   - **CA-02.2** A bolha em andamento tem `opacity` reduzida e indicador `…`
     piscando; quando o turno fecha, ela some e a fala finalizada aparece na
     posição correta da linha temporal.
@@ -157,8 +157,8 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 
 ## 6. Não-objetivos
 
-- **Quebra de fala longa em várias bolhas** (uma bolha por segmento, como o
-  Perssua).
+- **Quebra de fala longa em várias bolhas** (uma bolha por segmento; BR-102).
+  O único corte é o de sobreposição dos canais (BR-043).
 - Agrupamento de bolhas consecutivas do mesmo falante.
 - Tradução dentro da bolha (o painel de tradução continua separado).
 - Busca no histórico, paginação.
@@ -169,7 +169,7 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 | Risco | Mitigação |
 |---|---|
 | Re-render frequente com streaming de prévia | bolha memoizada, sem blur por bolha, teto de itens |
-| Texto longo virar bolha gigante | aceito (paridade); rolagem e `max-width: 75%` |
+| Texto longo virar bolha gigante | aceito (BR-102: uma fala = uma bolha); rolagem do painel |
 | Sessões antigas com um lado da conversa perdido (ISS-018) | irreversível; documentado em `issues.md` |
 | `started_at_ms` no evento de estado quebrar a UI | campo opcional; TS espelhado e testado |
 
@@ -263,9 +263,10 @@ Como usuário, quero ler a conversa em cartões largos e saber quem falou e quan
   **hora** aparece ao lado do nome em `HH:MM:SS` (hora de parede derivada de
   `started_at_ms + at_ms`); sem `started_at_ms`, cai em `mm:ss`.
 - **CA-10.3** A fala em andamento mostra **"Falando agora…"**, selo **Streaming**
-  com ponto cyan, borda/fundo cyan e caret; **não** mostra a ação de IA.
-- **CA-10.4** A continuação de fala longa (BR-031) não repete nome/hora/ações e
-  fica colada na parte anterior.
+  com ponto cyan, borda/fundo cyan e caret; **não** mostra a ação de IA. Ela é
+  **uma** bolha por falante, mesmo com texto longo (BR-102).
+- **CA-10.4** Cada fala finalizada é **uma** bolha com o texto inteiro; não há
+  continuação por tamanho. IA, tradução e copiar aparecem na própria bolha.
 - **CA-10.5** O histórico usa o mesmo contrato visual e a mesma hora; a ação de
   IA não aparece nele.
 - **CA-10.6** A tradução sob demanda (BR-030) continua no canto superior direito,
@@ -277,11 +278,10 @@ Como usuário, quero pedir uma sugestão sobre uma fala específica.
 
 - **CA-11.1** Cada fala **finalizada** tem um botão `[✦]` no canto superior
   direito, com `aria-label`/`title`.
-- **CA-11.2** O clique envia **sessão, falante, texto inteiro do segmento e
-  instante** ao núcleo, abre/foca a janela de **Sugestões** e **não** chama o
-  LLM.
-- **CA-11.3** Prévia em andamento, continuação, bolha de sugestão e ausência de
-  sessão não oferecem a ação.
+- **CA-11.2** O clique envia **sessão, falante, texto da bolha e instante** ao
+  núcleo, abre/foca a janela de **Sugestões** e **não** chama o LLM.
+- **CA-11.3** Prévia em andamento, bolha de sugestão e ausência de sessão não
+  oferecem a ação.
 - **CA-11.4** O contexto é substituído a cada novo clique; se a janela estava
   fechada, ele continua disponível ao abrir (store + busca no `panel_opened`).
 - **CA-11.5** O botão é acessível por teclado e tem estado de foco visível.
@@ -348,12 +348,16 @@ em vez de aparecer depois dela.
   inteira (nada é perdido).
 - **CA-14.3** A primeira parte mantém o tempo original; a fala nova entra no
   tempo dela; o restante entra **1 ms depois**, como uma nova bolha com rótulo e
-  hora (não como continuação silenciosa).
+  hora (não como um pedaço sem rótulo).
 - **CA-14.4** Vale nos dois sentidos (Microfone/Outros) e no **histórico**, que
   passa a carregar o `end_ms` da fala.
 - **CA-14.5** O grip de arraste fica visível no **canto superior esquerdo** de
   todas as janelas de painel (Chat, Sugestões, Histórico), com o header padrão
   da BR-064; **o header inteiro arrasta** a janela, exceto os controles.
+- **CA-14.6** O corte é **conservador**: só divide fala com **≥ 80 caracteres e
+  ≥ 6 s**, só por interrupção com **≥ 1,5 s** e só se **todas as partes**
+  tiverem **≥ 20 caracteres e ≥ 3 palavras**; senão, a fala fica inteira
+  (ISS-075).
 
 ### 9.5 Requisitos
 
@@ -397,8 +401,8 @@ em vez de aparecer depois dela.
   geração atual (task 15). Cancelamento/abort seria uma task própria.
 - **Timestamps por palavra** no corte de sobreposição: o corte é proporcional ao
   tempo com fim de frase/palavra (task 16); a fala inteira continua no ASR/banco.
-- Mudar o teto de 180 caracteres/continuação (BR-031), a linha temporal (BR-021)
-  ou a captura de áudio.
+- Mudar a regra de **uma fala por bolha** (BR-102, que revogou o teto de 180), a
+  linha temporal (BR-021) ou a captura de áudio.
 - Ação de IA no histórico de sessões encerradas.
 - i18n além de PT-BR (BR-010).
 
@@ -415,7 +419,7 @@ em vez de aparecer depois dela.
 | Reabrir a janela disparar geração | abrir não gera (BR-028 revisada); `suggestionLast` hidrata sem LLM |
 | Novo `[✦]` durante a manual perder a origem | `Suggestion.source` (snapshot leve: falante/hora/preview) rotula o resultado antigo |
 | Gate de geração causar deadlock | ordem fixa `gate → last`; `pin` não usa o gate |
-| Bolha full-width com texto longo | teto de 180 caracteres + continuação (BR-031); scroll do painel |
+| Bolha full-width com texto longo | uma fala = uma bolha (BR-102); scroll do painel |
 | Corte proporcional da sobreposição cair no meio da frase | preferir fim de frase/palavra; se não houver corte seguro, manter a fala inteira (nada é perdido) |
 | Hora de parede sem `started_at_ms` | fallback determinístico para `mm:ss` |
 | Dois ícones no canto superior direito (tradução + IA) | grupo de ações com espaçamento; o texto nunca fica por baixo |

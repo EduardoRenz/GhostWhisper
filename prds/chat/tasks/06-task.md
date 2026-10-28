@@ -1,6 +1,7 @@
 # 06 — Teto da bolha de fala (continuação em bolha seguinte)
 
-- **Status:** CONCLUDED (retroativa)
+- **Status:** CONCLUDED (retroativa) — **substituída pela 19** (ISS-073/BR-102): o
+  split de 180 foi removido e a fala passou a ser uma bolha só.
 - **Depende de:** 02
 - **Habilita:** —
 - **Issues:** ISS-031 · **BR:** BR-031

@@ -3,8 +3,8 @@
 //! Não rodam no `cargo test` normal (exigem `--features laya` + modelo). Com
 //! `LAYA_ONNX_DIR` apontando para `model.onnx`/`model.onnx.data`, executam as
 //! fixtures uma a uma e imprimem a decisão de cada situação. O classificador
-//! testado é o **efetivo do app**: Laya + a guarda determinística das regras
-//! locais (já respondida/abstenção).
+//! testado é o **efetivo do app**: Laya + a guarda lexical de `already_answered`
+//! (Jaccard, independente de idioma — R23).
 //!
 //! ```bash
 //! cd src-tauri
@@ -37,8 +37,7 @@ use crate::ports::settings_store::SettingsStore;
 use crate::ports::suggestion_cue_classifier::{ClassificationRequest, SuggestionCueClassifier};
 
 /// Contexto de agente equivalente ao usado no app (Entrevista Técnica).
-const AGENT_CONTEXT: &str =
-    "Agente: Entrevista Técnica (engineering)\nFoco do agente: responda como em uma entrevista técnica.";
+const AGENT_CONTEXT: &str = "Agent: Entrevista Técnica (engineering)";
 
 #[derive(Debug, Deserialize)]
 struct Fixture {
@@ -275,6 +274,251 @@ fn laya_integration_reports_each_situation() {
 /// Regressão da sessão real de 2026-10-26: a mesma pergunta do mutex/fila foi
 /// feita em dois blocos consecutivos. O segundo deve cair em `already_answered`
 /// mesmo que o Laya tente classificá-lo como pergunta/comentário.
+/// Monta a requisição como o app: blocos reais, alvo atravessando blocos
+/// contíguos, contexto anterior.
+fn reported_request(segments: &[(&str, Speaker, &str, i64, i64)]) -> ClassificationRequest {
+    let segments: Vec<crate::domain::transcription::TranscriptSegment> = segments
+        .iter()
+        .map(
+            |(id, speaker, text, start, end)| crate::domain::transcription::TranscriptSegment {
+                id: (*id).to_string(),
+                session_id: "s1".to_string(),
+                speaker: *speaker,
+                text: (*text).to_string(),
+                start_ms: *start,
+                end_ms: *end,
+                is_final: true,
+            },
+        )
+        .collect();
+    let config = crate::domain::suggestion_gate::BlockConfig {
+        gap_ms: 1_000,
+        max_block_ms: 45_000,
+        max_turns: 12,
+        min_chars: 1,
+        context_blocks: 8,
+    };
+    let now = segments.iter().map(|s| s.end_ms).max().unwrap_or(0) + 1_000;
+    let blocks = crate::domain::suggestion_gate::build_blocks("s1", &segments, &config, now);
+    let index = blocks.len().saturating_sub(1);
+    let (target, full, start) = crate::domain::suggestion_gate::target_across_blocks(
+        &blocks,
+        index,
+        3,
+        config.max_turns,
+        config.gap_ms,
+    )
+    .unwrap_or_else(|| {
+        let target = crate::domain::suggestion_gate::they_target(&blocks[index], 3)
+            .unwrap_or_else(|| blocks[index].clone());
+        (target, blocks[index].clone(), index)
+    });
+    let context_start = start.saturating_sub(8);
+    ClassificationRequest {
+        session_id: "s1".to_string(),
+        block: target,
+        full_block: full,
+        context: blocks[context_start..start].to_vec(),
+        locale: "pt".to_string(),
+        mode_id: "technical_interview".to_string(),
+        mode_context: AGENT_CONTEXT.to_string(),
+        allow_single_speaker: true,
+        prior_questions: vec![],
+        now_ms: now,
+    }
+}
+
+/// Regressão da sessão `0e882d0a…` (2026-10-27 19:41): a pergunta de arquitetura
+/// veio em 4 turnos de THEY e o `build_blocks` divide no limite de tempo. O alvo
+/// atravessa os blocos contíguos e o Laya (prompt multilíngue, sem palavras-
+/// chave) deve classificar como `question`.
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_0e882d0a_architecture_question_is_question() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let segments = [
+        ("me", Speaker::Me, "Muito bem, vamos começar então.", 50, 8_966),
+        ("they0", Speaker::They, "e aí", 1_907, 13_811),
+        ("they1", Speaker::They, "Pergunta de certativa. Arquitetura de software. Imagine que você é o tech lead de uma aplicação financeira que processa transferências bancárias. Dois clientes tentam transferir dinheiro da mesma conta ao mesmo tempo. E o sistema não pode permitir que o saldo fique negativo, nem que uma transferência seja processada.", 13_919, 38_919),
+        ("they2", Speaker::They, "como você projetaria essa...", 38_919, 41_951),
+        ("they3", Speaker::They, "a solução para garantir consistência dos dados e evitar problemas de concorrência. Responda como se estivesse em uma entrevista técnica. Depois, vou avaliar sua resposta e sugerir melhorias.", 41_951, 53_983),
+    ];
+    let request = reported_request(&segments);
+    let outcome = classifier.classify(&request).expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::Question);
+    assert!(outcome.should_suggest);
+    assert!(
+        request.block.turns.len() >= 4,
+        "o alvo precisa ter os 4 turnos de THEY"
+    );
+}
+
+/// Regressão da sessão `606de489…`: a pergunta do load balancer também veio
+/// partida em turnos; o Laya deve classificar como `question`.
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_606de489_load_balancer_question_is_question() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let segments = [
+        ("me0", Speaker::Me, "Vamos lá, vamos para o meu sete-over.", 90, 4_142),
+        ("they0", Speaker::They, "Pergunta Dissertativa. Load balancer. Você precisa construir uma aplicação web", 1_963, 26_963),
+        ("me1", Speaker::Me, "vamos começar a ouvir.", 7_214, 9_433),
+        ("they1", Speaker::They, "receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo.", 26_963, 33_963),
+        ("they2", Speaker::They, "o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou HAPROXY.", 33_963, 51_883),
+    ];
+    let request = reported_request(&segments);
+    let outcome = classifier.classify(&request).expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::Question);
+    assert!(outcome.should_suggest);
+}
+
+/// Regressão da sessão `5984de1d…` (22:02): a última pergunta de arquitetura
+/// veio em 3 finais (t5/t6/t7) e o ME só falou "deixa eu pensar" no fim.
+/// O alvo atravessa os blocos contíguos e o Laya deve classificar `question`.
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_5984de1d_architecture_question_is_question() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let segments = [
+        ("me0", Speaker::Me, "Muito bem, então vamos lá, vamos começar a nossa...", 99, 5_431),
+        ("me1", Speaker::Me, "Na entrevista estou pronto para algumas perguntas.", 5_431, 9_826),
+        ("they5", Speaker::They, "Pergunta dissertativa, arquitetura de software, imagine que você é o tech-lead de uma aplicação financeira que processa transferências bancárias.", 75_969, 100_969),
+        ("they6", Speaker::They, "Dois clientes tentam transferir dinheiro da mesma conta ao mesmo tempo, e o sistema não pode permitir que o saldo fique negativo, nem que uma transferência seja processada duas vezes.", 100_969, 113_985),
+        ("they7", Speaker::They, "essa solução para garantir consistência dos dados e evitar problemas de concorrência. Responda como se estivesse em uma entrevista técnica. Depois, vou avaliar sua resposta e sugerir melhorias.", 113_985, 127_937),
+        ("me10", Speaker::Me, "Está bom, deixa eu pensar aqui então.", 122_765, 127_373),
+    ];
+    let mut request = reported_request(&segments);
+    // O app já tinha a pergunta da carteira no histórico de respondidas.
+    let wallet = "Claro, vamos lá. Primeira pergunta. Se você encontra uma carteira no chão o que você faz? A. Pega pra você. B. Entrega pra polícia. C. Tenta achar o dono pelas redes sociais.";
+    request.prior_questions = vec![crate::domain::suggestion_gate::PriorQuestion {
+        title: wallet.chars().take(180).collect(),
+        block_id: "blk_wallet".to_string(),
+        answered_at_ms: 1,
+    }];
+    let outcome = classifier.classify(&request).expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::Question);
+    assert!(outcome.should_suggest);
+}
+
+/// A pergunta do amigo/dinheiro da mesma sessão também é uma pergunta.
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_5984de1d_friend_money_question_is_question() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let segments = [
+        ("they2", Speaker::They, "Beleza. Seguinte, um amigo te pede dinheiro emprestado toda semana e nunca devolve. O que você faz?", 41_921, 66_921),
+        ("they3", Speaker::They, "Continuem prestando porque é seu amigo.", 66_921, 69_953),
+        ("they4", Speaker::They, "de emprestar e conversa com ele com sinceridade. C, ignora e muda de assunto.", 69_953, 75_969),
+    ];
+    let request = reported_request(&segments);
+    let outcome = classifier.classify(&request).expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::Question);
+    assert!(outcome.should_suggest);
+}
+
+/// Regressão da sessão `5f8595a7…` (2026-10-28): a pergunta do load balancer
+/// voltou começando no meio (`web que receberá...`) e o histórico tinha só a
+/// segunda metade. A guarda lexical tem de sobrescrever o Laya (ISS-081).
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_5f8595a7_load_balancer_repeat_is_already_answered() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let segments = [
+        ("t8", Speaker::They, "você precisa construir uma aplicação", 172_071, 174_071),
+        ("t9", Speaker::They, "web que receberá milhões de requisições por dia e terá várias instâncias do back-end rodando em paralelo, onde você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS ALB, e uma solução própria, como Enginix ou Haproxy.", 176_061, 198_821),
+    ];
+    let mut request = reported_request(&segments);
+    let second_half = "você colocaria o load balancer na arquitetura e quais ferramentas ou tecnologias utilizaria para implementá-lo. Explique também a diferença entre usar um load balancer gerenciado na nuvem, como AWS LB, e uma solução própria, como Enginix ou HAPROXY.";
+    request.prior_questions = vec![crate::domain::suggestion_gate::PriorQuestion {
+        title: second_half.chars().take(180).collect(),
+        block_id: "blk_load_balancer".to_string(),
+        answered_at_ms: 1,
+    }];
+    let outcome = classifier.classify(&request).expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::AlreadyAnswered);
+    assert!(!outcome.should_suggest);
+    assert_eq!(outcome.backend, "heuristic");
+}
+
+/// A pergunta do amigo/dinheiro voltou só como cauda; a contenção lexical
+/// reconhece o fragmento e não deixa o Laya sugerir de novo (ISS-081).
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_5f8595a7_friend_money_tail_is_already_answered() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let segments = [
+        ("t17", Speaker::They, "Vamos ver o que é", 346_110, 371_110),
+        (
+            "me26",
+            Speaker::Me,
+            "Me presta aqui, eu...",
+            353_521,
+            355_441,
+        ),
+        ("me27", Speaker::Me, "Tchau.", 355_441, 355_941),
+        (
+            "t18",
+            Speaker::They,
+            "Estar e conversa com ele com sinceridade. C. Ignora e muda de assunto.",
+            371_110,
+            375_710,
+        ),
+    ];
+    let mut request = reported_request(&segments);
+    let full = "Seguinte, um amigo te pede dinheiro emprestado toda semana e nunca devolve. O que você faz? A, continue emprestando porque é seu amigo. B, para de emprestar e conversa com ele com sinceridade. C, ignora e muda de assunto.";
+    request.prior_questions = vec![crate::domain::suggestion_gate::PriorQuestion {
+        title: full.to_string(),
+        block_id: "blk_friend_money".to_string(),
+        answered_at_ms: 1,
+    }];
+    let outcome = classifier.classify(&request).expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::AlreadyAnswered);
+    assert!(!outcome.should_suggest);
+    assert_eq!(outcome.backend, "heuristic");
+}
+
+/// A mesma pergunta de arquitetura, respondida e repetida, deve virar
+/// `already_answered` pela guarda **lexical/Jaccard** (independente de idioma).
+#[test]
+#[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
+fn regression_repeated_architecture_question_is_already_answered() {
+    let Some(directory) = model_dir() else {
+        return;
+    };
+    let classifier = classifier(&directory);
+    let first = "ME: Muito bem, vamos começar então.\nTHEY: Pergunta de certativa. Arquitetura de software. Imagine que você é o tech lead de uma aplicação financeira que processa transferências bancárias. Dois clientes tentam transferir dinheiro da mesma conta ao mesmo tempo. E o sistema não pode permitir que o saldo fique negativo, nem que uma transferência seja processada.\nTHEY: como você projetaria essa...\nTHEY: a solução para garantir consistência dos dados e evitar problemas de concorrência. Responda como se estivesse em uma entrevista técnica. Depois, vou avaliar sua resposta e sugerir melhorias.";
+    let prior_title = crate::domain::suggestion_gate::question_title(&conversation(first, "blk_1"));
+    let prior = vec![crate::domain::suggestion_gate::PriorQuestion {
+        title: prior_title,
+        block_id: "blk_1".to_string(),
+        answered_at_ms: 1,
+    }];
+    let repeated = format!("{first}\nME: eu usaria uma transação com isolamento serializável e idempotência.\nTHEY: Pergunta de certativa. Arquitetura de software. Imagine que você é o tech lead de uma aplicação financeira que processa transferências bancárias. Dois clientes tentam transferir dinheiro da mesma conta ao mesmo tempo. E o sistema não pode permitir que o saldo fique negativo, nem que uma transferência seja processada.");
+    let outcome = classifier
+        .classify(&request_with_prior(&repeated, "blk_2", prior))
+        .expect("classificação");
+    assert_eq!(outcome.cue, SuggestionCue::AlreadyAnswered);
+    assert!(!outcome.should_suggest);
+}
+
 #[test]
 #[ignore = "exige LAYA_ONNX_DIR e o artefato ONNX exportado"]
 fn laya_integration_marks_a_repeated_mutex_question_as_already_answered() {
