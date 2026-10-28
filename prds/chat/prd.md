@@ -39,9 +39,10 @@ são botões de texto, o que não corresponde ao produto de referência.
    primária — **um lado da conversa some do banco**, do histórico e do export.
 2. **Falas não parecem uma conversa.** Linha de texto com `tempo + falante`, sem
    a leitura visual de quem falou; o Perssua usa bolhas alinhadas por falante.
-3. **Prévia em andamento no meio da lista.** O texto ainda revisável (`final =
-   false`) fica na posição em que apareceu e cresce ali; o Perssua o mostra como
-   bolha "em andamento" **no fim**, com indicador de digitação.
+3. **Prévia em andamento sem posição/intercalação.** O texto ainda revisável
+   (`final = false`) precisa aparecer no ponto do tempo e dividir a fala longa
+   finalizada que ele interrompeu, sem virar várias bolhas nem ficar atrás do
+   bloco já formado (ISS-018/ISS-082).
 4. **Controles não são os do Perssua.** Hoje são botões com rótulo ("Pausar",
    "Parar"), sem ícones, sem tempo de sessão e sem confirmação de encerramento.
 
@@ -52,9 +53,10 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
 - **CU-01 — Ler a conversa:** quem falou aparece em bolha à direita (Você) ou à
   esquerda (Interlocutor), em ordem de tempo, com bolhas intercaladas quando as
   duas fontes de áudio falam em paralelo.
-- **CU-02 — Acompanhar a fala em curso:** a fala ainda em revisão aparece no fim,
-  como bolha "em andamento" com `…`, e migra para a sua posição na linha temporal
-  quando o turno fecha.
+- **CU-02 — Acompanhar a fala em curso:** a fala ainda em revisão aparece na
+  posição do seu `start_ms`, como bolha "em andamento" com `…`; se começou no
+  meio de um bloco finalizado, o bloco é dividido para ela não ficar atrás dele.
+  Quando o turno fecha, o texto final ocupa a mesma posição.
 - **CU-03 — Ver a sugestão da IA na conversa:** a sugestão é uma bolha na mesma
   linha temporal, com tempo e botão de copiar.
 - **CU-04 — Controlar a sessão por ícones:** play (retomar), pause e stop, mais o
@@ -77,11 +79,14 @@ Mesmas personas do MVP (`../mvp/prd.md` §3). Casos de uso desta PRD:
   - **CA-01.4** O visual segue os valores do Perssua documentados em
     [`architecture/chat-ui.md`](architecture/chat-ui.md) §3 (largura máx. 75%,
     raio 12px, tonalidades por falante, rótulo em maiúsculas).
-- **US-02 — Fala em andamento no fim.** Como usuário, quero ver o que ainda está
-  sendo transcrito como bolha "em andamento" no fim da lista.
-  - **CA-02.1** Segmentos não finalizados **não** entram na linha temporal; são
-    exibidos como bolha em andamento (uma por falante, no máximo) **depois** do
-    último item, e **nunca** são divididos em continuações (BR-102).
+- **US-02 — Fala em andamento na posição do tempo.** Como usuário, quero ver o
+  que ainda está sendo transcrito como bolha "em andamento" no ponto em que a
+  fala começou.
+  - **CA-02.1** Segmentos não finalizados entram na linha temporal pelo
+    `start_ms` (uma bolha em andamento por falante, no máximo). Se começaram
+    dentro de uma fala finalizada longa, ela é dividida para intercalar a prévia
+    (BR-043/ISS-082); as prévias **nunca** são divididas em continuações
+    (BR-102).
   - **CA-02.2** A bolha em andamento tem `opacity` reduzida e indicador `…`
     piscando; quando o turno fecha, ela some e a fala finalizada aparece na
     posição correta da linha temporal.
