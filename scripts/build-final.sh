@@ -31,6 +31,10 @@ if [ ! -f vendor/laya/laya-rust/Cargo.toml ]; then
   git submodule update --init
 fi
 
+# Remove AppImages de versões antigas antes de compilar: durante o build não
+# pode sobrar um artefato velho para abrir/testar por engano.
+bash scripts/prune-appimages.sh
+
 # O tauri-build copia o modelo para <target>/release/laya; uma cópia antiga
 # read-only faz o build morrer com "Permission denied (os error 13)".
 for dir in \

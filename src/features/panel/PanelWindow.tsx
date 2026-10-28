@@ -30,7 +30,10 @@ export function PanelWindow() {
   const opened = usePanelOpen("chat");
   const { state } = useSessionState();
   const { settings, reload } = useSettings();
-  const transcriptionActivity = useTranscriptActivity(state.session_id);
+  const transcriptionActivity = useTranscriptActivity(
+    state.session_id,
+    state.listening && !state.paused,
+  );
   const [tab, setTab] = useState<PanelTab>(settings.panel_tab);
 
   // As settings carregam de forma assíncrona: acompanha a aba persistida.

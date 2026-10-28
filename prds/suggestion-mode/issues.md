@@ -3,7 +3,7 @@
 Registry de bugs e limitações deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-083**.
+único no repositório). Próximo ID livre: **ISS-085**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
@@ -17,6 +17,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ISS-078 | Backend “Regras locais” ainda depende de palavras-chave (viola R23) | Média | OPEN |
 | ISS-080 | Última pergunta não classificada: modo_context de geração + alvo fragmentado | Alta | FIXED |
 | ISS-081 | `already_answered` não reconhece repetição deslocada/fragmento (janela fixa) | Alta | FIXED |
+| ISS-083 | Sugestão gerada para fala de setup antes da pergunta real | Média | FIXED |
 
 ---
 
@@ -513,3 +514,31 @@ Modelo:
 - **Fora de escopo:** a 1ª ocorrência da carteira não gerou sugestão (o bloco
   terminou com ME), então não entrou no histórico — comportamento da BR-101;
   registrá-la exigiria outra decisão de produto.
+
+---
+
+## ISS-083 — Sugestão gerada para fala de setup antes da pergunta real
+
+- **Severidade:** Média · **Status:** FIXED (task 19)
+- **Sintoma (sessão `79db57b1…`, 2026-10-28):** THEY disse “vou pedir licença
+  para fazer algumas perguntas…” e o copiloto sugeriu uma resposta
+  administrativa (“Claro, fique à vontade…”), antes de a pergunta real chegar.
+- **Causa raiz:** o gate classificava o bloco fechado no primeiro tick, sem
+  esperar o próximo turno de THEY. O Laya zero-shot também não separa setup de
+  conteúdo de forma confiável; forçar isso no prompt quebrava perguntas reais.
+- **Correção (task 19):** **debounce estrutural** — um bloco fechado só é
+  classificado depois de **3 s** de silêncio E com o canal **THEY** parado
+  (`TranscriptActivity`, por sessão/canal). Se THEY começar a falar, o gate
+  segura; quando a pergunta real finaliza, classifica esse bloco. O canal ME não
+  segura (o usuário costuma responder em seguida).
+- **Testes anti-regressão (R16/R17):**
+  - `a_closed_block_waits_for_they_quiet_and_for_they_to_stop_speaking`;
+  - `transcript_activity_store_tracks_the_channel_until_the_final`;
+  - `activity_signal_expires_without_recent_speech`.
+- **Arquivos:** `src-tauri/src/ports/transcript_activity.rs`,
+  `src-tauri/src/adapters/system/in_memory_transcript_activity.rs`,
+  `src-tauri/src/application/suggestion_gate_service.rs`,
+  `src-tauri/src/application/transcription_pipeline.rs`,
+  `src-tauri/src/application/session_service.rs`, `src-tauri/src/lib.rs`.
+- **Task:** [`tasks/19-task.md`](tasks/19-task.md)
+- **Dano em dados existentes:** nenhum.

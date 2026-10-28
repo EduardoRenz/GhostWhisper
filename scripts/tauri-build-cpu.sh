@@ -10,6 +10,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Só a versão atual fica disponível para teste.
+bash scripts/prune-appimages.sh
+
 bash scripts/ensure-libvulkan.sh
 
 pnpm tauri build "$@"

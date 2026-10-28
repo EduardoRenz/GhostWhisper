@@ -28,12 +28,13 @@ const IDLE: TranscriptActivity = { microphone: false, system: false };
  */
 export function useTranscriptActivity(
   sessionId: string | null,
+  enabled = true,
 ): TranscriptActivity {
   const [activity, setActivity] = useState<TranscriptActivity>(IDLE);
 
   useEffect(() => {
     setActivity(IDLE);
-    if (!sessionId) {
+    if (!sessionId || !enabled) {
       return;
     }
 
@@ -69,7 +70,7 @@ export function useTranscriptActivity(
       cancelled = true;
       unlisten?.();
     };
-  }, [sessionId]);
+  }, [sessionId, enabled]);
 
   return activity;
 }

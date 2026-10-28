@@ -11,6 +11,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Só a versão atual fica disponível para teste.
+bash scripts/prune-appimages.sh
+
 bash scripts/ensure-libvulkan.sh
 
 # `source` exporta VULKAN_SDK/PATH/LD_LIBRARY_PATH/RUSTFLAGS/CARGO_TARGET_DIR.

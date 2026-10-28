@@ -25,6 +25,7 @@ use crate::ports::recording::RecordingLifecycle;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
 use crate::ports::session_controller::{AudioChannel, SessionController};
 use crate::ports::speech_engine_factory::SpeechEngineFactory;
+use crate::ports::transcript_activity::TranscriptActivity;
 
 use super::transcription_pipeline::TranscriptionPipeline;
 use super::turn_scheduler::TurnTimings;
@@ -44,6 +45,8 @@ pub struct SessionService {
     last_channels: Mutex<Vec<AudioChannel>>,
     /// Gancho opcional da gravação (BR-065). Ausente em testes que não gravam.
     recording: Option<Arc<dyn RecordingLifecycle>>,
+    /// Atividade de fala compartilhada com o gate (debounce estrutural).
+    activity: Arc<dyn TranscriptActivity>,
 }
 
 /// Canal sendo captado agora: porta de áudio + pipeline de transcrição.
@@ -96,6 +99,7 @@ impl SessionService {
         sessions: Arc<dyn SessionRepository>,
         transcriptions: Arc<dyn TranscriptionsRepository>,
         clock: Arc<dyn Clock>,
+        activity: Arc<dyn TranscriptActivity>,
     ) -> Self {
         Self {
             microphone,
@@ -108,6 +112,7 @@ impl SessionService {
             active: Mutex::new(None),
             last_channels: Mutex::new(Vec::new()),
             recording: None,
+            activity,
         }
     }
 
@@ -256,7 +261,8 @@ impl SessionService {
                 Arc::clone(&self.transcriptions),
             )
             .with_timings(TurnTimings::from_env())
-            .with_time_origin(origin_ms),
+            .with_time_origin(origin_ms)
+            .with_activity_store(Arc::clone(&self.activity)),
         )
         .start();
 
@@ -765,6 +771,9 @@ mod tests {
             sessions.clone(),
             Arc::new(InMemoryTranscriptionsRepository::new()),
             Arc::new(FixedClock(1_000)),
+            Arc::new(
+                crate::adapters::system::in_memory_transcript_activity::InMemoryTranscriptActivity::new(),
+            ),
         );
         Fixture {
             mic,

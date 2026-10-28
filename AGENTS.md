@@ -64,6 +64,8 @@ pnpm test             # testes do frontend
   `cargo check` para o lock). Não edite só um deles.
 - O nome do AppImage/deb usa a versão dos manifestos; faça o bump **antes** do
   `pnpm build:final` da release.
+- O build remove AppImages de versões antigas (`scripts/prune-appimages.sh`):
+  só o artefato da versão atual fica nos diretórios de bundle.
 - Próxima release planejada: **0.2.0**.
 
 ## Regras rápidas

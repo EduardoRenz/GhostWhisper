@@ -44,6 +44,7 @@ use crate::ports::event_publisher::{EventPublisher, TranscriptActivityEvent};
 use crate::ports::repositories::TranscriptionsRepository;
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::speech_to_text::SpeechToText;
+use crate::ports::transcript_activity::TranscriptActivity;
 
 use super::turn_scheduler::{self, Decision, TurnState, TurnTimings};
 
@@ -56,6 +57,8 @@ const MIN_BUFFER_MS: i64 = 250;
 const MAX_BUFFER_MS: i64 = 30_000;
 /// Intervalo de verificação da thread de agendamento.
 const PROCESS_INTERVAL: Duration = Duration::from_millis(50);
+/// Depois disto sem áudio falado, o sinal de atividade não fica aceso.
+const ACTIVITY_IDLE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Intervalo mínimo entre eventos de nível de áudio.
 const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
 /// Sem áudio por este tempo ⇒ a fonte pode ter parado.
@@ -166,6 +169,8 @@ pub struct TranscriptionPipeline {
     had_speech: AtomicBool,
     /// Último estado de atividade publicado para a UI (evita repetição).
     activity: AtomicBool,
+    /// Estado compartilhado com o gate (debounce estrutural).
+    activity_store: Mutex<Option<Arc<dyn TranscriptActivity>>>,
     /// Turnos com passe final pendente (aguardando o resultado).
     ///
     /// É um conjunto, não um único turno: o `tick` e o resultado da prévia podem
@@ -263,11 +268,20 @@ impl TranscriptionPipeline {
             last_voiced_at: Mutex::new(None),
             had_speech: AtomicBool::new(false),
             activity: AtomicBool::new(false),
+            activity_store: Mutex::new(None),
             pending_finals: Mutex::new(Vec::new()),
             last_preview: Mutex::new(None),
             last_commit_latency_ms: AtomicI64::new(-1),
             mode: Mutex::new(DecodeMode::Inline),
         }
+    }
+
+    /// Liga o estado de atividade compartilhado com o gate.
+    pub fn with_activity_store(self, store: Arc<dyn TranscriptActivity>) -> Self {
+        if let Ok(mut slot) = self.activity_store.lock() {
+            *slot = Some(store);
+        }
+        self
     }
 
     /// Inicia as threads (decodificação + agendamento).
@@ -412,6 +426,9 @@ impl TranscriptionPipeline {
     /// Atalho equivalente a [`consume`](AudioConsumer::consume) + [`tick`];
     /// existe para testes determinísticos sem a thread de agendamento.
     pub fn tick(&self) {
+        // Reavalia o sinal periodicamente: sem fala recente/decodificação, ele
+        // apaga mesmo que `had_speech` tenha ficado preso.
+        self.publish_activity();
         let buffered_ms = self.buffered_ms();
         if buffered_ms < MIN_BUFFER_MS {
             return;
@@ -1062,9 +1079,26 @@ impl TranscriptionPipeline {
     /// pendente. Assim o sinal começa no primeiro bloco falado e só apaga quando
     /// o passe final terminou.
     fn publish_activity(&self) {
-        let processing = self.had_speech()
-            || self.in_flight.load(Ordering::SeqCst) > 0
-            || !self.pending_finals_empty();
+        let since_voiced = self
+            .last_voiced_at
+            .lock()
+            .ok()
+            .and_then(|at| *at)
+            .map(|at| at.elapsed());
+        let processing = activity_is_processing(
+            self.had_speech(),
+            since_voiced,
+            self.in_flight.load(Ordering::SeqCst),
+            !self.pending_finals_empty(),
+        );
+        if let Some(store) = self
+            .activity_store
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(Arc::clone))
+        {
+            store.set_speaking(&self.session_id, self.channel, processing);
+        }
         if self.activity.swap(processing, Ordering::Relaxed) == processing {
             return;
         }
@@ -1262,6 +1296,22 @@ fn ms_to_samples(ms: i64) -> usize {
     (ms as usize * TARGET_SAMPLE_RATE as usize) / 1000
 }
 
+/// Sinal de atividade: fala recente, decodificação em voo ou final pendente.
+///
+/// `had_speech` sozinho podia ficar preso (ruído/áudio no buffer sem passe
+/// pendente) e a aba continuava animada sem ninguém falando. A idade da última
+/// janela falada fecha o sinal depois de `ACTIVITY_IDLE_TIMEOUT`.
+fn activity_is_processing(
+    had_speech: bool,
+    since_voiced: Option<Duration>,
+    in_flight: usize,
+    final_pending: bool,
+) -> bool {
+    let speaking =
+        had_speech && since_voiced.is_some_and(|elapsed| elapsed <= ACTIVITY_IDLE_TIMEOUT);
+    speaking || in_flight > 0 || final_pending
+}
+
 fn samples_to_ms(samples: usize) -> i64 {
     (samples as i64 * 1000) / TARGET_SAMPLE_RATE as i64
 }
@@ -1270,6 +1320,7 @@ fn samples_to_ms(samples: usize) -> i64 {
 mod tests {
     use super::*;
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
+    use crate::adapters::system::in_memory_transcript_activity::InMemoryTranscriptActivity;
     use crate::domain::transcription::TranscribedSpan;
     use crate::error::Result as CoreResult;
     use crate::ports::model_store::ModelStore;
@@ -1766,6 +1817,42 @@ mod tests {
             vec![SpeechQuality::Preview, SpeechQuality::Final],
             "o fechamento vem direto, sem prévia no meio"
         );
+    }
+
+    #[test]
+    fn activity_signal_expires_without_recent_speech() {
+        assert!(!activity_is_processing(false, None, 0, false));
+        assert!(activity_is_processing(
+            true,
+            Some(Duration::from_millis(500)),
+            0,
+            false
+        ));
+        assert!(!activity_is_processing(
+            true,
+            Some(ACTIVITY_IDLE_TIMEOUT + Duration::from_millis(1)),
+            0,
+            false
+        ));
+        assert!(activity_is_processing(false, None, 1, false));
+        assert!(activity_is_processing(false, None, 0, true));
+    }
+
+    #[test]
+    fn transcript_activity_store_tracks_the_channel_until_the_final() {
+        let activity = Arc::new(InMemoryTranscriptActivity::new());
+        let (pipeline, _publisher, _rows) = pipeline(Arc::new(FakeAsr {
+            text: "bom dia".into(),
+        }));
+        let pipeline = pipeline.with_activity_store(activity.clone());
+
+        pipeline.consume(&speech(1_500));
+        pipeline.tick();
+        assert!(activity.is_speaking("s1", AudioChannel::Microphone));
+
+        pipeline.consume(&silence(1_000));
+        pipeline.tick();
+        assert!(!activity.is_speaking("s1", AudioChannel::Microphone));
     }
 
     #[test]

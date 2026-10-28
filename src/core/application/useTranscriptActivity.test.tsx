@@ -88,6 +88,27 @@ describe("useTranscriptActivity", () => {
     expect(result.current).toEqual({ microphone: false, system: false });
   });
 
+  it("zera o sinal quando a sessão pausa ou para", async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useTranscriptActivity("s1", enabled),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!({
+        session_id: "s1",
+        channel: "system",
+        processing: true,
+      });
+    });
+    expect(result.current.system).toBe(true);
+
+    rerender({ enabled: false });
+    expect(result.current).toEqual({ microphone: false, system: false });
+  });
+
   it("sem sessão não assina", () => {
     renderHook(() => useTranscriptActivity(null));
     expect(subscribeMock.events).not.toContain("transcript_activity");

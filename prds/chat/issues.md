@@ -4,7 +4,7 @@ Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a de
 [`../mvp/issues.md`](../mvp/issues.md) para o ID ser único no repositório).
-Próximo ID livre: **ISS-083**.
+Próximo ID livre: **ISS-085**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
@@ -16,6 +16,7 @@ Próximo ID livre: **ISS-083**.
 | ISS-075 | Corte de sobreposição fatiando falas em bolhas de 1–5 caracteres | Média | FIXED |
 | ISS-079 | Fim do segmento usava o cut do turno e invertia a ordem no chat | Média | FIXED |
 | ISS-082 | Fala em andamento ficava atrás do bloco finalizado que ela interrompeu | Média | FIXED |
+| ISS-084 | Indicador de fala da aba continuava aceso sem ninguém falando | Média | FIXED |
 
 ---
 
@@ -262,3 +263,30 @@ Próximo ID livre: **ISS-083**.
   `src/features/chat/ChatView.tsx`.
 - **Task:** [`tasks/22-task.md`](tasks/22-task.md)
 - **Dano em dados existentes:** nenhum (corte de exibição).
+
+---
+
+## ISS-084 — Indicador de fala da aba continuava aceso sem ninguém falando
+
+- **Severidade:** Média · **Status:** FIXED (task 23)
+- **Sintoma:** o selo **Streaming**/gradiente da aba Transcrição continuava
+  animado depois que a fala terminou, mesmo com ninguém falando.
+- **Causa raiz (dupla):**
+  1. `publish_activity` usava `had_speech` sozinho; se o buffer guardava áudio
+     antigo/ruído e nenhum passe final estava pendente, o sinal ficava preso;
+  2. a UI nunca zerava o estado ao pausar/encerrar a sessão.
+- **Correção (task 23):**
+  - a atividade agora exige **fala recente** (`ACTIVITY_IDLE_TIMEOUT = 2 s`),
+    decodificação em voo ou final pendente; o `tick` reavalia a cada 50 ms;
+  - `useTranscriptActivity(sessionId, enabled)` zera quando a sessão está
+    pausada/parada (`state.listening && !state.paused`).
+- **Testes anti-regressão (R16/R17):**
+  - `activity_signal_expires_without_recent_speech`;
+  - `transcript_activity_store_tracks_the_channel_until_the_final`;
+  - `useTranscriptActivity` (“zera o sinal quando a sessão pausa ou para”).
+- **Arquivos:** `src-tauri/src/application/transcription_pipeline.rs`,
+  `src/core/application/useTranscriptActivity.ts`,
+  `src/core/application/useTranscriptActivity.test.tsx`,
+  `src/features/panel/PanelWindow.tsx`.
+- **Task:** [`tasks/23-task.md`](tasks/23-task.md)
+- **Dano em dados existentes:** nenhum.

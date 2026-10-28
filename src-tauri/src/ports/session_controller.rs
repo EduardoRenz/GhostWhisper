@@ -3,7 +3,7 @@
 use crate::error::Result;
 
 /// Canal de áudio de uma sessão.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioChannel {
     /// Microfone do usuário (`ME`).
     Microphone,

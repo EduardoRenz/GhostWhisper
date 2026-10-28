@@ -46,5 +46,6 @@ pub mod suggestion_cue_classifier;
 pub mod suggestion_gate;
 pub mod suggestion_generator;
 pub mod summary_generator;
+pub mod transcript_activity;
 pub mod translator;
 pub mod virtual_sink;

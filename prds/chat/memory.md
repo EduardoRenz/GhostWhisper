@@ -611,3 +611,20 @@ bloco é uma bolha única ancorada no início, a prévia caía depois dele.
 - `chat.test.ts` **25 ✓** (caso genérico + caso real `9e6d8300…`, prévia curta,
   prévia posterior, paridade prévia/final).
 - `pnpm test` **525 ✓** · `tsc` ✓.
+
+## 2026-10-28 — Indicador de fala da aba não fica preso
+
+- **IDs:** ISS-084, BR-033, T23 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/23-task.md`](tasks/23-task.md)
+
+### Sintoma
+O selo Streaming/gradiente da aba continuava aceso sem ninguém falando.
+
+### Decisão
+- `publish_activity` exige fala recente (`ACTIVITY_IDLE_TIMEOUT = 2 s`),
+  decodificação em voo ou final pendente; `tick` reavalia a cada 50 ms.
+- `useTranscriptActivity(sessionId, enabled)` zera ao pausar/parar.
+- Testes do helper, do store e do hook.
+
+### Verificação
+- `cargo test --lib` **855 ✓** · `pnpm test` **526 ✓** · clippy/tsc ✓.

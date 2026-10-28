@@ -3,7 +3,7 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-083**.
+único no repositório). Próximo ID livre: **ISS-085**.
 
 > `ISS-022` permanece reservada pelo PRD [`assistant`](../assistant/issues.md);
 > esta PRD começa em `ISS-023` para não colidir.

@@ -590,7 +590,9 @@ uma nota de revisão.
 - **Consequência:** **sem** migração de `chat_position`/`chat_size` (o label da
   janela continua `chat`); config antiga com `summary_*` é ignorada no load (serde);
   a janela `chat` e a `history`, da task 07/08 do PRD chat, continuam existindo. A
-  task 03 do PRD notch **evolui** a task 07 do chat (não a reverte).
+  task 03 do PRD notch **evolui** a task 07 do chat (não a reverte). O selo
+  **Streaming** da aba apaga após **2 s** sem fala recente/decodificação e zera
+  ao pausar/encerrar (ISS-084/task 23).
 - **Detalhes:** [`notch/prd.md`](notch/prd.md) §4 (US-03/US-04/US-05),
   [`notch/architecture/notch-ui.md`](notch/architecture/notch-ui.md) §1 e §5,
   [`chat/tasks/07-task.md`](chat/tasks/07-task.md).
@@ -2222,6 +2224,11 @@ uma nota de revisão.
   `already_answered`, que não codifica idioma. Laya indisponível/abstenção ⇒
   **não sugerir** (sem fallback por keywords). O limiar vem da sensibilidade
   (Laya: 0,75/0,50/0,35). Timeout/erro não geram por padrão.
+- **Debounce estrutural (revisão 2026-10-28, ISS-083/task 19):** um bloco fechado
+  só é classificado depois de **3 s** de silêncio **e** com o canal de THEY
+  parado (atividade por sessão/canal). Se THEY começar a falar, o gate segura;
+  quando a pergunta real finaliza, classifica esse bloco. O microfone (ME) não
+  segura — o usuário costuma responder em seguida.
 - **Pergunta longa sem `?` (revisão 2026-10-27, ISS-077/task 15):** o alvo é
   construído por `target_across_blocks` (junta blocos contíguos divididos por
   tempo) e o estado do Laya é a conversa inteira, sem separar

@@ -26,6 +26,7 @@ usuário (PRD §16).
 | 16 | Remover o backend “Regras locais” keyword (ISS-078) | Revisão | PENDING |
 | 17 | Última pergunta: contexto do agente e alvo entre blocos (ISS-080) | Revisão | CONCLUDED |
 | 18 | `already_answered`: repetição deslocada/fragmento (ISS-081) | Revisão | CONCLUDED |
+| 19 | Debounce estrutural: setup de THEY (ISS-083) | Revisão | CONCLUDED |
 
 ## Fases
 
@@ -51,7 +52,7 @@ Fase 6 — Fechamento
   10 ─▶ 11
 
 Fase 7 — Revisão de taxonomia
-  10/11 ─▶ 13 ─▶ 14 ─▶ 15 ─▶ 17 ─▶ 18
+  10/11 ─▶ 13 ─▶ 14 ─▶ 15 ─▶ 17 ─▶ 18 ─▶ 19
   15 ─▶ 16
 
 Fase 8 — Evolução (fine-tuning na taxonomia nova)

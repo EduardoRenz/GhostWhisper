@@ -28,6 +28,7 @@
 | 20 | Corte de sobreposição conservador (ISS-075) | CONCLUDED |
 | 21 | Fim do segmento = fim real da fala (ISS-079) | CONCLUDED |
 | 22 | Fala em andamento intercalada no bloco finalizado (ISS-082) | CONCLUDED |
+| 23 | Indicador de fala da aba não fica preso (ISS-084) | CONCLUDED |
 
 > A **14** é a última na ordem de execução, embora apareça antes da **15** na
 > tabela (mantém o fechamento junto das demais tasks). A ordem válida é a do
@@ -43,6 +44,7 @@
 16 ─▶ 20 · 19 ─▶ 20
 16 ─▶ 21 · 19 ─▶ 21
 21 ─▶ 22
+22 ─▶ 23
 01 ─▶ 07 ─▶ 08
 03 ─▶ 09 ─▶ 10 ─▶ 11 ─▶ 12 ─▶ 13 ─▶ 15 ─▶ 14
 ```

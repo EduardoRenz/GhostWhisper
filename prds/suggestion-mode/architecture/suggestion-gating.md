@@ -199,6 +199,11 @@ Ordem de precedência:
 5. **`comment`** — regra legada por convite explícito.
 6. **`no_action`** — caso contrário.
 
+**Debounce estrutural (ISS-083/task 19):** um bloco fechado só é classificado
+depois de **3 s** de silêncio e com o canal **THEY** parado
+(`TranscriptActivity`, por sessão/canal). Se THEY começar a falar, o gate segura;
+quando a pergunta real finaliza, classifica esse bloco. ME não segura.
+
 **Caminho efetivo (Laya, R23):** o modelo multilíngue decide
 `question`/`comment`/`no_action`/`insufficient_context` lendo a **conversa
 inteira** (sem separar contexto/alvo) com prompt genérico (sem exemplos/palavras

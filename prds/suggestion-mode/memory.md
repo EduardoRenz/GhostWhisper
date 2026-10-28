@@ -943,3 +943,23 @@ amigo/dinheiro foram sugeridos de novo.
 - Gate ponta a ponta com os segmentos reais de `5f8595a7…` (R24).
 - `cargo test --lib` **851 ✓** (11 ignorados) · Laya **9 ✓** · frontend **521 ✓**
   · clippy/fmt/tsc ✓.
+
+## 2026-10-28 — Debounce estrutural para setup de THEY
+
+- **IDs:** ISS-083, BR-094, T19 · **Refs:** [`issues.md`](issues.md),
+  [`tasks/19-task.md`](tasks/19-task.md)
+
+### Sintoma
+Sessão `79db57b1…`: “vou pedir licença para fazer algumas perguntas…” gerou
+“Claro, fique à vontade…” antes da pergunta real.
+
+### Decisão
+- Porta `TranscriptActivity` por sessão/canal + `InMemoryTranscriptActivity`.
+- Pipeline publica; gate lê **só System/THEY**.
+- Bloco fechado espera **3 s** de silêncio e THEY parado; ME não segura.
+- `reset` limpa a atividade da sessão.
+- Não é `no_action` do Laya: o Laya zero-shot não separa setup de conteúdo sem
+  quebrar perguntas reais; o debounce evita a sugestão prematura.
+
+### Verificação
+- Gate: quiet + System/Microphone; pipeline/store; `cargo test --lib` **855 ✓**.

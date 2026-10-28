@@ -41,6 +41,9 @@ pub struct SuggestionGateConfig {
     /// Só classifica quando THEY é o último a falar e projeta o bloco só com
     /// turnos de THEY (escopo `they_only`).
     pub they_only: bool,
+    /// Janela de silêncio de THEY antes de classificar um bloco fechado
+    /// (debounce estrutural; 0 desliga).
+    pub they_quiet_ms: i64,
 }
 
 impl Default for SuggestionGateConfig {
@@ -61,6 +64,7 @@ impl Default for SuggestionGateConfig {
             mode_context: String::new(),
             allow_single_speaker: false,
             they_only: false,
+            they_quiet_ms: 0,
         }
     }
 }

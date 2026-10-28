@@ -19,11 +19,14 @@ fi
 
 if [ "$(readlink -f "$source_dir")" = "$(readlink -f "$canonical")" ]; then
   echo "[publish-bundles] artefatos já estão em $canonical"
+  bash scripts/prune-appimages.sh
   exit 0
 fi
 
 mkdir -p "$canonical"
 cp -rf "$source_dir/." "$canonical/"
+# Deixa só o AppImage da versão atual: abrir/testar o antigo por engano é risco.
+bash scripts/prune-appimages.sh
 echo "[publish-bundles] artefatos publicados em $canonical:"
 find "$canonical" -maxdepth 3 -type f \( -name '*.deb' -o -name '*.AppImage' \) \
   -print -exec ls -lh {} \;

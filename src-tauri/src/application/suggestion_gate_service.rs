@@ -22,15 +22,22 @@ use crate::ports::event_publisher::{
     EventPublisher, SuggestionClassificationEvent, SuggestionClassifierState,
 };
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
+use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_cue_classifier::{
     ClassificationOutcome, ClassificationRequest, SuggestionCueClassifier,
 };
 use crate::ports::suggestion_gate::{
     GateResult, SuggestionGate, SuggestionGateConfig, SuggestionGateError,
 };
+use crate::ports::transcript_activity::TranscriptActivity;
 
 /// Espera mínima depois do fim da última fala para classificar um bloco aberto.
 const OPEN_BLOCK_SETTLE_MS: i64 = 300;
+/// Silêncio mínimo de THEY antes de classificar um bloco fechado.
+///
+/// Um setup ("vou te perguntar...") quase sempre é seguido pela pergunta real;
+/// segurar 1 s extra + atividade do canal evita sugerir para o setup (ISS-083).
+const THEY_QUIET_MS: i64 = 3_000;
 
 /// Contexto curto do agente selecionado para o classificador.
 ///
@@ -100,6 +107,7 @@ pub fn config_from_settings(settings: &Settings) -> SuggestionGateConfig {
         mode_context: selected_mode_context(settings),
         allow_single_speaker: settings.suggestion_scope != "blocks",
         they_only: settings.suggestion_scope == "they_only",
+        they_quiet_ms: THEY_QUIET_MS,
     }
 }
 
@@ -138,6 +146,8 @@ pub struct SuggestionGateService {
     /// Configuração mutável: salvar as settings aplica sem reiniciar (task 06).
     config: RwLock<SuggestionGateConfig>,
     state: Mutex<GateState>,
+    /// Atividade de fala dos canais (debounce estrutural; opcional em testes).
+    activity: Option<Arc<dyn TranscriptActivity>>,
 }
 
 impl SuggestionGateService {
@@ -157,7 +167,14 @@ impl SuggestionGateService {
             publisher,
             config: RwLock::new(config),
             state: Mutex::new(GateState::default()),
+            activity: None,
         }
+    }
+
+    /// Liga o estado de atividade compartilhado com os pipelines.
+    pub fn with_activity(mut self, activity: Arc<dyn TranscriptActivity>) -> Self {
+        self.activity = Some(activity);
+        self
     }
 
     /// Agora no **mesmo relógio das falas** (ms desde o início da sessão).
@@ -327,6 +344,22 @@ impl SuggestionGate for SuggestionGateService {
         // contínua não fica sem sugestão.
         if block.is_open && now.saturating_sub(block.end_ms) < OPEN_BLOCK_SETTLE_MS {
             return Err(SuggestionGateError::NoBlock);
+        }
+
+        // Debounce estrutural: bloco fechado só é classificado depois de
+        // `they_quiet_ms` de silêncio E com o canal de THEY parado. Assim um
+        // setup seguido da pergunta real não gera sugestão para o setup.
+        if !block.is_open {
+            if now.saturating_sub(block.end_ms) < config.they_quiet_ms {
+                return Err(SuggestionGateError::NoBlock);
+            }
+            if self
+                .activity
+                .as_deref()
+                .is_some_and(|activity| activity.is_speaking(session_id, AudioChannel::System))
+            {
+                return Err(SuggestionGateError::NoBlock);
+            }
         }
 
         // O alvo é o que THEY falou desde a última fala significativa de ME.
@@ -534,6 +567,9 @@ impl SuggestionGate for SuggestionGateService {
         state.pending.remove(session_id);
         state.answered_questions.remove(session_id);
         state.question_titles.clear();
+        if let Some(activity) = &self.activity {
+            activity.clear_session(session_id);
+        }
     }
 }
 
@@ -546,6 +582,7 @@ mod tests {
     use crate::adapters::ai::heuristic_suggestion_cue_classifier::HeuristicSuggestionCueClassifier;
     use crate::adapters::persistence::memory::in_memory_session_repository::InMemorySessionRepository;
     use crate::adapters::persistence::memory::in_memory_transcriptions_repository::InMemoryTranscriptionsRepository;
+    use crate::adapters::system::in_memory_transcript_activity::InMemoryTranscriptActivity;
     use crate::adapters::system::system_clock::FixedClock;
     use crate::domain::audio::AudioLevel;
     use crate::domain::session::{Session, SessionStatus};
@@ -1415,6 +1452,135 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_block_waits_for_they_quiet_and_for_they_to_stop_speaking() {
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment(
+            "they",
+            Speaker::They,
+            "how would you design the ledger?",
+            0,
+            5_000,
+        ))
+        .unwrap();
+
+        let mut cfg = config();
+        cfg.they_quiet_ms = 5_000;
+        cfg.allow_single_speaker = true;
+        let quiet = SuggestionGateService::new(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(7_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        );
+        assert!(matches!(
+            quiet.classify_latest("s1"),
+            Err(SuggestionGateError::NoBlock)
+        ));
+        assert!(classifier.requests().is_empty());
+
+        let mut cfg = config();
+        cfg.they_quiet_ms = 0;
+        cfg.allow_single_speaker = true;
+        let activity = Arc::new(InMemoryTranscriptActivity::new());
+        activity.set_speaking("s1", AudioChannel::System, true);
+        let gate = SuggestionGateService::new(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(10_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        )
+        .with_activity(activity.clone());
+        assert!(matches!(
+            gate.classify_latest("s1"),
+            Err(SuggestionGateError::NoBlock)
+        ));
+        assert!(classifier.requests().is_empty(), "THEY falando segura");
+
+        // Só o microfone ativo não segura: o debounce olha THEY.
+        activity.set_speaking("s1", AudioChannel::System, false);
+        activity.set_speaking("s1", AudioChannel::Microphone, true);
+        let outcome = gate.classify_latest("s1").expect("classifica");
+        assert_eq!(outcome.cue, SuggestionCue::Question);
+        assert_eq!(classifier.requests().len(), 1);
+    }
+
+    #[test]
+    fn a_setup_then_the_real_question_is_not_classified_as_setup() {
+        // Sessão `79db57b1…`: o setup termina em 204,590 s, a pergunta real
+        // começa em 206,917 s e termina em 214,757 s. Com o debounce, o gate
+        // segura o setup (quiet + THEY falando) e classifica a pergunta.
+        let classifier = Arc::new(FakeSuggestionCueClassifier::new());
+        classifier.push_outcome(outcome(SuggestionCue::Question, true));
+        let repo = Arc::new(InMemoryTranscriptionsRepository::new());
+        repo.insert(&segment(
+            "setup",
+            Speaker::They,
+            "vou pedir licença para fazer algumas perguntas mais específicas",
+            188_910,
+            204_590,
+        ))
+        .unwrap();
+        let activity = Arc::new(InMemoryTranscriptActivity::new());
+        activity.set_speaking("s1", AudioChannel::System, true);
+        let mut cfg = config();
+        cfg.allow_single_speaker = true;
+        cfg.they_quiet_ms = 3_000;
+
+        let first = SuggestionGateService::new(
+            classifier.clone(),
+            repo.clone(),
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(208_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg.clone(),
+        )
+        .with_activity(activity.clone());
+        assert!(matches!(
+            first.classify_latest("s1"),
+            Err(SuggestionGateError::NoBlock)
+        ));
+        assert!(classifier.requests().is_empty());
+
+        repo.insert(&segment(
+            "question",
+            Speaker::They,
+            "como você projetaria essa solução para garantir consistência dos dados?",
+            206_917,
+            214_757,
+        ))
+        .unwrap();
+        activity.set_speaking("s1", AudioChannel::System, false);
+        let second = SuggestionGateService::new(
+            classifier.clone(),
+            repo,
+            Arc::new(InMemorySessionRepository::new()),
+            Arc::new(FixedClock(218_000)),
+            Arc::new(RecordingPublisher::default()),
+            cfg,
+        )
+        .with_activity(activity);
+        let outcome = second.classify_latest("s1").expect("pergunta");
+        assert_eq!(outcome.cue, SuggestionCue::Question);
+        let requests = classifier.requests();
+        assert_eq!(requests.len(), 1);
+        let text = requests[0]
+            .block
+            .turns
+            .iter()
+            .map(|turn| turn.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("consistência dos dados"), "{text}");
+        assert!(!text.contains("pedir licença"), "{text}");
+    }
+
+    #[test]
     fn a_generated_comment_also_enters_the_answered_history() {
         let classifier = Arc::new(FakeSuggestionCueClassifier::new());
         classifier.push_outcome(outcome(SuggestionCue::Comment, true));
@@ -1660,6 +1826,7 @@ mod tests {
         assert_eq!(config.block.gap_ms, 3_000);
         assert_eq!(config.block.max_turns, 12);
         assert_eq!(config.context_blocks, 8);
+        assert_eq!(config.they_quiet_ms, 3_000);
 
         let high = crate::domain::settings::Settings {
             suggestion_classifier_sensitivity: "high".into(),

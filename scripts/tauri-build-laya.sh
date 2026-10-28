@@ -42,6 +42,9 @@ if [ ! -f vendor/laya/laya-rust/Cargo.toml ]; then
   git submodule update --init
 fi
 
+# Só a versão atual fica disponível para teste.
+bash scripts/prune-appimages.sh
+
 bash scripts/ensure-libvulkan.sh
 
 # shellcheck disable=SC1091

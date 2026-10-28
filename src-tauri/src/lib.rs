@@ -764,6 +764,12 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     let pending_session_end: Arc<dyn PendingSessionEnd> =
         Arc::new(InMemoryPendingSessionEnd::new());
 
+    // Estado de fala por canal: o pipeline escreve, o gate lê para segurar a
+    // sugestão enquanto THEY ainda está falando.
+    let transcript_activity: Arc<dyn ports::transcript_activity::TranscriptActivity> = Arc::new(
+        adapters::system::in_memory_transcript_activity::InMemoryTranscriptActivity::new(),
+    );
+
     let session: Arc<dyn SessionController> = Arc::new(
         SessionService::new(
             Arc::clone(&audio),
@@ -773,6 +779,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             Arc::clone(&sessions),
             Arc::clone(&transcriptions),
             Arc::clone(&clock),
+            Arc::clone(&transcript_activity),
         )
         .with_recording(recording_lifecycle),
     );
@@ -851,7 +858,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             Arc::clone(&clock),
             Arc::clone(&publisher),
             application::suggestion_gate_service::config_from_settings(&current_settings),
-        ),
+        )
+        .with_activity(Arc::clone(&transcript_activity)),
     );
 
     Ok(state::AppState::new(
