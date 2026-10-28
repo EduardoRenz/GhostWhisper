@@ -113,6 +113,9 @@ pelo usuário (2026-10-19); o contrato em
 - Texto com caret `▌` (CSS); sem ação de IA.
 - É **uma** bolha por falante, mesmo com texto longo — a prévia nunca é dividida
   em continuações (BR-102).
+- A prévia entra na posição do seu `start_ms` e serve de fronteira para o bloco
+  finalizado que ela interrompeu (ISS-082): o bloco é dividido para ela aparecer
+  no meio, não depois dele.
 - O `…` de digitação existente pode continuar como reforço, desde que não
   duplique o selo.
 
@@ -155,6 +158,8 @@ Outros                  [== 10,001–20 s ==]
   inteira (o export é uma lista por item, sem as partes).
 - O `end_ms` do segmento é o **fim real da fala** (VAD/whisper), não o cut do
   turno; é ele que decide se há sobreposição (ISS-079/task 21).
+- A **prévia** também é passada como `interruptions` para `splitSpeechSpans`:
+  ela não é dividida, mas serve de fronteira (ISS-082/task 22).
 
 ## 4. Handoff do contexto (task 12)
 

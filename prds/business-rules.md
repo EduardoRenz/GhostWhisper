@@ -963,12 +963,17 @@ uma nota de revisão.
     inteira;
   - o `end_ms` do segmento é o **fim real da fala** (VAD/whisper), não o fim do
     turno/buffer. Sem isso a fala já encerrada parece sobreposta à próxima do
-    outro canal e a ordem inverte (ISS-079).
+    outro canal e a ordem inverte (ISS-079);
+  - a **fala em andamento** (prévia) também é fronteira: se ela começou dentro
+    de um bloco finalizado, o bloco é dividido para a prévia aparecer no meio,
+    não depois dele. A prévia em si continua **uma** bolha por falante, com o
+    selo **Streaming** (ISS-082).
 - **Motivo:** relato do usuário — “se os outros estão falando sem parar e eu falo
   em seguida, ele vai jogando minha mensagem atrás”; a fala longa deve ser
   intercalada pela nova, não engolir a ordem. A revisão veio do relato de
   2026-10-27: “a transcrição picou em muitos balões, com frases curtas demais”
-  (o caso real `"e"` + `"79."` e `"…primeira"` + `"vez."`).
+  (o caso real `"e"` + `"79."` e `"…primeira"` + `"vez."`). O relato de
+  2026-10-28 repetiu o problema especificamente para o **Streaming** (ISS-082).
 - **Consequência:** `splitSpeechSpans` em `core/domain/chat.ts`, usado pelo
   `buildChatTimeline` e `bubblesFromTimeline`; `TimelineKind::Speech` ganha
   `end_ms` (sem schema); o **grip** de arraste passa a ser padrão no canto
@@ -976,9 +981,10 @@ uma nota de revisão.
 - **Detalhes:** [`chat/prd.md`](chat/prd.md) §9 (US-14),
   [`chat/architecture/transcription-panel.md`](chat/architecture/transcription-panel.md)
   §3.4, [`chat/tasks/16-task.md`](chat/tasks/16-task.md),
-  [`chat/tasks/20-task.md`](chat/tasks/20-task.md) (revisão conservadora).
-- **Data:** 2026-10-19 · **Revisão:** 2026-10-27 (ISS-075/task 20) · **Status:**
-  Ativa
+  [`chat/tasks/20-task.md`](chat/tasks/20-task.md) (revisão conservadora),
+  [`chat/tasks/22-task.md`](chat/tasks/22-task.md) (prévia).
+- **Data:** 2026-10-19 · **Revisão:** 2026-10-27 (ISS-075/task 20; 2026-10-28
+  ISS-082/task 22) · **Status:** Ativa
 
 ## BR-044 — Fontes de IA múltiplas e ordenadas; a primeira é a primária
 

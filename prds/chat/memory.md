@@ -582,3 +582,32 @@ começou em 122,765 s. O corte de sobreposição acreditava na sobreposição fa
 - Chat: caso real (THEY termina antes do ME) → uma bolha de THEY, ME depois,
   sem `#ov`.
 - `cargo test --lib` **844 ✓** · `pnpm test` **521 ✓** · clippy/fmt/tsc ✓.
+
+## 2026-10-28 — Streaming intercalado no bloco finalizado
+
+- **IDs:** ISS-082, BR-043, T22 · **Refs:** [`issues.md`](issues.md),
+  [`../business-rules.md`](../business-rules.md) BR-043,
+  [`tasks/22-task.md`](tasks/22-task.md)
+
+### Sintoma
+Sessão `9e6d8300…`: o bloco do interlocutor já estava formado e a fala do ME em
+andamento (**Streaming**) aparecia depois do bloco inteiro, mesmo tendo começado
+no meio dele.
+
+### Causa
+`splitSpeechSpans` só usava falas **finalizadas** como fronteira. A prévia entrava
+na linha temporal pelo `start_ms`, mas não dividia o bloco finalizado; como o
+bloco é uma bolha única ancorada no início, a prévia caía depois dele.
+
+### Decisão
+- `splitSpeechSpans(spans, interruptions)`: as prévias entram como fronteira, mas
+  **não** são divididas (continuam uma bolha por falante, BR-102).
+- `buildChatTimeline` passa `pending` como `interruptions`.
+- O corte conservador da ISS-075 continua (80 chars/6 s, interrupção ≥ 1,5 s,
+  partes ≥ 20 chars/3 palavras).
+- A posição da prévia é a mesma antes e depois de virar final.
+
+### Verificação
+- `chat.test.ts` **25 ✓** (caso genérico + caso real `9e6d8300…`, prévia curta,
+  prévia posterior, paridade prévia/final).
+- `pnpm test` **525 ✓** · `tsc` ✓.
