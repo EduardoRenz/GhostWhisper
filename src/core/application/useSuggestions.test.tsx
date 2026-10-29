@@ -180,8 +180,9 @@ describe("useSuggestions", () => {
     expect(result.current.quick?.text).toContain("resposta curta");
   });
 
-  it("ignora a rápida atrasada depois da completa da mesma geração", async () => {
-    // BR-088: com os passes em paralelo, o rascunho pode terminar depois.
+  it("mostra a rápida que chega depois da completa da mesma geração", async () => {
+    // BR-088: com modelo rápido/streaming, a completa pode chegar primeiro;
+    // a rápida ainda preenche o bloco próprio em vez de desaparecer.
     const { result } = renderHook(() => useSuggestions(options));
     await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
 
@@ -197,9 +198,30 @@ describe("useSuggestions", () => {
       subscribeMock.emit!(suggestion("> rápida atrasada", 5_000, false, "quick"));
     });
 
+    await waitFor(() =>
+      expect(result.current.quick?.text).toContain("rápida atrasada"),
+    );
     expect(result.current.current?.text).toContain("completa");
-    expect(result.current.quick).toBeNull();
     expect(result.current.awaitingFull).toBe(false);
+  });
+
+  it("ignora a rápida de uma geração antiga depois de uma completa mais nova", async () => {
+    const { result } = renderHook(() => useSuggestions(options));
+    await waitFor(() => expect(subscribeMock.emit).not.toBeNull());
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> completa nova", 9_000));
+    });
+    await waitFor(() =>
+      expect(result.current.current?.text).toContain("completa nova"),
+    );
+
+    act(() => {
+      subscribeMock.emit!(suggestion("> rápida antiga", 1_000, false, "quick"));
+    });
+
+    expect(result.current.current?.text).toContain("completa nova");
+    expect(result.current.quick).toBeNull();
   });
 
   it("tira a sugestão anterior do topo quando a nova começa (BR-038)", async () => {

@@ -5,7 +5,6 @@
 //! momentos da conversa; um `since_ms` evita chamar o LLM sem fala nova.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
@@ -82,8 +81,6 @@ struct QuickPass {
     publisher: Arc<dyn EventPublisher>,
     scope: AiRouteScope,
     request: CompletionRequest,
-    /// O completo já emitiu algum texto; o rascunho atrasado deve ser descartado.
-    full_emitted: Arc<AtomicBool>,
     session_id: String,
     mode_id: String,
     mode_name: String,
@@ -106,12 +103,9 @@ impl QuickPass {
             }
         };
 
-        // O completo já começou a falar: um rascunho atrasado só regrediria a
-        // UI para a fase rápida. A UI também ignora esse caso (defesa dupla).
-        if self.full_emitted.load(Ordering::SeqCst) {
-            return;
-        }
-
+        // O rascunho é independente do completo: mesmo que a completa já tenha
+        // começado (modelos rápidos/streaming), ele ainda completa o bloco
+        // "resposta rápida". A UI só descarta uma `quick` de geração antiga.
         // O rápido não pede `Subject:`, mas se vier, ele é o título.
         let (title, text) = prompts::parse_suggestion_response(&completion.text);
         if text.is_empty() {
@@ -419,10 +413,8 @@ impl SuggestionGenerator for SuggestionService {
         };
         let (max_tokens, temperature) = sampling(&mode);
 
-        // BR-088: rascunho rápido e passe completo em paralelo. O rascunho é
-        // descartado se o completo já começou a falar; uma falha nele não
-        // derruba o completo.
-        let full_emitted = Arc::new(AtomicBool::new(false));
+        // BR-088: rascunho rápido e passe completo em paralelo. Uma falha no
+        // rascunho não derruba o completo.
         let quick = request.fast_first.then(|| QuickPass {
             llm: Arc::clone(&self.llm),
             publisher: Arc::clone(&self.publisher),
@@ -431,7 +423,6 @@ impl SuggestionGenerator for SuggestionService {
                 .with_system(assistant_prompts::fast_first_system_prompt(&mode, language))
                 .with_temperature(FAST_FIRST_TEMPERATURE)
                 .with_max_tokens(FAST_FIRST_MAX_TOKENS),
-            full_emitted: Arc::clone(&full_emitted),
             session_id: session.id.clone(),
             mode_id: mode.id.clone(),
             mode_name: mode.name.clone(),
@@ -457,8 +448,6 @@ impl SuggestionGenerator for SuggestionService {
         let mode_color = mode.color.clone();
         let until_ms = recent.until_ms;
         let mut emit = |partial: &str| {
-            // O completo começou a falar: o rascunho não deve mais aparecer.
-            full_emitted.store(true, Ordering::SeqCst);
             // O `Subject:` é o título gerado pelo agente (BR-038): sai do corpo.
             let (title, text) = prompts::parse_suggestion_response(partial);
             if !text.is_empty() {
@@ -841,8 +830,10 @@ mod tests {
     }
 
     #[test]
-    fn a_late_quick_draft_is_discarded_when_the_full_already_spoke() {
-        // BR-088: o rápido não pode reaparecer depois que o completo começou.
+    fn a_late_quick_draft_still_fills_the_quick_block() {
+        // BR-088: com modelo rápido/streaming, a completa pode começar (e até
+        // terminar) antes do rascunho. O rascunho não pode desaparecer: ele
+        // ainda preenche o bloco "resposta rápida" da mesma geração.
         use std::time::Duration;
         let fixture = fixture_with_llm(
             Settings::default(),
@@ -867,8 +858,8 @@ mod tests {
         assert_eq!(fixture.llm.call_count(), 2, "as duas chamadas acontecem");
         assert_eq!(
             fixture.publisher.phases(),
-            vec![SuggestionPhase::Full],
-            "a rápida atrasada é descartada"
+            vec![SuggestionPhase::Full, SuggestionPhase::Quick],
+            "a rápida atrasada ainda chega ao bloco próprio"
         );
     }
 

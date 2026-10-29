@@ -459,3 +459,26 @@ mockup mostra (exceto o que ele excluiu) tem decisão, regra e task.
   preserva a organização existente.
 - **Testes:** 701 no `cargo test --lib`; `clippy` e `fmt --check` limpos; 485 no
   `pnpm test`.
+
+## 2026-10-28 — Resposta rápida independente da completa (BR-088, rev)
+
+- **IDs:** BR-088 · **Issues:** ISS-062 · **Refs:** [`tasks/21-task.md`](tasks/21-task.md),
+  [`prd.md`](prd.md) §13.1,
+  [`architecture/assistants-panel.md`](architecture/assistants-panel.md) §3.7
+
+- **Sintoma:** ao testar DeepSeek e Mercury, a **Resposta rápida** (resumida)
+  aparecia só às vezes; a completa saía normalmente. O comportamento variava
+  por modelo e por geração.
+- **Causa raiz:** a rápida (não-streaming) competia com a completa
+  (streaming). O primeiro delta da completa marcava `full_emitted` e o rascunho
+  atrasado era descartado no core; a UI repetia o descarte com um `Set` de
+  gerações completas. Não era contrato por provider — modelos mais rápidos
+  simplesmente venciam a corrida. Nenhum aviso de falha do rascunho aparecia
+  nos logs.
+- **Correção:** removida a flag `full_emitted`; a `quick` sempre é publicada
+  quando termina. A UI aceita `quick` atrasada da mesma geração e ignora apenas
+  a de geração antiga (`generation_id` + `at_ms`), sem limpar a completa nem
+  reabrir o aviso de completa pendente.
+- **Testes:** `a_late_quick_draft_still_fills_the_quick_block` (Rust) e os dois
+  casos novos em `useSuggestions.test.tsx`; 855 testes no `cargo test --lib`,
+  858 com Laya, 527 no `pnpm test`; `clippy`/`tsc` limpos.

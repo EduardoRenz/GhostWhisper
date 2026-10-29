@@ -361,11 +361,12 @@ No `SuggestionService::generate`, quando `fast_first` está ligado:
   `complete_for` (não-streaming);
 - o **completo** roda no thread atual com `complete_streaming_for`;
 - os dois começam juntos; o rascunho não bloqueia mais a completa;
-- um `AtomicBool` `full_emitted` é marcado no primeiro delta do completo. O
-  rascunho que terminar depois disso é **descartado** (não emite `quick`);
+- a `quick` é **independente** da completa: mesmo que o completo já tenha
+  começado, o rascunho ainda emite a fase `quick` (bloco Resposta rápida);
 - uma falha no rascunho só gera log; a completa segue;
 - o `useSuggestions` mantém um `Set` de `generation_id` cuja completa já
-  chegou e ignora uma fase `quick` atrasada da mesma geração (defesa dupla);
+  chegou, aceita uma `quick` atrasada da **mesma** geração e ignora apenas a de
+  uma geração antiga (defesa contra evento fora de ordem);
 - o custo é uma chamada concorrente ao provider — sujeita a rate limit; o
   rascunho é descartável por definição.
 
@@ -530,8 +531,8 @@ fundo, e o ícone herda `currentColor` (BR-037 — sem hex solto).
 | `TECHNICAL_SUMMARY_PROMPT` tem o debrief técnico (BR-090) | `application/prompts/summary.rs` |
 | `SUMMARY_TRANSCRIPT_CONTRACT` é injetado antes do contrato do agente | `application/summary_service.rs` |
 | revisão 3 limpa os blocos comuns e troca o técnico | `application/assistant_catalog_migration.rs` |
-| passes rápido e completo começam juntos; rascunho atrasado é descartado | `application/suggestion_service.rs` |
-| `useSuggestions` ignora `quick` atrasada da mesma geração | `core/application/useSuggestions.test.tsx` |
+| passes rápido e completo começam juntos; rascunho atrasado ainda preenche a Resposta rápida | `application/suggestion_service.rs` |
+| `useSuggestions` aceita `quick` atrasada da mesma geração e ignora a de geração antiga | `core/application/useSuggestions.test.tsx` |
 | `default_settings()` traz os 4 agentes de fábrica | `application/assistant_catalog.rs` |
 | `Settings::default()` nasce **vazio** (domínio puro) | `domain/settings.rs` |
 | `sanitized()` volta para `default` se o selecionado sumiu | `domain/settings.rs` |

@@ -26,6 +26,7 @@
 | 18 | Debrief técnico: "em aberto" só sem resposta + What to detail better | CONCLUDED |
 | 19 | Debrief técnico: autoria das perguntas em aberto é de THEY | CONCLUDED |
 | 20 | Resumo do Padrão livre; Reunião e LeetCode com contrato próprio | CONCLUDED |
+| 21 | Resposta rápida não some com modelo rápido/streaming | CONCLUDED |
 
 ## Implementação (2026-10-22)
 

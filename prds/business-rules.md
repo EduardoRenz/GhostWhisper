@@ -2041,24 +2041,30 @@ uma nota de revisão.
 ## BR-088 — Sugestão: rascunho e resposta completa em paralelo
 
 - **Decisão:** o passe **rápido** (fast-first) e o passe **completo** da
-  sugestão rodam em **paralelo**, não em série. O rascunho é descartado se a
-  resposta completa já começou a falar — tanto no core (flag
-  `full_emitted`) quanto na UI (gerações cuja completa já chegou). Uma falha no
-  rascunho não derruba a completa; a completa continua sendo a prioridade.
+  sugestão rodam em **paralelo**, não em série. A rápida é **independente** da
+  completa: mesmo que a completa já tenha começado (ou terminado), a `quick`
+  da mesma geração ainda preenche o bloco **Resposta rápida**. A UI só descarta
+  uma `quick` de uma geração que já foi substituída por uma completa mais nova
+  (defesa contra evento atrasado). Uma falha no rascunho não derruba a
+  completa; a completa continua sendo a prioridade.
 - **Motivo:** pedido do usuário (2026-10-23) — a resposta completa demorava
   porque o passe rápido, que não é streaming, precisava terminar antes de a
-  completa começar. Com os dois em paralelo, a completa começa imediatamente e
-  o rascunho aparece se chegar antes.
+  completa começar. Com os dois em paralelo, a completa começa imediatamente.
+  Revisão de 2026-10-28: com modelos rápidos/streaming (DeepSeek, Mercury), a
+  completa chegava primeiro e a rápida era descartada; o usuário perdia o
+  resumo. Não era contrato por modelo — era a corrida entre os dois passes.
 - **Consequência:** `SuggestionService` dispara o rascunho em uma thread
-  (`std::thread::scope`) e o completo no thread atual; o rascunho atrasado é
-  ignorado. O `UseSuggestions` mantém um conjunto de gerações completas e
-  ignora uma fase `quick` atrasada da mesma geração. O `fast-first` deixa de
-  bloquear a resposta completa; o custo é uma chamada concorrente ao provider
-  (sujeita a rate limit, como qualquer paralelismo).
+  (`std::thread::scope`) e o completo no thread atual. Não existe mais a flag
+  `full_emitted`; a `quick` é sempre publicada quando o passe rápido termina. O
+  `UseSuggestions` aceita uma `quick` atrasada da **mesma** geração e ignora
+  apenas a de uma geração antiga (comparando `generation_id` e `at_ms`). O
+  `fast-first` deixa de bloquear a resposta completa; o custo é uma chamada
+  concorrente ao provider (sujeita a rate limit, como qualquer paralelismo).
 - **Detalhes:** [`assistants/prd.md`](assistants/prd.md) §13.1,
   [`assistants/architecture/assistants-panel.md`](assistants/architecture/assistants-panel.md) §3.7,
-  [`assistants/tasks/16-task.md`](assistants/tasks/16-task.md).
-- **Data:** 2026-10-23 · **Status:** Ativa (implementada em 2026-10-23)
+  [`assistants/tasks/16-task.md`](assistants/tasks/16-task.md),
+  [`assistants/tasks/21-task.md`](assistants/tasks/21-task.md).
+- **Data:** 2026-10-23 · **Revisão:** 2026-10-28 · **Status:** Ativa
 
 ## BR-090 — Resumo: contrato comum de leitura injetado; Entrevista Técnica tem debrief próprio
 

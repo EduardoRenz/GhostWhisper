@@ -9,6 +9,7 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 |---|---|---|---|
 | ISS-060 | Escolha do agente de fábrica zerada na primeira carga após a atualização | Média | FIXED |
 | ISS-061 | Notch escondido atrás de barra de rolagem quando o conteúdo cresce | Alta | FIXED |
+| ISS-062 | Resposta rápida some de forma intermitente com modelos rápidos/streaming | Média | FIXED |
 
 ---
 
@@ -69,3 +70,33 @@ Modelo:
   anterior (max-width na pilha e ausência do lock de overflow).
 - **Arquivos:** `src/styles/globals.css`, `src/features/overlay/Overlay.tsx`
 - **Task:** [`11-task.md`](tasks/11-task.md)
+
+---
+
+## ISS-062 — Resposta rápida some com modelos rápidos/streaming
+
+- **Severidade:** Média · **Status:** FIXED (2026-10-28)
+- **Sintoma:** ao testar DeepSeek e Mercury, o bloco **Resposta rápida** (a
+  versão resumida) às vezes não aparecia; a resposta completa saía normal. O
+  comportamento variava entre modelos e entre gerações.
+- **Causa raiz:** não era contrato do provider. O rascunho *fast-first* é uma
+  chamada **não-streaming**; a completa usa streaming. A flag `full_emitted`
+  marcava o primeiro delta da completa e **descartava** o rascunho que
+  terminasse depois. A UI reforçava o descarte com um `Set` de gerações que já
+  tinham recebido a completa. Modelos mais rápidos/streaming chegavam primeiro
+  e a rápida desaparecia; modelos mais lentos deixavam a rápida aparecer. Os
+  logs não mostravam falha do rascunho, confirmando que ele era descartado, não
+  rejeitado.
+- **Correção:** a rápida é independente da completa. O core publica `quick`
+  quando o passe rápido termina, mesmo depois da completa. A UI aceita a
+  `quick` atrasada da **mesma** geração e ignora apenas a de uma geração já
+  substituída (por `generation_id` + `at_ms`). A rápida continua efêmera e não
+  limpa a completa.
+- **Testes (R16/R23):**
+  `application::suggestion_service::tests::a_late_quick_draft_still_fills_the_quick_block`,
+  `core/application/useSuggestions.test.tsx` — “mostra a rápida que chega
+  depois da completa da mesma geração” e “ignora a rápida de uma geração
+  antiga depois de uma completa mais nova”.
+- **Arquivos:** `src-tauri/src/application/suggestion_service.rs`,
+  `src/core/application/useSuggestions.ts`
+- **Task:** [`21-task.md`](tasks/21-task.md)

@@ -344,8 +344,9 @@ catálogo. Ver
       respondeu, o que o RH disse da empresa, benefícios/pretenções, outras
       perguntas e respostas, e opinião de entrevistador; seções sem informação
       dizem que o assunto não foi mencionado até o momento (BR-084).
-- [ ] O rascunho e a resposta completa da sugestão rodam em paralelo; um
-      rascunho atrasado não regride a UI (BR-088).
+- [ ] O rascunho e a resposta completa da sugestão rodam em paralelo; o
+      rascunho atrasado ainda preenche a Resposta rápida da mesma geração e não
+      regride a UI (BR-088).
 - [ ] O resumo da **Entrevista Técnica** separa resumo geral, perguntas em
       aberto, lacunas do que ME ainda deve falar, o problema apresentado,
       tecnologias/estratégias mencionadas e uma avaliação do desempenho
@@ -389,6 +390,8 @@ catálogo. Ver
 | 17 | Resumo: contrato comum injetado + debrief da Entrevista Técnica (BR-090) | CONCLUDED |
 | 18 | Debrief técnico: "em aberto" só sem resposta (BR-090) | CONCLUDED |
 | 19 | Debrief técnico: perguntas em aberto são de THEY (BR-090) | CONCLUDED |
+| 20 | Resumo do Padrão livre; Reunião e LeetCode com contrato próprio (BR-091) | CONCLUDED |
+| 21 | Resposta rápida não some com modelo rápido/streaming (BR-088) | CONCLUDED |
 
 Detalhes, entregáveis e critérios por task: [`tasks/_tasks.md`](tasks/_tasks.md).
 
@@ -486,8 +489,8 @@ O **fast-first** (primeira bolha curta) começa com o mesmo
 `TRANSCRIPT_CONTRACT` e depois usa um contrato fixo, `Agent: <nome>`, o
 `context` (se houver), idioma e segurança. Ele **não** usa `suggestion_prompt`
 nem `system_prompt`. Os dois passes rodam em **paralelo** (BR-088): a completa
-começa imediatamente e o rascunho é descartado se a completa já começou a
-falar.
+começa imediatamente e o rascunho ainda preenche a **Resposta rápida** da mesma
+geração, mesmo que a completa chegue antes.
 
 ### 13.2 "Campos avançados" não é outro motor
 

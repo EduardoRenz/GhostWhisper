@@ -80,10 +80,13 @@ export function useSuggestions({
   /**
    * Gerações cuja resposta **completa** já chegou.
    *
-   * Com os passes rápido e completo em paralelo, o rascunho pode terminar
-   * depois do completo; nesse caso ele é descartado para não regredir a UI.
+   * Serve para reconhecer uma `quick` atrasada da **mesma** geração (que ainda
+   * deve preencher o bloco "resposta rápida") e descartar uma `quick` de uma
+   * geração que já foi substituída por outra completa.
    */
   const fullGenerations = useRef<Set<string>>(new Set());
+  /** Espelho síncrono de `current` para os guardas do evento. */
+  const currentRef = useRef<Suggestion | null>(null);
 
   // A ref fica atualizada **antes** dos efeitos de sessão/subscribe, para o
   // filtro da automática enxergar o contexto manual já no primeiro evento.
@@ -157,12 +160,20 @@ export function useSuggestions({
   /** Aplica uma sugestão recebida, respeitando a fase e a prioridade (BR-042). */
   const applyIncoming = useCallback(
     (incoming: Suggestion) => {
-      // A completa desta geração já chegou: uma rápida atrasada não pode
-      // reabrir a fase rápida nem limpar o cartão.
       if (incoming.phase === "full") {
         fullGenerations.current.add(incoming.generation_id);
-      } else if (fullGenerations.current.has(incoming.generation_id)) {
-        return;
+      } else {
+        const current = currentRef.current;
+        const sameGeneration = current?.generation_id === incoming.generation_id;
+        // Rápida de uma geração que já foi substituída por outra completa.
+        if (fullGenerations.current.has(incoming.generation_id) && !sameGeneration) {
+          return;
+        }
+        // Rápida mais antiga que a sugestão atual (modelos rápidos podem
+        // terminar a completa antes do rascunho). `at_ms` é monotônico.
+        if (current && !sameGeneration && incoming.at_ms < current.at_ms) {
+          return;
+        }
       }
 
       // Com contexto manual ativo, a automática não assume o cartão: a
@@ -175,16 +186,19 @@ export function useSuggestions({
       }
 
       if (incoming.phase === "quick") {
+        const sameGeneration =
+          currentRef.current?.generation_id === incoming.generation_id;
         // A resposta rápida é o **começo** da nova sugestão: a anterior sai do
         // topo (já está no histórico) e o cartão passa a mostrar a nova sendo
-        // montada — sem confundir com a antiga.
-        setCurrent((previous) =>
-          previous && previous.generation_id !== incoming.generation_id
-            ? null
-            : previous,
-        );
+        // montada. Se a completa da mesma geração já chegou, ela permanece.
+        if (!sameGeneration) {
+          currentRef.current = null;
+          setCurrent(null);
+        }
         setQuick(incoming);
-        markFullPending(incoming.generation_id);
+        if (!fullGenerations.current.has(incoming.generation_id)) {
+          markFullPending(incoming.generation_id);
+        }
         return;
       }
 
@@ -196,6 +210,7 @@ export function useSuggestions({
           ? previous
           : null,
       );
+      currentRef.current = incoming;
       setCurrent(incoming);
       lastText.current = incoming.text;
       pushHistory(incoming);
@@ -208,6 +223,7 @@ export function useSuggestions({
     eventSeen.current = false;
     contextUntil.current = null;
     lastText.current = null;
+    currentRef.current = null;
     setCurrent(null);
     setQuick(null);
     setHistory([]);
@@ -272,8 +288,6 @@ export function useSuggestions({
         !incoming ||
         incoming.skipped ||
         !incoming.text.trim() ||
-        (incoming.phase === "quick" &&
-          fullGenerations.current.has(incoming.generation_id)) ||
         incoming.session_id !== sessionRef.current
       ) {
         return;
