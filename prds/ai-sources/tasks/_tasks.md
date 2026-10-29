@@ -22,6 +22,8 @@
 | 14 | Redesign da aba "Fontes de IA" | PENDING |
 | 15 | Opacidade global das janelas em tempo real + autosave | CONCLUDED |
 | 16 | Escala de fonte global + bônus do texto de IA | CONCLUDED |
+| 17 | Reordenar fontes de IA no arraste (WebKitGTK, ISS-086) | CONCLUDED |
+| 18 | Circuit breaker rígido (1 falha) e prazos curtos por escopo | CONCLUDED |
 
 ## Revisão v0.2 (2026-10-20)
 
@@ -57,6 +59,10 @@ fallback (PRD §11).
   e pode ser feita em uma única entrega de frontend/CSS.
 - A **15** estende a opacidade da 13 para todas as janelas, com preview e
   autosave; depende da casca visual da 13/BR-064.
+- A **17** é um ajuste de runtime sobre a **08** (ISS-086): não muda contrato
+  de settings nem backend, só faz o arraste reordenar no WebKitGTK.
+- A **18** endurece a **03/04** (BR-045): uma falha já abre o circuito e os
+  prazos passam a depender do escopo. Não muda settings nem IPC.
 
 > 10–13 implementadas em 2026-10-20; a **validação visual/manual** do usuário
 > (mockup e notch real) é o último passo antes de considerar a v0.2 encerrada.

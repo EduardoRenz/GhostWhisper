@@ -260,7 +260,7 @@ continua disponível nos cards e na documentação.
 ```
 article.settings__source[.settings__source--primary][data-testid]
 ├── div.settings__source-head
-│   ├── span.settings__source-grip          (GripIcon, draggable)
+│   ├── span.settings__source-grip          (GripIcon, botão focável: ↑/↓)
 │   ├── span.settings__source-tile          (ícone do provedor)
 │   ├── div.settings__source-title
 │   │   ├── div.settings__source-title-row  (nome + Pill modelo + pills)
@@ -297,9 +297,11 @@ Mapeamento de saúde → chip (`.settings__source-status--*`):
 A primeira fonte ganha a pill "Primário" e a borda ciano; a fonte sem chave
 mostra "Sem chave configurada" e a ação "Adicionar chave".
 
-O drag & drop atual é preservado: o artigo continua `draggable`, com os mesmos
-callbacks (`onDragStart`, `onDragOver`, `onDrop`). O grip é apenas o affordance
-visual.
+O drag & drop é o caminho principal, mas o artigo precisa **carregar dados**
+(`dataTransfer.setData`): no WebKitGTK o drop não existe sem isso (ISS-086).
+Callbacks: `onDragStart`, `onDragEnd`, `onDragOver`, `onDragLeave`, `onDrop`.
+A alça (`.settings__source-grip`) é um `<button>` focável — `↑`/`↓` movem a
+fonte uma posição — e serve de alternativa ao mouse.
 
 ### 10.3 Formulário de adição
 

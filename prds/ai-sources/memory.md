@@ -288,3 +288,78 @@ e o comportamento do HUD ganha uma aba própria ("Geral & HUD") no lugar de
   avisos · `cargo fmt --check` ✓.
 - Faixas travadas nos dois domínios (0,75–1,6 / 1,0–1,5), NaN → default e
   settings legadas sem os campos carregam em 100 %.
+
+## 2026-10-28 — Reordenar as fontes de IA no arraste (ISS-086, task 17)
+
+- **IDs:** ISS-086, BR-044, BR-045, T17
+- **Refs:** [`issues.md`](issues.md) ISS-086,
+  [`tasks/17-task.md`](tasks/17-task.md),
+  [`architecture/ai-sources.md`](architecture/ai-sources.md) §ordem/fallback
+
+### Pedido
+- "O drag das seleções de IA nas configurações funciona para arrastar, mas
+  **não é possível reordenar**."
+- A regra é a **ordem de execução/fallback**: a primeira fonte cadastrada é a
+  primária; se falhar, cai na segunda, com **circuit breaker na sessão**.
+
+### Diagnóstico
+- A regra já existia no core: `LlmRouter::candidates` percorre
+  `settings.ai_sources` na ordem e `complete_for` pula circuito aberto; o
+  `AiSourceHealthRegistry` é **em memória** (por sessão), 3 falhas/60 s, e
+  401/403 abre na hora. `sanitize_sources`/`ai_sources_save` preservam a ordem.
+  Nada a mudar no Rust.
+- O defeito era de **runtime**: no WebKitGTK o `DropTargetGt4` aborta o arraste
+  sem dados carregados, então `dragstart` dispara (o card "arrasta") mas
+  `dragover`/`drop` nunca chegam ao DOM. O código não chamava
+  `DataTransfer.setData` — bug [WebKit 265857][webkit-265857], ainda NEW. Os
+  testes existentes passavam porque disparavam os eventos na mão.
+
+### Decisão/entrega
+- `setData("text/plain", id)` + `effectAllowed`/`dropEffect` = `move` +
+  `setDragImage` no card; `dragleave` limpa o destaque do alvo.
+- Ordenação movida para o domínio puro: `moveSource` (arraste),
+  `moveSourceBy` (↑/↓) e `makePrimarySource`; lista idêntica **não** chama
+  `onChange`.
+- Alça virou botão focável com `↑`/`↓` (alternativa ao mouse e plano B se o
+  WebKitGTK voltar a atrapalhar); l10n em pt/en.
+- Regressão: o teste exige `setData` e é o que falha sem a correção.
+
+### Verificação
+- `pnpm test` **537 ✓** (82 arquivos) · `tsc --noEmit` ✓.
+  Guardas novas: `settings.test.ts` (5 casos de ordem) e
+  `AiSourcesSettings.test.tsx` (5, incluindo a regressão do `setData`).
+- Mutação conferida: removendo o `setData`, o teste novo falha.
+- Verificação manual (arrastar + salvar + reiniciar no binário Linux) pendente.
+
+[webkit-265857]: https://bugs.webkit.org/show_bug.cgi?id=265857
+
+## 2026-10-28 — Circuit breaker rígido e prazos curtos por escopo (task 18)
+
+- **IDs:** BR-045, T18
+- **Refs:** [`../business-rules.md`](../business-rules.md) BR-045,
+  [`architecture/ai-sources.md`](architecture/ai-sources.md) §4.1/§4.1.1,
+  [`tasks/18-task.md`](tasks/18-task.md)
+
+### Pedido
+- Depois de validar a reordenação: "o circuit breaker tem que ser mais
+  rigoroso, pois exigimos resposta rápida de IA. Coloca um timeout mais curto,
+  e basta uma falha para ativar o segundo modelo por 1 min."
+
+### Decisão/entrega
+- `FAILURE_THRESHOLD` **3 → 1**: qualquer falha (timeout, 5xx, 429, resposta
+  vazia) abre o circuito por **60 s** e a chamada seguinte começa na reserva.
+  `Degraded` fica reservado (não é produzido com o limiar em 1).
+- Prazos por escopo (`application/llm_timeouts.rs`): **15 s** no caminho
+  rápido (Default, agente, sugestões) e **60 s** em resumo/tradução. O prazo
+  viaja em `CompletionRequest.timeout` e é aplicado no adaptador HTTP
+  (`request_timeout`); prazo explícito do chamador vence a política.
+- Validação de chave (roteador e serviço de fontes) usa o prazo rápido.
+- Dica da aba "Fontes de IA" passa a dizer que a reserva assume **por 1 min**.
+
+### Verificação
+- `cargo test` **861 ✓** (11 ignorados) · `cargo clippy --all-targets` sem
+  avisos · `cargo fmt --check` ✓.
+- `pnpm test` **537 ✓** · `tsc --noEmit` ✓.
+- Regressão conferida por mutação: com `FAILURE_THRESHOLD = 3`, os testes
+  `one_failure_opens_the_circuit` e
+  `one_failure_already_skips_the_primary_on_the_next_call` falham.

@@ -11,6 +11,7 @@ import { subscribe } from "../../adapters/ipc/events";
 import { onWindowFocus } from "../../adapters/ipc/client";
 import { secretsPersistent } from "../../adapters/ipc/settings";
 import type { AiSource, AiSourceHealth, ProviderKind } from "../../core/domain/settings";
+import { makePrimarySource, moveSource, moveSourceBy } from "../../core/domain/settings";
 import { useTranslation } from "../../core/l10n";
 import { AddProviderForm } from "./AddProviderForm";
 import { ProviderCard } from "./ProviderCard";
@@ -130,12 +131,15 @@ export function AiSourcesSettings({
     return map;
   }, [health]);
 
-  const replace = (next: AiSource[]) => onChange(next);
+  const replace = (next: AiSource[]) => {
+    // Reordenar/promover pode devolver a **mesma** lista (nada mudou): não
+    // sujar o rascunho nem pedir save à toa.
+    if (next === sources) return;
+    onChange(next);
+  };
 
   const makePrimary = (id: string) => {
-    const source = sources.find((entry) => entry.id === id);
-    if (!source) return;
-    replace([source, ...sources.filter((entry) => entry.id !== id)]);
+    replace(makePrimarySource(sources, id));
   };
 
   const patch = (id: string, changes: Partial<AiSource>) => {
@@ -151,15 +155,11 @@ export function AiSourcesSettings({
   };
 
   const move = (fromId: string, toId: string) => {
-    if (fromId === toId) return;
-    const from = sources.findIndex((source) => source.id === fromId);
-    const to = sources.findIndex((source) => source.id === toId);
-    if (from < 0 || to < 0) return;
-    const next = [...sources];
-    const [moved] = next.splice(from, 1);
-    if (!moved) return;
-    next.splice(to, 0, moved);
-    replace(next);
+    replace(moveSource(sources, fromId, toId));
+  };
+
+  const moveBy = (id: string, offset: number) => {
+    replace(moveSourceBy(sources, id, offset));
   };
 
   const withBusy = async (action: () => Promise<void>) => {
@@ -254,13 +254,22 @@ export function AiSourcesSettings({
                 draggingId.current = null;
                 setDropTargetId(null);
               }}
-              onDragOver={() => setDropTargetId(source.id)}
+              onDragOver={() => {
+                if (draggingId.current) setDropTargetId(source.id);
+              }}
+              onDragLeave={() =>
+                setDropTargetId((current) =>
+                  current === source.id ? null : current,
+                )
+              }
               onDrop={() => {
                 const from = draggingId.current;
-                if (from) move(from, source.id);
                 draggingId.current = null;
                 setDropTargetId(null);
+                if (from) move(from, source.id);
               }}
+              onMoveUp={() => moveBy(source.id, -1)}
+              onMoveDown={() => moveBy(source.id, 1)}
               isDropTarget={dropTargetId === source.id}
             />
           ))}

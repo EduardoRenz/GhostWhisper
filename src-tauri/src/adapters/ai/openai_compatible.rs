@@ -12,7 +12,16 @@ use crate::domain::llm::{Completion, CompletionRequest, CompletionUsage, Provide
 use crate::error::{GhostWhisperError, Result};
 
 /// Tempo limite padrão das chamadas (segundos).
+/// Teto padrão de espera de uma chamada HTTP (s). O chamador pode encurtar via
+/// `CompletionRequest::timeout` (BR-045); este é o teto de resumo/tradução.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
+
+/// Prazo efetivo de uma chamada: o do pedido ou o teto do adaptador.
+pub(crate) fn request_timeout(request: &CompletionRequest) -> Duration {
+    request
+        .timeout
+        .unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+}
 
 /// Quantas vezes reenviamos após o provider rejeitar um parâmetro.
 const MAX_PARAM_RETRIES: usize = 3;
@@ -60,7 +69,7 @@ pub fn chat_completion(
 
     loop {
         let mut call = ureq::post(&url)
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .timeout(request_timeout(request))
             .set("Content-Type", "application/json")
             .set("Authorization", &format!("Bearer {}", config.api_key));
         for (name, value) in extra_headers {
@@ -160,7 +169,7 @@ fn try_stream(
     body["stream"] = json!(true);
 
     let mut call = ureq::post(&url)
-        .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .timeout(request_timeout(request))
         .set("Content-Type", "application/json")
         .set("Accept", "text/event-stream")
         .set("Authorization", &format!("Bearer {}", config.api_key));

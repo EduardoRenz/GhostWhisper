@@ -62,8 +62,14 @@ interface ProviderCardProps {
   onDragEnd: () => void;
   /** O card está sob o cursor durante o arraste. */
   onDragOver: () => void;
+  /** O cursor saiu do card durante o arraste. */
+  onDragLeave: () => void;
   /** Solta o arraste sobre este card. */
   onDrop: () => void;
+  /** Move a fonte uma posição para cima (teclado na alça). */
+  onMoveUp: () => void;
+  /** Move a fonte uma posição para baixo (teclado na alça). */
+  onMoveDown: () => void;
   /** O card é o alvo do arraste? */
   isDropTarget: boolean;
 }
@@ -92,7 +98,10 @@ export function ProviderCard({
   onDragStart,
   onDragEnd,
   onDragOver,
+  onDragLeave,
   onDrop,
+  onMoveUp,
+  onMoveDown,
   isDropTarget,
 }: ProviderCardProps) {
   const { t } = useTranslation();
@@ -130,23 +139,50 @@ export function ProviderCard({
     <article
       className={classes}
       draggable
-      onDragStart={onDragStart}
+      onDragStart={(event) => {
+        // WebKitGTK só entrega `dragover`/`drop` se o arraste carregar dados:
+        // sem `setData` o `DropTargetGtk4` aborta a sessão (WebKit bug 265857).
+        // É o que impedia reordenar no app Linux (ISS-086).
+        event.dataTransfer?.setData("text/plain", source.id);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer?.setDragImage?.(event.currentTarget, 0, 0);
+        onDragStart();
+      }}
       onDragEnd={onDragEnd}
       onDragOver={(event) => {
         event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
         onDragOver();
       }}
-      onDrop={onDrop}
+      onDragLeave={(event) => {
+        // `dragleave` também dispara ao cruzar filhos: só limpa ao sair do card.
+        const next = event.relatedTarget as Node | null;
+        if (!next || !event.currentTarget.contains(next)) onDragLeave();
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop();
+      }}
       data-testid={`source-${source.id}`}
     >
       <header className="settings__source-header">
-        <span
+        <button
+          type="button"
           className="settings__source-grip"
-          aria-hidden="true"
           title={t("sources_drag_reorder")}
+          aria-label={t("sources_move_keyboard")}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              onMoveUp();
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              onMoveDown();
+            }
+          }}
         >
           <GripIcon size={16} />
-        </span>
+        </button>
         <span className="settings__source-icon" aria-hidden="true">
           <BoltIcon size={16} />
         </span>

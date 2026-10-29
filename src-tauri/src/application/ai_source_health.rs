@@ -2,7 +2,9 @@
 //!
 //! Cada fonte tem um circuito com três estados:
 //!
-//! - **fechado** — a fonte é usada; 3 falhas consecutivas abrem o circuito;
+//! - **fechado** — a fonte é usada; **uma** falha já abre o circuito (a
+//!   exigência do produto é resposta rápida: uma fonte que estourou o prazo ou
+//!   devolveu 5xx não segura a próxima sugestão);
 //! - **aberto** — a fonte é pulada (sem gastar timeout de rede) por 60 s;
 //! - **meio-aberto** — depois do cooldown, a próxima chamada passa e é a
 //!   tentativa de recuperação: sucesso fecha o circuito, falha reabre.
@@ -21,7 +23,11 @@ use crate::error::GhostWhisperError;
 use crate::ports::clock::Clock;
 
 /// Falhas consecutivas que abrem o circuito.
-pub const FAILURE_THRESHOLD: u32 = 3;
+///
+/// **1**: com o limiar em 1 a fonte vai direto a `failed` na primeira falha —
+/// a próxima chamada já começa na reserva (o estado `degraded` fica reservado
+/// para um limiar maior).
+pub const FAILURE_THRESHOLD: u32 = 1;
 
 /// Tempo (ms) que o circuito fica aberto antes da tentativa de recuperação.
 pub const COOLDOWN_MS: i64 = 60_000;
@@ -76,6 +82,8 @@ impl AiSourceHealthRegistry {
             entry.state = AiSourceState::Failed;
             entry.open_until_ms = Some(now + COOLDOWN_MS);
         } else {
+            // Inalcançável com `FAILURE_THRESHOLD == 1`; fica para o dia em que
+            // o limiar subir e a fonte precisar de mais de uma chance.
             entry.state = AiSourceState::Degraded;
         }
     }
@@ -154,29 +162,30 @@ mod tests {
     }
 
     #[test]
+    fn one_failure_opens_the_circuit() {
+        // A exigência é resposta rápida: a primeira falha já tira a fonte da
+        // frente (o estado `degraded` fica para um limiar maior).
+        let (registry, _clock) = registry();
+        registry.record_failure("a", &status(500));
+        assert!(registry.is_open("a"));
+        let health = registry.health_of("a");
+        assert_eq!(health.state, AiSourceState::Failed);
+        assert_eq!(health.consecutive_failures, 1);
+    }
+
+    #[test]
     fn success_closes_the_circuit_and_records_latency() {
         let (registry, _clock) = registry();
         registry.record_failure("a", &status(500));
-        assert_eq!(registry.health_of("a").state, AiSourceState::Degraded);
+        assert!(registry.is_open("a"));
 
         registry.record_success("a", 142);
         let health = registry.health_of("a");
+        assert!(!registry.is_open("a"));
         assert_eq!(health.state, AiSourceState::Ready);
         assert_eq!(health.latency_ms, Some(142));
         assert_eq!(health.consecutive_failures, 0);
         assert!(health.last_error.is_none());
-    }
-
-    #[test]
-    fn three_failures_open_the_circuit() {
-        let (registry, _clock) = registry();
-        for _ in 0..2 {
-            registry.record_failure("a", &status(500));
-            assert!(!registry.is_open("a"));
-        }
-        registry.record_failure("a", &status(500));
-        assert!(registry.is_open("a"));
-        assert_eq!(registry.health_of("a").state, AiSourceState::Failed);
     }
 
     #[test]
@@ -191,9 +200,7 @@ mod tests {
     #[test]
     fn the_circuit_half_opens_after_the_cooldown() {
         let (registry, clock) = registry();
-        for _ in 0..3 {
-            registry.record_failure("a", &status(500));
-        }
+        registry.record_failure("a", &status(500));
         assert!(registry.is_open("a"));
 
         // Passou o cooldown: a fonte volta a ser tentada.
@@ -209,14 +216,19 @@ mod tests {
     #[test]
     fn a_failure_in_half_open_reopens_the_circuit() {
         let (registry, clock) = registry();
-        for _ in 0..3 {
-            registry.record_failure("a", &status(500));
-        }
+        registry.record_failure("a", &status(500));
         clock.advance(COOLDOWN_MS + 1);
         assert!(!registry.is_open("a"));
 
         registry.record_failure("a", &status(500));
         assert!(registry.is_open("a"));
+    }
+
+    #[test]
+    fn the_cooldown_lasts_one_minute() {
+        // A reserva assume por 1 min; depois disso a primária é sondada.
+        assert_eq!(COOLDOWN_MS, 60_000);
+        assert_eq!(FAILURE_THRESHOLD, 1);
     }
 
     #[test]

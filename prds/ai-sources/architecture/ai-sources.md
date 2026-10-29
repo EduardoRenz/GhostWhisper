@@ -24,6 +24,7 @@ application/ai_source_health.rs         # registro de saúde + circuit breaker
 application/ai_source_service.rs        # implementação da porta
 application/ai_source_migration.rs      # settings/chaves legadas → fontes
 application/llm_router.rs               # cadeia de fallback
+application/llm_timeouts.rs             # prazos por escopo (15 s / 60 s)
 
 adapters/ai/deepseek_chat_bot_provider.rs
 adapters/ai/default_chat_bot_provider_factory.rs
@@ -54,7 +55,9 @@ pub struct AiSource {
   chaves do keyring apontam para ele.
 - A **ordem do `Vec`** em `Settings.ai_sources` é a prioridade. `ai_sources[0]`
   é a primária. "Tornar primário" = mover para o índice 0; "reordenar" = mover
-  na lista.
+  na lista. A UI usa as funções puras `moveSource`/`moveSourceBy`/
+  `makePrimarySource` (`src/core/domain/settings.ts`) e a **mesma** lista volta
+  sem `onChange` quando nada muda (ISS-086).
 - `secret_key()` → `llm.source.{id}` (uma chave por fonte, não por tipo).
 - `effective_base_url()` → `base_url` explícito ou o padrão do provedor.
 
@@ -193,13 +196,25 @@ pub struct AiSourceHealth {
 |---|---|
 | sucesso | `consecutive_failures = 0`, estado `Ready`, circuito fechado |
 | falha **de autenticação** (401/403) | circuito **abre na hora** (`open_until_ms = now + 60 s`) |
-| outra falha | `consecutive_failures += 1`; ao chegar em **3**, o circuito abre por **60 s** |
+| qualquer outra falha | `consecutive_failures += 1`; com o limiar em **1**, o circuito abre por **60 s** na primeira |
 | circuito aberto e cooldown expirado | estado **meio-aberto**: a próxima chamada passa e é a tentativa de recuperação |
 | meio-aberto + sucesso | circuito fecha (`Ready`) |
 | meio-aberto + falha | circuito reabre por 60 s |
 
 Enquanto o circuito está aberto, a fonte é **pulada** (sem gastar timeout de
-rede) e o `state` é `Failed`.
+rede) e o `state` é `Failed`. Com o limiar em 1 o estado `Degraded` fica
+reservado (só aparece se `FAILURE_THRESHOLD` subir).
+
+### 4.1.1 Prazos (`application::llm_timeouts`)
+
+| Escopo | Prazo | Motivo |
+|---|---|---|
+| `Default`, agente, `Capability::Suggestions` | **15 s** | latência crítica: a falha precisa chegar ao breaker antes de o usuário desistir |
+| `Capability::Summary`, `Capability::Translation` | **60 s** | textos maiores; não bloqueiam a conversa |
+
+O prazo viaja no `CompletionRequest.timeout` e é aplicado pelo adaptador HTTP
+(`request_timeout`). Um prazo definido pelo chamador (`.with_timeout`) vence a
+política do escopo (`.with_default_timeout`).
 
 ### 4.2 Classificação do erro
 
@@ -293,7 +308,7 @@ A chave **nunca** volta ao frontend: `key_preview` devolve a versão mascarada
 | `Clock` | `FixedClock` (já existe) |
 | `EventPublisher` | `RecordingEventPublisher` |
 
-Cenários cobertos: fallback na 1ª falha; circuito abre após 3 falhas; circuito
-aberto pula a fonte; meio-aberto fecha com sucesso; todas as fontes falham ⇒
+Cenários cobertos: fallback na 1ª falha; circuito abre **na primeira** falha e a
+fonte aberta é pulada; meio-aberto fecha com sucesso; todas as fontes falham ⇒
 erro agregado sem vazamento; fonte sem chave é pulada; streaming não troca de
-fonte no meio.
+fonte no meio; prazo curto no caminho rápido × prazo longo no resumo.

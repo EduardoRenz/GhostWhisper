@@ -1,6 +1,7 @@
 //! Tipos de domínio para chamadas a LLMs.
 
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use super::settings::ProviderKind;
 
@@ -32,6 +33,12 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     /// Imagens anexadas (vazio = pedido só de texto — o caso comum).
     pub images: Vec<CompletionImage>,
+    /// Prazo que o chamador aceita esperar (BR-045).
+    ///
+    /// O adaptador aplica o limite na chamada HTTP; `None` deixa o padrão do
+    /// adaptador. Quem decide o valor é a camada de aplicação
+    /// (`application::llm_timeouts`), não o domínio.
+    pub timeout: Option<Duration>,
 }
 
 impl CompletionRequest {
@@ -43,7 +50,22 @@ impl CompletionRequest {
             max_tokens: None,
             temperature: None,
             images: Vec::new(),
+            timeout: None,
         }
+    }
+
+    /// Define o prazo de espera (sobrescreve um valor anterior).
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Define o prazo **só se** ninguém definiu um: o chamador manda.
+    pub fn with_default_timeout(mut self, timeout: Duration) -> Self {
+        if self.timeout.is_none() {
+            self.timeout = Some(timeout);
+        }
+        self
     }
 
     /// Define o prompt de sistema.

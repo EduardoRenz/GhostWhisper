@@ -66,7 +66,7 @@ pnpm test             # testes do frontend
   `pnpm build:final` da release.
 - O build remove AppImages de versões antigas (`scripts/prune-appimages.sh`):
   só o artefato da versão atual fica nos diretórios de bundle.
-- Próxima release planejada: **0.2.0**.
+- Próxima release planejada: **0.4.0**.
 
 ## Regras rápidas
 - **Perssua é a referência de produto:** ao decidir *como* resolver algo, priorize

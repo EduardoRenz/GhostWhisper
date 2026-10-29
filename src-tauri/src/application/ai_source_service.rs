@@ -20,6 +20,7 @@ use crate::ports::secret_store::SecretStore;
 use crate::ports::settings_store::SettingsStore;
 
 use super::ai_source_health::AiSourceHealthRegistry;
+use super::llm_timeouts::FAST_TIMEOUT;
 
 /// Prompt trivial do teste de conexão.
 const VALIDATION_PROMPT: &str = "Responda apenas com a palavra: ok";
@@ -146,7 +147,8 @@ impl AiSourceService for LocalAiSourceService {
         let request = CompletionRequest::user(VALIDATION_PROMPT)
             .with_system("Você é um teste de conectividade. Seja breve.")
             .with_max_tokens(16)
-            .with_temperature(0.0);
+            .with_temperature(0.0)
+            .with_timeout(FAST_TIMEOUT);
 
         let started = self.clock.now_ms();
         match provider.complete(&request) {

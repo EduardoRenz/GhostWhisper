@@ -261,6 +261,84 @@ describe("AiSourcesSettings", () => {
     expect(next[1]?.id).toBe("a");
   });
 
+  it("publica o id no dataTransfer do arraste (regressão ISS-086)", async () => {
+    // WebKitGTK só entrega `dragover`/`drop` quando o arraste carrega dados
+    // (WebKit bug 265857): sem `setData` o card "arrasta" mas nunca reordena.
+    const setData = vi.fn();
+    const dataTransfer = {
+      setData,
+      effectAllowed: "none",
+      dropEffect: "none",
+      setDragImage: vi.fn(),
+    } as unknown as DataTransfer;
+
+    const { onChange } = renderTab([openai, deepseek]);
+    const cards = await screen.findAllByRole("article");
+
+    await act(async () => {
+      fireEvent.dragStart(cards[1] as HTMLElement, { dataTransfer });
+      fireEvent.dragOver(cards[0] as HTMLElement, { dataTransfer });
+      fireEvent.drop(cards[0] as HTMLElement, { dataTransfer });
+    });
+
+    expect(setData).toHaveBeenCalledWith("text/plain", "b");
+    expect(dataTransfer.effectAllowed).toBe("move");
+    expect(dataTransfer.dropEffect).toBe("move");
+    const next = onChange.mock.calls[0]?.[0] as AiSource[];
+    expect(next.map((source) => source.id)).toEqual(["b", "a"]);
+  });
+
+  it("não reordena ao soltar sem arraste", async () => {
+    const { onChange } = renderTab([openai, deepseek]);
+    const cards = await screen.findAllByRole("article");
+
+    await act(async () => {
+      fireEvent.drop(cards[0] as HTMLElement);
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("soltar o card sobre ele mesmo não muda a lista", async () => {
+    const { onChange } = renderTab([openai, deepseek]);
+    const cards = await screen.findAllByRole("article");
+
+    await act(async () => {
+      fireEvent.dragStart(cards[0] as HTMLElement);
+      fireEvent.dragOver(cards[0] as HTMLElement);
+      fireEvent.drop(cards[0] as HTMLElement);
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("reordena pelo teclado na alça", async () => {
+    const { onChange } = renderTab([openai, deepseek]);
+    const grips = await screen.findAllByRole("button", {
+      name: "Reordenar fonte: ↑ sobe, ↓ desce",
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(grips[1] as HTMLElement, { key: "ArrowUp" });
+    });
+
+    const next = onChange.mock.calls[0]?.[0] as AiSource[];
+    expect(next.map((source) => source.id)).toEqual(["b", "a"]);
+  });
+
+  it("a alça não move a primeira fonte para cima", async () => {
+    const { onChange } = renderTab([openai, deepseek]);
+    const grips = await screen.findAllByRole("button", {
+      name: "Reordenar fonte: ↑ sobe, ↓ desce",
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(grips[0] as HTMLElement, { key: "ArrowUp" });
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("recarrega a saúde quando a janela ganha foco", async () => {
     // A janela de Configurações nasce oculta: o badge "Nunca usada" ficaria
     // congelado se a saúde não fosse buscada de novo ao abrir a janela.

@@ -3,12 +3,13 @@
 Registry de bugs e problemas deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-048**.
+único no repositório). Próximo ID livre: **ISS-087**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
 | ISS-039 | Chave não aparece em fonte recém-adicionada (ainda no rascunho) | Alta | FIXED |
 | ISS-040 | Card fica em "Nunca usada" mesmo com a fonte em uso | Média | FIXED |
+| ISS-086 | Arrastar a fonte não reordena (WebKitGTK descarta o drop) | Alta | FIXED |
 
 ---
 
@@ -54,6 +55,36 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
   `src-tauri/src/application/ai_source_service.rs`,
   `src-tauri/src/lib.rs`.
 - **Task:** [`09-task.md`](tasks/09-task.md) (ajuste pós-entrega)
+
+---
+
+## ISS-086 — Arrastar a fonte não reordena (WebKitGTK descarta o drop)
+
+- **Severidade:** Alta · **Status:** FIXED
+- **Sintoma:** na aba "Fontes de IA", o card "arrasta" (o fantasma acompanha o
+  cursor), mas soltar sobre outro card não muda a ordem — logo, não há como
+  escolher a fonte primária nem a ordem do fallback.
+- **Causa raiz:** o app roda em **WebKitGTK** (Tauri/Linux). O `onDragStart`
+  gravava o id só num `useRef` e **nunca chamava `DataTransfer.setData`**. Sem
+  dados carregados, o `DropTargetGtk4` do WebKit encerra a sessão
+  (`if (!data) { didloaddata(); return; }`), então `dragover`/`drop` nunca
+  chegam ao DOM — o bug [WebKit 265857][webkit-265857] continua **NEW**. Em
+  Chromium/Firefox o mesmo código funcionava, e o teste antigo (que dispara
+  eventos sintéticos) também passava: o defeito só aparece no runtime real.
+- **Correção:** `ProviderCard` publica o id em `dataTransfer.setData("text/plain")`
+  (com `effectAllowed`/`dropEffect` = `move` e `setDragImage` no card inteiro).
+  A regra de ordenação saiu do componente para o domínio
+  (`moveSource`/`moveSourceBy`/`makePrimarySource`, BR-044); a lista
+  **idêntica** não chama `onChange` (não suja o rascunho) e o destaque do alvo
+  é limpo no `dragleave`. A alça virou botão focável: **↑/↓** também reordenam,
+  como alternativa ao mouse.
+- **Arquivos:** `src/core/domain/settings.ts`,
+  `src/features/settings/ProviderCard.tsx`,
+  `src/features/settings/AiSourcesSettings.tsx`,
+  `src/core/l10n/locales/{pt,en}.ts`, `src/styles/globals.css`.
+- **Task:** [`17-task.md`](tasks/17-task.md)
+
+[webkit-265857]: https://bugs.webkit.org/show_bug.cgi?id=265857
 
 ---
 

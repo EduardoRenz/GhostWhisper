@@ -1010,11 +1010,15 @@ uma nota de revisão.
 
 - **Decisão:** quando a fonte primária falha, a próxima fonte habilitada da
   lista assume — em **todas** as chamadas de IA (sugestões, resumo incremental,
-  tradução ao vivo). Cada fonte tem um **circuit breaker**: 3 falhas
-  consecutivas abrem o circuito por 60 s (a fonte é pulada, sem gastar
-  timeout); erro de autenticação (401/403) abre na hora; após o cooldown a
-  fonte entra em meio-aberto e um sucesso fecha o circuito. O erro só sobe
-  quando **todas** as candidatas falharam.
+  tradução ao vivo). Cada fonte tem um **circuit breaker**: **uma** falha já
+  abre o circuito por 60 s (a fonte é pulada, sem gastar timeout); erro de
+  autenticação (401/403) abre na hora; após o cooldown a fonte entra em
+  meio-aberto e um sucesso fecha o circuito. O erro só sobe quando **todas** as
+  candidatas falharam.
+- **Prazos:** o caminho rápido (sugestão, pergunta, validação) espera no
+  máximo **15 s**; resumo e tradução mantêm **60 s** (textos maiores). O prazo
+  curto é o que faz a falha chegar ao circuit breaker antes de o usuário
+  desistir — a reserva assume em segundos.
 - **Motivo:** o GhostWhisper é usado **durante** a reunião; um 429 ou uma chave
   expirada não pode derrubar sugestão, resumo e tradução — e o usuário não
   tem tempo de abrir as configurações no meio da call. O circuit breaker evita

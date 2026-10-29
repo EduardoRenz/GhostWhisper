@@ -23,6 +23,7 @@ use crate::ports::secret_store::SecretStore;
 use crate::ports::settings_store::SettingsStore;
 
 use super::ai_source_health::AiSourceHealthRegistry;
+use super::llm_timeouts::{timeout_for_scope, FAST_TIMEOUT};
 
 /// Prompt trivial usado no teste de conexão.
 const VALIDATION_PROMPT: &str = "Responda apenas com a palavra: ok";
@@ -296,7 +297,8 @@ impl LlmController for LlmRouter {
         let request = CompletionRequest::user(VALIDATION_PROMPT)
             .with_system("Você é um teste de conectividade. Seja breve.")
             .with_max_tokens(16)
-            .with_temperature(0.0);
+            .with_temperature(0.0)
+            .with_timeout(FAST_TIMEOUT);
         let started = self.clock.now_ms();
         match provider.complete(&request) {
             Ok(completion) => {
@@ -327,6 +329,12 @@ impl LlmController for LlmRouter {
         scope: &AiRouteScope,
         request: &CompletionRequest,
     ) -> Result<Completion> {
+        // Prazo por escopo (BR-045): o rápido falha cedo e entrega a vez à
+        // reserva; resumo/tradução mantêm o teto longo.
+        let scoped = request
+            .clone()
+            .with_default_timeout(timeout_for_scope(scope));
+        let request = &scoped;
         let candidates = self.candidates(scope)?;
         if candidates.is_empty() {
             return Err(GhostWhisperError::Config(
@@ -385,6 +393,11 @@ impl LlmController for LlmRouter {
         request: &CompletionRequest,
         on_text: &mut dyn FnMut(&str),
     ) -> Result<Completion> {
+        // Mesmo prazo por escopo do caminho não-streaming (BR-045).
+        let scoped = request
+            .clone()
+            .with_default_timeout(timeout_for_scope(scope));
+        let request = &scoped;
         let candidates = self.candidates(scope)?;
         if candidates.is_empty() {
             return Err(GhostWhisperError::Config(
@@ -446,12 +459,14 @@ impl LlmController for LlmRouter {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
+    use std::time::Duration;
 
     use super::*;
     use crate::adapters::ai::fake_chat_bot_provider::FakeChatBotProvider;
     use crate::adapters::secrets::in_memory_secret_store::InMemorySecretStore;
     use crate::adapters::settings::memory::InMemorySettingsStore;
     use crate::adapters::system::system_clock::MutableClock;
+    use crate::application::llm_timeouts::{FAST_TIMEOUT, LONG_TIMEOUT};
     use crate::domain::ai_route::AiRoute;
     use crate::domain::ai_source::AiSource;
     use crate::domain::settings::{ProviderKind, Settings};
@@ -520,7 +535,31 @@ mod tests {
             if config.model == "falha-1" {
                 return Ok(Arc::new(FlakyProvider::new(1)));
             }
+            if config.model == "devolve-timeout" {
+                return Ok(Arc::new(TimeoutEchoProvider));
+            }
             Ok(Arc::new(FakeChatBotProvider::new().with_response("ok")))
+        }
+    }
+
+    /// Provider que devolve, como texto, o prazo recebido no pedido (s).
+    struct TimeoutEchoProvider;
+
+    impl ChatBotProvider for TimeoutEchoProvider {
+        fn id(&self) -> String {
+            "timeout-echo".to_string()
+        }
+
+        fn complete(&self, request: &CompletionRequest) -> Result<Completion> {
+            Ok(Completion {
+                text: request
+                    .timeout
+                    .map(|timeout| timeout.as_secs().to_string())
+                    .unwrap_or_else(|| "sem-prazo".to_string()),
+                model: "timeout-echo".to_string(),
+                provider: None,
+                usage: None,
+            })
         }
     }
 
@@ -697,6 +736,78 @@ mod tests {
         assert!(usages[0].is_fallback);
         assert_eq!(usages[0].scope, "capability:summary");
         assert_eq!(usages[0].model, "deepseek-chat");
+    }
+
+    #[test]
+    fn one_failure_already_skips_the_primary_on_the_next_call() {
+        // BR-045: uma falha basta. A primária sai da frente na hora e a reserva
+        // atende; na chamada seguinte a primária nem é criada (circuito aberto).
+        let settings = Settings {
+            ai_sources: vec![
+                source("a", ProviderKind::OpenAi, "falha-1"),
+                source("b", ProviderKind::DeepSeek, "deepseek-chat"),
+            ],
+            ..Settings::default()
+        };
+        let (router, factory, _secrets, _publisher, health, _clock) =
+            router(settings, &[("a", "chave"), ("b", "chave")]);
+
+        router
+            .complete_for(&AiRouteScope::Default, &CompletionRequest::user("oi"))
+            .expect("a reserva responde");
+        assert!(health.is_open("a"));
+
+        router
+            .complete_for(&AiRouteScope::Default, &CompletionRequest::user("oi"))
+            .expect("a reserva responde de novo");
+
+        let calls = factory.calls.lock().expect("calls").clone();
+        assert_eq!(
+            calls.iter().filter(|model| *model == "falha-1").count(),
+            1,
+            "a fonte com o circuito aberto não pode ser tentada de novo"
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|model| *model == "deepseek-chat")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn the_scope_decides_the_request_timeout() {
+        // A exigência é resposta rápida: o caminho rápido herda o prazo curto e
+        // resumo/tradução mantêm o teto longo (BR-045).
+        let settings = Settings {
+            ai_sources: vec![source("a", ProviderKind::OpenAi, "devolve-timeout")],
+            ..Settings::default()
+        };
+        let (router, _factory, _secrets, _publisher, _health, _clock) =
+            router(settings, &[("a", "chave")]);
+
+        let fast = router
+            .complete_for(&AiRouteScope::Default, &CompletionRequest::user("oi"))
+            .expect("ok");
+        assert_eq!(fast.text, FAST_TIMEOUT.as_secs().to_string());
+
+        let long = router
+            .complete_for(
+                &AiRouteScope::Capability(crate::domain::ai_route::AiCapability::Summary),
+                &CompletionRequest::user("oi"),
+            )
+            .expect("ok");
+        assert_eq!(long.text, LONG_TIMEOUT.as_secs().to_string());
+
+        // Prazo explícito do chamador vence a política do escopo.
+        let explicit = router
+            .complete_for(
+                &AiRouteScope::Default,
+                &CompletionRequest::user("oi").with_timeout(Duration::from_secs(7)),
+            )
+            .expect("ok");
+        assert_eq!(explicit.text, "7");
     }
 
     #[test]

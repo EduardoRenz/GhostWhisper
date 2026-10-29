@@ -643,3 +643,55 @@ export const newSourceId = (): string => {
   }
   return `fonte-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
+
+/**
+ * Reordena as fontes, movendo `fromId` para o índice de `toId` (BR-044).
+ *
+ * A ordem da lista **é** a prioridade de execução/fallback: o índice 0 é a
+ * fonte primária e as seguintes são as reservas. Devolve a **mesma** lista
+ * quando nada muda (ids iguais ou inexistentes), para não disparar save à toa.
+ */
+export const moveSource = (
+  sources: AiSource[],
+  fromId: string,
+  toId: string,
+): AiSource[] => {
+  if (fromId === toId) return sources;
+  const from = sources.findIndex((source) => source.id === fromId);
+  const to = sources.findIndex((source) => source.id === toId);
+  if (from < 0 || to < 0) return sources;
+  const next = [...sources];
+  const [moved] = next.splice(from, 1);
+  if (!moved) return sources;
+  next.splice(to, 0, moved);
+  return next;
+};
+
+/** Move uma fonte uma posição (`-1` sobe, `+1` desce); nos limites, nada muda. */
+export const moveSourceBy = (
+  sources: AiSource[],
+  id: string,
+  offset: number,
+): AiSource[] => {
+  const from = sources.findIndex((source) => source.id === id);
+  if (from < 0) return sources;
+  const to = from + offset;
+  if (to < 0 || to >= sources.length) return sources;
+  const next = [...sources];
+  const [moved] = next.splice(from, 1);
+  if (!moved) return sources;
+  next.splice(to, 0, moved);
+  return next;
+};
+
+/** Promove a fonte para o índice 0 (a primária), preservando o resto da ordem. */
+export const makePrimarySource = (
+  sources: AiSource[],
+  id: string,
+): AiSource[] => {
+  const index = sources.findIndex((source) => source.id === id);
+  if (index <= 0) return sources;
+  const source = sources[index];
+  if (!source) return sources;
+  return [source, ...sources.filter((item) => item.id !== id)];
+};

@@ -27,8 +27,12 @@ import {
   clampFontScale,
   clampOverlayOpacity,
   defaultSettings,
+  makePrimarySource,
+  moveSource,
+  moveSourceBy,
   providerRequiresBaseUrl,
 } from "./settings";
+import type { AiSource } from "./settings";
 
 describe("settings (domínio)", () => {
   it("defaults são válidos e coerentes", () => {
@@ -157,5 +161,50 @@ describe("settings (domínio)", () => {
     expect(settings.assistant_mode_id).toBe("default");
     // A migração do agente padrão ainda não rodou.
     expect(settings.assistant_mode_migrated).toBe(false);
+  });
+});
+
+describe("ordem das fontes de IA (BR-044)", () => {
+  const source = (id: string): AiSource => ({
+    id,
+    kind: "openai",
+    label: id,
+    model: "gpt-4o-mini",
+    base_url: null,
+    enabled: true,
+  });
+  const ids = (list: AiSource[]) => list.map((item) => item.id);
+  const list = () => [source("a"), source("b"), source("c"), source("d")];
+
+  it("a lista é a prioridade: índice 0 é a primária", () => {
+    expect(ids(moveSource(list(), "c", "a"))).toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("mover para baixo coloca a fonte no índice do alvo", () => {
+    expect(ids(moveSource(list(), "a", "d"))).toEqual(["b", "c", "d", "a"]);
+    expect(ids(moveSource(list(), "b", "c"))).toEqual(["a", "c", "b", "d"]);
+  });
+
+  it("não mexe na lista quando o arraste não muda nada", () => {
+    const sources = list();
+    expect(moveSource(sources, "b", "b")).toBe(sources);
+    expect(moveSource(sources, "x", "a")).toBe(sources);
+    expect(moveSource(sources, "a", "x")).toBe(sources);
+  });
+
+  it("a alça move uma posição e para nos limites", () => {
+    expect(ids(moveSourceBy(list(), "b", -1))).toEqual(["b", "a", "c", "d"]);
+    expect(ids(moveSourceBy(list(), "b", 1))).toEqual(["a", "c", "b", "d"]);
+    const sources = list();
+    expect(moveSourceBy(sources, "a", -1)).toBe(sources);
+    expect(moveSourceBy(sources, "d", 1)).toBe(sources);
+    expect(moveSourceBy(sources, "x", 1)).toBe(sources);
+  });
+
+  it("tornar primária move para o índice 0 preservando o resto", () => {
+    expect(ids(makePrimarySource(list(), "c"))).toEqual(["c", "a", "b", "d"]);
+    const sources = list();
+    expect(makePrimarySource(sources, "a")).toBe(sources);
+    expect(makePrimarySource(sources, "x")).toBe(sources);
   });
 });

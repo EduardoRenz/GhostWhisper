@@ -1411,8 +1411,21 @@ body,
 
 .settings__source-grip {
   display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--oh-text-muted);
   cursor: grab;
+  border-radius: var(--oh-radius-sm, 4px);
+}
+
+.settings__source-grip:active {
+  cursor: grabbing;
+}
+
+.settings__source-grip:focus-visible {
+  outline: 2px solid var(--oh-accent);
+  outline-offset: 2px;
 }
 
 .settings__source-icon {

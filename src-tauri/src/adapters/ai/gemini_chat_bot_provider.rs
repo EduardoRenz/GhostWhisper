@@ -8,7 +8,7 @@ use crate::domain::llm::{Completion, CompletionRequest, CompletionUsage, Provide
 use crate::error::{GhostWhisperError, Result};
 use crate::ports::chat_bot_provider::ChatBotProvider;
 
-use super::openai_compatible::{map_transport_error, DEFAULT_TIMEOUT_SECS};
+use super::openai_compatible::{map_transport_error, request_timeout};
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -139,7 +139,7 @@ impl ChatBotProvider for GeminiChatBotProvider {
         loop {
             // A chave vai em cabeçalho (nunca na URL/query) para não vazar em logs.
             let response = ureq::post(&url)
-                .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+                .timeout(request_timeout(request))
                 .set("Content-Type", "application/json")
                 .set("x-goog-api-key", &self.config.api_key)
                 .send_json(body.clone())

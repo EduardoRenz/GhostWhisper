@@ -1,6 +1,6 @@
 [package]
 name = "ghostwhisper"
-version = "0.2.0"
+version = "0.3.0"
 description = "Copiloto de reunião open-source, Linux-first e local-only"
 authors = ["GhostWhisper"]
 edition = "2021"
