@@ -21,6 +21,18 @@ pub fn db_get_session(state: State<'_, AppState>, id: String) -> Result<Option<S
     state.sessions.get(&id)
 }
 
+/// Busca sessões pelo título (caixa/acento ignorados, BR-103).
+#[tauri::command(async)]
+pub fn db_search_sessions(
+    state: State<'_, AppState>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<Session>> {
+    state
+        .sessions
+        .search_by_subject(&query, limit.unwrap_or(50))
+}
+
 /// Lista as transcrições de uma sessão.
 #[tauri::command(async)]
 pub fn db_session_transcriptions(

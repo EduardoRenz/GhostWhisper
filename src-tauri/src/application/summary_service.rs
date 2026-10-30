@@ -133,6 +133,27 @@ impl SummaryService {
         }
         Ok((subject, markdown))
     }
+
+    /// Aplica o título do resumo **apenas** quando a sessão ainda não tem um.
+    ///
+    /// Relê a sessão em vez de confiar no snapshot do começo: o usuário pode
+    /// ter renomeado enquanto o LLM respondia — a escolha dele vence (BR-104).
+    fn backfill_subject(&self, session_id: &str, subject: Option<&str>) -> Result<()> {
+        let Some(subject) = subject.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(());
+        };
+        let Some(current) = self.sessions.get(session_id)? else {
+            return Ok(());
+        };
+        if current
+            .subject
+            .as_deref()
+            .is_some_and(|existing| !existing.trim().is_empty())
+        {
+            return Ok(());
+        }
+        self.sessions.rename(session_id, subject)
+    }
 }
 
 impl SummaryGenerator for SummaryService {
@@ -173,11 +194,17 @@ impl SummaryGenerator for SummaryService {
 
         if chunks.is_empty() {
             return match stored {
-                Some(previous) if request.mode == SummaryMode::Auto => Ok(SummaryResult {
-                    summary: previous,
-                    updated: false,
-                    has_more: false,
-                }),
+                Some(previous) if request.mode == SummaryMode::Auto => {
+                    // Sem trechos novos, mas a sessão pode estar sem título
+                    // (resumo gravado antes de existir `subject`): aplica o
+                    // título já conhecido, sem chamar o LLM (BR-104).
+                    self.backfill_subject(&session.id, previous.subject.as_deref())?;
+                    Ok(SummaryResult {
+                        summary: previous,
+                        updated: false,
+                        has_more: false,
+                    })
+                }
                 _ => Err(GhostWhisperError::Config(
                     "transcrição vazia: nada para resumir".to_string(),
                 )),
@@ -215,13 +242,7 @@ impl SummaryGenerator for SummaryService {
 
         self.summaries.save(&summary)?;
         self.sessions.set_overview(&session.id, &summary.markdown)?;
-        if session.subject.is_none() {
-            if let Some(subject) = summary.subject.as_deref().map(str::trim) {
-                if !subject.is_empty() {
-                    self.sessions.rename(&session.id, subject)?;
-                }
-            }
-        }
+        self.backfill_subject(&session.id, summary.subject.as_deref())?;
 
         Ok(SummaryResult {
             summary,
@@ -420,6 +441,98 @@ mod tests {
         assert!(!second.updated);
         assert_eq!(fixture.llm.call_count(), calls, "não chamou o LLM de novo");
         assert_eq!(second.summary.markdown, "## A\n\nok");
+    }
+
+    #[test]
+    fn backfills_the_title_from_the_stored_summary_without_calling_the_llm() {
+        // BR-104: sessão com resumo gravado mas sem título ganha o `subject`
+        // do próprio resumo — sem uma chamada nova ao modelo.
+        let fixture = fixture(vec!["SUBJECT: Não usado\nCONTENT: ## A\n\nok"]);
+        fixture
+            .transcriptions
+            .insert(&segment("1", 0, "fala"))
+            .unwrap();
+        fixture
+            .summaries
+            .save(&MeetingSummary {
+                session_id: "s1".to_string(),
+                subject: Some("Título antigo".to_string()),
+                markdown: "## A\n\nok".to_string(),
+                summarized_from_ms: 0,
+                summarized_until_ms: 0,
+                updated_at_ms: 1,
+            })
+            .expect("resumo gravado");
+
+        let result = fixture
+            .service
+            .generate(SummaryRequest {
+                session_id: None,
+                mode: SummaryMode::Auto,
+            })
+            .expect("generate");
+
+        assert!(!result.updated, "nada novo para resumir");
+        assert_eq!(fixture.llm.call_count(), 0, "não chamou o LLM");
+        assert_eq!(
+            fixture
+                .sessions
+                .get("s1")
+                .unwrap()
+                .unwrap()
+                .subject
+                .as_deref(),
+            Some("Título antigo")
+        );
+    }
+
+    #[test]
+    fn does_not_overwrite_a_title_chosen_while_the_llm_was_generating() {
+        // BR-104: o usuário renomeia enquanto o modelo responde — a escolha
+        // dele vence o `SUBJECT` que chega depois.
+        let sessions = Arc::new(InMemorySessionRepository::new());
+        sessions.create(&session()).expect("sessão");
+        let transcriptions = Arc::new(InMemoryTranscriptionsRepository::new());
+        transcriptions
+            .insert(&segment("1", 0, "fala"))
+            .expect("fala");
+        let llm = Arc::new(
+            FakeLlmController::new()
+                .with_response("SUBJECT: Gerado\nCONTENT: ## A\n\nok")
+                .with_quick_delay(std::time::Duration::from_millis(150)),
+        );
+        let service = Arc::new(SummaryService::new(
+            llm,
+            Arc::new(InMemorySettingsStore::default()),
+            Arc::clone(&sessions) as Arc<dyn crate::ports::repositories::SessionRepository>,
+            transcriptions as Arc<dyn TranscriptionsRepository>,
+            Arc::new(InMemoryMeetingSummariesRepository::new())
+                as Arc<dyn crate::ports::meeting_summaries_repository::MeetingSummariesRepository>,
+            Arc::new(FixedClock(65_000)) as Arc<dyn Clock>,
+        ));
+
+        let worker = {
+            let service = Arc::clone(&service);
+            std::thread::spawn(move || {
+                service.generate(SummaryRequest {
+                    session_id: None,
+                    mode: SummaryMode::Auto,
+                })
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        sessions
+            .rename("s1", "Escolha do usuário")
+            .expect("renomeia");
+
+        let result = worker.join().expect("thread").expect("generate");
+
+        assert_eq!(result.summary.subject.as_deref(), Some("Gerado"));
+        assert_eq!(
+            sessions.get("s1").unwrap().unwrap().subject.as_deref(),
+            Some("Escolha do usuário"),
+            "o título do usuário não pode ser sobrescrito"
+        );
     }
 
     #[test]

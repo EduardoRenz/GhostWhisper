@@ -173,6 +173,14 @@ pub struct TranscriptActivityEvent {
     pub processing: bool,
 }
 
+/// Sessão mudou depois de um resumo/título gerado em background (BR-104).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SessionUpdatedEvent {
+    pub session_id: String,
+    /// Título atual (`None` quando ainda não há).
+    pub subject: Option<String>,
+}
+
 /// Progresso da finalização da gravação (BR-067).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecordingProgressEvent {
@@ -235,6 +243,9 @@ pub trait EventPublisher: Send + Sync {
     fn emit_recording_state(&self, _state: &RecordingState) {}
     /// Emite o progresso da finalização da gravação (BR-067).
     fn emit_recording_progress(&self, _progress: &RecordingProgressEvent) {}
+    /// Emite a mudança de uma sessão (título/resumo gerado em background) —
+    /// BR-104. Default no-op: fakes que não observam o histórico ignoram.
+    fn emit_session_updated(&self, _event: &SessionUpdatedEvent) {}
 }
 
 #[cfg(test)]

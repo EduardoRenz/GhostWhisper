@@ -84,6 +84,7 @@ pub fn run() {
             ipc::journal_commands::journal_cancel,
             ipc::database_commands::db_list_sessions,
             ipc::database_commands::db_get_session,
+            ipc::database_commands::db_search_sessions,
             ipc::database_commands::db_session_transcriptions,
             ipc::database_commands::db_session_messages,
             ipc::database_commands::db_session_timeline,
@@ -310,6 +311,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use application::recording_service::RecordingService;
     use application::session_service::SessionService;
     use application::suggestion_service::SuggestionService;
+    use application::summary_refresh::SummaryRefresh;
     use application::summary_service::SummaryService;
     use application::translation_service::TranslationService;
     use ports::ask_controller::AskController;
@@ -629,16 +631,30 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new(),
     );
 
-    // Perguntas do usuário (aba "Sessão", BR-053).
-    let ask: Arc<dyn AskController> = Arc::new(AskService::new(
-        Arc::clone(&llm),
+    // Atualização do resumo em background: uma instância só no app, para o
+    // Perguntar e o encerramento compartilharem single-flight/cooldown
+    // (PRD Sessão 15, BR-104).
+    let summary_refresh = Arc::new(SummaryRefresh::new(
+        Arc::clone(&summary),
         Arc::clone(&sessions),
         Arc::clone(&transcriptions),
-        Arc::clone(&journal),
-        Arc::clone(&summary),
         Arc::clone(&clock),
         Arc::clone(&publisher),
     ));
+
+    // Perguntas do usuário (aba "Sessão", BR-053).
+    let ask: Arc<dyn AskController> = Arc::new(
+        AskService::new(
+            Arc::clone(&llm),
+            Arc::clone(&sessions),
+            Arc::clone(&transcriptions),
+            Arc::clone(&journal),
+            Arc::clone(&summary),
+            Arc::clone(&clock),
+            Arc::clone(&publisher),
+        )
+        .with_summary_refresh(Arc::clone(&summary_refresh)),
+    );
 
     // Atalhos globais: o despachante resolve o `AppState` em tempo de execução.
     let shortcuts: Arc<dyn GlobalShortcutRegistry> = {
@@ -781,7 +797,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             Arc::clone(&clock),
             Arc::clone(&transcript_activity),
         )
-        .with_recording(recording_lifecycle),
+        .with_recording(recording_lifecycle)
+        .with_session_end(summary_refresh),
     );
 
     // Model manager do classificador (BR-099): o artefato ONNX vive em

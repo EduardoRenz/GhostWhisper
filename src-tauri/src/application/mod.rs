@@ -25,6 +25,7 @@ pub mod session_timeline;
 pub mod suggestion_gate_service;
 pub mod suggestion_scheduler;
 pub mod suggestion_service;
+pub mod summary_refresh;
 pub mod summary_service;
 #[cfg(test)]
 pub mod test_support;

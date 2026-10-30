@@ -972,3 +972,52 @@ Voltar à esquerda, Renomear à direita, título e metadata em linhas próprias 
 
 ### Verificação
 - **465 testes frontend** (+3, 73 arquivos) · `tsc --noEmit` limpo.
+
+---
+
+## 2026-10-28 — Histórico: busca por título, exclusão em lote e título automático
+
+- **IDs:** BR-103, BR-104, T24
+- **Refs:** [`tasks/24-task.md`](tasks/24-task.md),
+  [`tasks/_tasks.md`](tasks/_tasks.md).
+
+### Contexto
+A janela de Histórico só mostrava as 50 sessões recentes, sem busca (achar uma
+reunião antiga era rolar e abrir uma a uma), a exclusão era uma por vez e o
+título (`sessions.subject`) só nascia se a aba Resumo fosse aberta — sessões
+encerradas sem resumo ficavam "Sessão sem título" para sempre.
+
+### Decisão
+- **Busca no banco (BR-103):** `domain/search_text.rs` dobra o texto (NFD sem
+  diacríticos + minúsculas) e escapa `LIKE`; o SQLite registra `ghw_fold` na
+  conexão e busca um `LIKE` por palavra (AND). A dobra em memória usa a mesma
+  função. A UI pesquisa com debounce de 250 ms e descarta respostas fora de
+  ordem.
+- **Seleção múltipla (BR-103):** modo "Selecionar" na toolbar, "Selecionar
+  todas" visíveis, confirmação em dois cliques e `removeMany` sequencial (cada
+  exclusão pode parar a sessão ativa/descartar a gravação), com um refresh só.
+  Mudar a pesquisa limpa a seleção.
+- **Título automático (BR-104):** o single-flight/cooldown do resumo saiu do
+  `AskService` para `application/summary_refresh.rs` (`SummaryRefresh`), agora
+  uma instância só no app. A porta `SessionEndObserver` é chamada no
+  `SessionService::stop` (fire-and-forget) e agenda o resumo `Auto` quando a
+  sessão não tem `overview` **ou** `subject`; o `SummaryService` relê a sessão
+  antes do `rename` (o usuário vence) e faz backfill do `subject` gravado sem
+  chamar o LLM quando não há trechos novos. O evento `session_updated` faz o
+  Histórico recarregar em silêncio.
+
+### Verificação
+- Rust: **877 ✓** (11 ignorados) · `clippy --all-targets -D warnings` ✓ ·
+  `cargo fmt --check` ✓.
+- Frontend: **542 ✓** (82 arquivos) · `tsc --noEmit` ✓.
+- Dependências novas: `unicode-normalization` (já presente no lock, via
+  tokenizers) e a feature `functions` do `rusqlite`.
+
+### Limites conhecidos
+- A busca usa função escalar sobre `sessions` (sem índice) — volume típico é
+  irrelevante; indexar a coluna normalizada se crescer.
+- Sessões longas continuam limitadas a 3 chunks por chamada: o título sai do
+  primeiro, o resumo pode ficar parcial (`has_more`).
+- Sem chave/fonte de IA, o encerramento falha só em log e a sessão segue sem
+  título. O toggle "Resumo automático" vale para as atualizações periódicas,
+  não para o encerramento.

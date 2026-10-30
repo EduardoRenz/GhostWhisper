@@ -2363,3 +2363,47 @@ uma nota de revisão.
   (ISS-081/task 18); a janela fixa de 180 caracteres da ISS-076 foi removida.
 - **Data:** 2026-10-26 · **Revisão:** 2026-10-27 (ISS-076/task 14; ISS-081/task
   18) · **Status:** Ativa
+
+## BR-103 — Histórico: busca por título e exclusão em lote
+
+- **Decisão:** a janela **Histórico** tem uma **barra de pesquisa** que filtra
+  as sessões pelo **título** (`sessions.subject`), no banco, sem diferenciar
+  caixa nem acentos (`Reunião` é encontrada por `reuniao`); cada palavra da
+  consulta precisa aparecer no título (AND). A lista também ganha
+  **seleção múltipla** (modo "Selecionar"): marcar linhas visíveis, selecionar
+  todas e **excluir em lote** com confirmação em dois cliques. A exclusão em
+  lote reaproveita a regra existente de `session_delete` (descarta a gravação,
+  encerra a sessão ativa e apaga falas/sugestões em cascata), executada em
+  sequência e com **um** recarregamento no fim.
+- **Motivo:** pedido do usuário (2026-10-28) — achar uma sessão antiga pelo
+  nome e limpar várias de uma vez sem abrir cada detalhe.
+- **Consequência:** a busca deixa de olhar só as 50 sessões carregadas; o
+  SQLite registra a função `ghw_fold` (mesma dobra do domínio, `NFD` sem
+  diacríticos + minúsculas) e o `LIKE` usa `ESCAPE` para `%`/`_` literais.
+  Sessões **sem título** não casam com termos (só aparecem com a busca vazia).
+  Mudar a pesquisa limpa a seleção, para nunca excluir algo que saiu do
+  filtro. Detalhes na [`mvp/tasks/24-task.md`](mvp/tasks/24-task.md).
+- **Data:** 2026-10-28 · **Status:** Ativa (task 24)
+
+## BR-104 — Resumo e título automáticos no encerramento
+
+- **Decisão:** ao **encerrar** uma sessão, se ela ainda **não tem resumo**
+  (`overview`) **ou** não tem título (`subject`) e existe fala final, o app
+  dispara o **resumo automático** (`SummaryMode::Auto`) numa thread própria —
+  sem bloquear o `session_stop`/atalho/`continue`. O título vem do `SUBJECT:`
+  do resumo, como na geração normal; quando já existe resumo gravado com
+  título e a sessão está sem título, o `subject` é aplicado **sem** chamar o
+  LLM de novo. A geração **nunca sobrescreve** um título existente: a sessão é
+  relida imediatamente antes do `rename`, porque o usuário pode ter renomeado
+  enquanto o modelo respondia.
+- **Motivo:** pedido do usuário (2026-10-28) — sessões encerradas sem abrir a
+  aba Resumo ficavam eternamente "Sessão sem título" no histórico.
+- **Consequência:** uma **única** instância de `SummaryRefresh` no app
+  compartilha single-flight (uma geração por sessão) e cooldown de falha de
+  60 s entre o **Perguntar** e o **encerramento**; ao terminar, publica
+  `session_updated` e a janela de Histórico recarrega em silêncio. Falha de
+  LLM/chave ausente fica só em log (a sessão segue sem título). O gatilho do
+  encerramento **não** consulta o toggle "Resumo automático": ele vale só para
+  as atualizações periódicas. Detalhes na
+  [`mvp/tasks/24-task.md`](mvp/tasks/24-task.md).
+- **Data:** 2026-10-28 · **Status:** Ativa (task 24)

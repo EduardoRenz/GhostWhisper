@@ -121,7 +121,7 @@ pnpm build:final
 É o caminho canônico do build final: confere o submódulo `vendor/laya` e o
 artefato ONNX, corrige as permissões que o snapshot do Hugging Face deixa
 somente-leitura e então chama o build Laya. Gera **um AppImage** em
-`src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.0_amd64.AppImage`
+`src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`
 (~821 MiB), com o modelo embutido — não precisa baixar nada no primeiro uso.
 
 O build padrão (`pnpm tauri:build`) continua leve: sem Laya e com o modelo
@@ -169,9 +169,9 @@ pnpm tauri:build:laya
 Install a release:
 
 ```bash
-sudo apt install ./GhostWhisper_0.3.0_amd64.deb
+sudo apt install ./GhostWhisper_0.3.1_amd64.deb
 # or
-chmod +x GhostWhisper_0.3.0_amd64.AppImage && ./GhostWhisper_0.3.0_amd64.AppImage
+chmod +x GhostWhisper_0.3.1_amd64.AppImage && ./GhostWhisper_0.3.1_amd64.AppImage
 ```
 
 ## Available scripts

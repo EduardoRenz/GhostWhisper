@@ -1706,7 +1706,7 @@ dependencies = [
 
 [[package]]
 name = "ghostwhisper"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1737,6 +1737,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "ureq 2.12.1",
  "uuid",
  "whisper-rs",

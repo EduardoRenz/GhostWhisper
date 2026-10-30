@@ -111,4 +111,79 @@ impl SessionRepository for InMemorySessionRepository {
         sessions.truncate(limit);
         Ok(sessions)
     }
+
+    fn search_by_subject(&self, query: &str, limit: usize) -> Result<Vec<Session>> {
+        let tokens = crate::domain::search_text::query_tokens(query);
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut sessions: Vec<Session> = self
+            .all()
+            .into_iter()
+            .filter(|session| {
+                session.subject.as_deref().is_some_and(|subject| {
+                    let folded = crate::domain::search_text::fold_text(subject);
+                    tokens.iter().all(|token| folded.contains(token.as_str()))
+                })
+            })
+            .collect();
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.started_at_ms));
+        sessions.truncate(limit);
+        Ok(sessions)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn titled(id: &str, started_at_ms: i64, subject: Option<&str>) -> Session {
+        Session {
+            id: id.to_string(),
+            started_at_ms,
+            ended_at_ms: None,
+            provider: "local".to_string(),
+            model: None,
+            transcription_model: None,
+            user_id: None,
+            subject: subject.map(str::to_string),
+            overview: None,
+            status: SessionStatus::Ended,
+        }
+    }
+
+    #[test]
+    fn search_by_subject_ignores_case_and_accents() {
+        let repo = InMemorySessionRepository::new();
+        repo.create(&titled("a", 100, Some("Reunião de sexta")))
+            .expect("a");
+        repo.create(&titled("b", 200, Some("Ledger bancário")))
+            .expect("b");
+        repo.create(&titled("c", 300, None)).expect("c");
+
+        let found = repo.search_by_subject("REUNIAO", 10).expect("search");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "a");
+    }
+
+    #[test]
+    fn search_by_subject_requires_every_word_and_orders_newest_first() {
+        let repo = InMemorySessionRepository::new();
+        repo.create(&titled("old", 100, Some("Reunião do ledger")))
+            .expect("old");
+        repo.create(&titled("new", 200, Some("Reunião do ledger")))
+            .expect("new");
+        repo.create(&titled("other", 300, Some("Reunião de sexta")))
+            .expect("other");
+
+        let found = repo
+            .search_by_subject("reuniao ledger", 10)
+            .expect("search");
+        assert_eq!(
+            found.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            ["new", "old"]
+        );
+
+        assert!(repo.search_by_subject("  ", 10).expect("empty").is_empty());
+    }
 }

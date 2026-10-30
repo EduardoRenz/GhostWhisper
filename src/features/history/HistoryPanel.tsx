@@ -50,8 +50,9 @@ function fileNameFor(session: SessionSummary): string {
  */
 export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps) {
   const { t } = useTranslation();
-  const { sessions, loading, error, refresh, rename, remove } =
-    useSessionHistory(activeSessionId);
+  const [query, setQuery] = useState("");
+  const { sessions, loading, error, refresh, rename, remove, removeMany } =
+    useSessionHistory(activeSessionId, query);
   const [selected, setSelected] = useState<string | null>(null);
   // Aba ativa no detalhe (Resumo × Transcrição); começa no resumo.
   const [tab, setTab] = useState<DetailTabId>("summary");
@@ -60,11 +61,73 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  // Seleção múltipla para excluir em lote (BR-103).
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const current = sessions.find((session) => session.id === selected) ?? null;
   // Converter a linha temporal em bolhas pode custar caro numa sessão longa e não
   // pode rodar a cada render (ISS-020).
   const bubbles = useMemo(() => bubblesFromTimeline(entries), [entries]);
+
+  const allSelected =
+    sessions.length > 0 && sessions.every((session) => selectedIds.includes(session.id));
+
+  /** Pesquisa e seleção são exclusivas: filtrar limpa o que estava marcado. */
+  const onSearch = (value: string) => {
+    setQuery(value);
+    setSelectedIds([]);
+    setConfirmDelete(false);
+    setNotice(null);
+  };
+
+  const toggleSelecting = () => {
+    setSelecting((previous) => !previous);
+    setSelectedIds([]);
+    setConfirmDelete(false);
+    setNotice(null);
+  };
+
+  const toggleSelected = (id: string) => {
+    setConfirmDelete(false);
+    setSelectedIds((previous) =>
+      previous.includes(id)
+        ? previous.filter((item) => item !== id)
+        : [...previous, id],
+    );
+  };
+
+  /** Marca/desmarca todas as linhas **visíveis** (filtro atual). */
+  const toggleAll = () => {
+    setConfirmDelete(false);
+    setSelectedIds(allSelected ? [] : sessions.map((session) => session.id));
+  };
+
+  /** Exclui as marcadas: o primeiro clique pede confirmação (BR-103). */
+  const deleteSelected = async () => {
+    if (selectedIds.length === 0 || busy) {
+      return;
+    }
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    const ids = [...selectedIds];
+    setBusy(true);
+    setNotice(null);
+    const { deleted, failed } = await removeMany(ids);
+    setBusy(false);
+    setConfirmDelete(false);
+    setSelectedIds([]);
+    if (failed === 0) {
+      setSelecting(false);
+      setNotice(t("history_bulk_deleted", { count: deleted }));
+    } else {
+      setNotice(t("history_bulk_delete_partial", { deleted, failed }));
+    }
+  };
 
   const startRename = (session: SessionSummary) => {
     setEditing(true);
@@ -266,6 +329,22 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
   return (
     <div className="history" data-interactive>
       <div className="history__head history__head--toolbar">
+        <input
+          type="search"
+          className="history__search"
+          value={query}
+          placeholder={t("history_search_placeholder")}
+          aria-label={t("history_search_placeholder")}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+        <button
+          type="button"
+          className="overlay__button"
+          aria-pressed={selecting}
+          onClick={toggleSelecting}
+        >
+          {selecting ? t("history_cancel") : t("history_select")}
+        </button>
         <button
           type="button"
           className="overlay__button"
@@ -276,12 +355,51 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
         </button>
       </div>
 
+      {selecting && (
+        <div className="history__selection">
+          <label className="history__select-all">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+            />
+            {t("history_select_all")}
+          </label>
+          <span className="history__selection-count">
+            {t("history_selected_count", { count: selectedIds.length })}
+          </span>
+          <button
+            type="button"
+            className="overlay__button overlay__button--stop"
+            disabled={selectedIds.length === 0 || busy}
+            onClick={() => void deleteSelected()}
+          >
+            {busy
+              ? t("history_deleting")
+              : confirmDelete
+                ? t("history_confirm_delete_selected", {
+                    count: selectedIds.length,
+                  })
+                : t("history_delete_selected", { count: selectedIds.length })}
+          </button>
+        </div>
+      )}
+
+      {query.trim() !== "" && !loading && sessions.length > 0 && (
+        <p className="history__search-count">
+          {t("history_search_results", { count: sessions.length })}
+        </p>
+      )}
+
       {error && <p className="overlay__error">{error}</p>}
+      {notice && <p className="settings__hint">{notice}</p>}
 
       <div className="history__list">
         {!loading && sessions.length === 0 && (
           <p className="overlay__empty">
-            {t("history_no_sessions_yet_start_listening_create")}
+            {query.trim() !== ""
+              ? t("history_no_match")
+              : t("history_no_sessions_yet_start_listening_create")}
           </p>
         )}
         {sessions.map((session) => (
@@ -291,6 +409,17 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
               session.id === activeSessionId ? " history__row--active" : ""
             }`}
           >
+            {selecting && (
+              <input
+                type="checkbox"
+                className="history__row-select"
+                checked={selectedIds.includes(session.id)}
+                aria-label={t("history_select_session", {
+                  title: sessionTitleText(session, t),
+                })}
+                onChange={() => toggleSelected(session.id)}
+              />
+            )}
             <button
               type="button"
               className="history__open"
@@ -316,15 +445,17 @@ export function HistoryPanel({ activeSessionId, onContinue }: HistoryPanelProps)
                 {session.id === activeSessionId ? ` · ${t("history_recording")}` : ""}
               </span>
             </button>
-            <button
-              type="button"
-              className="overlay__button"
-              title={t("history_ends_current_session_any_resumes_capturing",
-              )}
-              onClick={() => onContinue(session.id)}
-            >
-              {t("history_continue")}
-            </button>
+            {!selecting && (
+              <button
+                type="button"
+                className="overlay__button"
+                title={t("history_ends_current_session_any_resumes_capturing",
+                )}
+                onClick={() => onContinue(session.id)}
+              >
+                {t("history_continue")}
+              </button>
+            )}
           </div>
         ))}
       </div>

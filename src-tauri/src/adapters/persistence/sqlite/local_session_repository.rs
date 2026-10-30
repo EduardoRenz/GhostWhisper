@@ -120,6 +120,44 @@ impl SessionRepository for LocalSessionRepository {
         }
         Ok(sessions)
     }
+
+    fn search_by_subject(&self, query: &str, limit: usize) -> Result<Vec<Session>> {
+        let tokens = crate::domain::search_text::query_tokens(query);
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Um `LIKE` por palavra (AND). `ghw_fold` (registrada na conexão)
+        // aplica a mesma dobra do domínio; `ESCAPE` mantém `%`/`_` literais.
+        let mut sql = format!("SELECT {COLUMNS} FROM sessions WHERE subject IS NOT NULL");
+        for index in 0..tokens.len() {
+            sql.push_str(&format!(
+                " AND ghw_fold(subject) LIKE ?{} ESCAPE '\\'",
+                index + 1
+            ));
+        }
+        sql.push_str(&format!(
+            " ORDER BY started_at DESC LIMIT ?{}",
+            tokens.len() + 1
+        ));
+
+        let mut values: Vec<rusqlite::types::Value> = tokens
+            .iter()
+            .map(|token| {
+                rusqlite::types::Value::Text(crate::domain::search_text::like_pattern(token))
+            })
+            .collect();
+        values.push(rusqlite::types::Value::Integer(limit as i64));
+
+        let conn = lock(&self.conn)?;
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(values), map_session)?;
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row?);
+        }
+        Ok(sessions)
+    }
 }
 
 fn map_session(row: &Row<'_>) -> rusqlite::Result<Session> {
@@ -286,6 +324,59 @@ mod tests {
             .search("fala", 10)
             .expect("search")
             .is_empty());
+    }
+
+    #[test]
+    fn search_by_subject_matches_case_and_accents_without_wildcards() {
+        let repo = LocalSessionRepository::new(tests_support::in_memory());
+        repo.create(&tests_support::session("a", 100))
+            .expect("create a");
+        repo.rename("a", "Reunião 100% do ledger").expect("title a");
+        repo.create(&tests_support::session("b", 200))
+            .expect("create b");
+        repo.rename("b", "Reunião de sexta").expect("title b");
+        repo.create(&tests_support::session("c", 300))
+            .expect("create c");
+
+        // Acento/caixa ignorados; título nulo não entra.
+        let found = repo.search_by_subject("REUNIAO", 10).expect("search");
+        assert_eq!(
+            found
+                .iter()
+                .map(|session| session.id.as_str())
+                .collect::<Vec<_>>(),
+            ["b", "a"]
+        );
+
+        // `%` é literal (sem wildcard) e todas as palavras precisam casar.
+        let literal = repo.search_by_subject("100% ledger", 10).expect("literal");
+        assert_eq!(literal.len(), 1);
+        assert_eq!(literal[0].id, "a");
+
+        assert!(repo
+            .search_by_subject("reuniao nada", 10)
+            .expect("none")
+            .is_empty());
+        assert!(repo.search_by_subject("", 10).expect("empty").is_empty());
+    }
+
+    #[test]
+    fn search_by_subject_respects_the_limit() {
+        let repo = LocalSessionRepository::new(tests_support::in_memory());
+        for (index, id) in ["a", "b", "c"].iter().enumerate() {
+            repo.create(&tests_support::session(id, 100 + index as i64 * 100))
+                .expect("create");
+            repo.rename(id, "Reunião").expect("title");
+        }
+
+        let found = repo.search_by_subject("reuniao", 2).expect("search");
+        assert_eq!(
+            found
+                .iter()
+                .map(|session| session.id.as_str())
+                .collect::<Vec<_>>(),
+            ["c", "b"]
+        );
     }
 
     #[test]

@@ -30,6 +30,7 @@
 | 21 | Filtro de loop de frase do Whisper (ISS-019) | CONCLUDED |
 | 22 | Interface responsiva: IPC fora da main thread e menos re-render (ISS-020) | CONCLUDED |
 | 23 | Retratação da prévia "em andamento" pendurada (ISS-021) | CONCLUDED |
+| 24 | Histórico: busca por título, exclusão em lote e resumo/título no encerramento (BR-103/BR-104) | CONCLUDED |
 
 ## Dependências entre tarefas
 
@@ -60,6 +61,8 @@
 - 21 (filtro de loop de frase, ISS-019) depende de 11/13 (streaming e ASR).
 - 22 (interface responsiva, ISS-020) depende de 01/07/11 (overlay, UI e streaming).
 - 23 (retratação da prévia, ISS-021) depende de 11/13 (streaming e ASR).
+- 24 (histórico, BR-103/BR-104) depende de 17 (histórico) e do resumo do PRD
+  Sessão; é independente das demais.
 
 ## Definição de pronto (geral)
 - Código compila (`pnpm tauri build` sem erros).

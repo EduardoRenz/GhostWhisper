@@ -837,6 +837,58 @@ body,
 /* Só o botão "Atualizar": o título vive no cabeçalho do painel. */
 .history__head--toolbar {
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Pesquisa por título (BR-103): ocupa a linha e cede espaço nos botões. */
+.history__search {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 0.25rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid var(--oh-border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ghostwhisper-text);
+  font-size: 0.78rem;
+}
+
+.history__search:focus-visible {
+  outline: 1px solid var(--oh-accent);
+  outline-offset: 1px;
+}
+
+.history__search-count {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--oh-text-muted);
+}
+
+/* Barra de seleção múltipla. */
+.history__selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--oh-text-muted);
+}
+
+.history__select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.history__select-all input,
+.history__row-select {
+  accent-color: var(--oh-accent);
+  cursor: pointer;
+  margin: 0;
+}
+
+.history__selection-count {
+  margin-right: auto;
 }
 
 .history__title {

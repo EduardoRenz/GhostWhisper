@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HistoryPanel } from "./HistoryPanel";
 import type { SessionSummary, TimelineEntry } from "../../core/domain/transcript";
 
 const listSessions = vi.fn();
+const searchSessions = vi.fn();
+const subscribe = vi.fn();
 const sessionTimeline = vi.fn();
 const renameSession = vi.fn();
 const deleteSession = vi.fn();
@@ -14,6 +16,7 @@ const copyText = vi.fn();
 
 vi.mock("../../adapters/ipc/database", () => ({
   listSessions: (...args: unknown[]) => listSessions(...args),
+  searchSessions: (...args: unknown[]) => searchSessions(...args),
   sessionTimeline: (...args: unknown[]) => sessionTimeline(...args),
   renameSession: (...args: unknown[]) => renameSession(...args),
   deleteSession: (...args: unknown[]) => deleteSession(...args),
@@ -27,6 +30,10 @@ vi.mock("../../adapters/ipc/export", () => ({
 
 vi.mock("../../core/application/clipboard", () => ({
   copyText: (...args: unknown[]) => copyText(...args),
+}));
+
+vi.mock("../../adapters/ipc/events", () => ({
+  subscribe: (...args: unknown[]) => subscribe(...args),
 }));
 
 const STARTED = new Date(2026, 0, 2, 3, 4).getTime();
@@ -59,6 +66,8 @@ describe("HistoryPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listSessions.mockResolvedValue(sessions);
+    searchSessions.mockResolvedValue(sessions);
+    subscribe.mockResolvedValue(() => {});
     sessionTimeline.mockResolvedValue(timeline);
     renameSession.mockResolvedValue(undefined);
     deleteSession.mockResolvedValue(undefined);
@@ -212,6 +221,109 @@ describe("HistoryPanel", () => {
     await waitFor(() => {
       expect(deleteSession).toHaveBeenCalledWith("s2");
     });
+  });
+
+
+  it("busca no banco pelo título e filtra a lista", async () => {
+    searchSessions.mockResolvedValue([sessions[0]]);
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+    await screen.findByText("Reunião de sexta");
+
+    fireEvent.change(screen.getByLabelText("Pesquisar no título…"), {
+      target: { value: "reuniao" },
+    });
+
+    await waitFor(() => {
+      expect(searchSessions).toHaveBeenCalledWith("reuniao", 50);
+    });
+    expect(await screen.findByText("1 resultado(s)")).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByText("Sessão sem título")).toBeNull();
+    });
+  });
+
+  it("mostra aviso quando a busca não encontra sessão", async () => {
+    searchSessions.mockResolvedValue([]);
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+    await screen.findByText("Reunião de sexta");
+
+    fireEvent.change(screen.getByLabelText("Pesquisar no título…"), {
+      target: { value: "inexistente" },
+    });
+
+    expect(
+      await screen.findByText("Nenhuma sessão com esse título."),
+    ).toBeDefined();
+  });
+
+  it("exclui várias sessões selecionadas com confirmação", async () => {
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+    await screen.findByText("Reunião de sexta");
+
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar" }));
+    fireEvent.click(screen.getByLabelText("Selecionar Reunião de sexta"));
+    fireEvent.click(screen.getByLabelText("Selecionar Sessão sem título"));
+
+    const first = screen.getByRole("button", { name: "Excluir (2)" });
+    fireEvent.click(first);
+    // Primeiro clique só pede confirmação.
+    expect(deleteSession).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirmar exclusão (2)" }),
+    );
+
+    await waitFor(() => {
+      expect(deleteSession).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteSession).toHaveBeenNthCalledWith(1, "s2");
+    expect(deleteSession).toHaveBeenNthCalledWith(2, "s1");
+    expect(await screen.findByText("2 sessão(ões) excluída(s).")).toBeDefined();
+    // Sai do modo de seleção.
+    expect(screen.getByRole("button", { name: "Selecionar" })).toBeDefined();
+  });
+
+  it("limpa a seleção quando a pesquisa muda", async () => {
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+    await screen.findByText("Reunião de sexta");
+
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar" }));
+    fireEvent.click(screen.getByLabelText("Selecionar Reunião de sexta"));
+    expect(
+      screen.getByRole("button", { name: "Excluir (1)" }),
+    ).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText("Pesquisar no título…"), {
+      target: { value: "reuniao" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Excluir (0)" }),
+    ).toBeDefined();
+  });
+
+  it("atualiza o título quando o resumo em background termina", async () => {
+    let onUpdate: ((payload: unknown) => void) | null = null;
+    subscribe.mockImplementation(
+      async (event: string, handler: (payload: unknown) => void) => {
+        if (event === "session_updated") {
+          onUpdate = handler;
+        }
+        return () => {};
+      },
+    );
+    listSessions
+      .mockResolvedValueOnce(sessions)
+      .mockResolvedValue([{ ...sessions[0], subject: "Título gerado" }, sessions[1]]);
+
+    render(<HistoryPanel activeSessionId={null} onContinue={vi.fn()} />);
+    await screen.findByText("Reunião de sexta");
+    await waitFor(() => expect(onUpdate).not.toBeNull());
+
+    await act(async () => {
+      onUpdate!({ session_id: "s2", subject: "Título gerado" });
+    });
+
+    expect(await screen.findByText("Título gerado")).toBeDefined();
   });
 
   it("avisa quando não há sessões", async () => {

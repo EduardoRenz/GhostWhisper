@@ -24,6 +24,20 @@ export const listSessions = (
 ): Promise<SessionSummary[] | undefined> =>
   invokeSafe<SessionSummary[]>("db_list_sessions", { limit: limit ?? null });
 
+/**
+ * Busca sessões pelo **título** (caixa/acento ignorados, BR-103).
+ *
+ * Consulta vazia devolve vazio; a lista sem filtro vem de `listSessions`.
+ */
+export const searchSessions = (
+  query: string,
+  limit?: number,
+): Promise<SessionSummary[] | undefined> =>
+  invokeSafe<SessionSummary[]>("db_search_sessions", {
+    query,
+    limit: limit ?? null,
+  });
+
 /** Linha temporal da sessão: falas + sugestões já ordenadas. */
 export const sessionTimeline = (
   sessionId: string,

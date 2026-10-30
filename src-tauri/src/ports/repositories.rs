@@ -13,6 +13,12 @@ pub trait SessionRepository: Send + Sync {
     fn end(&self, id: &str, ended_at_ms: i64) -> Result<()>;
     fn get(&self, id: &str) -> Result<Option<Session>>;
     fn list_recent(&self, limit: usize) -> Result<Vec<Session>>;
+    /// Busca sessões pelo **título** (`subject`), sem caixa/acento (BR-103).
+    ///
+    /// Cada palavra da consulta precisa aparecer no título (AND); a ordem é a
+    /// mesma do histórico (mais recentes primeiro). Consulta vazia devolve
+    /// vazio — "sem filtro" é responsabilidade de quem chama.
+    fn search_by_subject(&self, query: &str, limit: usize) -> Result<Vec<Session>>;
     /// Reativa uma sessão encerrada (`status = active`, `ended_at = NULL`).
     fn resume(&self, id: &str) -> Result<()>;
     /// Encerra todas as sessões ainda `active` e retorna quantas foram.

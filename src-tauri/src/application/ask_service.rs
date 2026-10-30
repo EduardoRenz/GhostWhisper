@@ -19,9 +19,7 @@
 //!   atualizada em **background**, em paralelo com a resposta. A falha do
 //!   resumo nunca impede a pergunta (prioridade: velocidade da resposta).
 
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use uuid::Uuid;
 
@@ -37,12 +35,13 @@ use crate::ports::event_publisher::{EventPublisher, JournalPhase, JournalUpdate}
 use crate::ports::journal_repository::JournalRepository;
 use crate::ports::llm_controller::LlmController;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
-use crate::ports::summary_generator::{SummaryGenerator, SummaryMode, SummaryRequest};
+use crate::ports::summary_generator::SummaryGenerator;
 
 use super::answer_summary;
 use super::context;
 use super::prompts::assistant as assistant_prompts;
 use super::session_lookup::resolve_session;
+use super::summary_refresh::SummaryRefresh;
 
 /// Teto do contexto enviado com a pergunta (mesma ordem de grandeza da
 /// sugestão — BR-024).
@@ -64,10 +63,6 @@ const CONTEXT_SUMMARIES_MAX_CHARS: usize = 1_500;
 /// quando passa, o excesso é cortado pelo **fim** — a parte recente já está
 /// coberta pela transcrição ao vivo.
 const CONTEXT_MEETING_SUMMARY_MAX_CHARS: usize = 6_000;
-/// Cooldown depois de uma falha do resumo em background (ms).
-///
-/// Evita martelar o provedor a cada pergunta quando o resumo está quebrado.
-const SUMMARY_REFRESH_COOLDOWN_MS: i64 = 60_000;
 /// Teto de tokens da resposta.
 ///
 /// Folgado o bastante para uma resposta com código + exemplo **e** o bloco de
@@ -127,69 +122,6 @@ fn system_prompt() -> String {
     )
 }
 
-/// Estado do refresh do resumo disparado pelo **Perguntar**.
-///
-/// - **single-flight**: no máximo uma atualização por sessão; a pergunta
-///   seguinte não empilha outra (a aba Resumo tem o próprio `inFlight` no
-///   frontend).
-/// - **cooldown de falha**: se o resumo falhou, não tenta de novo a cada
-///   pergunta (evita martelar o provedor).
-#[derive(Default)]
-struct SummaryRefreshState {
-    inner: Mutex<SummaryRefreshInner>,
-}
-
-#[derive(Default)]
-struct SummaryRefreshInner {
-    in_flight: HashSet<String>,
-    last_failure_ms: HashMap<String, i64>,
-}
-
-impl SummaryRefreshState {
-    /// Reserva a atualização da sessão; `false` = já em voo ou em cooldown.
-    fn try_begin(&self, session_id: &str, now_ms: i64) -> bool {
-        let Ok(mut inner) = self.inner.lock() else {
-            return false;
-        };
-        if inner.in_flight.contains(session_id) {
-            return false;
-        }
-        if let Some(last) = inner.last_failure_ms.get(session_id) {
-            if now_ms.saturating_sub(*last) < SUMMARY_REFRESH_COOLDOWN_MS {
-                return false;
-            }
-        }
-        inner.in_flight.insert(session_id.to_string());
-        true
-    }
-
-    /// Libera a sessão (chamado no fim da thread, inclusive em panic).
-    fn finish(&self, session_id: &str) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.in_flight.remove(session_id);
-        }
-    }
-
-    /// Registra a falha para o cooldown.
-    fn note_failure(&self, session_id: &str, now_ms: i64) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.last_failure_ms.insert(session_id.to_string(), now_ms);
-        }
-    }
-}
-
-/// Limpa o "em voo" mesmo se a thread do resumo entrar em panic.
-struct SummaryRefreshGuard {
-    state: Arc<SummaryRefreshState>,
-    session_id: String,
-}
-
-impl Drop for SummaryRefreshGuard {
-    fn drop(&mut self) {
-        self.state.finish(&self.session_id);
-    }
-}
-
 /// Pergunta à IA e registra no diário da sessão.
 pub struct AskService {
     llm: Arc<dyn LlmController>,
@@ -203,8 +135,8 @@ pub struct AskService {
     publisher: Arc<dyn EventPublisher>,
     /// Serializa as perguntas: uma por vez (BR-042).
     gate: Arc<Mutex<()>>,
-    /// Single-flight/cooldown do refresh do resumo em background.
-    summary_refresh: Arc<SummaryRefreshState>,
+    /// Geração do resumo em background (single-flight/cooldown compartilhados).
+    summary_refresh: Arc<SummaryRefresh>,
 }
 
 impl AskService {
@@ -219,6 +151,15 @@ impl AskService {
         clock: Arc<dyn Clock>,
         publisher: Arc<dyn EventPublisher>,
     ) -> Self {
+        // Compartilhável com o encerramento de sessão (BR-104) via
+        // `with_summary_refresh`.
+        let summary_refresh = Arc::new(SummaryRefresh::new(
+            Arc::clone(&summaries),
+            Arc::clone(&sessions),
+            Arc::clone(&transcriptions),
+            Arc::clone(&clock),
+            Arc::clone(&publisher),
+        ));
         Self {
             llm,
             sessions,
@@ -228,8 +169,15 @@ impl AskService {
             clock,
             publisher,
             gate: Arc::new(Mutex::new(())),
-            summary_refresh: Arc::new(SummaryRefreshState::default()),
+            summary_refresh,
         }
+    }
+
+    /// Usa o agendador compartilhado do composition root (uma instância só no
+    /// app inteiro — Perguntar e encerramento respeitam o mesmo single-flight).
+    pub fn with_summary_refresh(mut self, refresh: Arc<SummaryRefresh>) -> Self {
+        self.summary_refresh = refresh;
+        self
     }
 
     /// Sessão da pergunta: a pedida, a ativa ou uma **nova**.
@@ -417,46 +365,7 @@ impl AskService {
     /// resultado deste trabalho só beneficia a próxima pergunta (ou a aba
     /// Resumo). Falha é log + cooldown, nunca erro da pergunta.
     fn spawn_summary_refresh(&self, session_id: &str) {
-        let now_ms = self.clock.now_ms();
-        if !self.summary_refresh.try_begin(session_id, now_ms) {
-            return;
-        }
-
-        let generator = Arc::clone(&self.summaries);
-        let clock = Arc::clone(&self.clock);
-        let refresh = Arc::clone(&self.summary_refresh);
-        let id = session_id.to_string();
-        let spawned = thread::Builder::new()
-            .name("ask-summary".into())
-            .spawn(move || {
-                let _guard = SummaryRefreshGuard {
-                    state: Arc::clone(&refresh),
-                    session_id: id.clone(),
-                };
-                match generator.generate(SummaryRequest {
-                    session_id: Some(id.clone()),
-                    mode: SummaryMode::Auto,
-                }) {
-                    Ok(result) => tracing::debug!(
-                        session_id = %id,
-                        updated = result.updated,
-                        has_more = result.has_more,
-                        "resumo atualizado em background para o Perguntar"
-                    ),
-                    Err(error) => {
-                        tracing::warn!(
-                            session_id = %id,
-                            "falha ao atualizar o resumo em background: {error}"
-                        );
-                        refresh.note_failure(&id, clock.now_ms());
-                    }
-                }
-            });
-        if let Err(error) = spawned {
-            // A reserva foi feita antes do spawn; libera para a próxima.
-            self.summary_refresh.finish(session_id);
-            tracing::warn!("falha ao iniciar thread do resumo em background: {error}");
-        }
+        self.summary_refresh.spawn(session_id);
     }
 }
 
@@ -1408,27 +1317,6 @@ mod tests {
             assert!(answered);
             release_tx.send(()).expect("libera o resumo");
         });
-    }
-
-    #[test]
-    fn the_summary_refresh_is_single_flight_and_cools_down() {
-        let state = SummaryRefreshState::default();
-
-        assert!(state.try_begin("s1", 1_000));
-        assert!(!state.try_begin("s1", 1_000), "já está em voo");
-        state.finish("s1");
-        assert!(state.try_begin("s1", 2_000), "liberou para a próxima");
-
-        state.finish("s1");
-        state.note_failure("s1", 3_000);
-        assert!(
-            !state.try_begin("s1", 3_000 + SUMMARY_REFRESH_COOLDOWN_MS - 1),
-            "durante o cooldown não tenta de novo"
-        );
-        assert!(
-            state.try_begin("s1", 3_000 + SUMMARY_REFRESH_COOLDOWN_MS),
-            "depois do cooldown volta a tentar"
-        );
     }
 
     #[test]

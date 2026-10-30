@@ -38,6 +38,7 @@ pub mod screen_recorder;
 pub mod screen_targets;
 pub mod secret_store;
 pub mod session_controller;
+pub mod session_end_observer;
 pub mod settings_store;
 pub mod shortcut_registry;
 pub mod speech_engine_factory;

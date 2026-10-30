@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use rusqlite::functions::FunctionFlags;
 use rusqlite::Connection;
 
 use crate::error::{GhostWhisperError, Result};
@@ -35,6 +36,25 @@ pub fn initialize(conn: &Connection) -> Result<()> {
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     conn.execute_batch(SCHEMA)?;
     migrate_columns(conn)?;
+    register_search_fold(conn)?;
+    Ok(())
+}
+
+/// Registra `ghw_fold(text)` — a mesma dobra do domínio (BR-103).
+///
+/// A busca de sessões por título precisa ignorar caixa e acentos; sem a função
+/// o `LIKE` do SQLite só cobre ASCII. É `DETERMINISTIC` para o planejador poder
+/// reaproveitar o resultado.
+fn register_search_fold(conn: &Connection) -> Result<()> {
+    conn.create_scalar_function(
+        "ghw_fold",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let value: Option<String> = ctx.get(0)?;
+            Ok(value.map(|text| crate::domain::search_text::fold_text(&text)))
+        },
+    )?;
     Ok(())
 }
 

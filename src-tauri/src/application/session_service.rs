@@ -24,6 +24,7 @@ use crate::ports::event_publisher::{EventPublisher, SessionStateEvent};
 use crate::ports::recording::RecordingLifecycle;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
 use crate::ports::session_controller::{AudioChannel, SessionController};
+use crate::ports::session_end_observer::SessionEndObserver;
 use crate::ports::speech_engine_factory::SpeechEngineFactory;
 use crate::ports::transcript_activity::TranscriptActivity;
 
@@ -45,6 +46,8 @@ pub struct SessionService {
     last_channels: Mutex<Vec<AudioChannel>>,
     /// Gancho opcional da gravação (BR-065). Ausente em testes que não gravam.
     recording: Option<Arc<dyn RecordingLifecycle>>,
+    /// Reação opcional ao encerramento (resumo/título em background, BR-104).
+    session_end: Option<Arc<dyn SessionEndObserver>>,
     /// Atividade de fala compartilhada com o gate (debounce estrutural).
     activity: Arc<dyn TranscriptActivity>,
 }
@@ -112,6 +115,7 @@ impl SessionService {
             active: Mutex::new(None),
             last_channels: Mutex::new(Vec::new()),
             recording: None,
+            session_end: None,
             activity,
         }
     }
@@ -120,6 +124,21 @@ impl SessionService {
     pub fn with_recording(mut self, recording: Arc<dyn RecordingLifecycle>) -> Self {
         self.recording = Some(recording);
         self
+    }
+
+    /// Liga a reação ao encerramento da sessão (BR-104).
+    ///
+    /// A implementação só agenda trabalho: o `stop` não espera o resumo.
+    pub fn with_session_end(mut self, observer: Arc<dyn SessionEndObserver>) -> Self {
+        self.session_end = Some(observer);
+        self
+    }
+
+    /// Avisa o observador do encerramento; nunca derruba a sessão (RNF-07).
+    fn session_end_hook(&self, session_id: &str) {
+        if let Some(observer) = &self.session_end {
+            observer.on_session_ended(session_id);
+        }
     }
 
     /// Executa um gancho de gravação; falha **nunca** derruba a sessão (RNF-07).
@@ -405,6 +424,7 @@ impl SessionController for SessionService {
             }
             self.sessions.end(&active.id, self.clock.now_ms())?;
             self.emit_idle();
+            self.session_end_hook(&active.id);
             self.recording_hook(|recording| recording.on_session_stopped());
         }
         Ok(())
@@ -757,13 +777,21 @@ mod tests {
     }
 
     fn fixture(mic_fail: bool, system_fail: bool) -> Fixture {
+        fixture_with_observer(mic_fail, system_fail, None)
+    }
+
+    fn fixture_with_observer(
+        mic_fail: bool,
+        system_fail: bool,
+        observer: Option<Arc<dyn SessionEndObserver>>,
+    ) -> Fixture {
         let mic = Arc::new(FakeAudioSource::new(mic_fail));
         let system = Arc::new(FakeAudioSource::new(system_fail));
         let sessions = Arc::new(InMemorySessionRepository::new());
         let publisher = Arc::new(RecordingPublisher {
             states: Mutex::new(Vec::new()),
         });
-        let service = SessionService::new(
+        let mut service = SessionService::new(
             mic.clone(),
             system.clone(),
             Arc::new(FakeEngineFactory),
@@ -775,6 +803,9 @@ mod tests {
                 crate::adapters::system::in_memory_transcript_activity::InMemoryTranscriptActivity::new(),
             ),
         );
+        if let Some(observer) = observer {
+            service = service.with_session_end(observer);
+        }
         Fixture {
             mic,
             system,
@@ -782,6 +813,35 @@ mod tests {
             publisher,
             service,
         }
+    }
+
+    /// Observador do encerramento que guarda os ids notificados.
+    #[derive(Default)]
+    struct RecordingObserver {
+        ended: Mutex<Vec<String>>,
+    }
+
+    impl SessionEndObserver for RecordingObserver {
+        fn on_session_ended(&self, session_id: &str) {
+            self.ended.lock().unwrap().push(session_id.to_string());
+        }
+    }
+
+    #[test]
+    fn stopping_the_session_notifies_the_end_observer() {
+        // BR-104: o encerramento agenda o resumo/título em background.
+        let observer = Arc::new(RecordingObserver::default());
+        let f = fixture_with_observer(false, false, Some(observer.clone()));
+        let id = f.service.start(&[AudioChannel::Microphone]).expect("start");
+
+        f.service.pause().expect("pause");
+        assert!(
+            observer.ended.lock().unwrap().is_empty(),
+            "pausar mantém a sessão aberta"
+        );
+
+        f.service.stop().expect("stop");
+        assert_eq!(*observer.ended.lock().unwrap(), vec![id]);
     }
 
     #[test]
