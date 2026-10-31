@@ -403,8 +403,9 @@ a PRD de gravação por ora.
 - Rust **911 ✓** (14 ignorados), clippy/fmt ✓; frontend **546 ✓**, tsc ✓.
 - AppImage completo **830,52 MiB**, sha256
   `7c5531037f152b1a3190960df93a0ff8ef368befe0f6e7c6b9ef7d0ed770b1dd`;
-  montou e iniciou no Ubuntu 26.04 (Vulkan/Laya). Detalhes em
-  `../mvp/memory.md`.
+  montou e iniciou no Ubuntu 26.04 (Vulkan/Laya). O usuário validou três
+  gravações pela UI, incluindo pausa/retomada (2 segmentos), todas `ready`.
+  Detalhes em `../mvp/memory.md`.
 
 ### Limites
 - Sem follow automático da janela ativa: o portal fixa a fonte no `start`.

@@ -84,6 +84,9 @@ vai para segmentos MKV via **PipeWire + GStreamer**.
   Montou e iniciou no Ubuntu 26.04 (Vulkan + Laya + app id do portal); o
   ambiente GStreamer do `AppRun` foi simulado no teste de áudio e as
   capabilities ficaram disponíveis.
+- **Validação manual do usuário (2026-10-31):** três gravações pela UI do
+  AppImage, incluindo uma com **pausa/retomada** (2 segmentos); todas
+  finalizaram com status `ready` (1,9–3,5 MB; 9,9–20,3 s).
 
 ## Limites conhecidos
 

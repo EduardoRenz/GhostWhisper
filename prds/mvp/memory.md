@@ -1170,3 +1170,6 @@ precisa sair do GStreamer (`pulsesrc`) no mesmo pipeline.
   portal. O `gst-launch`/`gst-inspect` rodam sem o `LD_LIBRARY_PATH`/
   `GST_PLUGIN_SYSTEM_PATH*` do `AppRun` (validado com o binário de teste sob o
   ambiente do AppDir).
+- **Validação manual (2026-10-31):** o usuário gravou três vezes pela UI do
+  AppImage, incluindo uma com pausa/retomada (2 segmentos). Todas ficaram
+  `ready` no banco (1,9–3,5 MB; 9,9–20,3 s).
