@@ -6,6 +6,7 @@ import type {
   RecordingTarget,
 } from "../../core/domain/recording";
 import {
+  recordingCapabilities,
   recordingPickerClose,
   recordingStartWith,
   recordingState,
@@ -17,6 +18,7 @@ import { RecordingPickerWindow } from "./RecordingPickerWindow";
 vi.mock("../../adapters/ipc/recording", () => ({
   recordingState: vi.fn(),
   recordingTargets: vi.fn(),
+  recordingCapabilities: vi.fn(),
   recordingStartWith: vi.fn(async () => undefined),
   recordingSwitchTarget: vi.fn(async () => undefined),
   recordingPickerClose: vi.fn(async () => undefined),
@@ -53,6 +55,7 @@ describe("RecordingPickerWindow — seletor de janelas", () => {
   beforeEach(() => {
     vi.mocked(recordingState).mockResolvedValue(IDLE);
     vi.mocked(recordingTargets).mockResolvedValue(TARGETS);
+    vi.mocked(recordingCapabilities).mockResolvedValue(undefined);
     vi.mocked(recordingStartWith).mockClear();
     vi.mocked(recordingSwitchTarget).mockClear();
     vi.mocked(recordingPickerClose).mockClear();
@@ -74,6 +77,68 @@ describe("RecordingPickerWindow — seletor de janelas", () => {
       expect(recordingStartWith).toHaveBeenCalledWith(TARGETS[1]);
     });
     expect(recordingPickerClose).toHaveBeenCalled();
+  });
+
+  it("no Wayland o alvo é o seletor do GNOME", async () => {
+    vi.mocked(recordingCapabilities).mockResolvedValue({
+      available: true,
+      encoder: "x264",
+      reason: null,
+      reason_code: null,
+      follow_supported: false,
+      target_mode: "portal",
+    });
+    const portal: RecordingTarget[] = [
+      {
+        kind: "screen",
+        label: "Tela (portal)",
+        width: 1920,
+        height: 1080,
+        x: 0,
+        y: 0,
+      },
+    ];
+    vi.mocked(recordingTargets).mockResolvedValue(portal);
+
+    render(<RecordingPickerWindow />);
+
+    const target = await screen.findByText("Escolher janela ou tela no GNOME");
+    expect(
+      screen.getByText(/Escolha uma janela para deixar o GhostWhisper fora do vídeo/),
+    ).toBeDefined();
+    fireEvent.click(target);
+    await waitFor(() => {
+      expect(recordingStartWith).toHaveBeenCalledWith(portal[0]);
+    });
+  });
+
+  it("no Wayland com gravação ativa, a fonte não pode ser trocada", async () => {
+    vi.mocked(recordingCapabilities).mockResolvedValue({
+      available: true,
+      encoder: "x264",
+      reason: null,
+      reason_code: null,
+      follow_supported: false,
+      target_mode: "portal",
+    });
+    vi.mocked(recordingState).mockResolvedValue({
+      ...IDLE,
+      status: "recording",
+      target_label: "Tela (portal)",
+    });
+
+    render(<RecordingPickerWindow />);
+
+    expect(
+      await screen.findByText(/A gravação continua na mesma fonte/),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/A fonte foi escolhida no início da gravação/),
+    ).toBeDefined();
+    expect(
+      screen.queryByText("Escolher janela ou tela no GNOME"),
+    ).toBeNull();
+    expect(recordingSwitchTarget).not.toHaveBeenCalled();
   });
 
   it("com gravação em andamento, escolher troca o alvo", async () => {

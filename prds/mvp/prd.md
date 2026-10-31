@@ -99,7 +99,8 @@ privada e aberta.
 - macOS/Windows.
 - MCP / connected tools, Codex OAuth, LLM local (llama.cpp), captura/OCR de tela,
   e-mail, Obsidian, multi-flavors/white-label, onboarding/login.
-- Wayland nativo (spike isolado; alvo posterior).
+- Wayland **sem XWayland** (o overlay depende de XWayland; atalhos, captura e
+  gravação já usam portais XDG — BR-007/ISS-088/ISS-089).
 - Invisibilidade garantida no compartilhamento de tela (best-effort).
 
 ## 6. Requisitos
@@ -138,7 +139,7 @@ privada e aberta.
 | LLM | `reqwest` (OpenAI/Gemini/OpenRouter/custom) |
 | DB | `rusqlite` (`bundled`, FTS5) |
 | Segredos | `keyring` (Secret Service) |
-| Overlay | Janela Tauri (X11); `gtk-layer-shell` (Wayland, pós-MVP) |
+| Overlay | Janela Tauri X11/XWayland; atalhos/captura/gravação por portais XDG no Wayland |
 | IPC | Tauri commands + events |
 
 Detalhamento em [`architecture/architecture.md`](architecture/architecture.md).
@@ -158,7 +159,7 @@ dependência, SOLID, alta testabilidade e nomenclatura sem prefixo `I`
 | ID | Risco | Mitigação |
 |----|-------|-----------|
 | R-01 | Invisibilidade ao share impossível no Linux | Output virtual dedicado; documentar limite (BR-006) |
-| R-02 | Wayland sem always-on-top | X11/XWayland primeiro; `gtk-layer-shell` depois (BR-007) |
+| R-02 | Wayland sem always-on-top | Resolvido em 2026-10-30: overlay em **XWayland** + portais XDG para atalhos/captura/gravação (BR-007/ISS-088/ISS-089) |
 | R-03 | Captura de sistema varia (PipeWire vs Pulse) | Detecção + fallback + helper de sink virtual |
 | R-04 | Transparência sem compositor | Detectar compositor; degradar para fundo opaco |
 | R-05 | ASR local pesado | Perfis de modelo; opção cloud |

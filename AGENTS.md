@@ -83,10 +83,12 @@ pnpm test             # testes do frontend
   anterior; causas de WM/timing devem ser isoladas em lógica pura testável
   (R16/R17).
 - **Wayland (Ubuntu 26.04/GNOME 50):** o overlay roda em **XWayland**
-  (`GDK_BACKEND=x11` automático); atalhos e captura usam os **portais XDG**
-  (`GlobalShortcuts`/`Screenshot`). O host portal exige o app id
-  `com.ghostwhisper.app` + `.desktop` oculto. O caminho X11 continua igual
-  (BR-007/ISS-088).
+  (`GDK_BACKEND=x11` automático); atalhos, captura e **gravação** usam os
+  **portais XDG** (`GlobalShortcuts`/`Screenshot`/`ScreenCast`). A gravação é
+  PipeWire + GStreamer (`pipewiresrc`/`x264enc`) e a fonte escolhida no GNOME
+  fica **fixa** até o `stop` (sem follow da janela ativa). O host portal exige o
+  app id `com.ghostwhisper.app` + `.desktop` oculto. O caminho X11 continua igual
+  (BR-007/ISS-088/ISS-089).
 - **Documentação é fonte única:** cite arquivos e IDs (`BR-015`, `ISS-011`,
   `12-task`) em vez de duplicar conteúdo (R14, BR-016).
 - **Sessão reportada vira regressão:** resultado inesperado → extraia a conversa

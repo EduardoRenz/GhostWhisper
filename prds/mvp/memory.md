@@ -1096,3 +1096,77 @@ não vê janelas nativas.
 - AppImage final **830,42 MiB**, sha256
   `da3ef539e8d08cd8bd5dd679b8f2272708a292c10f74b507202a4e728ec91020`;
   montou e iniciou no Ubuntu 26.04 com o runtime atual.
+
+---
+
+## 2026-10-30 — Gravação no Wayland via ScreenCast + GStreamer (ISS-089)
+
+- **IDs:** ISS-089, BR-006, BR-007, BR-065, BR-067, BR-070, T27
+- **Refs:** [`issues.md`](issues.md), [`tasks/27-task.md`](tasks/27-task.md),
+  [`../../README.md`](../../README.md), [`../../AGENTS.md`](../../AGENTS.md)
+
+### Sintoma
+No Ubuntu 26.04/GNOME 50 a gravação da sessão continuava indisponível: o
+`ffmpeg`/`x11grab` não via as janelas Wayland nativas, o build do `ffmpeg` não
+tinha entrada `pulse` e não havia `parec` para o áudio.
+
+### Causa
+O `DISPLAY` do XWayland não contém as janelas nativas; capturar a root entrega um
+desktop vazio/incompleto. O compositor só entrega a captura por
+`org.freedesktop.portal.ScreenCast` (PipeWire). Sem Pulse no `ffmpeg`, o áudio
+precisa sair do GStreamer (`pulsesrc`) no mesmo pipeline.
+
+### Entregue
+- `PortalScreenRecorder`: sessão ScreenCast (`Monitor | Window`, fonte única,
+  cursor embutido), `OpenPipeWireRemote` novo por segmento e `gst-launch-1.0`
+  com `pipewiresrc` → `x264enc` → `matroskamux` + `pulsesrc` (mic/monitor) →
+  `audiomixer` → `avenc_aac`. O fd remoto entra no filho por `pre_exec`/`dup2`
+  (fd 198), sem `CLOEXEC`.
+- `pause` encerra o `gst-launch` com SIGINT + `-e` (MKV válido) e mantém a sessão
+  do portal; `resume` abre outro segmento; `stop` fecha o portal. Áudio-only usa
+  `pulsesrc` → `flacenc`, sem portal.
+- `gstreamer_args` (builder puro/testado) e `PortalScreenTargets` (alvo único do
+  seletor do GNOME). Capacidades novas: `GStreamerMissing`,
+  `target_mode = "portal"` e `follow_supported = false`.
+- O `gst-launch`/`gst-inspect` do sistema roda com o ambiente **limpo** de
+  `LD_LIBRARY_PATH`/`GST_PLUGIN_SYSTEM_PATH*`: o `AppRun` do AppImage aponta
+  essas variáveis para o AppDir e, sem a limpeza, os plugins do host não
+  carregam (o áudio-only e o `gst-inspect` falhavam dentro do pacote).
+- A UI esconde alvo interno/follow no modo portal, mostra "Escolher janela ou
+  tela no GNOME" e avisa que a fonte não muda; l10n pt/en. O picker não oferece
+  troca de alvo com gravação ativa no portal.
+- `lib.rs` escolhe portal/GStreamer no Wayland; X11 mantém
+  `FfmpegScreenRecorder` + `X11ScreenTargets`. A finalização segue no
+  `FfmpegRecordingFinalizer` (`-c copy`/reencode).
+- O cronômetro da `RecordingService` começa quando o `recorder.start` retorna,
+  então a espera do diálogo do GNOME não infla a duração do artefato.
+
+### Verificação
+- Testes reais ignorados no GNOME 50.1: `records_and_finalizes_a_real_portal_stream`
+  (tela escolhida no portal, 5 s + pausa + 4 s, **2 segmentos**, MP4 **9,0 s**,
+  H.264 **1920×1080** + AAC **48 kHz estéreo** por ffprobe) e
+  `records_audio_only_with_gstreamer` (3 s de mic, FLAC).
+- Rust **911 ✓** (14 ignorados) · `clippy --all-targets -D warnings` ✓ ·
+  `cargo fmt --check` ✓.
+- Frontend **546 ✓** (82 arquivos) · `tsc --noEmit` ✓.
+- Amostra validada em `/tmp/opencode/portal-recording-test.mp4`.
+
+### Limites conhecidos
+- Sem follow automático da janela ativa no Wayland: a fonte é fixada no `start`
+  e não muda até o `stop`.
+- O seletor do GNOME aparece a cada gravação (`PersistMode::DoNot`).
+- Capturar a tela inteira inclui o overlay; só a janela o deixa fora (BR-006).
+- Se a janela/fonte fechar ou o compartilhamento for encerrado no GNOME, o
+  `gst-launch` termina e o segmento é fechado no próximo `pause`/`stop` (não há
+  `window-watch` no portal).
+- Requer GStreamer com `pipewiresrc`, `x264enc`, `matroskamux` e `pulsesrc`;
+  sem isso a UI mostra `gstreamer_missing`.
+
+### AppImage
+- AppImage final **830,52 MiB** (870.869.496 bytes), sha256
+  `7c5531037f152b1a3190960df93a0ff8ef368befe0f6e7c6b9ef7d0ed770b1dd`,
+  em `src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`.
+  Montou e iniciou no Ubuntu 26.04 com Vulkan/Laya e registrou o app id do
+  portal. O `gst-launch`/`gst-inspect` rodam sem o `LD_LIBRARY_PATH`/
+  `GST_PLUGIN_SYSTEM_PATH*` do `AppRun` (validado com o binário de teste sob o
+  ambiente do AppDir).

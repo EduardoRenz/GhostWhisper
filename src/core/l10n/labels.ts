@@ -161,6 +161,8 @@ export function recordingUnavailableKey(
       return "recording_unavailable_ffmpeg_missing";
     case "no_audio":
       return "recording_unavailable_no_audio";
+    case "gstreamer_missing":
+      return "recording_unavailable_gstreamer_missing";
     default:
       return null;
   }

@@ -19,6 +19,8 @@ pub fn recording_capabilities(state: State<'_, AppState>) -> RecordingCapabiliti
 /// `target` explícito vem do seletor de janelas; omitido, usa a configuração.
 #[tauri::command(async)]
 pub fn recording_start(state: State<'_, AppState>, target: Option<RecordingTarget>) -> Result<()> {
+    // No Wayland o portal abre o seletor do GNOME e a chamada espera a escolha;
+    // fora da main thread para a UI (overlay/notch) continuar respondendo.
     let session_id = state.session.current_session_id().ok_or_else(|| {
         GhostWhisperError::Config("inicie uma sessão antes de gravar".to_string())
     })?;

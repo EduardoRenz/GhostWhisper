@@ -367,3 +367,49 @@ a PRD de gravação por ora.
   (`ffmpeg_missing`), que é o valor que o TS consome.
 - Manual (a fazer pelo usuário): com `GHOSTWHISPER_FFMPEG=/nao/existe`, o botão
   deve ficar desabilitado com "Instale o ffmpeg para liberar a gravação".
+
+## 2026-10-30 — Gravação no Wayland via ScreenCast + GStreamer (ISS-051/ISS-089)
+
+- **IDs:** ISS-051, ISS-089, BR-006, BR-007, BR-065, BR-067, BR-070, T27
+- **Refs:** [`../mvp/memory.md`](../mvp/memory.md) (entrada de 2026-10-30),
+  [`../mvp/issues.md`](../mvp/issues.md) ISS-089,
+  [`../mvp/tasks/27-task.md`](../mvp/tasks/27-task.md),
+  [`architecture/recording.md`](architecture/recording.md) §5.7,
+  [`prd.md`](prd.md) CA-06.8.
+
+### O que foi feito
+- `PortalScreenRecorder` abre a sessão XDG **ScreenCast** (janela ou monitor,
+  fonte única, cursor embutido), mantém a sessão entre pausas e grava cada
+  segmento com `gst-launch` (`pipewiresrc` → `x264enc` → `matroskamux`; áudio
+  `pulsesrc`/`audiomixer`/`avenc_aac`). Cada `resume` chama
+  `OpenPipeWireRemote` de novo; `stop` fecha o portal.
+- Áudio-only não usa portal (`pulsesrc` → `flacenc`).
+- `gstreamer_args` (builder puro), `PortalScreenTargets`, capacidades com
+  `GStreamerMissing`/`target_mode = "portal"`/`follow_supported = false`.
+- UI: esconde alvo interno/follow no modo portal; picker mostra "Escolher janela
+  ou tela no GNOME" e não oferece troca com gravação ativa. l10n pt/en.
+- X11 mantém `FfmpegScreenRecorder` + `X11ScreenTargets`; o finalizador é o
+  mesmo. O cronômetro do serviço começa quando a captura começa (não conta a
+  espera do diálogo do GNOME).
+- `gst-launch`/`gst-inspect` rodam sem `LD_LIBRARY_PATH`/`GST_PLUGIN_*` do
+  AppRun do AppImage; sem isso o GStreamer do sistema não carrega os plugins do
+  host dentro do pacote.
+- `RecordingCapabilities` ganhou `follow_supported`/`target_mode` (serde default
+  para não quebrar clientes antigos).
+
+### Verificação
+- Testes reais ignorados: portal com pausa/retomada em **2 segmentos**, MP4 de
+  **9,0 s** (H.264 1920×1080 + AAC 48 kHz estéreo, ffprobe); áudio-only em FLAC.
+- Rust **911 ✓** (14 ignorados), clippy/fmt ✓; frontend **546 ✓**, tsc ✓.
+- AppImage completo **830,52 MiB**, sha256
+  `7c5531037f152b1a3190960df93a0ff8ef368befe0f6e7c6b9ef7d0ed770b1dd`;
+  montou e iniciou no Ubuntu 26.04 (Vulkan/Laya). Detalhes em
+  `../mvp/memory.md`.
+
+### Limites
+- Sem follow automático da janela ativa: o portal fixa a fonte no `start`.
+- Seletor do GNOME a cada gravação (`PersistMode::DoNot`).
+- Tela inteira inclui o overlay; só a janela o deixa fora (BR-006).
+- Se a fonte fechar ou o compartilhamento for encerrado no GNOME, o segmento só
+  é contabilizado no próximo `pause`/`stop` (sem `window-watch` no portal).
+- Requer GStreamer com `pipewiresrc`, `x264enc`, `matroskamux` e `pulsesrc`.

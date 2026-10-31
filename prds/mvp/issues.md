@@ -23,6 +23,7 @@ Registro de bugs e pendências observadas em uso. Legenda de status:
 | ISS-017 | Seletor de canais travado durante a captura (`disabled` enquanto gravava) | Média | FIXED |
 | ISS-087 | Canal "Sistema" indisponível sem `pactl` e troca para "Ambos" silenciosa | Alta | FIXED |
 | ISS-088 | Wayland (Ubuntu 26.04): notch atrás, atalhos e captura quebrados | Alta | FIXED |
+| ISS-089 | Gravação de tela indisponível no Wayland (ScreenCast/GStreamer) | Alta | FIXED |
 | ISS-019 | Whisper repete a mesma frase sem parar e a repetição entra na conversa | Média | FIXED |
 | ISS-020 | Interface travava/engasgava: IPC demorado na main thread e IPC em excesso pela barra de nível | Alta | FIXED |
 | ISS-021 | Bolha "em andamento" ficava pendurada com o texto cru da prévia | Média | FIXED |
@@ -710,3 +711,48 @@ permanece apenas como **fallback** (Wayland/sem SHAPE).
   `src-tauri/src/ipc/screen_commands.rs`, `scripts/tauri-build-linux.sh`.
 - **Task:** [`26-task.md`](tasks/26-task.md)
 - **Dano em dados existentes:** nenhum.
+
+## ISS-089 — Gravação de tela indisponível no Wayland (ScreenCast/GStreamer)
+
+- **Severidade:** Alta · **Status:** FIXED (task 27)
+- **Sintoma (relato do usuário):** no Ubuntu 26.04/GNOME 50 a gravação da sessão
+  aparecia indisponível; o caminho antigo (`ffmpeg`/`x11grab`) não via as janelas
+  Wayland nativas, o `ffmpeg` do host não tinha entrada `pulse` e não havia
+  `parec` para o áudio.
+- **Causa raiz:** o `DISPLAY` do XWayland não contém as janelas nativas; gravar a
+  root produz desktop vazio/incompleto. O compositor só entrega a captura por
+  `org.freedesktop.portal.ScreenCast` (PipeWire). Sem Pulse no `ffmpeg`, o áudio
+  precisa ser capturado pelo GStreamer no mesmo pipeline.
+- **Correção:**
+  - `PortalScreenRecorder` abre uma sessão ScreenCast (`Monitor | Window`, fonte
+    única, cursor embutido), mantém a sessão entre pausas e grava cada segmento
+    com `gst-launch` (`pipewiresrc` → `x264enc` → `matroskamux` + `pulsesrc` →
+    `audiomixer` → `avenc_aac`). O fd remoto é duplicado no filho via `pre_exec`
+    e cada `resume` chama `OpenPipeWireRemote` de novo.
+  - Áudio-only continua no GStreamer (`pulsesrc` → `flacenc`), sem portal.
+  - `pause` encerra o `gst-launch` com SIGINT + `-e`; `stop` fecha a sessão do
+    portal. A finalização segue no `FfmpegRecordingFinalizer`.
+  - `gstreamer_args` (builder puro/testado) e `PortalScreenTargets` (alvo único
+    do seletor do GNOME). Capacidades novas: `GStreamerMissing`,
+    `target_mode = "portal"`, `follow_supported = false`.
+  - A UI esconde o alvo interno e o "seguir a janela ativa" no modo portal e
+    explica que a fonte é escolhida no GNOME; l10n pt/en.
+  - X11 mantém `FfmpegScreenRecorder` + `X11ScreenTargets` sem mudança.
+- **Testes anti-regressão:** builder do pipeline (muxer/mixer antes das
+  ramificações, caps, FLAC), decisão de capacidades, alvo do portal, seleção do
+  recorder por sessão e testes reais ignorados:
+  `records_and_finalizes_a_real_portal_stream` (2 segmentos, pausa/retomada,
+  MP4 9,0 s com H.264 1920×1080 + AAC 48 kHz estéreo) e
+  `records_audio_only_with_gstreamer`.
+- **Arquivos:** `src-tauri/src/adapters/recording/portal_screen_recorder.rs`,
+  `src-tauri/src/adapters/recording/gstreamer_args.rs`,
+  `src-tauri/src/adapters/recording/portal_targets.rs`,
+  `src-tauri/src/ports/screen_recorder.rs`,
+  `src-tauri/src/application/recording_service.rs`,
+  `src-tauri/src/lib.rs`, `src/features/recording/RecordingPickerWindow.tsx`,
+  `src/features/settings/RecordingSettings.tsx`,
+  `src/core/domain/recording.ts`, `src/core/l10n/*`.
+- **Task:** [`27-task.md`](tasks/27-task.md)
+- **Dano em dados existentes:** nenhum.
+- **Limite:** não há follow automático da janela ativa no Wayland; a fonte fica
+  fixa até o `stop`. Tela inteira inclui o overlay (BR-006).

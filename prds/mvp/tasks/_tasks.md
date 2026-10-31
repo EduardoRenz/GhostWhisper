@@ -33,6 +33,7 @@
 | 24 | Histórico: busca por título, exclusão em lote e resumo/título no encerramento (BR-103/BR-104) | CONCLUDED |
 | 25 | Sistema sem `pactl` + aviso de canal indisponível (ISS-087) | CONCLUDED |
 | 26 | Wayland: notch em XWayland, atalhos e captura por portais (ISS-088) | CONCLUDED |
+| 27 | Wayland: gravação de tela via ScreenCast + GStreamer (ISS-089) | CONCLUDED |
 
 ## Dependências entre tarefas
 
@@ -69,6 +70,8 @@
   14 (áudio do sistema).
 - 26 (Wayland/portais, ISS-088) depende da 23 (estabilidade) e do release único;
   não altera o caminho X11.
+- 27 (gravação no Wayland, ISS-089) depende da 26 (app id/portais) e da 25
+  (áudio sem `pactl`); mantém o caminho X11 e a porta `ScreenRecorder`.
 
 ## Definição de pronto (geral)
 - Código compila (`pnpm tauri build` sem erros).

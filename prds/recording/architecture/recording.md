@@ -45,13 +45,17 @@ sessão se falhar (RNF-07).
 |---|---|---|
 | `domain` | `domain/recording.rs` | `Recording { id, session_id, kind, status, path, size_bytes, duration_ms, width, height, fps, started_at_ms, finished_at_ms, error }`; `RecordingKind` (`Video`/`Audio`); `RecordingStatus` (`Recording`/`Paused`/`Finalizing`/`Ready`/`Failed`/`Discarded`/`Interrupted`); `RecordingSpec` (config congelada) |
 | `application` | `application/recording_service.rs` | orquestra ciclo de vida, congela `RecordingSpec`, emite eventos, converte falha em estado |
-| `ports` | `ports/screen_recorder.rs` | trait `ScreenRecorder` + `RecordingProgress` |
+| `ports` | `ports/screen_recorder.rs` | traits `ScreenRecorder` + `RecordingFinalizer`; `RecordingCapabilities` |
+| `ports` | `ports/screen_targets.rs` | trait `ScreenTargets` (janela ativa, tela, monitores) |
 | `ports` | `ports/recordings_repository.rs` | persistência do artefato |
-| `adapters` | `adapters/recording/ffmpeg_screen_recorder.rs` | spawn, segmentos, concat, progresso |
-| `adapters` | `adapters/recording/ffmpeg_args.rs` | **builders puros** (testáveis sem processo) |
+| `adapters` | `adapters/recording/ffmpeg_screen_recorder.rs` | captura X11 em segmentos MKV |
+| `adapters` | `adapters/recording/ffmpeg_args.rs` | **builders puros** do `ffmpeg` (testáveis sem processo) |
 | `adapters` | `adapters/recording/ffmpeg_path.rs` | resolução do binário em degraus |
-| `adapters` | `adapters/recording/x11_windows.rs` | `_NET_ACTIVE_WINDOW`, lista de janelas (`WM_CLASS`, título, geometria) |
-| `adapters` | `adapters/recording/window_watch.rs` | `ConfigureNotify`/`DestroyNotify`/`UnmapNotify` da janela alvo |
+| `adapters` | `adapters/recording/finalizer.rs` | concat/remux, progresso e cleanup |
+| `adapters` | `adapters/recording/x11_targets.rs` | `_NET_ACTIVE_WINDOW`, lista de janelas (`WM_CLASS`, título, geometria) e monitores |
+| `adapters` | `adapters/recording/gstreamer_args.rs` | **builder puro** do pipeline GStreamer (Wayland) |
+| `adapters` | `adapters/recording/portal_screen_recorder.rs` | ScreenCast + PipeWire + `gst-launch` por segmento (Wayland) |
+| `adapters` | `adapters/recording/portal_targets.rs` | alvo único do seletor do GNOME (Wayland) |
 | `adapters` | `adapters/persistence/sqlite/local_recordings_repository.rs` | tabela `recordings` |
 | `adapters` | `adapters/persistence/memory/in_memory_recordings_repository.rs` | dobra de teste |
 | `ipc` | `ipc/recording_commands.rs` | `recording_start/pause/resume/stop`, `recording_state`, `recording_open_folder`, `recording_discard`, `session_end_context` |
@@ -63,8 +67,10 @@ sessão se falhar (RNF-07).
 | frontend | `src/features/session-end/SessionEndWindow.tsx` | modal (§7) |
 | frontend | `src/features/settings/RecordingSettings.tsx` | aba (§8) |
 
-Composition root: `lib.rs` instancia **um** `FfmpegScreenRecorder` e o injeta no
+Composition root: `lib.rs` instancia **um** `ScreenRecorder` conforme a sessão
+(`FfmpegScreenRecorder` no X11, `PortalScreenRecorder` no Wayland) e o injeta no
 `RecordingService`; `AppState.recording: Arc<dyn RecordingController>` (R2/R3).
+O finalizador (`FfmpegRecordingFinalizer`) é o mesmo nos dois caminhos.
 
 ## 3. Porta
 
@@ -271,6 +277,39 @@ ffmpeg -hide_banner -nostdin -y -loglevel error -progress pipe:1 -nostats \
 garante que todos os segmentos tenham o mesmo codec, resolução, fps e taxa de
 áudio — condição para o `-c copy` funcionar (CA-02.7).
 
+### 5.7 Wayland: ScreenCast + GStreamer (ISS-089)
+
+O `x11grab` não vê as janelas Wayland nativas (a root do XWayland fica
+incompleta) e o `ffmpeg` do host pode não ter `pulse`. No Wayland o
+`PortalScreenRecorder` faz:
+
+1. `Screencast::create_session` + `select_sources` com
+   `Monitor | Window`, **uma** fonte e cursor embutido
+   (`PersistMode::DoNot`) e `start`; o GNOME mostra o seletor e devolve o nó
+   PipeWire.
+2. Para cada segmento, `OpenPipeWireRemote` **novo** e um `gst-launch-1.0`
+   próprio: `pipewiresrc fd=198 path=<node> → videoconvert [→ videoscale/videorate] →
+   x264enc` (`pass=qual`, `quantizer` = CRF 30/27/24, `key-int-max` = 10 s) `→
+   h264parse → matroskamux`; o áudio entra por `pulsesrc` (mic e/ou
+   `<sink>.monitor`) → `audiomixer` → `avenc_aac` → o mesmo muxer. Áudio-only
+   não abre o portal e termina em `flacenc`.
+3. O fd do portal é `CLOEXEC`; o filho recebe uma cópia em `fd=198` via
+   `pre_exec`/`dup2` (sem vazar fds do app).
+4. `pause` encerra o `gst-launch` com **SIGINT + `-e`** (EOS, MKV válido) e
+   mantém a sessão do portal; `resume` abre outro segmento e chama
+   `OpenPipeWireRemote` de novo; `stop` fecha a sessão (o indicador de
+   compartilhamento do GNOME some).
+
+A porta síncrona é atendida por uma **thread própria** (D-Bus + runtime), como
+`PortalScreenCapture`/`PortalGlobalShortcutRegistry`. A finalização continua no
+`FfmpegRecordingFinalizer` (`-c copy`); como a fonte é fixa, `normalize` fica
+falso e não há troca de alvo no meio.
+
+Capacidades: `GStreamerMissing` quando falta `gst-launch`/elementos;
+`target_mode = "portal"` e `follow_supported = false`. A UI esconde o alvo
+interno/follow e o picker mostra "Escolher janela ou tela no GNOME". Limites:
+sem follow automático, fonte fixa e tela inteira inclui o overlay (BR-006).
+
 ## 6. Botão de câmera
 
 - Novo item **dentro** de `NotchTabs`, depois de `Sugestões`, com divisor
@@ -436,8 +475,9 @@ kbps clampado, strings fora do allowlist caem no padrão, caminho vazio →
 | Situação | Comportamento |
 |---|---|
 | `ffmpeg` ausente | botão desabilitado, `reason_code: "ffmpeg_missing"` traduzido no *tooltip*, sessão normal |
-| sessão Wayland (`WAYLAND_DISPLAY`/`XDG_SESSION_TYPE=wayland`) | botão desabilitado: a root do XWayland não contém janelas Wayland nativas |
-| sem `DISPLAY` | idem, `reason_code: "no_display"` (`reason` cita X11/XWayland, BR-007) |
+| sessão Wayland (`WAYLAND_DISPLAY`/`XDG_SESSION_TYPE=wayland`) | gravação pelo portal **ScreenCast** + GStreamer; sem `gst-launch`/elementos → `reason_code: "gstreamer_missing"` |
+| Wayland sem portal ScreenCast | `start` falha com a mensagem do portal; a sessão continua |
+| sem `DISPLAY` no X11 | botão desabilitado, `reason_code: "no_display"` (BR-007) |
 | janela alvo fechada ou minimizada | `stop` com `status=interrupted`, segmentos preservados, modal mostra "Abrir local" |
 | janela alvo redimensionada | fecha o segmento e abre outro na nova geometria (ISS-053) |
 | encoder falha no meio | `status=failed`, sessão continua, toast discreto |
@@ -450,15 +490,19 @@ Nenhum caminho grava áudio/frame em log (RNF-08).
 ## 12. Testes
 
 - **Puros (sem processo):** `ffmpeg_args` — vídeo, áudio, sem mic, VAAPI;
+  `gstreamer_args` — vídeo + duas fontes, uma fonte, caps/resolução, FLAC e
+  áudio sem fonte; decisão de capacidades (`GStreamerMissing`, modo portal);
   normalização de settings; `ffmpeg_path` (3 degraus, com `PATH` fake);
-  `x11_windows` (parsers de `_NET_ACTIVE_WINDOW`/`WM_CLASS` com buffers fixos);
-  `window_watch` (transições resize/close/minimize).
+  `x11_targets` (parsers de `_NET_ACTIVE_WINDOW`/`WM_CLASS` com buffers fixos).
 - **Application:** `RecordingService` com `FakeScreenRecorder` +
   `InMemoryRecordingsRepository` — start/pause/resume/stop, falha não derruba a
   sessão, settings congeladas, `interrupted` no boot.
 - **Frontend:** `RecordingButton` (4 estados, clique, `aria-pressed`),
   `SessionEndWindow` (com/sem gravação, progresso, descartar em dois toques),
   `RecordingSettings` (defaults, faixas, estimativa).
-- **Manual (ignorado no CI, como `captures_the_real_screen`):** gravação de 10 s
-  real e verificação de que o MP4 abre com `ffprobe`.
-- Nenhum teste unitário executa `ffmpeg` (RNF-10).
+- **Manual (ignorado no CI, como `captures_the_real_screen`):** gravação X11 de
+  10 s e, no Wayland, `records_and_finalizes_a_real_portal_stream` (seletor do
+  GNOME, pausa/retomada em 2 segmentos, MP4 verificado com `ffprobe`) e
+  `records_audio_only_with_gstreamer` (FLAC). O MP4 de referência tem 9,0 s,
+  H.264 1920×1080 e AAC 48 kHz estéreo.
+- Nenhum teste unitário executa `ffmpeg`/`gst-launch` (RNF-10).

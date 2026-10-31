@@ -53,6 +53,10 @@ uma nota de revisão.
   **KDE Plasma 6.6+** ("Hide from Screencast" / `PlasmaWindowInterface`, por
   compositor) — opt-in futuro. Alternativas práticas hoje: compartilhar **uma
   janela** na reunião ou deixar o overlay em outro monitor.
+- **Wayland (2026-10-30, ISS-089):** no portal **ScreenCast** vale a mesma
+  regra: escolher uma **janela** no diálogo do GNOME mantém o overlay fora do
+  vídeo; escolher a **tela/monitor inteiro** inclui o overlay, mesmo com stealth
+  ligado. O GNOME 50 não tem exclusão de janela da captura.
 - **Detalhes:** [`mvp/tasks/19-task.md`](mvp/tasks/19-task.md),
   [`mvp/architecture/overlay.md`](mvp/architecture/overlay.md) §4,
   [`mvp/architecture/wayland-spike.md`](mvp/architecture/wayland-spike.md).
@@ -68,6 +72,11 @@ uma nota de revisão.
   (`GDK_BACKEND=x11`) para manter topmost/posição/click-through; atalhos globais
   e captura usam os **portais XDG** (`GlobalShortcuts` / `Screenshot`). O host
   portal exige app id reverso-DNS + `.desktop` (ISS-088). X11 segue inalterado.
+- **Revisão (2026-10-30, ISS-089):** a **gravação de tela** também usa portal no
+  Wayland: `ScreenCast` + PipeWire + GStreamer (`pipewiresrc`). O usuário escolhe
+  **uma janela ou um monitor** no diálogo do GNOME e a fonte fica fixa até o
+  `stop`; o caminho X11 (`ffmpeg`/`x11grab`, janela ativa e follow) permanece
+  inalterado. Não há follow automático de janela no Wayland.
 - **Data:** 2026-10-17
 - **Status:** Ativa (revisada em 2026-10-30)
 
@@ -1529,6 +1538,10 @@ uma nota de revisão.
 - **Consequência:** o botão de câmera só aparece com sessão ativa; cada
   pausa/retomada gera um **segmento**; o modal de fim de sessão é o único ponto
   de entrega do arquivo.
+- **Wayland (2026-10-30, ISS-089):** a fonte é escolhida no `start` (portal
+  ScreenCast) e a sessão do portal sobrevive às pausas; retomar abre um novo
+  segmento **sem** reabrir o seletor do GNOME. A gravação continua sendo um
+  artefato da sessão e termina no `stop`.
 - **Detalhes:** [`recording/prd.md`](recording/prd.md) US-01/US-02,
   [`recording/architecture/recording.md`](recording/architecture/recording.md) §4.
 - **Data:** 2026-10-21 · **Status:** Ativa
@@ -1560,6 +1573,12 @@ uma nota de revisão.
 - **Motivo:** MP4 só é reproduzível depois do `moov`; um crash no meio de uma
   reunião de 1 h perderia tudo. `-c copy` mantém o custo de finalização em I/O
   (~2–5 s por hora) e permite barra de progresso honesta.
+- **Revisão (2026-10-30, ISS-089):** no Wayland os segmentos são escritos pelo
+  **GStreamer** (`gst-launch` com `pipewiresrc` + `x264enc` + `matroskamux`), um
+  processo por trecho. `pause` encerra o processo com **SIGINT + `-e`** (EOS,
+  MKV válido) e mantém a sessão do portal viva; `resume` abre outro segmento com
+  um `OpenPipeWireRemote` novo. A finalização continua no
+  `FfmpegRecordingFinalizer` (`-c copy`; reencode só se as dimensões mudarem).
 - **Consequência:** as configurações de gravação são **congeladas no início da
   sessão** (segmentos precisam ser concatenáveis); os segmentos são apagados
   após o remux, salvo `recording_keep_segments`; falha na finalização preserva
@@ -1616,15 +1635,22 @@ uma nota de revisão.
   da janela funciona (1888×1006 a 8 fps, ~20% de um núcleo).
 - **Consequência:** só a janela escolhida é gravada — trocar de janela não
   acompanha, e diálogos/popups que são janelas separadas ficam de fora. Em
-  Wayland nativo (BR-007) a gravação fica desabilitada; a exclusão por compositor
-  (KDE Plasma 6.6+ "Hide from Screencast") é caminho futuro, não v1. Janela
-  fechada/minimizada/redimensionada encerra o segmento; se as dimensões mudarem,
-  a finalização reencoda com `scale`/`pad` e mostra progresso.
+  Wayland a fonte é escolhida **no portal ScreenCast** (janela ou monitor) e fica
+  fixa até o `stop`; o follow automático não existe nesse caminho (ISS-089). A
+  exclusão por compositor (KDE Plasma 6.6+ "Hide from Screencast") é caminho
+  futuro, não v1. Janela fechada/minimizada/redimensionada encerra o segmento; se
+  as dimensões mudarem, a finalização reencoda com `scale`/`pad` e mostra
+  progresso.
 - **Revisão (2026-10-21):** o alvo pode ser **trocado no meio da gravação**
   (seletor, clique direito) e há a opção **"Seguir a janela ativa"** (debounce
   de 1 s). Quando as dimensões mudam entre segmentos, a finalização reencoda
   com `scale`+`pad` para o tamanho do primeiro — o `-c copy` só vale com
   geometria constante.
+- **Revisão (2026-10-30, ISS-089):** no Wayland o alvo é escolhido no diálogo do
+  **ScreenCast** (janela ou monitor) e **não** pode ser trocado no meio da
+  gravação; a UI esconde o alvo interno e o "seguir a janela ativa" quando
+  `RecordingCapabilities.target_mode == "portal"`. Capturar uma **janela** mantém
+  o overlay fora do vídeo; capturar a **tela inteira** inclui o overlay (BR-006).
 - **Detalhes:** [`recording/prd.md`](recording/prd.md) US-06;
   [`recording/architecture/recording.md`](recording/architecture/recording.md) §5.3;
   [`mvp/architecture/wayland-spike.md`](mvp/architecture/wayland-spike.md) §2–§3.

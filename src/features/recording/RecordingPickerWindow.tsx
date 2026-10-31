@@ -4,6 +4,7 @@ import { onWindowFocus } from "../../adapters/ipc/client";
 import { startWindowDrag } from "../../adapters/ipc/windowDrag";
 import { subscribe } from "../../adapters/ipc/events";
 import {
+  recordingCapabilities,
   recordingPickerClose,
   recordingStartWith,
   recordingState,
@@ -28,7 +29,16 @@ export function RecordingPickerWindow() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [active, setActive] = useState(false);
+  const [portalTargets, setPortalTargets] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // No Wayland a fonte é escolhida no diálogo do GNOME, não nesta lista;
+    // a UI some com a troca de alvo (o portal fixa a fonte no start).
+    void recordingCapabilities().then((capabilities) => {
+      setPortalTargets(capabilities?.target_mode === "portal");
+    });
+  }, []);
 
   const close = useCallback(() => {
     void recordingPickerClose();
@@ -107,9 +117,13 @@ export function RecordingPickerWindow() {
           className="recording-picker__header"
           title={t("recording_picker_record_window")}
           subtitle={
-            active
-              ? t("recording_picker_change_recording_target")
-              : t("recording_picker_ghostwhisper_not_included_window_capture")
+            portalTargets
+              ? active
+                ? t("recording_picker_portal_target_fixed")
+                : t("recording_picker_portal_choose_window_or_screen")
+              : active
+                ? t("recording_picker_change_recording_target")
+                : t("recording_picker_ghostwhisper_not_included_window_capture")
           }
           icon={<VideoCameraIcon size={18} />}
           onStartDrag={startDrag}
@@ -118,14 +132,18 @@ export function RecordingPickerWindow() {
           dragLabel={t("recording_picker_move_picker")}
         />
 
-        {active ? (
+        {active && !portalTargets ? (
           <p className="recording-picker__notice">
             {t("recording_picker_recording_continues_same_file_new_section",
             )}
           </p>
         ) : null}
 
-        {loading ? (
+        {active && portalTargets ? (
+          <p className="recording-picker__notice">
+            {t("recording_picker_portal_recording_continues")}
+          </p>
+        ) : loading ? (
           <p className="recording-picker__loading">
             {t("recording_picker_looking_windows")}
           </p>
@@ -154,9 +172,11 @@ export function RecordingPickerWindow() {
                       )}
                     </span>
                     <span className="recording-picker__item-label">
-                      {target.kind === "screen"
-                        ? t("recording_picker_entire_screen")
-                        : target.label}
+                      {portalTargets
+                        ? t("recording_picker_portal_target")
+                        : target.kind === "screen"
+                          ? t("recording_picker_entire_screen")
+                          : target.label}
                     </span>
                     {target.width > 0 && target.height > 0 ? (
                       <span className="recording-picker__item-size">
@@ -173,11 +193,13 @@ export function RecordingPickerWindow() {
         {error ? <p className="recording-picker__error">{error}</p> : null}
 
         <footer className="recording-picker__footer">
-          <span>
-            {active
-              ? t("recording_picker_click_change_target")
-              : t("recording_picker_click_start_recording")}
-          </span>
+          {active && portalTargets ? null : (
+            <span>
+              {active
+                ? t("recording_picker_click_change_target")
+                : t("recording_picker_click_start_recording")}
+            </span>
+          )}
           <button type="button" className="recording-picker__cancel" onClick={close}>
             {t("recording_picker_cancel")}
           </button>

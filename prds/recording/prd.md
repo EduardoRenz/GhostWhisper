@@ -269,9 +269,11 @@ Como usuário, quero **usar o app normalmente, com o overlay visível**, e que e
       divergirem, reencoda com `scale`+`pad` mostrando `Otimizando gravação…`.
 - [ ] **CA-06.7** "Tela inteira" é escolha explícita e **inclui** o overlay —
       a UI avisa isso no seletor.
-- [ ] **CA-06.8** Em Wayland (nativo **ou** via XWayland), a gravação fica
-      indisponível com explicação: a root do XWayland não contém as janelas
-      Wayland nativas, então o vídeo sairia vazio/incompleto (BR-007/ISS-051).
+- [ ] **CA-06.8** Em Wayland (nativo **ou** via XWayland), a gravação usa o
+      portal **ScreenCast**: o usuário escolhe **uma janela ou um monitor** no
+      diálogo do GNOME e a fonte fica fixa até o `stop` (sem follow/troca no
+      meio). CA-06.1–CA-06.7 continuam valendo no X11; no portal, a UI esconde
+      o alvo interno e o "seguir a janela ativa" (BR-007/ISS-051/ISS-089).
 - [ ] **CA-06.9** Com vários monitores, o seletor lista **"Todos os monitores"**
       (a tela virtual) e **cada monitor** com nome e resolução; gravar um
       monitor específico usa o offset dele (`:0.0+X,Y`). O **print de tela**

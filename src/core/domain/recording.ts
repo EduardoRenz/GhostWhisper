@@ -44,7 +44,11 @@ export type RecordingUnavailableCode =
   | "wayland"
   | "no_display"
   | "ffmpeg_missing"
-  | "no_audio";
+  | "no_audio"
+  | "gstreamer_missing";
+
+/** Como o alvo da gravação é escolhido. */
+export type RecordingTargetMode = "internal" | "portal";
 
 /** O ambiente consegue gravar? */
 export interface RecordingCapabilities {
@@ -52,6 +56,10 @@ export interface RecordingCapabilities {
   encoder: string;
   reason: string | null;
   reason_code: RecordingUnavailableCode | null;
+  /** O backend consegue seguir/trocar a janela ativa? (X11) */
+  follow_supported?: boolean;
+  /** `portal`: o GNOME escolhe a janela/tela a cada gravação (Wayland). */
+  target_mode?: RecordingTargetMode;
 }
 
 /** Resumo da mídia no modal. */

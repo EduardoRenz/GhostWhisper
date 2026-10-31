@@ -25,6 +25,9 @@ pub enum RecordingUnavailableCode {
     FfmpegMissing,
     /// Sem `pulse` no `ffmpeg` e sem `parec` (RNF-09).
     NoAudio,
+    /// GStreamer/pipewiresrc ausente (caminho de gravação no Wayland).
+    #[serde(rename = "gstreamer_missing")]
+    GStreamerMissing,
 }
 
 impl RecordingUnavailableCode {
@@ -36,6 +39,7 @@ impl RecordingUnavailableCode {
             RecordingUnavailableCode::NoDisplay => "no_display",
             RecordingUnavailableCode::FfmpegMissing => "ffmpeg_missing",
             RecordingUnavailableCode::NoAudio => "no_audio",
+            RecordingUnavailableCode::GStreamerMissing => "gstreamer_missing",
         }
     }
 }
@@ -51,6 +55,20 @@ pub struct RecordingCapabilities {
     pub reason: Option<String>,
     /// Código do motivo, para a UI traduzir.
     pub reason_code: Option<RecordingUnavailableCode>,
+    /// `true` quando o backend consegue seguir/trocar a janela ativa.
+    ///
+    /// No Wayland a fonte é fixada pelo portal ScreenCast; a UI esconde o
+    /// "seguir a janela ativa" quando isto é `false`.
+    #[serde(default)]
+    pub follow_supported: bool,
+    /// Como o alvo é escolhido: `internal` (X11) ou `portal` (Wayland).
+    #[serde(default = "default_target_mode")]
+    pub target_mode: String,
+}
+
+/// Modo de escolha de alvo padrão (X11).
+fn default_target_mode() -> String {
+    "internal".to_string()
 }
 
 impl RecordingCapabilities {
@@ -61,6 +79,8 @@ impl RecordingCapabilities {
             encoder: "x264".to_string(),
             reason: Some(reason.into()),
             reason_code: Some(code),
+            follow_supported: false,
+            target_mode: default_target_mode(),
         }
     }
 
@@ -71,7 +91,16 @@ impl RecordingCapabilities {
             encoder: encoder.into(),
             reason: None,
             reason_code: None,
+            follow_supported: true,
+            target_mode: default_target_mode(),
         }
+    }
+
+    /// Marca o backend do portal: o alvo é escolhido no GNOME e não segue foco.
+    pub fn with_portal_targets(mut self) -> Self {
+        self.follow_supported = false;
+        self.target_mode = "portal".to_string();
+        self
     }
 }
 
@@ -164,7 +193,28 @@ mod tests {
         let json = serde_json::to_string(&RecordingUnavailableCode::FfmpegMissing).expect("json");
         assert_eq!(json, "\"ffmpeg_missing\"");
         assert_eq!(RecordingUnavailableCode::Wayland.as_str(), "wayland");
+        assert_eq!(
+            RecordingUnavailableCode::GStreamerMissing.as_str(),
+            "gstreamer_missing"
+        );
         assert_eq!(RecordingUnavailableCode::NoDisplay.as_str(), "no_display");
         assert_eq!(RecordingUnavailableCode::NoAudio.as_str(), "no_audio");
+    }
+
+    #[test]
+    fn x11_capabilities_support_following_the_active_window() {
+        let capabilities = RecordingCapabilities::available("x264");
+        assert!(capabilities.follow_supported);
+        assert_eq!(capabilities.target_mode, "internal");
+    }
+
+    #[test]
+    fn portal_capabilities_disable_following_the_active_window() {
+        let capabilities = RecordingCapabilities::available("x264").with_portal_targets();
+        assert!(!capabilities.follow_supported);
+        assert_eq!(capabilities.target_mode, "portal");
+        let json = serde_json::to_value(&capabilities).expect("json");
+        assert_eq!(json["follow_supported"], false);
+        assert_eq!(json["target_mode"], "portal");
     }
 }

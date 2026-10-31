@@ -62,6 +62,8 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
 
   const estimate = estimateSizePerHour(settings);
   const isVideo = settings.recording_mode === "video";
+  // Wayland: a fonte é escolhida no diálogo do portal a cada gravação.
+  const portalTargets = capabilities?.target_mode === "portal";
   const encoderLabel = capabilities
     ? t(
         recordingEncoderKey(
@@ -148,49 +150,59 @@ export function RecordingSettings({ settings, update }: RecordingSettingsProps) 
           <header className="settings__card-header">
             <h3 className="settings__card-title">{t("recording_settings_capture_target")}</h3>
             <span className="settings__badge">
-              {t(recordingTargetKey(settings.recording_target))}
+              {portalTargets
+                ? t("recording_target_portal")
+                : t(recordingTargetKey(settings.recording_target))}
             </span>
           </header>
-          <p className="settings__card-description">
-            {t("recording_settings_meeting_window_not_include_ghostwhisper_overlay",
-            )}
-          </p>
-          <div
-            className="settings__segmented"
-            role="group"
-            aria-label={t("recording_settings_capture_target")}
-          >
-            {RECORDING_TARGETS.map((target) => (
-              <button
-                key={target}
-                type="button"
-                className={segmentClass(settings.recording_target === target)}
-                aria-pressed={settings.recording_target === target}
-                onClick={() => update("recording_target", target)}
+          {portalTargets ? (
+            <p className="settings__card-description">
+              {t("recording_settings_portal_target_description")}
+            </p>
+          ) : (
+            <>
+              <p className="settings__card-description">
+                {t("recording_settings_meeting_window_not_include_ghostwhisper_overlay",
+                )}
+              </p>
+              <div
+                className="settings__segmented"
+                role="group"
+                aria-label={t("recording_settings_capture_target")}
               >
-                {t(recordingTargetKey(target))}
-              </button>
-            ))}
-          </div>
+                {RECORDING_TARGETS.map((target) => (
+                  <button
+                    key={target}
+                    type="button"
+                    className={segmentClass(settings.recording_target === target)}
+                    aria-pressed={settings.recording_target === target}
+                    onClick={() => update("recording_target", target)}
+                  >
+                    {t(recordingTargetKey(target))}
+                  </button>
+                ))}
+              </div>
 
-          <div className="settings__field settings__field--row">
-            <span>{t("recording_settings_follow_active_window")}</span>
-            <label className="settings__toggle">
-              <input
-                type="checkbox"
-                aria-label={t("recording_settings_follow_active_window_while_recording")}
-                checked={settings.recording_follow_active}
-                onChange={(event) =>
-                  update("recording_follow_active", event.target.checked)
-                }
-              />
-              <span className="settings__toggle-track" aria-hidden="true" />
-            </label>
-          </div>
-          <p className="settings__card-description">
-            {t("recording_settings_switches_target_focus_changes_1_s",
-            )}
-          </p>
+              <div className="settings__field settings__field--row">
+                <span>{t("recording_settings_follow_active_window")}</span>
+                <label className="settings__toggle">
+                  <input
+                    type="checkbox"
+                    aria-label={t("recording_settings_follow_active_window_while_recording")}
+                    checked={settings.recording_follow_active}
+                    onChange={(event) =>
+                      update("recording_follow_active", event.target.checked)
+                    }
+                  />
+                  <span className="settings__toggle-track" aria-hidden="true" />
+                </label>
+              </div>
+              <p className="settings__card-description">
+                {t("recording_settings_switches_target_focus_changes_1_s",
+                )}
+              </p>
+            </>
+          )}
         </article>
 
         {isVideo ? (

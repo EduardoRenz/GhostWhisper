@@ -200,4 +200,7 @@ GhostWhisper/
 - **`libpulse-binding`** para áudio do sistema (PipeWire expõe Pulse); alternativa
   futura `pipewire-rs`.
 - **`whisper-rs`** para ASR/VAD (bindings maduros).
-- **Wayland:** adiado; `gtk-layer-shell` quando o MVP X11 estabilizar (BR-007).
+- **Wayland (2026-10-30):** o overlay continua em **XWayland** (`GDK_BACKEND=x11`);
+  atalhos, screenshot e gravação usam os portais XDG
+  (`GlobalShortcuts`/`Screenshot`/`ScreenCast`). `gtk-layer-shell` não entrou;
+  o caminho X11 segue igual (BR-007/ISS-088/ISS-089).

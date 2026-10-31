@@ -35,6 +35,26 @@ describe("RecordingSettings — aba Gravação", () => {
     ).toBeDefined();
   });
 
+  it("no Wayland não oferece seguir a janela ativa (portal)", async () => {
+    ipc.capabilities = {
+      available: true,
+      encoder: "x264",
+      reason: null,
+      reason_code: null,
+      follow_supported: false,
+      target_mode: "portal",
+    };
+
+    render(<RecordingSettings settings={defaultSettings()} update={vi.fn()} />);
+
+    expect(
+      await screen.findByText(/o GNOME abre o seletor de janela ou tela/),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Janela da reunião" })).toBeNull();
+    expect(screen.queryByText("Seguir a janela ativa")).toBeNull();
+    expect(screen.getByText("Escolher no GNOME")).toBeDefined();
+  });
+
   it("parte dos padrões da máquina de referência", () => {
     render(<RecordingSettings settings={defaultSettings()} update={vi.fn()} />);
 

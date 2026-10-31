@@ -319,6 +319,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::recording::ffmpeg_path::resolve_ffmpeg;
     use adapters::recording::ffmpeg_screen_recorder::FfmpegScreenRecorder;
     use adapters::recording::finalizer::FfmpegRecordingFinalizer;
+    use adapters::recording::portal_screen_recorder::PortalScreenRecorder;
+    use adapters::recording::portal_targets::PortalScreenTargets;
     use adapters::recording::x11_targets::X11ScreenTargets;
     use adapters::screen::portal_screen_capture::PortalScreenCapture;
     use adapters::screen::x11_screen_capture::X11ScreenCapture;
@@ -793,11 +795,20 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             PathBuf::from("ffmpeg")
         }
     };
-    let recorder: Arc<dyn ScreenRecorder> =
-        Arc::new(FfmpegScreenRecorder::new(ffmpeg_path.clone()));
+    // Wayland: o portal escolhe a fonte e o GStreamer consome o nó PipeWire.
+    // X11: o caminho antigo (ffmpeg/x11grab + janela ativa) continua igual.
+    let recorder: Arc<dyn ScreenRecorder> = if wayland {
+        Arc::new(PortalScreenRecorder::new(ffmpeg_path.clone()))
+    } else {
+        Arc::new(FfmpegScreenRecorder::new(ffmpeg_path.clone()))
+    };
     let finalizer: Arc<dyn RecordingFinalizer> =
         Arc::new(FfmpegRecordingFinalizer::new(ffmpeg_path));
-    let targets: Arc<dyn ScreenTargets> = Arc::new(X11ScreenTargets::new());
+    let targets: Arc<dyn ScreenTargets> = if wayland {
+        Arc::new(PortalScreenTargets::new())
+    } else {
+        Arc::new(X11ScreenTargets::new())
+    };
     let recordings_dir = app
         .path()
         .video_dir()

@@ -9,7 +9,7 @@ livre: **ISS-056**.
 |---|---|---|---|
 | ISS-049 | `ffmpeg` não é dependência do app; licença do build estático (x264) é GPL | Alta | OPEN |
 | ISS-050 | Dois clientes no microfone (cpal + ffmpeg) podem competir em ALSA puro | Média | OPEN |
-| ISS-051 | Wayland nativo sem gravação (BR-007) | Média | OPEN |
+| ISS-051 | Wayland nativo sem gravação (BR-007) | Média | FIXED |
 | ISS-052 | Captura por janela perde popups/diálogos e não acompanha troca de janela | Média | OPEN |
 | ISS-053 | Redimensionar a janela muda as dimensões dos segmentos | Média | OPEN |
 | ISS-054 | `ffmpeg` estático sem entrada Pulse: áudio cai para `parec` em PCM cru | Média | MITIGATED |
@@ -53,16 +53,21 @@ livre: **ISS-056**.
 
 ## ISS-051 — Wayland nativo sem gravação
 
-- **Severidade:** Média · **Status:** OPEN
+- **Severidade:** Média · **Status:** FIXED (task 27 / ISS-089)
 - **Sintoma:** em Wayland puro não há `DISPLAY`; `x11grab` não existe. O
   `xdg-desktop-portal` + PipeWire permitiria capturar, mas exige um consumidor
-  PipeWire (nova dependência) e consentimento por sessão.
-- **Impacto:** usuários Wayland veem o botão desabilitado com explicação; a
-  transcrição continua normal via XWayland.
-- **Mitigação:** mensagem clara (`gravação disponível apenas em X11/XWayland`)
-  e caminho futuro documentado (portal ScreenCast + `pipewire-rs`).
-- **Refs:** BR-007, BR-070 ·
-  [`../../mvp/architecture/wayland-spike.md`](../mvp/architecture/wayland-spike.md) §2–§3.
+  PipeWire e consentimento por sessão.
+- **Impacto original:** usuários Wayland viam o botão desabilitado; a
+  transcrição continuava normal via XWayland.
+- **Correção (2026-10-30):** `PortalScreenRecorder` usa o portal **ScreenCast**
+  para receber o nó PipeWire e grava com **GStreamer** (`pipewiresrc`/`x264enc`),
+  sem `pipewire-rs` no app. O usuário escolhe janela ou monitor no diálogo do
+  GNOME; a fonte fica fixa até o `stop`. O X11 continua com o
+  `FfmpegScreenRecorder`. Detalhes em
+  [`../mvp/issues.md`](../mvp/issues.md) ISS-089 e
+  [`../mvp/tasks/27-task.md`](../mvp/tasks/27-task.md).
+- **Refs:** BR-006, BR-007, BR-065, BR-067, BR-070 ·
+  [`architecture/recording.md`](architecture/recording.md) §5.7.
 
 ## ISS-052 — Captura por janela perde popups e não acompanha troca de janela
 

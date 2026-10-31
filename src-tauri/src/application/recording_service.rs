@@ -448,6 +448,10 @@ impl RecordingController for RecordingService {
             elapsed_ms: 0,
             size_bytes: 0,
         };
+        // No Wayland o `start` espera o usuário escolher a fonte no portal.
+        // O cronômetro começa quando a captura realmente começa (o `started_at`
+        // do arquivo continua sendo o do clique, para o nome do arquivo).
+        let resumed_at_ms = self.clock.now_ms();
         {
             let mut inner = self.lock()?;
             inner.active = Some(Active {
@@ -459,7 +463,7 @@ impl RecordingController for RecordingService {
                 first_size: (width, height),
                 normalize: false,
                 accumulated_ms: 0,
-                resumed_at_ms: Some(started_at_ms),
+                resumed_at_ms: Some(resumed_at_ms),
             });
             inner.last_state = state.clone();
             inner.current_session_id = Some(session_id.to_string());

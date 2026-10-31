@@ -46,7 +46,9 @@ Linux and staying fully open.
   journal, incremental summaries and Markdown export.
 - **Session recording** — record the meeting window or the full screen together
   with session audio (microphone + system) into a compact MP4; recording belongs
-  to the session and can be paused, resumed and discarded.
+  to the session and can be paused, resumed and discarded. On Wayland you pick a
+  window or monitor in the GNOME portal dialog; the source stays fixed for that
+  recording.
 - **Discreet overlay** — transparent HUD, tray icon, configurable global
   shortcuts and a stealth mode that hides the window from the taskbar.
 - **Local-only** — audio, transcripts and settings never leave your machine;
@@ -64,13 +66,13 @@ Linux and staying fully open.
 | Acceleration | Vulkan backend (default release), CPU fallback |
 | LLM | HTTP (OpenAI, Gemini, OpenRouter, DeepSeek, custom OpenAI-compatible) |
 | Persistence | SQLite via `rusqlite` 0.32 (bundled, FTS5) |
-| Recording | X11 window/screen capture + FFmpeg (H.264 via x264 or VAAPI) |
+| Recording | X11: FFmpeg `x11grab` (x264/VAAPI). Wayland: XDG ScreenCast + PipeWire + GStreamer (`pipewiresrc`/`x264enc`) |
 | Secrets | Secret Service (libsecret) via `keyring` 3 |
 | Overlay | Transparent Tauri window; X11/XWayland click-through |
 
 ## Requirements
 
-- Linux with X11/XWayland. On Wayland the overlay uses XWayland and global shortcuts/screenshot use XDG portals (GNOME screenshot UI on capture).
+- Linux with X11/XWayland. On Wayland the overlay uses XWayland and global shortcuts/screenshot use XDG portals (GNOME screenshot UI on capture). Screen recording uses the ScreenCast portal plus GStreamer (see below).
 - Rust stable (1.77+) and `cargo`.
 - Node.js 20+ and `pnpm` (or `npm`).
 - Tauri v2 system dependencies:
@@ -79,6 +81,10 @@ Linux and staying fully open.
   - Fedora:
     `webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-libs-devel vulkan-loader-devel glslc`
 - PipeWire or PulseAudio with a sink monitor for system audio.
+- **Wayland recording:** GStreamer with `pipewiresrc`, `x264enc`, `matroskamux`
+  and `pulsesrc`, plus the GNOME ScreenCast portal. On Debian/Ubuntu:
+  `gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-libav xdg-desktop-portal-gnome`.
+  Without them the recording button explains that `gstreamer_missing`.
 
 ## Getting started
 
@@ -241,14 +247,17 @@ so it stays on top and can be positioned/clicked through. Global shortcuts use
 the XDG **GlobalShortcuts** portal (approve the GNOME dialog once); the screenshot
 uses the XDG **Screenshot** portal in interactive mode, so GNOME shows its capture
 UI and the user confirms the area. X11 keeps the old silent `GetImage` path.
-The app registers the reverse-DNS app id `com.ghostwhisper.app` and a hidden
-`.desktop` in `$XDG_DATA_HOME/applications`; that is required by
-xdg-desktop-portal ≥1.20.
+Screen recording uses the XDG **ScreenCast** portal: GNOME asks for a window or
+monitor on every recording and the source stays fixed until you stop (there is
+no follow-active-window on Wayland). The app registers the reverse-DNS app id
+`com.ghostwhisper.app` and a hidden `.desktop` in
+`$XDG_DATA_HOME/applications`; that is required by xdg-desktop-portal ≥1.20.
 
 **Screen-share invisibility** — no X11/Wayland API can hide a window from a
 screen capture. Stealth mode removes the overlay from the taskbar and alt-tab
 but not from a shared screen. Share a single window instead of the whole screen,
-or move the overlay to another monitor.
+or move the overlay to another monitor. On Wayland, choose a **window** in the
+ScreenCast dialog; the entire screen includes the overlay.
 
 **Debug logging** — set `RUST_LOG=ghostwhisper_lib=debug` (not global `debug`,
 which makes `keyring` dump credential attributes). Each LLM call logs the task
