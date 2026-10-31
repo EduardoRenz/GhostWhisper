@@ -89,12 +89,11 @@ pnpm install
 pnpm tauri dev
 ```
 
-> O submódulo `vendor/laya` (classificador Laya, Apache-2.0) é resolvido pelo
-> Cargo mesmo sem a feature. Se você já clonou sem `--recurse-submodules`, rode
-> `git submodule update --init`. O engine Laya só é compilado com
-> `pnpm tauri dev --features laya` / `pnpm tauri build --features laya`; no
-> build padrão o modelo ONNX (~1,2 GB) é baixado pelo app, e no build final
-> (`./scripts/build-final.sh`) ele vai empacotado no AppImage.
+> O submódulo `vendor/laya` (classificador Laya, Apache-2.0) e o artefato ONNX
+> (~1,3 GB, não versionado) são **obrigatórios** para o build de release. Se você
+> clonou sem `--recurse-submodules`, rode `git submodule update --init`; para
+> gerar o artefato uma vez, veja [Build and packaging](#build-and-packaging).
+> Todo AppImage de release é **Vulkan + Laya + modelo empacotado**.
 
 On first launch, open **Settings** (gear icon) and add an AI source with your own
 API key. Keys are stored in the system keyring, never in plain text. The Whisper
@@ -107,47 +106,37 @@ model is downloaded only on the first session that uses it.
 
 ## Build and packaging
 
-### Build final (tudo incluso)
-
-Para o artefato completo de teste/distribuição — **Vulkan + engine Laya + modelo
-ONNX empacotado** — use:
-
-```bash
-./scripts/build-final.sh
-# ou
-pnpm build:final
-```
-
-É o caminho canônico do build final: confere o submódulo `vendor/laya` e o
-artefato ONNX, corrige as permissões que o snapshot do Hugging Face deixa
-somente-leitura e então chama o build Laya. Gera **um AppImage** em
-`src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`
-(~821 MiB), com o modelo embutido — não precisa baixar nada no primeiro uso.
-
-O build padrão (`pnpm tauri:build`) continua leve: sem Laya e com o modelo
-Whisper baixado sob demanda.
+O **único** build de release do GhostWhisper é o AppImage completo: **Vulkan +
+engine Laya + modelo ONNX empacotado**. Não existe build leve/CPU de release; o
+binário escolhe a GPU em runtime e cai para CPU sozinho quando não há Vulkan.
 
 ```bash
-pnpm tauri:build        # release with Vulkan (default) + embedded loader
-pnpm tauri:build:cpu    # release, CPU only (escape hatch)
-pnpm tauri:build:laya   # Vulkan + Laya engine + bundled ONNX (no pre-flight)
-pnpm build:final        # final artifact: pre-flight + Vulkan + Laya + ONNX
-scripts/package-linux.sh        # .deb + AppImage
-scripts/package-linux.sh deb    # only .deb
+pnpm tauri:build
+# equivalente: ./scripts/tauri-build-linux.sh
 ```
 
-Artifacts are written to `src-tauri/target/release/bundle/{deb,appimage}/`.
+> `pnpm tauri build` também é redirecionado para esse build completo (o CLI não
+> consegue gerar um bundle parcial).
 
-The Laya build needs the submodule and the exported artifact (not versioned):
+O script exige o submódulo `vendor/laya` e o artefato ONNX (não versionado):
 
 ```bash
 git submodule update --init
 python3 vendor/laya/laya-rust/tools/export_onnx.py --model multilingual \
   --out src-tauri/resources/laya
-pnpm tauri:build:laya
-# ou o build final (checagens + permissões + publish):
-./scripts/build-final.sh
 ```
+
+Gera **um AppImage** em
+`src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`
+(~830 MiB), com o modelo embutido — não precisa baixar nada no primeiro uso.
+
+O build:
+- confere o artefato e corrige as permissões que o snapshot do Hugging Face
+  deixa somente-leitura;
+- monta o SDK Vulkan (`scripts/vulkan-env.sh`, sem sudo) e embute
+  `libvulkan.so.1`;
+- publica em `src-tauri/target/release/bundle` e remove AppImages antigos;
+- imprime o caminho e o SHA-256.
 
 > **Laya is a POC:** the engine and the multilingual model are bundled, but the
 > zero-shot evaluation is below the quality gate. `Regras locais` remains the
@@ -169,8 +158,6 @@ pnpm tauri:build:laya
 Install a release:
 
 ```bash
-sudo apt install ./GhostWhisper_0.3.1_amd64.deb
-# or
 chmod +x GhostWhisper_0.3.1_amd64.AppImage && ./GhostWhisper_0.3.1_amd64.AppImage
 ```
 
@@ -181,13 +168,11 @@ chmod +x GhostWhisper_0.3.1_amd64.AppImage && ./GhostWhisper_0.3.1_amd64.AppImag
 | `pnpm dev` | Vite dev server only |
 | `pnpm tauri dev` | Full app in development (CPU build) |
 | `pnpm tauri:dev:vulkan` | Development with Vulkan GPU acceleration |
+| `pnpm tauri:dev:laya` | Development with Vulkan + Laya engine |
 | `pnpm tauri:dev:clean` | Dev launcher that strips snap environment variables |
-| `pnpm tauri:build` | Release build with Vulkan + bundles |
-| `pnpm tauri:build:cpu` | Release build without GPU |
-| `pnpm tauri:build:laya` | Release with Vulkan + Laya engine + bundled ONNX (no pre-flight) |
-| `pnpm build:final` / `scripts/build-final.sh` | **Final AppImage with everything** (Vulkan + Laya + ONNX) |
+| `pnpm tauri:build` | **Único build de release**: AppImage Vulkan + Laya + modelo ONNX |
+| `pnpm tauri build` | CLI redirecionado para o build único |
 | `pnpm test` | Frontend tests (Vitest) |
-| `scripts/package-linux.sh` | Linux packaging (`.deb` / AppImage) |
 
 ## Project structure
 

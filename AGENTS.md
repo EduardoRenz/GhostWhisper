@@ -47,11 +47,10 @@ prds/{business-rules.md, <prd>/{prd.md,memory.md,issues.md,architecture,tasks}}
 
 ## Comandos
 ```bash
-git submodule update --init   # vendor/laya; o Cargo resolve mesmo sem a feature
+git submodule update --init   # necessário para o build (engine Laya)
 pnpm install
-pnpm tauri dev        # rodar em desenvolvimento
-pnpm tauri build      # gerar binários (.deb/AppImage)
-pnpm tauri:build:laya # AppImage com Vulkan + engine/modelo Laya (POC)
+pnpm tauri dev        # desenvolvimento (CPU; use tauri:dev:vulkan/laya para GPU/classificador)
+pnpm tauri:build      # ÚNICO build de release: AppImage Vulkan + Laya + modelo ONNX
 cargo test            # testes do core
 cargo clippy          # lint Rust
 pnpm test             # testes do frontend
@@ -62,10 +61,13 @@ pnpm test             # testes do frontend
   `src-tauri/tauri.conf.json` e `src-tauri/Cargo.toml`. O `Cargo.lock` acompanha.
 - Bump: `./scripts/bump-version.sh X.Y.Z` (atualiza os três, o README e roda
   `cargo check` para o lock). Não edite só um deles.
-- O nome do AppImage/deb usa a versão dos manifestos; faça o bump **antes** do
-  `pnpm build:final` da release.
+- O nome do AppImage usa a versão dos manifestos; faça o bump **antes** do
+  `pnpm tauri:build` da release.
 - O build remove AppImages de versões antigas (`scripts/prune-appimages.sh`):
   só o artefato da versão atual fica nos diretórios de bundle.
+- **Só existe um build de release:** AppImage com Vulkan + Laya + modelo ONNX.
+  Os alvos `tauri:build:cpu`, `tauri:build:laya` e `build:final` foram removidos;
+  `pnpm tauri build` também é redirecionado para o build completo.
 - Próxima release planejada: **0.4.0**.
 
 ## Regras rápidas

@@ -8,7 +8,7 @@
 # executa o binário solto, que resolve o modelo Laya ao lado do próprio binário
 # (`resource_dir()` de um binário solto é o dir do exe).
 #
-# É o mesmo artefato do `pnpm build:final` (Vulkan + Laya + modelo), só que roda
+# É o mesmo artefato do `pnpm tauri:build` (Vulkan + Laya + modelo), só que roda
 # do binário direto. Usa o mesmo `app_data_dir` do AppImage/deb — você testa com
 # seus dados, configs e modelos reais.
 #
@@ -68,7 +68,9 @@ chmod -R u+w,a+rX "${target_dir}/release/laya" 2>/dev/null || true
 
 # Compila o binário completo (Vulkan + Laya). O `--no-bundle` pula deb/appimage
 # (onde mora o mksquashfs lento); ainda roda o `beforeBuildCommand` (tsc + vite).
-env "${clean[@]}" pnpm tauri build --features "vulkan,laya" --no-bundle
+# `./node_modules/.bin/tauri` (e não o script `tauri` do package.json, que
+# redireciona builds para o AppImage completo) para gerar só o binário de iteração.
+env "${clean[@]}" ./node_modules/.bin/tauri build --features "vulkan,laya" --no-bundle
 
 # Garante o modelo ONNX ao lado do binário (fallback `bundled` de
 # `resolve_model_dir`). Cópia só se ausente — o build seguinte é incremental e não

@@ -21,6 +21,7 @@ Registro de bugs e pendências observadas em uso. Legenda de status:
 | ISS-015 | Sensibilidade do microfone muito baixa (nenhum ganho de entrada) | Alta | FIXED |
 | ISS-016 | Pausar/continuar a gravação apagava as mensagens (sem conceito de sessão) | Alta | FIXED |
 | ISS-017 | Seletor de canais travado durante a captura (`disabled` enquanto gravava) | Média | FIXED |
+| ISS-087 | Canal "Sistema" indisponível sem `pactl` e troca para "Ambos" silenciosa | Alta | FIXED |
 | ISS-019 | Whisper repete a mesma frase sem parar e a repetição entra na conversa | Média | FIXED |
 | ISS-020 | Interface travava/engasgava: IPC demorado na main thread e IPC em excesso pela barra de nível | Alta | FIXED |
 | ISS-021 | Bolha "em andamento" ficava pendurada com o texto cru da prévia | Média | FIXED |
@@ -628,3 +629,42 @@ permanece apenas como **fallback** (Wayland/sem SHAPE).
     troca de aba); 22 testes frontend.
 - **Evidência:** 114 testes Rust (10 novos/reescritos de streaming) + 18 frontend;
   clippy/fmt/tsc limpos; E2E JFK (`--ignored`) mantido.
+
+---
+
+## ISS-087 — Canal "Sistema" indisponível sem `pactl` e troca para "Ambos" silenciosa
+
+- **Severidade:** Alta · **Status:** FIXED (task 25)
+- **Sintoma (relato do usuário):** *"iniciei o programa e comecou só capturando
+  meu mic. ao tentar mudar para 'ambos' nao mudava, e nem dava alguma mensagem
+  de feedback em caso de erro"*.
+- **Causa raiz:** a descoberta do monitor do sistema usava **`pactl`**
+  (`get-default-sink`/`list short sources`) sem alternativa. Em PipeWire com
+  `pipewire-pulse` mas **sem o pacote `pulseaudio-utils`** (o caso do ambiente),
+  `pactl` não existe: `default_monitor_name()` falhava, `open_channel` devolvia
+  `None` e `set_channels` mantinha o microfone (política da task 20) e retornava
+  `Ok`. A UI continuava em "Microfone" e nada explicava a falha. A conexão
+  libpulse também era aberta dentro da thread, então erros de fonte só apareciam
+  no log.
+- **Correção:**
+  - `default_sink_name` tenta `pactl` → `wpctl inspect @DEFAULT_AUDIO_SINK@` →
+    `pw-metadata -n default`; sem `pactl`, `list_devices` cai para os sinks do
+    `pw-cli ls Node` (ou para o monitor padrão) — ISS-087.
+  - `Simple::new` é aberto **antes** de `start` devolver `Ok`: falha de conexão
+    chega ao chamador.
+  - `SessionWarningEvent` (`session_warning`) é emitido por `SessionService`
+    quando um canal não abre; `useSessionState` traduz e o overlay mostra
+    "Não foi possível capturar o áudio do sistema…" em vez de silêncio.
+- **Testes anti-regressão:** parsers `wpctl`/`pw-metadata`/`pw-cli`; teste real
+  (ignorado) `lists_monitors_on_real_server` e
+  `opens_the_default_monitor_on_real_server` passam no host sem `pactl`;
+  `start_warns_about_the_channel_that_could_not_capture` e
+  `set_channels_keeps_the_working_one_when_the_other_fails` verificam o aviso;
+  `useSessionState` cobre o evento `session_warning`.
+- **Arquivos:** `src-tauri/src/adapters/audio/pulse_system_audio_source.rs`,
+  `src-tauri/src/ports/event_publisher.rs`,
+  `src-tauri/src/adapters/events/tauri_event_publisher.rs`,
+  `src-tauri/src/application/session_service.rs`,
+  `src/core/application/useSessionState.ts`, locale `pt`/`en`.
+- **Task:** [`25-task.md`](tasks/25-task.md)
+- **Dano em dados existentes:** nenhum.

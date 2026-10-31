@@ -498,6 +498,8 @@ export const PT = {
   "session_session_running_duration_click_end": "Sessão em andamento há {duration}; clique para encerrar",
   "session_session_time_click_end": "Tempo de sessão — clique para encerrar",
   "session_untitled": "Sessão sem título",
+  "session_warning_microphone_unavailable": "Não foi possível capturar o microfone. Verifique o dispositivo de entrada.",
+  "session_warning_system_unavailable": "Não foi possível capturar o áudio do sistema. Verifique o monitor de saída (PipeWire/PulseAudio).",
   "session_yes": "Sim",
   "settings_acceleration": "Aceleração",
   "settings_all_changes_synced_locally": "Todas as alterações são sincronizadas localmente",

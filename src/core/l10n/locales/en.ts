@@ -498,6 +498,8 @@ export const EN = {
   "session_session_running_duration_click_end": "Session running for {duration}; click to end",
   "session_session_time_click_end": "Session time — click to end",
   "session_untitled": "Untitled session",
+  "session_warning_microphone_unavailable": "Could not capture the microphone. Check the input device.",
+  "session_warning_system_unavailable": "Could not capture system audio. Check the output monitor (PipeWire/PulseAudio).",
   "session_yes": "Yes",
   "settings_acceleration": "Acceleration",
   "settings_all_changes_synced_locally": "All changes are synced locally",

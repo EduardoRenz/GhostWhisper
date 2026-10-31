@@ -26,6 +26,17 @@ pub struct SessionStateEvent {
     pub started_at_ms: Option<i64>,
 }
 
+/// Aviso de que um canal escolhido não pôde ser capturado.
+///
+/// Emitido quando o microfone ou o áudio do sistema falham ao abrir, mas a
+/// sessão continua com os canais que funcionaram. A UI mostra uma mensagem
+/// localizada (o motivo técnico fica no log) — ISS-087.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SessionWarningEvent {
+    /// `microphone` | `system`.
+    pub channel: String,
+}
+
 /// Estado da cadência do auto-sugerir publicado para a UI (BR-039).
 ///
 /// É o **timer que já existe** no agendador, exposto como feedback visual: a
@@ -215,6 +226,10 @@ pub trait EventPublisher: Send + Sync {
     fn emit_transcript_activity(&self, _activity: &TranscriptActivityEvent) {}
     /// Emite uma mudança de estado da sessão.
     fn emit_session_state(&self, state: &SessionStateEvent);
+    /// Emite um aviso de canal indisponível (mantém os canais que funcionam).
+    ///
+    /// Default no-op: fakes que não observam avisos não precisam implementar.
+    fn emit_session_warning(&self, _warning: &SessionWarningEvent) {}
     /// Emite uma sugestão já persistida (painel ou atalho global).
     fn emit_insight(&self, suggestion: &Suggestion);
     /// Emite a sugestão **efêmera em andamento** (rascunho fast-first + deltas do

@@ -9,16 +9,13 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "tauri": "tauri",
+    "tauri": "bash scripts/tauri-cli.sh",
     "tauri:dev": "tauri dev",
     "tauri:dev:clean": "bash scripts/tauri-dev-clean.sh",
     "tauri:dev:vulkan": "bash scripts/tauri-dev-vulkan.sh",
     "tauri:dev:release": "bash scripts/tauri-dev-release.sh",
     "tauri:build": "bash scripts/tauri-build-linux.sh",
-    "tauri:build:cpu": "bash scripts/tauri-build-cpu.sh",
-    "tauri:dev:laya": "tauri dev --features laya",
-    "tauri:build:laya": "bash scripts/tauri-build-laya.sh",
-    "build:final": "bash scripts/build-final.sh",
+    "tauri:dev:laya": "tauri dev --features \"vulkan,laya\"",
     "bump:version": "bash scripts/bump-version.sh"
   },
   "dependencies": {

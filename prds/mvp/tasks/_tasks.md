@@ -31,6 +31,7 @@
 | 22 | Interface responsiva: IPC fora da main thread e menos re-render (ISS-020) | CONCLUDED |
 | 23 | Retratação da prévia "em andamento" pendurada (ISS-021) | CONCLUDED |
 | 24 | Histórico: busca por título, exclusão em lote e resumo/título no encerramento (BR-103/BR-104) | CONCLUDED |
+| 25 | Sistema sem `pactl` + aviso de canal indisponível (ISS-087) | CONCLUDED |
 
 ## Dependências entre tarefas
 
@@ -63,6 +64,8 @@
 - 23 (retratação da prévia, ISS-021) depende de 11/13 (streaming e ASR).
 - 24 (histórico, BR-103/BR-104) depende de 17 (histórico) e do resumo do PRD
   Sessão; é independente das demais.
+- 25 (sistema sem `pactl` + aviso, ISS-087) depende da 20 (troca de canais) e da
+  14 (áudio do sistema).
 
 ## Definição de pronto (geral)
 - Código compila (`pnpm tauri build` sem erros).

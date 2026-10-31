@@ -201,6 +201,12 @@ uma nota de revisão.
   só começa quando o usuário manda. Por isso `start` **não** cria outro id com
   uma sessão aberta — ele continua nela (a escolha de canais é lembrada e
   herdada pela sessão automática; sem escolha, microfone).
+- **Revisão 3 (2026-10-30, ISS-087):** trocar para **Ambos** não pode ser
+  silencioso. Se um canal não abre, a sessão mantém os que funcionam e publica
+  `session_warning`; a UI mostra o aviso localizado (o motivo técnico fica no
+  log). O monitor do sistema é descoberto sem depender de `pactl` (fallback
+  `wpctl`/`pw-metadata`/`pw-cli`), e a conexão libpulse é aberta antes de o
+  canal ser considerado ativo.
 - **Data:** 2026-10-18 · **Status:** Ativa (task 16)
 
 ## BR-020 — Sugestões da IA entram na linha temporal; export é Markdown
@@ -496,12 +502,11 @@ uma nota de revisão.
   muda). No **Linux sem ROCm/CUDA** (o caso desta máquina: AMD Polaris), o caminho
   é **Vulkan** (`whisper-rs/vulkan` → `whisper-rs-sys/vulkan`, backend Vulkan do
   ggml via RADV/Mesa); o SDK de build é montado por `scripts/vulkan-env.sh`
-  (usa `libvulkan-dev`/`glslc` do sistema ou baixa os `.deb` **sem sudo**), e os
-  scripts `pnpm tauri:dev:vulkan` / `tauri:build:vulkan` compilam com a feature.
-  **Um artefato só**: o pacote de release (`pnpm tauri:build`) já vem com Vulkan e
-  o **loader `libvulkan.so.1` embutido** (AppImage; `libvulkan1` como dependência
-  no `.deb`), então o app **escolhe a GPU em runtime e cai para CPU sozinho** sem
-  dispositivo. O usuário escolhe o modo em **Aceleração** (`auto`/`cpu`/`gpu`); se
+  (usa `libvulkan-dev`/`glslc` do sistema ou baixa os `.deb` **sem sudo**), e
+  `pnpm tauri:dev:vulkan` compila em dev com a feature. **Um artefato só**: o
+  release (`pnpm tauri:build`) é o AppImage completo com Vulkan, engine Laya e
+  modelo ONNX empacotado, e o **loader `libvulkan.so.1` embutido**, então o app
+  **escolhe a GPU em runtime e cai para CPU sozinho** sem dispositivo. O usuário escolhe o modo em **Aceleração** (`auto`/`cpu`/`gpu`); se
   o app morrer com a GPU ativa, uma **marca de crash** desliga a GPU no próximo
   boot (padrão Perssua). O modelo recomendado com GPU é o **`small`** — sugerido
   com um clique na tela de transcrição, **sem** troca automática (override
@@ -536,6 +541,12 @@ uma nota de revisão.
 - **Detalhes:** [`precision-and-performance/tasks/03-task.md`](precision-and-performance/tasks/03-task.md),
   [`precision-and-performance/tasks/04-task.md`](precision-and-performance/tasks/04-task.md),
   [`precision-and-performance/architecture/precision-and-performance.md`](precision-and-performance/architecture/precision-and-performance.md) §4.
+- **Revisão (2026-10-30):** o **único** build de release é o AppImage completo
+  (`pnpm tauri:build`): Vulkan + engine Laya + modelo ONNX empacotado. Não
+  existem mais os alvos `tauri:build:cpu`, `tauri:build:laya` e `build:final`;
+  `pnpm tauri build` também é redirecionado para o build completo. O artefato
+  ONNX (~1,3 GB) é obrigatório, não versionado, e o script falha cedo com as
+  instruções de export se ele faltar.
 - **Data:** 2026-10-18 (atualizada em 2026-10-21) · **Status:** Ativa (E3 completo:
   reuso do passe final + GPU/Vulkan + AEC + commits avaliados; L1: prioridade do
   final + fechamento por frase)

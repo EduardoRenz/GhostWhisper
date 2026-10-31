@@ -643,3 +643,31 @@ as Sugestões mais rápido.”*
   `src-tauri/target/release/bundle/appimage/`.
 - **Pendente:** teste manual no app com GPU (conferir `backend="gpu"` no log e a
   ordem das bolhas em conversa alternada).
+
+---
+
+## 2026-10-30 — Build único: AppImage completo (Vulkan + Laya + modelo)
+
+- **IDs:** BR-029 · **Refs:** [`../business-rules.md`](../business-rules.md),
+  [`../../README.md`](../../README.md), [`../../AGENTS.md`](../../AGENTS.md)
+
+O usuário definiu que **todo build de release** deve ser o **bundle completo**
+(Vulkan + engine Laya + modelo ONNX). Removidos os caminhos parciais:
+
+- `scripts/tauri-build-linux.sh` agora é o build único: confere o artefato ONNX,
+  corrige permissões, monta o SDK Vulkan, compila `--features "vulkan,laya"`,
+  empacota **só AppImage**, publica e imprime SHA-256.
+- Removidos `scripts/build-final.sh`, `scripts/tauri-build-laya.sh`,
+  `scripts/tauri-build-cpu.sh` e `scripts/package-linux.sh`, além dos scripts
+  `build:final`, `tauri:build:laya` e `tauri:build:cpu`.
+- `pnpm tauri build` (CLI) passa por `scripts/tauri-cli.sh`, que redireciona
+  `build` para o mesmo caminho completo. `pnpm tauri:build` é o comando canônico.
+- O `tauri:dev:release` usa `./node_modules/.bin/tauri` direto para continuar
+  gerando só o binário de iteração (sem bundle), com as mesmas features.
+
+### Verificação
+
+- AppImage final (Vulkan + Laya + modelo) **829,48 MiB**, sha256
+  `3399bd7da11e4e4cf1f5c2e40135762576f6415cf72aca2ed14614c6e99ea369`,
+  em `src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`.
+- `bash -n` nos scripts e `package.json` válido.

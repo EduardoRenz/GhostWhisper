@@ -4,6 +4,7 @@
 //! simple do PulseAudio (compatível com PipeWire). O servidor faz o remix para
 //! mono 16 kHz, então o cliente só normaliza as amostras.
 
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -45,12 +46,18 @@ impl PulseSystemAudioSource {
 
 impl AudioSource for PulseSystemAudioSource {
     fn list_devices(&self) -> Result<Vec<AudioDevice>> {
-        let sources = pactl::run_pactl(&["list", "short", "sources"])?;
-        let default_monitor = pactl::run_pactl(&["get-default-sink"])
-            .ok()
-            .map(|sink| format!("{}.monitor", sink.trim()))
-            .filter(|name| !name.is_empty());
-        Ok(parse_monitors(&sources, default_monitor.as_deref()))
+        let default_monitor = default_sink_name().map(|sink| format!("{sink}.monitor"));
+
+        // Caminho preferido: `pactl` (lista completa, inclusive servidores
+        // PulseAudio puros). Se o binário não existe (PipeWire sem
+        // `pulseaudio-utils`), cai para as ferramentas nativas do PipeWire.
+        if let Ok(sources) = pactl::run_pactl(&["list", "short", "sources"]) {
+            let devices = parse_monitors(&sources, default_monitor.as_deref());
+            if !devices.is_empty() {
+                return Ok(devices);
+            }
+        }
+        monitors_without_pactl(default_monitor)
     }
 
     fn start(&self, device_id: Option<String>, consumer: Arc<dyn AudioConsumer>) -> Result<()> {
@@ -61,13 +68,18 @@ impl AudioSource for PulseSystemAudioSource {
             None => default_monitor_name()?,
         };
 
+        // Abre a conexão **antes** de devolver Ok: se o monitor não existir, o
+        // erro chega ao chamador e vira aviso na UI (antes ele só aparecia no
+        // log da thread e o canal ficava "ativo" sem capturar).
+        let simple = open_capture(&source_name)?;
+
         self.stop.store(false, Ordering::Relaxed);
         self.running.store(true, Ordering::Relaxed);
 
         let stop = Arc::clone(&self.stop);
         let running = Arc::clone(&self.running);
         let handle = thread::spawn(move || {
-            if let Err(error) = run_capture(&source_name, consumer, Arc::clone(&stop)) {
+            if let Err(error) = run_capture(simple, consumer, Arc::clone(&stop)) {
                 tracing::error!("captura do sistema falhou: {error}");
             }
             running.store(false, Ordering::Relaxed);
@@ -95,30 +107,147 @@ impl AudioSource for PulseSystemAudioSource {
 }
 
 /// Nome do monitor do sink padrão (`<sink>.monitor`).
+///
+/// Usa `pactl` quando disponível; sem ele (PipeWire sem `pulseaudio-utils`),
+/// resolve o sink padrão pelo WirePlumber (`wpctl`) ou pelos metadados do
+/// PipeWire (`pw-metadata`).
 pub(crate) fn default_monitor_name() -> Result<String> {
-    let sink = pactl::run_pactl(&["get-default-sink"])?;
-    let sink = sink.trim();
-    if sink.is_empty() {
-        return Err(GhostWhisperError::Other(
-            "sink padrão indisponível".to_string(),
-        ));
-    }
-    Ok(format!("{sink}.monitor"))
+    default_sink_name()
+        .map(|sink| format!("{sink}.monitor"))
+        .ok_or_else(|| {
+            GhostWhisperError::Other(
+                "monitor de saída não encontrado; verifique o sink padrão do PipeWire/PulseAudio"
+                    .to_string(),
+            )
+        })
 }
 
-/// Grava do `source_name` normalizando para f32 mono 16 kHz.
-fn run_capture(
-    source_name: &str,
-    consumer: Arc<dyn AudioConsumer>,
-    stop: Arc<AtomicBool>,
-) -> Result<()> {
+/// Executa um utilitário e devolve o stdout quando ele termina com sucesso.
+fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(program).args(args).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Nome do sink padrão, na ordem: PulseAudio (`pactl`), WirePlumber e
+/// metadados do PipeWire.
+fn default_sink_name() -> Option<String> {
+    if let Some(output) = command_stdout("pactl", &["get-default-sink"]) {
+        let name = output.trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    if let Some(output) = command_stdout("wpctl", &["inspect", "@DEFAULT_AUDIO_SINK@"]) {
+        if let Some(name) = parse_wpctl_node_name(&output) {
+            return Some(name);
+        }
+    }
+    if let Some(output) = command_stdout("pw-metadata", &["-n", "default"]) {
+        if let Some(name) = parse_pw_metadata_default_sink(&output) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Extrai `node.name = "..."` da saída de `wpctl inspect`.
+fn parse_wpctl_node_name(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (_, value) = line.split_once("node.name = ")?;
+        let value = value.trim().trim_matches('"');
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+/// Extrai o nome do sink de `default.audio.sink` no `pw-metadata`.
+///
+/// Linha: `update: id:0 key:'default.audio.sink' value:'{"name":"..."}' …`.
+fn parse_pw_metadata_default_sink(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (_, rest) = line.split_once("key:'default.audio.sink'")?;
+        let start = rest.find("value:'")? + "value:'".len();
+        let end = rest[start..].find("' type:")? + start;
+        let value: serde_json::Value = serde_json::from_str(&rest[start..end]).ok()?;
+        value.get("name")?.as_str().map(str::to_string)
+    })
+}
+
+/// Sinks (`media.class = "Audio/Sink"`) listados por `pw-cli ls Node`.
+fn parse_pw_cli_sinks(output: &str) -> Vec<String> {
+    let mut sinks = Vec::new();
+    let mut name: Option<String> = None;
+    for line in output.lines() {
+        let line = line.trim();
+        if line.starts_with("id ") {
+            name = None;
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("node.name = ") {
+            name = Some(value.trim().trim_matches('"').to_string());
+        } else if let Some(value) = line.strip_prefix("media.class = ") {
+            if value.trim().trim_matches('"') == "Audio/Sink" {
+                if let Some(name) = name.take() {
+                    if !name.is_empty() && !sinks.contains(&name) {
+                        sinks.push(name);
+                    }
+                }
+            }
+        }
+    }
+    sinks
+}
+
+/// Fallback de monitores sem `pactl`: usa os sinks do PipeWire e cobre o caso
+/// em que nem o `pw-cli` está disponível com o monitor padrão.
+fn monitors_without_pactl(default_monitor: Option<String>) -> Result<Vec<AudioDevice>> {
+    let monitors: Vec<String> = command_stdout("pw-cli", &["ls", "Node"])
+        .map(|output| {
+            parse_pw_cli_sinks(&output)
+                .into_iter()
+                .map(|sink| format!("{sink}.monitor"))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut devices: Vec<AudioDevice> = monitors
+        .into_iter()
+        .map(|id| AudioDevice {
+            is_default: default_monitor.as_deref() == Some(id.as_str()),
+            id: id.clone(),
+            name: id,
+        })
+        .collect();
+
+    if devices.is_empty() {
+        if let Some(default) = default_monitor {
+            devices.push(AudioDevice {
+                id: default.clone(),
+                name: default,
+                is_default: true,
+            });
+        }
+    }
+
+    if devices.is_empty() {
+        return Err(GhostWhisperError::Other(
+            "nenhum monitor de saída encontrado (PipeWire/PulseAudio)".to_string(),
+        ));
+    }
+    Ok(devices)
+}
+
+/// Abre a captura do monitor (síncrono: erros chegam a quem chamou).
+fn open_capture(source_name: &str) -> Result<Simple> {
     let spec = Spec {
         format: Format::S16le,
         channels: 1,
         rate: TARGET_SAMPLE_RATE,
     };
 
-    let simple = Simple::new(
+    Simple::new(
         None,
         "GhostWhisper",
         Direction::Record,
@@ -128,8 +257,19 @@ fn run_capture(
         None,
         None,
     )
-    .map_err(|e| GhostWhisperError::Other(format!("falha ao abrir captura do sistema: {e}")))?;
+    .map_err(|e| {
+        GhostWhisperError::Other(format!(
+            "falha ao abrir captura do sistema ({source_name}): {e}"
+        ))
+    })
+}
 
+/// Grava do monitor normalizando para f32 mono 16 kHz.
+fn run_capture(
+    simple: Simple,
+    consumer: Arc<dyn AudioConsumer>,
+    stop: Arc<AtomicBool>,
+) -> Result<()> {
     let mut buffer = vec![0u8; 4096];
     while !stop.load(Ordering::Relaxed) {
         match simple.read(&mut buffer) {
@@ -200,6 +340,67 @@ mod tests {
         assert_eq!(default.id, "alsa_output.pci.hdmi.monitor");
     }
 
+    /// ISS-087: sem `pactl`, o sink padrão vem do WirePlumber.
+    #[test]
+    fn parses_the_default_sink_from_wpctl() {
+        let output = "id 46, type PipeWire:Interface:Node/3\n\
+            \t* media.class = \"Audio/Sink\"\n\
+            \t* node.description = \"H510 PRO\"\n\
+            \t* node.name = \"alsa_output.usb-H510.analog-stereo\"\n\
+            \t* object.id = \"46\"\n";
+        assert_eq!(
+            parse_wpctl_node_name(output).as_deref(),
+            Some("alsa_output.usb-H510.analog-stereo")
+        );
+    }
+
+    /// ISS-087: fallback pelos metadados do PipeWire.
+    #[test]
+    fn parses_the_default_sink_from_pipewire_metadata() {
+        let output = "update: id:0 key:'default.configured.audio.sink' \
+            value:'{\"name\":\"ignored\"}' type:'Spa:String:JSON'\n\
+            update: id:0 key:'default.audio.sink' \
+            value:'{\"name\":\"alsa_output.usb-H510.analog-stereo\"}' \
+            type:'Spa:String:JSON'\n";
+        assert_eq!(
+            parse_pw_metadata_default_sink(output).as_deref(),
+            Some("alsa_output.usb-H510.analog-stereo")
+        );
+    }
+
+    /// ISS-087: fallback pelo `pw-cli` lista só os sinks (não as entradas).
+    #[test]
+    fn parses_sinks_from_pw_cli() {
+        let output = "\tid 44, type PipeWire:Interface:Node/3\n\
+            \t\tfactory.id = \"19\"\n\
+            \t\tnode.name = \"alsa_output.usb-a.analog-stereo\"\n\
+            \t\tmedia.class = \"Audio/Sink\"\n\
+            \tid 45, type PipeWire:Interface:Node/3\n\
+            \t\tfactory.id = \"19\"\n\
+            \t\tnode.name = \"alsa_input.usb-a.mono-fallback\"\n\
+            \t\tmedia.class = \"Audio/Source\"\n\
+            \tid 46, type PipeWire:Interface:Node/3\n\
+            \t\tfactory.id = \"19\"\n\
+            \t\tnode.name = \"alsa_output.pci-hdmi.stereo\"\n\
+            \t\tmedia.class = \"Audio/Sink\"\n";
+        assert_eq!(
+            parse_pw_cli_sinks(output),
+            vec![
+                "alsa_output.usb-a.analog-stereo".to_string(),
+                "alsa_output.pci-hdmi.stereo".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn ignores_the_configured_metadata_key() {
+        // A chave `default.configured.audio.sink` não pode ser confundida com
+        // `default.audio.sink`.
+        let output = "update: id:0 key:'default.configured.audio.sink' \
+            value:'{\"name\":\"configured\"}' type:'Spa:String:JSON'\n";
+        assert_eq!(parse_pw_metadata_default_sink(output), None);
+    }
+
     #[test]
     fn source_starts_not_running() {
         assert!(!PulseSystemAudioSource::new().is_running());
@@ -216,6 +417,15 @@ mod tests {
             devices.iter().any(|d| d.is_default),
             "esperado monitor padrão"
         );
+    }
+
+    /// ISS-087: o nome resolvido sem `pactl` abre no libpulse.
+    #[test]
+    #[ignore = "requer servidor Pulse/PipeWire em execução"]
+    fn opens_the_default_monitor_on_real_server() {
+        let name = default_monitor_name().expect("monitor padrão");
+        let capture = open_capture(&name).expect("abrir captura");
+        drop(capture);
     }
 
     #[test]

@@ -10,11 +10,19 @@ Detalha as portas e adaptadores de áudio/ASR do core Rust
 | Fonte | Módulo | Crate | Rótulo |
 |-------|--------|-------|--------|
 | Microfone | `adapters/audio/cpal_microphone_source.rs` | `cpal` | `ME` |
-| Áudio do sistema (monitor de sink) | `adapters/audio/pulse_system_audio_source.rs` | `libpulse-binding` | `THEY` |
+| Áudio do sistema (monitor de sink) | `adapters/audio/pulse_system_audio_source.rs` | `libpulse-binding` (descoberta: `pactl`, `wpctl`/`pw-metadata`/`pw-cli`) | `THEY` |
 | Sink virtual (fallback) | `adapters/audio/pactl_sink_helper.rs` | `pactl`/libpulse | `THEY` |
 
 Cada fonte produz um stream contínuo de **PCM f32 mono 16 kHz**, que é o formato
 aceito pelo whisper.cpp.
+
+A descoberta do monitor **não depende de `pactl`** (ISS-087): quando o binário
+não existe (PipeWire com `pipewire-pulse` sem `pulseaudio-utils`), o sink padrão
+vem de `wpctl inspect @DEFAULT_AUDIO_SINK@` ou de `pw-metadata -n default`, e a
+lista de monitores de `pw-cli ls Node` (fallback para o monitor padrão). A
+conexão libpulse é aberta antes de `start` devolver `Ok`, então erro de fonte
+chega ao chamador; o canal que falha mantém os demais e publica
+`session_warning` para a UI.
 
 ## 2. Fluxo
 
@@ -50,6 +58,8 @@ pactl load-module module-null-sink sink_name=ghostwhisper session.sink_name=ghos
 
 - Remoção no encerramento: `pactl unload-module <id>`.
 - Não empacotamos nenhum driver de kernel (BR-008).
+- O sink virtual **ainda depende de `pactl`**; sem ele, o comando devolve erro
+  explícito (o caminho normal de captura usa o monitor do sink padrão).
 
 ## 4. VAD + ASR
 

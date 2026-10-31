@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { subscribe } from "../../adapters/ipc/events";
+import { useTranslation } from "../l10n";
 import {
   sessionContinue,
   sessionCurrent,
@@ -11,6 +12,11 @@ import {
 } from "../../adapters/ipc/session";
 import type { SessionChannel, SessionState } from "../domain/transcript";
 import type { SessionEnd } from "../domain/recording";
+
+/** Aviso de canal que não pôde ser capturado (ISS-087). */
+export interface SessionWarning {
+  channel: SessionChannel;
+}
 
 const IDLE: SessionState = {
   listening: false,
@@ -35,6 +41,7 @@ export function useSessionState(): {
   const [state, setState] = useState<SessionState>(IDLE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +60,39 @@ export function useSessionState(): {
       unlisten?.();
     };
   }, []);
+
+  // Avisos de canal: quando o microfone ou o sistema não abre, o serviço
+  // continua com os que funcionam e publica `session_warning`. Sem isto a
+  // troca para "Ambos" parecia não ter efeito (ISS-087).
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    void subscribe<SessionWarning>("session_warning", (payload) => {
+      const channel = payload?.channel;
+      if (channel !== "microphone" && channel !== "system") {
+        return;
+      }
+      setError(
+        t(
+          channel === "system"
+            ? "session_warning_system_unavailable"
+            : "session_warning_microphone_unavailable",
+        ),
+      );
+    }).then((stop) => {
+      if (cancelled) {
+        stop();
+      } else {
+        unlisten = stop;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [t]);
 
   // Semeia o estado atual: as janelas de painel podem abrir no meio da sessão e
   // não viram o último evento `session_state`. Se o evento já chegou, não mexe.

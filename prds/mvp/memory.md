@@ -1021,3 +1021,41 @@ encerradas sem resumo ficavam "Sessão sem título" para sempre.
 - Sem chave/fonte de IA, o encerramento falha só em log e a sessão segue sem
   título. O toggle "Resumo automático" vale para as atualizações periódicas,
   não para o encerramento.
+
+---
+
+## 2026-10-30 — Sistema sem `pactl` e aviso de canal indisponível (ISS-087)
+
+- **IDs:** ISS-087, BR-018, BR-019, T25
+- **Refs:** [`issues.md`](issues.md), [`tasks/25-task.md`](tasks/25-task.md),
+  [`architecture/audio-pipeline.md`](architecture/audio-pipeline.md)
+
+### Sintoma
+O usuário iniciou o app e ele capturou **só o microfone**; trocar para "Ambos"
+não mudava nada e não aparecia mensagem de erro.
+
+### Causa
+O ambiente tem PipeWire + `pipewire-pulse`, mas **não tem `pactl`**
+(`pulseaudio-utils`). A descoberta do monitor do sistema usava `pactl` sem
+alternativa: `default_monitor_name()` falhava, `open_channel` devolvia `None`,
+`set_channels` mantinha o microfone e retornava `Ok` (política da task 20). A UI
+não tinha como saber; o erro só existia no log. Além disso, `Simple::new` era
+aberto dentro da thread, então erros de fonte apareciam tarde.
+
+### Entregue
+- `default_sink_name`: `pactl` → `wpctl inspect @DEFAULT_AUDIO_SINK@` →
+  `pw-metadata -n default`; `list_devices` cai para `pw-cli ls Node` (ou o
+  monitor padrão) quando `pactl` não existe.
+- `Simple::new` síncrono em `start` (erro chega ao chamador).
+- `SessionWarningEvent` (`session_warning`) emitido por `SessionService` quando
+  um canal não abre; `useSessionState` traduz (pt/en) e o overlay mostra o
+  aviso. Os canais que funcionam continuam.
+
+### Verificação
+- Testes de parser (`wpctl`/`pw-metadata`/`pw-cli`) e testes reais ignorados:
+  `lists_monitors_on_real_server` e `opens_the_default_monitor_on_real_server`
+  passam no host **sem `pactl`** (libpulse abriu `<sink>.monitor`).
+- `start_warns_about_the_channel_that_could_not_capture` e o caso parcial de
+  `set_channels` cobrem o aviso; `useSessionState` cobre o evento.
+- Rust **882 ✓** (12 ignorados) · clippy `-D warnings` ✓ · rustfmt ✓.
+- Frontend **543 ✓** (82 arquivos) · `tsc --noEmit` ✓.

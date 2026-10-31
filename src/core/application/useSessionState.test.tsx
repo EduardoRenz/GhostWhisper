@@ -58,4 +58,19 @@ describe("useSessionState", () => {
     });
     expect(result.current.state.paused).toBe(true);
   });
+
+  it("mostra o aviso quando um canal não pôde ser capturado", async () => {
+    subscribe.mockImplementation((event: string, handler: (payload: unknown) => void) => {
+      if (event === "session_warning") {
+        handler({ channel: "system" });
+      }
+      return Promise.resolve(() => {});
+    });
+
+    const { result } = renderHook(() => useSessionState());
+
+    await waitFor(() => {
+      expect(result.current.error).toContain("sistema");
+    });
+  });
 });

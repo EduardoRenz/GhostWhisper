@@ -20,7 +20,7 @@ use crate::error::{GhostWhisperError, Result};
 use crate::ports::audio_consumer::AudioConsumer;
 use crate::ports::audio_source::AudioSource;
 use crate::ports::clock::Clock;
-use crate::ports::event_publisher::{EventPublisher, SessionStateEvent};
+use crate::ports::event_publisher::{EventPublisher, SessionStateEvent, SessionWarningEvent};
 use crate::ports::recording::RecordingLifecycle;
 use crate::ports::repositories::{SessionRepository, TranscriptionsRepository};
 use crate::ports::session_controller::{AudioChannel, SessionController};
@@ -237,6 +237,16 @@ impl SessionService {
         self.emit(false, false, None, Vec::new(), None);
     }
 
+    /// Avisa a UI que um canal escolhido não pôde ser aberto.
+    ///
+    /// A sessão continua com os canais que funcionaram; o aviso evita o
+    /// "silêncio" em que a troca para Ambos parece não ter efeito (ISS-087).
+    fn warn_channel(&self, channel: AudioChannel) {
+        self.publisher.emit_session_warning(&SessionWarningEvent {
+            channel: channel.as_str().to_string(),
+        });
+    }
+
     /// Origem de tempo (ms) desta captura dentro da sessão.
     fn origin_ms(&self, started_at_ms: i64) -> i64 {
         (self.clock.now_ms() - started_at_ms).max(0)
@@ -256,6 +266,7 @@ impl SessionService {
             Ok(engine) => engine,
             Err(error) => {
                 tracing::warn!("falha ao criar motor de fala ({channel:?}): {error}");
+                self.warn_channel(channel);
                 return None;
             }
         };
@@ -290,6 +301,7 @@ impl SessionService {
             Ok(()) => Some(ActiveChannel { channel, pipeline }),
             Err(error) => {
                 tracing::warn!("falha ao capturar {channel:?}: {error}");
+                self.warn_channel(channel);
                 pipeline.stop();
                 None
             }
@@ -727,6 +739,7 @@ mod tests {
 
     struct RecordingPublisher {
         states: Mutex<Vec<SessionStateEvent>>,
+        warnings: Mutex<Vec<SessionWarningEvent>>,
     }
     impl EventPublisher for RecordingPublisher {
         fn emit_segment(&self, _segment: &TranscriptSegment) {}
@@ -738,6 +751,9 @@ mod tests {
         }
         fn emit_session_state(&self, state: &SessionStateEvent) {
             self.states.lock().unwrap().push(state.clone());
+        }
+        fn emit_session_warning(&self, warning: &SessionWarningEvent) {
+            self.warnings.lock().unwrap().push(warning.clone());
         }
         fn emit_insight(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
         fn emit_suggestion(&self, _suggestion: &crate::ports::suggestion_generator::Suggestion) {}
@@ -774,6 +790,16 @@ mod tests {
         fn states(&self) -> Vec<SessionStateEvent> {
             self.publisher.states.lock().unwrap().clone()
         }
+
+        fn warnings(&self) -> Vec<String> {
+            self.publisher
+                .warnings
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|warning| warning.channel.clone())
+                .collect()
+        }
     }
 
     fn fixture(mic_fail: bool, system_fail: bool) -> Fixture {
@@ -790,6 +816,7 @@ mod tests {
         let sessions = Arc::new(InMemorySessionRepository::new());
         let publisher = Arc::new(RecordingPublisher {
             states: Mutex::new(Vec::new()),
+            warnings: Mutex::new(Vec::new()),
         });
         let mut service = SessionService::new(
             mic.clone(),
@@ -1317,6 +1344,27 @@ mod tests {
         assert!(f.mic.is_running());
         assert!(!f.system.is_running());
         assert_eq!(f.last_state().channels, vec!["microphone"]);
+        assert_eq!(
+            f.warnings(),
+            vec!["system".to_string()],
+            "o canal que falhou precisa chegar à UI (ISS-087)"
+        );
+    }
+
+    #[test]
+    fn start_warns_about_the_channel_that_could_not_capture() {
+        let f = fixture(false, true);
+
+        f.service
+            .start(&[AudioChannel::Microphone, AudioChannel::System])
+            .expect("start");
+
+        assert_eq!(f.last_state().channels, vec!["microphone"]);
+        assert_eq!(
+            f.warnings(),
+            vec!["system".to_string()],
+            "iniciar com Ambos e falhar o sistema não pode ser silencioso"
+        );
     }
 
     #[test]
@@ -1332,6 +1380,7 @@ mod tests {
             .expect_err("sem canal");
 
         assert!(error.to_string().contains("nenhum canal"), "{error}");
+        assert_eq!(f.warnings(), vec!["system".to_string()]);
         assert_eq!(f.service.current_session_id(), None);
         assert_eq!(
             f.sessions.get(&id).expect("get").expect("present").status,

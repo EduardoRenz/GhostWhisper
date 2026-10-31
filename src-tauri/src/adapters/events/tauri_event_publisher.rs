@@ -8,8 +8,8 @@ use crate::domain::recording::RecordingState;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
     EventPublisher, JournalUpdate, LlmSourceUsage, RecordingProgressEvent, SessionStateEvent,
-    SessionUpdatedEvent, SuggestionCadenceEvent, SuggestionClassificationEvent,
-    SuggestionModelDownloadEvent, TranscriptActivityEvent,
+    SessionUpdatedEvent, SessionWarningEvent, SuggestionCadenceEvent,
+    SuggestionClassificationEvent, SuggestionModelDownloadEvent, TranscriptActivityEvent,
 };
 use crate::ports::session_controller::AudioChannel;
 use crate::ports::suggestion_generator::Suggestion;
@@ -20,6 +20,8 @@ pub const TRANSCRIPT_SEGMENT_EVENT: &str = "transcript_segment";
 pub const AUDIO_LEVEL_EVENT: &str = "audio_level";
 /// Nome do evento de estado da sessão.
 pub const SESSION_STATE_EVENT: &str = "session_state";
+/// Nome do evento de aviso de canal indisponível (ISS-087).
+pub const SESSION_WARNING_EVENT: &str = "session_warning";
 /// Nome do evento de sugestão gerada (painel ou atalho).
 pub const INSIGHT_EVENT: &str = "insight";
 /// Nome do evento de sugestão efêmera em andamento (fast-first/streaming).
@@ -83,6 +85,10 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_session_state(&self, state: &SessionStateEvent) {
         let _ = self.app.emit(SESSION_STATE_EVENT, state);
+    }
+
+    fn emit_session_warning(&self, warning: &SessionWarningEvent) {
+        let _ = self.app.emit(SESSION_WARNING_EVENT, warning);
     }
 
     fn emit_insight(&self, suggestion: &Suggestion) {

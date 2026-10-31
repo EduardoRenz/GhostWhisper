@@ -16,7 +16,7 @@ gerador existente continua escrevendo o texto.
 | Artefato ONNX `laya-multilingual` | ✅ exportado em `src-tauri/resources/laya/multilingual` (não versionado) |
 | Eval bruto do Laya real (5 cues) | ❌ **60% de decisão** (ISS-062); fine-tuning pendente |
 | Caminho efetivo do app (Laya + guarda) | ✅ **100% de decisão** / 100% de cue nas 20 fixtures |
-| AppImage Vulkan + Laya + modelo | ✅ `pnpm tauri:build:laya` |
+| AppImage Vulkan + Laya + modelo | ✅ `pnpm tauri:build` |
 
 ### Como o engine entra no build
 
@@ -224,13 +224,14 @@ por causa da guarda determinística.
 git submodule update --init
 python3 vendor/laya/laya-rust/tools/export_onnx.py --model multilingual \
   --out src-tauri/resources/laya
-pnpm tauri:build:laya
+pnpm tauri:build
 ```
 
-Gera `src-tauri/target/release/bundle/appimage/GhostWhisper_0.1.0_amd64.AppImage`
-(~821 MiB) com Vulkan + `laya-onnx` + o modelo em
-`<resource_dir>/laya/multilingual`. O build default continua sem Laya; o
-`pnpm tauri:build:laya` exige o artefato real (o fake de dev é recusado).
+Gera `src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`
+(~830 MiB) com Vulkan + `laya-onnx` + o modelo em
+`<resource_dir>/laya/multilingual`. Não existe build de release sem Laya: o
+`pnpm tauri:build` é o único caminho e exige o artefato real (o fake de dev é
+recusado).
 
 > O AppImage monta os resources como **root**; `model.onnx.data` precisa ser
 > **0644** (o snapshot do HF vem 0600). O script faz `chmod a+rX` na origem e
