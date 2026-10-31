@@ -1059,3 +1059,40 @@ aberto dentro da thread, então erros de fonte apareciam tarde.
   `set_channels` cobrem o aviso; `useSessionState` cobre o evento.
 - Rust **882 ✓** (12 ignorados) · clippy `-D warnings` ✓ · rustfmt ✓.
 - Frontend **543 ✓** (82 arquivos) · `tsc --noEmit` ✓.
+
+---
+
+## 2026-10-30 — Wayland no Ubuntu 26.04 (ISS-088)
+
+- **IDs:** ISS-088, BR-007, BR-055, BR-073, T26
+- **Refs:** [`issues.md`](issues.md), [`tasks/26-task.md`](tasks/26-task.md),
+  [`../../README.md`](../../README.md), [`../../AGENTS.md`](../../AGENTS.md)
+
+### Sintoma
+Após atualizar para Ubuntu 26.04 (GNOME 50, **Wayland-only**), o notch não
+ficava no topo, `Ctrl+Shift+C`/`Ctrl+Shift+K` não funcionavam com o Chrome ativo
+e a captura falhava com `GetImage BadMatch`.
+
+### Causa
+O app era X11/XWayland: `keep_above`/`set_position` são no-op em Wayland,
+`XGrabKey` não recebe teclas de apps Wayland e `GetImage` na root do XWayland
+não vê janelas nativas.
+
+### Entregue
+- `SessionBackend` puro; no Wayland o app força `GDK_BACKEND=x11` para o overlay
+  continuar em XWayland (ABOVE/posição/input-shape).
+- Atalhos via XDG **GlobalShortcuts** (`PortalGlobalShortcutRegistry`), com o
+  host `Registry.Register` do app id `com.ghostwhisper.app` e um `.desktop`
+  oculto em `$XDG_DATA_HOME/applications`.
+- Captura via XDG **Screenshot** em modo interativo (UI do GNOME), mantendo
+  X11 `GetImage` no X11; o arquivo temporário do portal é apagado.
+- Build único passa a embutir o runtime atual do AppImage (FUSE do Ubuntu
+  26.04).
+
+### Verificação
+- GNOME 50: notch acima do Chrome; atalho aprovado no portal funcionando;
+  captura retornando a prévia pela UI do GNOME.
+- Rust **894 ✓** (12 ignorados) · clippy/fmt ✓ · frontend **543 ✓** · tsc ✓.
+- AppImage final **830,42 MiB**, sha256
+  `da3ef539e8d08cd8bd5dd679b8f2272708a292c10f74b507202a4e728ec91020`;
+  montou e iniciou no Ubuntu 26.04 com o runtime atual.

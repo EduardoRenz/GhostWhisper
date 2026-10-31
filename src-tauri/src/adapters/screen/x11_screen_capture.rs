@@ -178,7 +178,7 @@ impl Channel {
 }
 
 /// Reescala (≤1280 px) e codifica em JPEG.
-fn encode_jpeg(rgb: &[u8], width: u32, height: u32) -> Result<(Vec<u8>, u32, u32)> {
+pub(crate) fn encode_jpeg(rgb: &[u8], width: u32, height: u32) -> Result<(Vec<u8>, u32, u32)> {
     use image::imageops::FilterType;
     use image::{ImageEncoder, RgbImage};
 

@@ -63,8 +63,13 @@ uma nota de revisão.
   (via `gtk-layer-shell`) entra como spike/tarefa posterior.
 - **Motivo:** janelas always-on-top/posicionamento preciso não existem no
   `xdg-shell`; reduzir risco do MVP.
+- **Revisão (2026-10-30, ISS-088):** o release agora roda no Wayland do Ubuntu
+  26.04 **sem `gtk-layer-shell`**: o overlay é forçado a **XWayland**
+  (`GDK_BACKEND=x11`) para manter topmost/posição/click-through; atalhos globais
+  e captura usam os **portais XDG** (`GlobalShortcuts` / `Screenshot`). O host
+  portal exige app id reverso-DNS + `.desktop` (ISS-088). X11 segue inalterado.
 - **Data:** 2026-10-17
-- **Status:** Ativa
+- **Status:** Ativa (revisada em 2026-10-30)
 
 ## BR-008 — Reconstrução de comportamento, não de código proprietário
 - **Decisão:** o GhostWhisper se inspira em comportamento observado do Perssua
@@ -1313,9 +1318,11 @@ uma nota de revisão.
   janelas escondidas durante a captura, colar imagem também anexa). O
   `desktopCapturer` do Electron não existe no Tauri → transposição de
   tecnologia (BR-015), não de comportamento (R11/R12).
-- **Consequência:** **Wayland nativo não é suportado** (BR-007); **1 imagem
-  por pergunta** (paridade com o limite free do Perssua); o redimensionamento
-  fica num módulo **puro**, testável sem display.
+- **Consequência:** **1 imagem por pergunta** (paridade com o limite free do
+  Perssua); o redimensionamento fica num módulo **puro**, testável sem display.
+  No Wayland o portal `Screenshot` é usado em modo **interativo** (UI do GNOME)
+  e o arquivo temporário é apagado; X11 continua `GetImage` não-interativo.
+  *(Revisão 2026-10-30, ISS-088.)*
 - **Detalhes:** [`session/prd.md`](session/prd.md) US-03,
   [`session/architecture/session-journal.md`](session/architecture/session-journal.md) §4.2/§5.2,
   [`session/tasks/06-task.md`](session/tasks/06-task.md).
@@ -1707,7 +1714,11 @@ uma nota de revisão.
   própria (`apply_stealth`).
 - **Detalhes:** [`session/issues.md`](session/issues.md) ISS-056,
   [`session/tasks/13-task.md`](session/tasks/13-task.md).
-- **Data:** 2026-10-21 · **Status:** Ativa
+- **Revisão (2026-10-30, ISS-088):** no Wayland o overlay é um cliente
+  XWayland (forçado no boot) justamente para o Mutter honrar
+  `_NET_WM_STATE_ABOVE`; sem XWayland o compositor não garante topmost de uma
+  janela `xdg-shell` sem `gtk-layer-shell`.
+- **Data:** 2026-10-21 · **Status:** Ativa (revisada em 2026-10-30)
 
 ## BR-074 — Painel "Assistentes": o Padrão no topo, os agentes configurados abaixo
 

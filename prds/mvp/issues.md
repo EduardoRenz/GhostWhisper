@@ -22,6 +22,7 @@ Registro de bugs e pendências observadas em uso. Legenda de status:
 | ISS-016 | Pausar/continuar a gravação apagava as mensagens (sem conceito de sessão) | Alta | FIXED |
 | ISS-017 | Seletor de canais travado durante a captura (`disabled` enquanto gravava) | Média | FIXED |
 | ISS-087 | Canal "Sistema" indisponível sem `pactl` e troca para "Ambos" silenciosa | Alta | FIXED |
+| ISS-088 | Wayland (Ubuntu 26.04): notch atrás, atalhos e captura quebrados | Alta | FIXED |
 | ISS-019 | Whisper repete a mesma frase sem parar e a repetição entra na conversa | Média | FIXED |
 | ISS-020 | Interface travava/engasgava: IPC demorado na main thread e IPC em excesso pela barra de nível | Alta | FIXED |
 | ISS-021 | Bolha "em andamento" ficava pendurada com o texto cru da prévia | Média | FIXED |
@@ -667,4 +668,45 @@ permanece apenas como **fallback** (Wayland/sem SHAPE).
   `src-tauri/src/application/session_service.rs`,
   `src/core/application/useSessionState.ts`, locale `pt`/`en`.
 - **Task:** [`25-task.md`](tasks/25-task.md)
+- **Dano em dados existentes:** nenhum.
+
+---
+
+## ISS-088 — Wayland (Ubuntu 26.04): notch atrás, atalhos e captura quebrados
+
+- **Severidade:** Alta · **Status:** FIXED (task 26)
+- **Sintoma (relato do usuário):** depois da atualização para Ubuntu 26.04, o
+  notch deixou de ficar sempre no topo; atalhos como `Ctrl+Shift+C` e a captura
+  de tela (`Ctrl+Shift+K`) pararam; a captura falhava com
+  `X11Error { … GetImage }`.
+- **Causa raiz:** o Ubuntu 26.04/GNOME 50 passou a usar **Wayland puro** (não há
+  mais sessão Xorg instalada). O app era X11/XWayland: `keep_above` e
+  `set_position` são ignorados em janelas Wayland nativas; `XGrabKey` não recebe
+  teclas de apps Wayland (Chrome); `GetImage` na root do XWayland falha com
+  `BadMatch` e não vê janelas nativas.
+- **Correção:**
+  - `domain/session_backend.rs` decide X11 × Wayland; no Wayland o app força
+    `GDK_BACKEND=x11` antes do GTK para o overlay continuar em XWayland
+    (`_NET_WM_STATE_ABOVE`, posição e input-shape funcionam).
+  - Atalhos globais via portal **GlobalShortcuts** (`PortalGlobalShortcutRegistry`)
+    com o mesmo contrato `GlobalShortcutRegistry`; X11 mantém o plugin do Tauri.
+  - O host portal exige app id (xdg-desktop-portal ≥1.20): o app registra
+    `com.ghostwhisper.app` na **mesma conexão D-Bus** e mantém um `.desktop`
+    oculto em `$XDG_DATA_HOME/applications` (ISS-088).
+  - Captura no Wayland via portal **Screenshot** em modo interativo (UI do
+    GNOME; o compositor exige confirmação). O arquivo é lido, recomprimido e
+    apagado; X11 continua `GetImage` não-interativo.
+  - O build único baixa e embute o **runtime atual do AppImage** (o antigo não
+    monta no Ubuntu 26.04 por causa do `fusermount3` 3.18).
+- **Testes anti-regressão:** decisão de backend; mapeamento de acelerador →
+  trigger do portal e id → ação; app id/`.desktop`; URI do portal; a suíte X11
+  existente continua igual. Manual no GNOME 50: atalho funciona com o Chrome
+  ativo, notch fica acima dele e a captura retorna a imagem pela UI do GNOME.
+- **Arquivos:** `src-tauri/src/domain/session_backend.rs`,
+  `src-tauri/src/adapters/system/portal.rs`,
+  `src-tauri/src/adapters/shortcuts/portal_global_shortcut_registry.rs`,
+  `src-tauri/src/adapters/screen/portal_screen_capture.rs`,
+  `src-tauri/src/ports/*`, `src-tauri/src/lib.rs`,
+  `src-tauri/src/ipc/screen_commands.rs`, `scripts/tauri-build-linux.sh`.
+- **Task:** [`26-task.md`](tasks/26-task.md)
 - **Dano em dados existentes:** nenhum.

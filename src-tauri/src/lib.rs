@@ -17,13 +17,40 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 
+use domain::session_backend::SessionBackend;
 use domain::shortcuts::ShortcutAction;
 
 pub use error::{GhostWhisperError, Result};
 
+/// Backend gráfico da sessão atual (X11 ou Wayland).
+fn session_backend() -> SessionBackend {
+    let session_type = std::env::var("XDG_SESSION_TYPE").ok();
+    let wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+    SessionBackend::detect(session_type.as_deref(), wayland_display.as_deref())
+}
+
+/// Em Wayland, força o GTK a usar XWayland quando houver um X acessível.
+///
+/// É o que devolve ao overlay o `_NET_WM_STATE_ABOVE`, o posicionamento livre e o
+/// input-shape X11 (BR-007). Sem `DISPLAY` (Wayland puro, sem XWayland) não há o
+/// que forçar; os portais continuam cobrindo captura e atalhos.
+fn force_xwayland_for_overlay() {
+    if std::env::var_os("GDK_BACKEND").is_some() || std::env::var_os("DISPLAY").is_none() {
+        return;
+    }
+    std::env::set_var("GDK_BACKEND", "x11");
+    tracing::info!("sessão Wayland: usando XWayland para o overlay e o click-through");
+}
+
 /// Inicializa e executa a aplicação Tauri.
 pub fn run() {
     init_tracing();
+    if session_backend().is_wayland() {
+        force_xwayland_for_overlay();
+        if let Err(error) = adapters::system::portal::ensure_desktop_entry() {
+            tracing::warn!("não foi possível preparar o .desktop do portal: {error}");
+        }
+    }
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -293,10 +320,12 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
     use adapters::recording::ffmpeg_screen_recorder::FfmpegScreenRecorder;
     use adapters::recording::finalizer::FfmpegRecordingFinalizer;
     use adapters::recording::x11_targets::X11ScreenTargets;
+    use adapters::screen::portal_screen_capture::PortalScreenCapture;
     use adapters::screen::x11_screen_capture::X11ScreenCapture;
     use adapters::secrets::in_memory_secret_store::InMemorySecretStore;
     use adapters::secrets::keyring_secret_store::KeyringSecretStore;
     use adapters::settings::file_settings_store::FileSettingsStore;
+    use adapters::shortcuts::portal_global_shortcut_registry::PortalGlobalShortcutRegistry;
     use adapters::shortcuts::tauri_global_shortcut_registry::{
         ShortcutHandler, TauriGlobalShortcutRegistry,
     };
@@ -353,6 +382,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         .get_webview_window("overlay")
         .ok_or_else(|| GhostWhisperError::Other("janela 'overlay' não encontrada".to_string()))?;
     let overlay_window = window.clone();
+    let wayland = session_backend().is_wayland();
 
     let overlay: Arc<dyn OverlayWindowController> = Arc::new(TauriOverlayWindow::new(window));
 
@@ -626,7 +656,11 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
 
     // Captura de tela (print para a pergunta, BR-055). O print fica **pendente**
     // até o usuário confirmar a pergunta; a prévia no canto lê o mesmo estado.
-    let screen: Arc<dyn ScreenCapture> = Arc::new(X11ScreenCapture::new());
+    let screen: Arc<dyn ScreenCapture> = if wayland {
+        Arc::new(PortalScreenCapture::new())
+    } else {
+        Arc::new(X11ScreenCapture::new())
+    };
     let capture: Arc<dyn crate::ports::pending_capture::PendingCapture> = Arc::new(
         crate::adapters::pending::in_memory_pending_capture::InMemoryPendingCapture::new(),
     );
@@ -656,16 +690,21 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         .with_summary_refresh(Arc::clone(&summary_refresh)),
     );
 
-    // Atalhos globais: o despachante resolve o `AppState` em tempo de execução.
+    // Atalhos globais: no X11 usa o plugin do Tauri; no Wayland usa o portal
+    // GlobalShortcuts (o XGrabKey não recebe teclas de apps Wayland nativos).
     let shortcuts: Arc<dyn GlobalShortcutRegistry> = {
         let app_handle = app.handle().clone();
         let handler: ShortcutHandler = Arc::new(move |action: ShortcutAction| {
             dispatch_shortcut(&app_handle, action);
         });
-        Arc::new(TauriGlobalShortcutRegistry::new(
-            app.handle().clone(),
-            handler,
-        ))
+        if wayland {
+            Arc::new(PortalGlobalShortcutRegistry::new(handler))
+        } else {
+            Arc::new(TauriGlobalShortcutRegistry::new(
+                app.handle().clone(),
+                handler,
+            ))
+        }
     };
 
     // Aplica settings persistidas: atalhos, stealth e posição do overlay.

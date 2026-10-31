@@ -32,6 +32,7 @@
 | 23 | Retratação da prévia "em andamento" pendurada (ISS-021) | CONCLUDED |
 | 24 | Histórico: busca por título, exclusão em lote e resumo/título no encerramento (BR-103/BR-104) | CONCLUDED |
 | 25 | Sistema sem `pactl` + aviso de canal indisponível (ISS-087) | CONCLUDED |
+| 26 | Wayland: notch em XWayland, atalhos e captura por portais (ISS-088) | CONCLUDED |
 
 ## Dependências entre tarefas
 
@@ -66,6 +67,8 @@
   Sessão; é independente das demais.
 - 25 (sistema sem `pactl` + aviso, ISS-087) depende da 20 (troca de canais) e da
   14 (áudio do sistema).
+- 26 (Wayland/portais, ISS-088) depende da 23 (estabilidade) e do release único;
+  não altera o caminho X11.
 
 ## Definição de pronto (geral)
 - Código compila (`pnpm tauri build` sem erros).

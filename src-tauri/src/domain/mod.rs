@@ -17,6 +17,7 @@ pub mod overview;
 pub mod recording;
 pub mod search_text;
 pub mod session;
+pub mod session_backend;
 pub mod settings;
 pub mod shortcuts;
 pub mod suggestion_gate;

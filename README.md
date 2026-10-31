@@ -28,7 +28,7 @@ on Linux. No account, no telemetry and no subscription: bring your own API key
 ## Why it exists
 
 Most similar apps offer poor Linux support: unstable system-audio capture, a
-hard dependency on XWayland, window/permission quirks and key features locked
+window/permission quirks and key features locked
 behind a paywall. GhostWhisper focuses on getting the core experience right on
 Linux and staying fully open.
 
@@ -70,7 +70,7 @@ Linux and staying fully open.
 
 ## Requirements
 
-- Linux with X11 or XWayland (Wayland native is not supported yet).
+- Linux with X11/XWayland. On Wayland the overlay uses XWayland and global shortcuts/screenshot use XDG portals (GNOME screenshot UI on capture).
 - Rust stable (1.77+) and `cargo`.
 - Node.js 20+ and `pnpm` (or `npm`).
 - Tauri v2 system dependencies:
@@ -149,6 +149,10 @@ O build:
   loader installed; GPU drivers/ICDs still come from the host.
 - `scripts/vulkan-env.sh` assembles the SDK from the system (`libvulkan-dev`,
   `glslc`) or extracts downloaded `.deb` files into `.vulkan-sdk/` — no sudo.
+- The build downloads the **current AppImage type2 runtime** into
+  `~/.cache/ghostwhisper/` and embeds it; the old runtime cannot mount on
+  Ubuntu 26.04 (`fusermount3` 3.18). If you still hit FUSE, run the AppImage
+  with `APPIMAGE_EXTRACT_AND_RUN=1`.
 - After an unclean shutdown with a GPU context active, the next launch runs on
   CPU and returns to GPU after a clean exit. The crash marker is armed only when
   the GPU context actually loads, so opening/closing the app without a session
@@ -232,9 +236,14 @@ microphone or audio device is required.
 
 ## Troubleshooting
 
-**Wayland** — the app runs on X11/XWayland. Native Wayland lacks cursor
-click-through, global shortcuts and window anchoring without
-`gtk-layer-shell`. Force XWayland if needed.
+**Wayland** — on Wayland the overlay is an **XWayland** client (forced at boot)
+so it stays on top and can be positioned/clicked through. Global shortcuts use
+the XDG **GlobalShortcuts** portal (approve the GNOME dialog once); the screenshot
+uses the XDG **Screenshot** portal in interactive mode, so GNOME shows its capture
+UI and the user confirms the area. X11 keeps the old silent `GetImage` path.
+The app registers the reverse-DNS app id `com.ghostwhisper.app` and a hidden
+`.desktop` in `$XDG_DATA_HOME/applications`; that is required by
+xdg-desktop-portal ≥1.20.
 
 **Screen-share invisibility** — no X11/Wayland API can hide a window from a
 screen capture. Stealth mode removes the overlay from the taskbar and alt-tab

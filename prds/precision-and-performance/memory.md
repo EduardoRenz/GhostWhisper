@@ -667,7 +667,9 @@ O usuário definiu que **todo build de release** deve ser o **bundle completo**
 
 ### Verificação
 
-- AppImage final (Vulkan + Laya + modelo) **829,48 MiB**, sha256
-  `3399bd7da11e4e4cf1f5c2e40135762576f6415cf72aca2ed14614c6e99ea369`,
+- AppImage final (Vulkan + Laya + modelo) **830,42 MiB**, sha256
+  `da3ef539e8d08cd8bd5dd679b8f2272708a292c10f74b507202a4e728ec91020`,
   em `src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`.
+  O build embute o runtime atual do AppImage; o arquivo montou/iniciou no Ubuntu
+  26.04 (o runtime antigo falhava no FUSE).
 - `bash -n` nos scripts e `package.json` válido.

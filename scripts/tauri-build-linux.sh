@@ -63,6 +63,20 @@ for dir in \
   chmod -R u+w,a+rX "$dir" 2>/dev/null || true
 done
 
+# O runtime antigo do AppImage não monta no Ubuntu 26.04 (fusermount3 3.18).
+# Usa o runtime atual do AppImage e o passa ao linuxdeploy-plugin-appimage;
+# fica em cache no XDG_CACHE_HOME para não baixar a cada build.
+runtime="${XDG_CACHE_HOME:-$HOME/.cache}/ghostwhisper/appimage-runtime-x86_64"
+if [ ! -x "$runtime" ]; then
+  mkdir -p "$(dirname "$runtime")"
+  echo "[build] baixando o runtime atual do AppImage…" >&2
+  curl -fL --retry 2 -o "$runtime.tmp" \
+    https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+  chmod +x "$runtime.tmp"
+  mv "$runtime.tmp" "$runtime"
+fi
+export LDAI_RUNTIME_FILE="$runtime"
+
 # Binário direto (e não o script `tauri` do package.json) para não reentrar no wrapper.
 ./node_modules/.bin/tauri build --features "vulkan,laya" --bundles appimage
 
