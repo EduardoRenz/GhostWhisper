@@ -305,6 +305,44 @@ describe("SettingsPage", () => {
     expect(card.textContent).toContain("Ativo");
   });
 
+  it("sincroniza o checkbox de contexto salvo em outra janela (não regrava)", async () => {
+    // BR-106/ISS-095: o toggle da pill grava via setter dedicado; o rascunho
+    // desta página é antigo — sem sync, "Salvar Alterações" regraria a
+    // preferência do usuário.
+    const base = { ...defaultSettings(), screen_context_include: true };
+    settingsIpc.getSettings.mockResolvedValue(base as never);
+
+    let handler: (() => void) | undefined;
+    eventsIpc.subscribe.mockImplementation(
+      async (_event?: string, callback?: unknown) => {
+        handler = callback as (() => void) | undefined;
+        return () => {};
+      },
+    );
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(handler).toBeDefined());
+
+    // Outra janela (AskBar/Sessão) desmarcou o checkbox.
+    settingsIpc.getSettings.mockResolvedValue({
+      ...base,
+      screen_context_include: false,
+    } as never);
+    await act(async () => {
+      handler?.();
+    });
+
+    // Salvar envia o rascunho **já sincronizado** (false), não o velho.
+    await act(async () => {
+      screen.getByRole("button", { name: "Salvar Alterações" }).click();
+    });
+    await waitFor(() => expect(settingsIpc.saveSettings).toHaveBeenCalled());
+    const saved = settingsIpc.saveSettings.mock.calls.at(-1)?.[0] as {
+      screen_context_include: boolean;
+    };
+    expect(saved.screen_context_include).toBe(false);
+  });
+
   it("aplica a opacidade em tempo real e salva automaticamente", async () => {
     render(<SettingsPage />);
 

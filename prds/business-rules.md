@@ -2455,3 +2455,75 @@ uma nota de revisão.
   as atualizações periódicas. Detalhes na
   [`mvp/tasks/24-task.md`](mvp/tasks/24-task.md).
 - **Data:** 2026-10-28 · **Status:** Ativa (task 24)
+
+## BR-105 — Contexto de tela por acessibilidade (AT-SPI), opt-in
+
+- **Decisão:** o app ganha uma **segunda fonte de contexto de tela**, além do
+  print: ler a **árvore de acessibilidade** da janela ativa via **AT-SPI2**
+  (D-Bus, crate `atspi`) e usá-la como texto do prompt — **sem capturar
+  pixels**. O recurso é opt-in estrito: `Settings.screen_context_enabled`
+  (padrão **desligado**); desligado, **nenhuma conexão D-Bus de acessibilidade
+  é aberta** e nenhum adaptador é instanciado (composition root). O texto é
+  **limitado** (≤ 2 000 chars no prompt, prévia ≤ 300 no front), tem validade
+  (≤ 30 s no prompt) e **nunca aparece em log** — só app/tamanho/latência. O
+  **print (BR-055) permanece**: AT-SPI é caminho adicional (texto/estrutura),
+  não substituto (canvas, terminal e imagens continuam com screenshot). O
+  snapshot funciona em X11 (`_NET_ACTIVE_WINDOW` + pid) e em **Wayland** (foco
+  via eventos do próprio AT-SPI — D-Bus não depende de compositor, o que
+  contorna a ausência de "janela ativa" no Wayland, BR-007/`portal_targets.rs`).
+- **Motivo:** pedido do usuário (2026-11-01) — obter contexto do navegador/
+  editor "pelo sistema de acessibilidade" sem print, com transparência do que
+  é lido; a imagem é cara/opaca e no Wayland não há janela ativa nativa.
+- **Consequência:** porta `ScreenContextSource` + adaptador AT-SPI isolado em
+  `adapters/screen/`; a saída entra no prompt como bloco `<screen_context>`
+  (campo adicional — `JournalRequestSource` não ganha variante); apps com
+  `DeniedAccess` resultam em snapshot vazio; a pill de estado é a BR-106.
+- **Detalhes:** [`screen-context/prd.md`](screen-context/prd.md),
+  [`screen-context/architecture/screen-context.md`](screen-context/architecture/screen-context.md),
+  [`screen-context/tasks/_tasks.md`](screen-context/tasks/_tasks.md).
+- **Data:** 2026-11-01 · **Status:** Ativa (especificada)
+
+## BR-106 — Pill de contexto na AskBar (checkbox de envio)
+
+- **Decisão:** com `screen_context_enabled` ligado, a **AskBar** ("pesquisar")
+  e o **composer da aba Sessão** mostram a mesma **pill** indicando qual
+  contexto o copiloto está enxergando: `🌐 {app} · {título da janela}`, com
+  **tooltip de prévia** do texto (≤ 300 chars) — o usuário inspeciona o que
+  será enviado **antes** de perguntar. A pill tem estados explícitos e
+  localizados: oculta (flag desligada — não renderiza), **pausada**
+  (checkbox desmarcado — nada é lido), lendo, ativa, **sem contexto**
+  (janela sem árvore, ex.: terminal/canvas) e **indisponível**
+  (AT-SPI/acessibilidade inacessível); `aria-live` anuncia mudanças. A
+  **pill inteira** é o checkbox de `screen_context_include` (padrão
+  **marcado**, role/aria-checked): **um** clique alterna ligar/desligar — a
+  caixa, o ícone e o texto contam como um único alvo (ISS-096 v4).
+  **Desmarcado desliga a leitura**: nenhuma consulta ao AT-SPI
+  (mount/foco/reabertura), cache descartado no core e nenhum evento de
+  contexto — o usuário desligou o contexto para não gastar processamento; ao
+  remarcar, a leitura recomeça. O toggle grava em settings e sincroniza as
+  janelas via `settings_changed`.
+  Ela **não substitui** os affordances do print (o botão **Capturar Tela**
+  continua ao lado); com print anexado + flag ligada, as duas fontes coexistem.
+- **Motivo:** pedido do usuário (2026-11-01, revisado) — "uma pill no
+  pesquisar indicando qual contexto ele está enxergando" + "o contexto ser
+  selecionável... espécie de checkbox... e na tela de Sessão também" —
+  transparência e controle do envio para um recurso que lê texto de outros
+  apps (BR-105).
+- **Consequência:** componente `ContextPill` (compartilhado entre AskBar e
+  `AskComposer`); hook `useScreenContext` como fonte única das duas
+  superfícies; novo campo `Settings.screen_context_include` (default
+  marcado, settings antigos carregam marcados) + command
+  `settings_set_screen_context_include`; evento IPC `screen_context`
+  (preview, nunca o texto completo); sem polling contínuo (leitura na
+  abertura da barra + mudança de foco com debounce). **Revisão 2026-11-01
+  (v2):** a pill deixou de ser só informativa (era não-clicável, ISS-090) e
+  virou checkbox; popover de prévia no clique continua como evolução
+  ([`screen-context/issues.md`](screen-context/issues.md) ISS-090).
+  **Revisão 2026-11-02 (v3):** o checkbox passou a desligar a **leitura**
+  (estado Pausado, zero consultas) e só a caixa alternava (ISS-096).
+  **Revisão 2026-11-02 (v4):** a **pill inteira** voltou a ser o checkbox —
+  um clique por alternância, com gravação serializada (ISS-096 v4); o
+  snapshot saiu da main thread (ISS-097).
+- **Detalhes:** [`screen-context/prd.md`](screen-context/prd.md) §3.3,
+  [`screen-context/tasks/05-task.md`](screen-context/tasks/05-task.md).
+- **Data:** 2026-11-02 · **Status:** Ativa (revisada — checkbox desliga leitura)

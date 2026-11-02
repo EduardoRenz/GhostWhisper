@@ -34,6 +34,8 @@ pub mod recording;
 pub mod recordings_repository;
 pub mod repositories;
 pub mod screen_capture;
+pub mod screen_context_controller;
+pub mod screen_context_source;
 pub mod screen_recorder;
 pub mod screen_targets;
 pub mod secret_store;

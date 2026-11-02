@@ -15,6 +15,7 @@ pub mod llm;
 pub mod message;
 pub mod overview;
 pub mod recording;
+pub mod screen_context;
 pub mod search_text;
 pub mod session;
 pub mod session_backend;

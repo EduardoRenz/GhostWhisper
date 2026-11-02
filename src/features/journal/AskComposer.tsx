@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { CameraIcon, SendIcon } from "../../components/icons";
 import { useTranslation } from "../../core/l10n";
+import type { ScreenContextEvent, ScreenContextState } from "../../core/domain/screenContext";
+import { ContextPill } from "../overlay/ContextPill";
 
 interface AskComposerProps {
   /** Perguntas prontas (chips). */
@@ -17,14 +19,24 @@ interface AskComposerProps {
   onCapture: () => void;
   /** Descarta o print anexado. */
   onRemoveAttachment: () => void;
+  /** Estado do contexto de tela (BR-106); `hidden` não renderiza a pill. */
+  contextState?: ScreenContextState;
+  /** Último evento de contexto (estado ativo). */
+  contextEvent?: ScreenContextEvent | null;
+  /** Checkbox de contexto marcado (vai na pergunta) — BR-106. */
+  contextChecked?: boolean;
+  /** Marca/desmarca o contexto; presente, a pill vira checkbox. */
+  onToggleContext?: () => void;
 }
 
 /**
  * Composer **compacto** da aba Sessão (BR-053).
  *
- * Uma linha: câmera + campo + enviar; as perguntas prontas vêm como chips
- * abaixo. `Enter` envia. Com um print anexado o texto é **opcional** — a IA
- * decide o que fazer com a imagem. Capturar nunca envia: só anexa.
+ * Uma linha: câmera + campo + **pill de contexto** + enviar; as perguntas
+ * prontas vêm como chips abaixo. `Enter` envia. Com um print anexado o texto é
+ * **opcional** — a IA decide o que fazer com a imagem. Capturar nunca envia:
+ * só anexa. A pill (BR-106, com a flag mestre ligada) é o mesmo checkbox da
+ * AskBar: marca/desmarca o contexto de tela na pergunta.
  */
 export function AskComposer({
   presets,
@@ -34,6 +46,10 @@ export function AskComposer({
   onSend,
   onCapture,
   onRemoveAttachment,
+  contextState = "hidden",
+  contextEvent = null,
+  contextChecked = true,
+  onToggleContext,
 }: AskComposerProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -81,6 +97,15 @@ export function AskComposer({
               send(value);
             }
           }}
+        />
+
+        {/* Pill de contexto (BR-106): mesma fonte da AskBar — checkbox de
+            incluir/excluir o contexto na pergunta. Oculta sem a flag. */}
+        <ContextPill
+          state={contextState}
+          event={contextEvent}
+          checked={contextChecked}
+          onToggle={onToggleContext}
         />
 
         <button

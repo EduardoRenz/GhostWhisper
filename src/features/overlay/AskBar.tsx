@@ -3,6 +3,8 @@ import { DragHandle } from "../../components/DragHandle";
 import { ShortcutBadges } from "../../components/ShortcutBadges";
 import { CameraIcon, SearchIcon } from "../../components/icons";
 import { useTranslation } from "../../core/l10n";
+import type { ScreenContextEvent, ScreenContextState } from "../../core/domain/screenContext";
+import { ContextPill } from "./ContextPill";
 
 interface AskBarProps {
   /** Texto da pergunta. */
@@ -28,6 +30,14 @@ interface AskBarProps {
   presets?: string[];
   /** Usa uma pergunta pronta (envia direto). */
   onPreset?: (text: string) => void;
+  /** Estado do contexto de tela (BR-106); `hidden` não renderiza a pill. */
+  contextState?: ScreenContextState;
+  /** Último evento de contexto (estado ativo). */
+  contextEvent?: ScreenContextEvent | null;
+  /** Checkbox de contexto marcado (vai na pergunta) — BR-106. */
+  contextChecked?: boolean;
+  /** Marca/desmarca o contexto; presente, a pill vira checkbox. */
+  onToggleContext?: () => void;
 }
 
 /**
@@ -51,6 +61,10 @@ export function AskBar({
   captureAccelerator = "Alt+C",
   presets = [],
   onPreset,
+  contextState = "hidden",
+  contextEvent = null,
+  contextChecked = true,
+  onToggleContext,
 }: AskBarProps) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
@@ -102,6 +116,15 @@ export function AskBar({
         <span className="askbar__keys">
           <ShortcutBadges accelerator={askAccelerator} />
         </span>
+
+        {/* Pill de contexto (BR-106): oculta quando a flag está desligada;
+            no estado ativo vira checkbox de incluir/excluir na pergunta. */}
+        <ContextPill
+          state={contextState}
+          event={contextEvent}
+          checked={contextChecked}
+          onToggle={onToggleContext}
+        />
 
         <span className="askbar__divider" aria-hidden="true" />
 

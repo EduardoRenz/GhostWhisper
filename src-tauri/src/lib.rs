@@ -102,6 +102,8 @@ pub fn run() {
             ipc::screen_commands::screen_capture,
             ipc::screen_commands::capture_pending,
             ipc::screen_commands::capture_clear,
+            ipc::screen_context_commands::screen_context_snapshot,
+            ipc::screen_context_commands::screen_context_status,
             ipc::journal_commands::journal_list,
             ipc::journal_commands::journal_get,
             ipc::journal_commands::journal_search,
@@ -143,6 +145,7 @@ pub fn run() {
             ipc::settings_commands::settings_set_assistant_mode,
             ipc::settings_commands::settings_preview_overlay_opacity,
             ipc::settings_commands::settings_set_overlay_opacity,
+            ipc::settings_commands::settings_set_screen_context_include,
             ipc::settings_commands::settings_preview_font_scales,
             ipc::settings_commands::settings_set_font_scales,
             ipc::settings_commands::settings_validate_key,
@@ -678,6 +681,38 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         Arc::clone(&publisher),
     ));
 
+    // Contexto de tela pela acessibilidade (BR-105): o adaptador AT-SPI **só
+    // é instanciado** com a flag ligada no boot — desligada, nenhuma conexão
+    // D-Bus de acessibilidade é aberta (CA-04.1). A pill acompanha o foco
+    // pelo callback registrado no adaptador (BR-106).
+    let screen_context: Option<Arc<dyn ports::screen_context_controller::ScreenContextController>> =
+        if settings
+            .load()
+            .map(|loaded| loaded.screen_context_enabled)
+            .unwrap_or(false)
+        {
+            let source = Arc::new(
+                adapters::screen::atspi_screen_context_source::AtspiScreenContextSource::new(),
+            );
+            let service = Arc::new(
+                application::screen_context_service::ScreenContextService::new(
+                    Some(source.clone()),
+                    Arc::clone(&settings),
+                    Arc::clone(&clock),
+                    Arc::clone(&publisher),
+                ),
+            );
+            let weak_service = Arc::downgrade(&service);
+            source.set_focus_callback(Arc::new(move || {
+                if let Some(service) = weak_service.upgrade() {
+                    service.on_focus_changed();
+                }
+            }));
+            Some(service)
+        } else {
+            None
+        };
+
     // Perguntas do usuário (aba "Sessão", BR-053).
     let ask: Arc<dyn AskController> = Arc::new(
         AskService::new(
@@ -689,7 +724,8 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
             Arc::clone(&clock),
             Arc::clone(&publisher),
         )
-        .with_summary_refresh(Arc::clone(&summary_refresh)),
+        .with_summary_refresh(Arc::clone(&summary_refresh))
+        .with_screen_context(screen_context.clone()),
     );
 
     // Atalhos globais: no X11 usa o plugin do Tauri; no Wayland usa o portal
@@ -961,6 +997,7 @@ fn build_app_state(app: &tauri::App) -> Result<state::AppState> {
         shortcuts,
         recording,
         pending_session_end,
+        screen_context,
     ))
 }
 

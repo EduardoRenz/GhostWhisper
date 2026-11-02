@@ -133,7 +133,7 @@ python3 vendor/laya/laya-rust/tools/export_onnx.py --model multilingual \
 ```
 
 Gera **um AppImage** em
-`src-tauri/target/release/bundle/appimage/GhostWhisper_0.3.1_amd64.AppImage`
+`src-tauri/target/release/bundle/appimage/GhostWhisper_0.4.0_amd64.AppImage`
 (~830 MiB), com o modelo embutido — não precisa baixar nada no primeiro uso.
 
 O build:
@@ -168,7 +168,7 @@ O build:
 Install a release:
 
 ```bash
-chmod +x GhostWhisper_0.3.1_amd64.AppImage && ./GhostWhisper_0.3.1_amd64.AppImage
+chmod +x GhostWhisper_0.4.0_amd64.AppImage && ./GhostWhisper_0.4.0_amd64.AppImage
 ```
 
 ## Available scripts

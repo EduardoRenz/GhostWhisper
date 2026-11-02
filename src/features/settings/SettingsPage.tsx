@@ -183,6 +183,11 @@ export function SettingsPage() {
   // Outra janela salvou (ex.: o seletor global de agentes do notch — BR-080):
   // mantém a badge "Ativo" em tempo real. Só o agente é sincronizado; o resto
   // do rascunho fica intocado (não atrapalha edição/autosave da opacidade).
+  //
+  // `screen_context_include` (checkbox da pill — BR-106) também é sincronizado:
+  // ele tem setter dedicado (toggle na AskBar/Sessão) e **não é editável
+  // aqui** — sem sync, um "Salvar Alterações" com rascunho velho regraria a
+  // preferência do usuário (ISS-095).
   useEffect(() => {
     let stop: (() => void) | undefined;
     void subscribe<null>("settings_changed", () => {
@@ -193,12 +198,14 @@ export function SettingsPage() {
         setUiLanguage(loaded.ui_language);
         setDraft((previous) =>
           previous.assistant_mode_id === loaded.assistant_mode_id &&
-          previous.ui_language === loaded.ui_language
+          previous.ui_language === loaded.ui_language &&
+          previous.screen_context_include === loaded.screen_context_include
             ? previous
             : {
                 ...previous,
                 assistant_mode_id: loaded.assistant_mode_id,
                 ui_language: loaded.ui_language,
+                screen_context_include: loaded.screen_context_include,
               },
         );
       });

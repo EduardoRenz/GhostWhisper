@@ -130,6 +130,10 @@ export interface Settings {
   mic_gain: number;
   /** Modo stealth (sem barra de tarefas / sem título). */
   stealth: boolean;
+  /** Contexto de tela via acessibilidade (AT-SPI) na AskBar — BR-105. */
+  screen_context_enabled: boolean;
+  /** Incluir o contexto de tela na pergunta (checkbox da pill) — BR-106. */
+  screen_context_include: boolean;
   /** Atalhos globais. */
   shortcuts: ShortcutBinding[];
   /** Posição do overlay na tela (lembrada após o usuário mover). */
@@ -471,6 +475,8 @@ export const defaultSettings = (): Settings => ({
   aec_enabled: true,
   mic_gain: DEFAULT_MIC_GAIN,
   stealth: false,
+  screen_context_enabled: false,
+  screen_context_include: true,
   shortcuts: defaultBindings(),
   overlay_position: null,
   ask_position: null,

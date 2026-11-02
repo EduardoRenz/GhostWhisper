@@ -1,6 +1,6 @@
 [package]
 name = "ghostwhisper"
-version = "0.3.1"
+version = "0.4.0"
 description = "Copiloto de reunião open-source, Linux-first e local-only"
 authors = ["GhostWhisper"]
 edition = "2021"
@@ -64,6 +64,9 @@ url = "2"
 libc = "0.2"
 ashpd = { version = "0.13", features = ["screenshot", "global_shortcuts", "screencast"] }
 zbus = "5"
+# Contexto de tela pela árvore de acessibilidade (AT-SPI2, BR-105).
+# zbus 5.5+ (mesma major do projeto); conexão só com a flag ligada.
+atspi = { version = "0.30", default-features = false, features = ["proxies", "wrappers"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros"] }
 thiserror = "2"

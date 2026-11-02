@@ -13,6 +13,12 @@ src-tauri/gen/
 # Sistema
 .DS_Store
 
+# AppImage extraído (--extract-and-run / APPIMAGE_EXTRACT_AND_RUN=1)
+squashfs-root/
+
+# Workaround local de linkagem (symlinks p/ libs sem -dev; instalar libpulse-dev)
+.link-libs/
+
 # SDK Vulkan local (build com --features vulkan)
 .vulkan-sdk/
 src-tauri/target-vulkan/

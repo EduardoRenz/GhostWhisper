@@ -59,6 +59,17 @@ export const previewOverlayOpacity = (opacity: number): Promise<void | undefined
 export const setOverlayOpacity = (opacity: number): Promise<void | undefined> =>
   invokeSafe<void>("settings_set_overlay_opacity", { opacity });
 
+/**
+ * Marca/desmarca o **checkbox de contexto de tela** da pill (BR-106).
+ *
+ * Grava só esse campo e sincroniza as janelas via `settings_changed` — a pill
+ * continua mostrando o contexto; só o envio na pergunta é afetado.
+ */
+export const setScreenContextInclude = (
+  included: boolean,
+): Promise<void | undefined> =>
+  invokeSafe<void>("settings_set_screen_context_include", { included });
+
 /** Publica o preview das escalas de fonte antes do autosave (BR-087). */
 export const previewFontScales = (
   fontScale: number,

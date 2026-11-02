@@ -19,6 +19,7 @@ pub mod markdown_export;
 pub mod prompts;
 pub mod recording_service;
 pub mod saved_questions_migration;
+pub mod screen_context_service;
 pub mod session_lookup;
 pub mod session_service;
 pub mod session_timeline;

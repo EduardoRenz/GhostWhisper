@@ -102,6 +102,12 @@ const ASK_RULES: &str = "Esta é uma pergunta direta do usuário (não uma suges
      anteriores da reunião; o <transcript> é a fala mais recente e tem \
      precedência em caso de conflito. Não invente o que não estiver no resumo \
      nem na transcrição e não repita o resumo literalmente. \
+     Quando houver um bloco <screen_context>, ele é o que o usuário está \
+     vendo na tela agora (texto da janela ativa, lido pela acessibilidade). \
+     A transcrição continua sendo a conversa; a tela é o material em \
+     discussão — em conflito, a conversa (transcript) vence. Use o \
+     <screen_context> para responder sobre o que está na tela sem pedir \
+     que o usuário repita. \
      Depois da resposta completa, numa linha própria, escreva exatamente: \
      <!--resumo: até 240 caracteres resumindo o que você respondeu--> \
      Esse bloco é apenas o fecho; a resposta acima dele deve estar completa.";
@@ -137,6 +143,10 @@ pub struct AskService {
     gate: Arc<Mutex<()>>,
     /// Geração do resumo em background (single-flight/cooldown compartilhados).
     summary_refresh: Arc<SummaryRefresh>,
+    /// Contexto de tela pela acessibilidade (BR-105). `None` com a flag
+    /// desligada — a pergunta sai sem o bloco `<screen_context>`.
+    screen_context:
+        Option<Arc<dyn crate::ports::screen_context_controller::ScreenContextController>>,
 }
 
 impl AskService {
@@ -170,6 +180,7 @@ impl AskService {
             publisher,
             gate: Arc::new(Mutex::new(())),
             summary_refresh,
+            screen_context: None,
         }
     }
 
@@ -177,6 +188,18 @@ impl AskService {
     /// app inteiro — Perguntar e encerramento respeitam o mesmo single-flight).
     pub fn with_summary_refresh(mut self, refresh: Arc<SummaryRefresh>) -> Self {
         self.summary_refresh = refresh;
+        self
+    }
+
+    /// Injeta a fonte de contexto de tela (BR-105); `None` mantém o prompt
+    /// sem o bloco `<screen_context>` (flag desligada no boot).
+    pub fn with_screen_context(
+        mut self,
+        screen_context: Option<
+            Arc<dyn crate::ports::screen_context_controller::ScreenContextController>,
+        >,
+    ) -> Self {
+        self.screen_context = screen_context;
         self
     }
 
@@ -290,6 +313,12 @@ impl AskService {
             transcript,
             summaries: recent_summaries(&entries, summary_limit, CONTEXT_SUMMARIES_MAX_CHARS),
             meeting_summary,
+            // Contexto de tela (BR-105): só com a flag ligada e snapshot
+            // fresco; sem isso, `None` e o prompt segue idêntico ao de antes.
+            screen_context: self
+                .screen_context
+                .as_ref()
+                .and_then(|controller| controller.snapshot_for_ask()),
             has_final_speech: segments
                 .iter()
                 .any(|segment| segment.is_final && !segment.text.trim().is_empty()),
@@ -334,6 +363,19 @@ impl AskService {
             }
             prompt.push_str("</previous_questions>\n\n");
         }
+        // Contexto de tela (BR-105): o que o usuário está vendo **agora**,
+        // lido da janela ativa pela acessibilidade. Vem depois do resumo de
+        // perguntas e antes do transcript (o transcript tem precedência).
+        if let Some(screen_context) = context.screen_context.as_ref() {
+            let window = screen_context.window_title.replace('"', "'");
+            prompt.push_str("<screen_context app=\"");
+            prompt.push_str(&screen_context.app.replace('"', "'"));
+            prompt.push_str("\" window=\"");
+            prompt.push_str(&window);
+            prompt.push_str("\">\n");
+            prompt.push_str(screen_context.text.trim());
+            prompt.push_str("\n</screen_context>\n\n");
+        }
         if let Some(transcript) = context.transcript {
             prompt.push_str("<transcript>\n");
             prompt.push_str(&transcript.text);
@@ -377,6 +419,9 @@ struct AskContext {
     summaries: Vec<String>,
     /// Resumo incremental da reunião (memória longa), quando existe.
     meeting_summary: Option<MeetingSummary>,
+    /// Texto da janela ativa lido pela acessibilidade (BR-105), quando a
+    /// flag está ligada e o snapshot é fresco.
+    screen_context: Option<crate::domain::screen_context::ScreenContextSnapshot>,
     /// Há fala final utilizável — evita gerar resumo para uma sessão criada
     /// só pela própria pergunta (sem transcrição nenhuma).
     has_final_speech: bool,
@@ -1484,5 +1529,133 @@ mod tests {
 
         let entries = f.journal.list_by_session("s1").expect("diário");
         assert_eq!(entries[0].status, JournalStatus::Cancelled);
+    }
+
+    // --- Contexto de tela (BR-105, task 06) ---
+
+    use crate::domain::screen_context::ScreenContextSnapshot;
+    use crate::ports::screen_context_controller::{ScreenContextController, ScreenContextStatus};
+
+    /// Dobra do controller: devolve o snapshot configurado.
+    struct FakeScreenContextController {
+        snapshot: Mutex<Option<ScreenContextSnapshot>>,
+    }
+
+    impl FakeScreenContextController {
+        fn with_snapshot(snapshot: ScreenContextSnapshot) -> Self {
+            Self {
+                snapshot: Mutex::new(Some(snapshot)),
+            }
+        }
+    }
+
+    impl ScreenContextController for FakeScreenContextController {
+        fn snapshot_for_display(&self) -> Option<ScreenContextSnapshot> {
+            self.snapshot.lock().expect("lock").clone()
+        }
+        fn snapshot_for_ask(&self) -> Option<ScreenContextSnapshot> {
+            self.snapshot.lock().expect("lock").clone()
+        }
+        fn status(&self) -> ScreenContextStatus {
+            ScreenContextStatus::Available
+        }
+        fn clear(&self) {}
+    }
+
+    fn screen_snapshot(text: &str) -> ScreenContextSnapshot {
+        ScreenContextSnapshot {
+            app: "google-chrome".into(),
+            window_title: "API Reference".into(),
+            text: text.into(),
+            captured_at_ms: 5_000,
+        }
+    }
+
+    fn fixture_with_context(
+        llm: Arc<FakeLlm>,
+        context: Option<Arc<dyn ScreenContextController>>,
+    ) -> Fixture {
+        let mut f = fixture(llm);
+        f.service = f.service.with_screen_context(context);
+        f
+    }
+
+    #[test]
+    fn prompt_includes_fresh_screen_context() {
+        let f = fixture_with_context(
+            Arc::new(FakeLlm::ok("x")),
+            Some(Arc::new(FakeScreenContextController::with_snapshot(
+                screen_snapshot("GET /v1/chat"),
+            ))),
+        );
+        session(&f);
+
+        f.service
+            .ask(ask("o que este endpoint aceita?"))
+            .expect("pergunta");
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
+
+        assert!(sent.prompt.contains("<screen_context"), "{}", sent.prompt);
+        assert!(
+            sent.prompt.contains("app=\"google-chrome\""),
+            "{}",
+            sent.prompt
+        );
+        assert!(sent.prompt.contains("GET /v1/chat"), "{}", sent.prompt);
+        // O bloco vem antes da pergunta (ordem do architecture §2.5).
+        let context_at = sent.prompt.find("<screen_context").expect("bloco");
+        let question_at = sent.prompt.find("o que este endpoint").expect("pergunta");
+        assert!(context_at < question_at);
+    }
+
+    #[test]
+    fn prompt_unchanged_when_flag_disabled() {
+        // CA-03.4: sem fonte (flag desligada), nenhum bloco aparece.
+        let f = fixture_with_context(Arc::new(FakeLlm::ok("x")), None);
+        session(&f);
+
+        f.service.ask(ask("pergunta")).expect("pergunta");
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
+
+        assert!(!sent.prompt.contains("<screen_context"), "{}", sent.prompt);
+        assert!(!sent.prompt.contains("google-chrome"), "{}", sent.prompt);
+    }
+
+    #[test]
+    fn prompt_skips_empty_context() {
+        // Snapshot `None` (janela sem árvore) → prompt limpo.
+        let controller = FakeScreenContextController {
+            snapshot: Mutex::new(None),
+        };
+        let f = fixture_with_context(Arc::new(FakeLlm::ok("x")), Some(Arc::new(controller)));
+        session(&f);
+
+        f.service.ask(ask("pergunta")).expect("pergunta");
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
+
+        assert!(!sent.prompt.contains("<screen_context"), "{}", sent.prompt);
+    }
+
+    #[test]
+    fn screenshot_and_screen_context_coexist() {
+        // CA-03.3: print anexado + flag ligada → imagem **e** bloco juntos.
+        let f = fixture_with_context(
+            Arc::new(FakeLlm::ok("x")),
+            Some(Arc::new(FakeScreenContextController::with_snapshot(
+                screen_snapshot("conteúdo da página"),
+            ))),
+        );
+        session(&f);
+        let mut request = ask("e aí?");
+        request.images = vec![CompletionImage {
+            mime: "image/png".to_string(),
+            data: vec![9, 9],
+        }];
+
+        f.service.ask(request).expect("pergunta");
+        let sent = f.llm.request.lock().expect("lock").clone().expect("pedido");
+
+        assert_eq!(sent.images.len(), 1);
+        assert!(sent.prompt.contains("<screen_context"), "{}", sent.prompt);
     }
 }

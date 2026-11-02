@@ -129,4 +129,28 @@ describe("HudSettings (aba Geral & HUD)", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Modo stealth" }));
     expect(update).toHaveBeenCalledWith("stealth", true);
   });
+
+  it("mostra o card de contexto de tela desligado por padrão (BR-105)", () => {
+    const { update } = setup({ screen_context_enabled: false });
+    expect(screen.getByText("Contexto de tela")).toBeDefined();
+    // Aviso de privacidade obrigatório (CA-01.2).
+    expect(
+      screen.getByText(/Ligar este recurso permite ao GhostWhisper/),
+    ).toBeDefined();
+    const toggle = screen.getByRole("checkbox", {
+      name: "Contexto de tela",
+    }) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(update).toHaveBeenCalledWith("screen_context_enabled", true);
+  });
+
+  it("reflete a flag ligada no toggle do contexto de tela", () => {
+    setup({ screen_context_enabled: true });
+    const toggle = screen.getByRole("checkbox", {
+      name: "Contexto de tela",
+    }) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+  });
 });

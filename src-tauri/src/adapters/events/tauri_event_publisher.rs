@@ -7,8 +7,8 @@ use crate::domain::audio::AudioLevel;
 use crate::domain::recording::RecordingState;
 use crate::domain::transcription::{AsrStatus, TranscriptSegment};
 use crate::ports::event_publisher::{
-    EventPublisher, JournalUpdate, LlmSourceUsage, RecordingProgressEvent, SessionStateEvent,
-    SessionUpdatedEvent, SessionWarningEvent, SuggestionCadenceEvent,
+    EventPublisher, JournalUpdate, LlmSourceUsage, RecordingProgressEvent, ScreenContextEvent,
+    SessionStateEvent, SessionUpdatedEvent, SessionWarningEvent, SuggestionCadenceEvent,
     SuggestionClassificationEvent, SuggestionModelDownloadEvent, TranscriptActivityEvent,
 };
 use crate::ports::session_controller::AudioChannel;
@@ -46,6 +46,8 @@ pub const RECORDING_STATE_EVENT: &str = "recording_state";
 pub const RECORDING_PROGRESS_EVENT: &str = "recording_progress";
 /// Nome do evento de sessão alterada pelo resumo/título em background (BR-104).
 pub const SESSION_UPDATED_EVENT: &str = "session_updated";
+/// Nome do evento de contexto de tela da AskBar (BR-106).
+pub const SCREEN_CONTEXT_EVENT: &str = "screen_context";
 
 /// Payload do evento `audio_level` (canal + nível).
 #[derive(Debug, Clone, Serialize)]
@@ -137,5 +139,9 @@ impl EventPublisher for TauriEventPublisher {
 
     fn emit_session_updated(&self, event: &SessionUpdatedEvent) {
         let _ = self.app.emit(SESSION_UPDATED_EVENT, event);
+    }
+
+    fn emit_screen_context(&self, event: &ScreenContextEvent) {
+        let _ = self.app.emit(SCREEN_CONTEXT_EVENT, event);
     }
 }

@@ -266,6 +266,31 @@ pub fn settings_set_assistant_mode(
     Ok(())
 }
 
+/// Marca/desmarca o **checkbox de contexto de tela** da pill (BR-106).
+///
+/// Grava só esse campo e sincroniza as janelas (AskBar e aba Sessão) via
+/// `settings_changed`. **Desmarcar limpa** o contexto cacheado: a partir daí
+/// nenhuma leitura acontece (nem foco, nem pill, nem prompt) — o usuário
+/// desligou o contexto para não gastar processamento.
+#[tauri::command(async)]
+pub fn settings_set_screen_context_include(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    included: bool,
+) -> Result<()> {
+    let mut settings = state.settings.load()?;
+    settings.screen_context_include = included;
+    settings.validate()?;
+    state.settings.save(&settings)?;
+    if !included {
+        if let Some(controller) = state.screen_context.as_ref() {
+            controller.clear();
+        }
+    }
+    let _ = app.emit("settings_changed", ());
+    Ok(())
+}
+
 /// Testa a conexão com a fonte primária (validar chave).
 ///
 /// A validação **por fonte** vive em `ipc::ai_source_commands`; esta é a

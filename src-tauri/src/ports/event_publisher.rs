@@ -99,6 +99,30 @@ pub enum SuggestionModelDownloadPhase {
     Failed,
 }
 
+/// Estado do contexto de tela publicado para a UI (BR-105/BR-106).
+///
+/// Carrega só o **preview** (≤ `PREVIEW_MAX_CHARS`): o texto completo do
+/// snapshot nunca sai do core — ele é montado no prompt na hora da pergunta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ScreenContextEvent {
+    /// `false` quando não há contexto (janela sem árvore, sem foco, acesso
+    /// negado); `true` quando há `app`/`window_title`/`preview`.
+    pub available: bool,
+    /// A última leitura **falhou** (D-Bus/AT-SPI inacessível, timeout) — a UI
+    /// mostra "Contexto indisponível" em vez de "Sem contexto".
+    #[serde(default)]
+    pub failed: bool,
+    /// Nome curto do app (`google-chrome`); vazio quando indisponível.
+    pub app: String,
+    /// Título da janela (truncado em `TITLE_MAX_CHARS`); vazio quando
+    /// indisponível.
+    pub window_title: String,
+    /// Prévia do texto (≤ `PREVIEW_MAX_CHARS`); vazia quando indisponível.
+    pub preview: String,
+    /// Momento do snapshot (ms, relógio de parede).
+    pub captured_at_ms: i64,
+}
+
 /// Progresso do model manager publicado para a UI.
 ///
 /// O evento é emitido arquivo a arquivo; `bytes_done`/`bytes_total` somam o
@@ -261,6 +285,8 @@ pub trait EventPublisher: Send + Sync {
     /// Emite a mudança de uma sessão (título/resumo gerado em background) —
     /// BR-104. Default no-op: fakes que não observam o histórico ignoram.
     fn emit_session_updated(&self, _event: &SessionUpdatedEvent) {}
+    /// Emite o estado do contexto de tela da AskBar (BR-106). Default no-op.
+    fn emit_screen_context(&self, _event: &ScreenContextEvent) {}
 }
 
 #[cfg(test)]

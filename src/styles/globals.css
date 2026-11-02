@@ -5451,6 +5451,13 @@ body,
   color: var(--oh-on-primary-container);
 }
 
+/* Pill de contexto na aba Sessão (BR-106): mesma fonte da AskBar, escala
+   da linha compacta (input 32 / botões 30). */
+.composer__row .askbar__context {
+  max-width: 190px;
+  height: 30px;
+}
+
 .composer__attachment {
   display: flex;
   align-items: center;
@@ -5654,6 +5661,98 @@ body,
   height: 24px;
   flex: none;
   background: var(--oh-border);
+}
+
+/* Pill de contexto de tela (BR-106): cyan no estado ativo (papel "foco"),
+   outline nos estados neutros — mesma linguagem do design system Obsidian. */
+.askbar__context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 260px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--oh-border);
+  border-radius: var(--oh-radius-full);
+  background: var(--oh-surface-container-high);
+  color: var(--oh-text-muted);
+  font-size: 0.6875rem; /* 11 */
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.askbar__context--active {
+  border-color: color-mix(in srgb, var(--oh-agent-cyan) 45%, transparent);
+  color: var(--oh-text);
+  background: color-mix(in srgb, var(--oh-agent-cyan) 10%, var(--oh-surface-container-high));
+}
+
+.askbar__context--loading {
+  border-style: dashed;
+}
+
+.askbar__context--empty,
+.askbar__context--unavailable {
+  opacity: 0.8;
+}
+
+/* Desmarcado: nada é lido; a pill fica só com a caixa para religar. */
+.askbar__context--paused,
+.askbar__context--unchecked {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.askbar__context-icon {
+  flex: none;
+  font-size: 0.75rem; /* 12 */
+}
+
+.askbar__context-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Corpo da pill e o texto são parte do alvo de clique: a pill **inteira** é o
+   checkbox (BR-106) — cada clique alterna ligar/desligar. */
+button.askbar__context {
+  font: inherit;
+  font-size: 0.6875rem; /* 11 */
+  cursor: pointer;
+}
+
+button.askbar__context:focus-visible {
+  outline: none;
+  box-shadow: var(--oh-focus-ring);
+}
+
+.askbar__context-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--oh-agent-cyan);
+  border-radius: 3px;
+  font-size: 0.625rem; /* 10 — rem, sem font-size fixo em px (BR-087) */
+  line-height: 1;
+}
+
+/* Marcado: caixa preenchida com ✓ (cyan = "ligado", papel do sistema). */
+.askbar__context[aria-checked="true"] .askbar__context-check {
+  background: var(--oh-agent-cyan);
+  color: var(--oh-surface);
+}
+
+/* Desmarcado: caixa vazia e contexto esmaecido (desligado). */
+.askbar__context[aria-checked="false"] .askbar__context-check {
+  border-color: var(--oh-border-strong);
+}
+.askbar__context--unchecked .askbar__context-label,
+.askbar__context--unchecked .askbar__context-icon {
+  opacity: 0.55;
 }
 
 .askbar__capture {

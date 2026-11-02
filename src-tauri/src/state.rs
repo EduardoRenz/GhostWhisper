@@ -24,6 +24,7 @@ use crate::ports::pending_session_end::PendingSessionEnd;
 use crate::ports::recording::RecordingController;
 use crate::ports::repositories::{MessagesRepository, SessionRepository, TranscriptionsRepository};
 use crate::ports::screen_capture::ScreenCapture;
+use crate::ports::screen_context_controller::ScreenContextController;
 use crate::ports::secret_store::SecretStore;
 use crate::ports::session_controller::SessionController;
 use crate::ports::settings_store::SettingsStore;
@@ -99,6 +100,9 @@ pub struct AppState {
     pub recording: Arc<dyn RecordingController>,
     /// Sessão encerrada exibida pelo modal "Sessão Finalizada" (BR-068).
     pub pending_session_end: Arc<dyn PendingSessionEnd>,
+    /// Contexto de tela pela acessibilidade (BR-105). `None` quando a flag
+    /// estava desligada no boot — o adaptador não é instanciado.
+    pub screen_context: Option<Arc<dyn ScreenContextController>>,
 }
 
 impl AppState {
@@ -136,6 +140,7 @@ impl AppState {
         shortcuts: Arc<dyn GlobalShortcutRegistry>,
         recording: Arc<dyn RecordingController>,
         pending_session_end: Arc<dyn PendingSessionEnd>,
+        screen_context: Option<Arc<dyn ScreenContextController>>,
     ) -> Self {
         Self {
             overlay,
@@ -169,6 +174,7 @@ impl AppState {
             shortcuts,
             recording,
             pending_session_end,
+            screen_context,
         }
     }
 }
@@ -704,7 +710,18 @@ mod tests {
             Arc::new(
                 crate::adapters::pending::in_memory_pending_session_end::InMemoryPendingSessionEnd::new(),
             ),
+            // Flag desligada no boot: nenhum adaptador de contexto de tela
+            // é instanciado (BR-105, CA-04.1).
+            None,
         )
+    }
+
+    #[test]
+    fn composition_omits_screen_context_when_disabled() {
+        // CA-04.1: sem flag, o estado não tem fonte de contexto de tela —
+        // o adaptador AT-SPI não existe, logo nenhuma conexão D-Bus é aberta.
+        let state = build_state();
+        assert!(state.screen_context.is_none());
     }
 
     #[test]

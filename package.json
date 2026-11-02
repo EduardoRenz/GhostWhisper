@@ -1,7 +1,7 @@
 {
   "name": "ghostwhisper",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Copiloto de reunião open-source, Linux-first e local-only",
   "type": "module",
   "scripts": {

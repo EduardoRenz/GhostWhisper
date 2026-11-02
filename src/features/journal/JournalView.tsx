@@ -12,6 +12,7 @@ import { capturedDataUrl, capturePending } from "../../adapters/ipc/screen";
 import { useJournal } from "../../core/application/useJournal";
 import { useSessionState } from "../../core/application/useSessionState";
 import { usePendingCapture } from "../../core/application/usePendingCapture";
+import { useScreenContext } from "../../core/application/useScreenContext";
 import { useSettings } from "../../core/application/useSettings";
 import { DEFAULT_SAVED_QUESTIONS } from "../../core/domain/settings";
 import { useTranslation } from "../../core/l10n";
@@ -42,6 +43,9 @@ export function JournalView() {
   const { state } = useSessionState();
   const { entries, count, loading, error, busy, ask } = useJournal(state.session_id);
   const { settings } = useSettings();
+  /** Contexto de tela: estado, evento e checkbox (BR-106) — mesma fonte da
+   *  AskBar; o toggle grava em settings e sincroniza as duas janelas. */
+  const context = useScreenContext(settings);
   const {
     attachment: pending,
     capturing,
@@ -160,6 +164,10 @@ export function JournalView() {
         onSend={(text, source) => void send(text, source)}
         onCapture={() => void capture()}
         onRemoveAttachment={() => void clearCapture()}
+        contextState={context.state}
+        contextEvent={context.event}
+        contextChecked={context.checked}
+        onToggleContext={context.toggle}
       />
 
       <div className="journal__list" aria-live="polite">

@@ -223,6 +223,19 @@ pub struct Settings {
     /// Modo stealth (sem barra de tarefas / sem título).
     #[serde(default)]
     pub stealth: bool,
+    /// Contexto de tela via acessibilidade (AT-SPI) na AskBar — BR-105.
+    ///
+    /// **Padrão desligado** (opt-in): com a flag desligada nenhuma conexão
+    /// D-Bus de acessibilidade é aberta e a pill não renderiza (BR-106).
+    #[serde(default)]
+    pub screen_context_enabled: bool,
+    /// Incluir o contexto de tela na pergunta (checkbox da pill — BR-106).
+    ///
+    /// Não desliga a leitura: a pill continua mostrando o contexto
+    /// encontrado; só o **bloco do prompt** fica de fora quando desmarcado.
+    /// Padrão **marcado**.
+    #[serde(default = "default_enabled")]
+    pub screen_context_include: bool,
     /// Vínculos de atalhos globais.
     #[serde(default = "crate::domain::shortcuts::default_bindings")]
     pub shortcuts: Vec<ShortcutBinding>,
@@ -563,6 +576,8 @@ impl Default for Settings {
             aec_enabled: true,
             mic_gain: default_mic_gain(),
             stealth: false,
+            screen_context_enabled: false,
+            screen_context_include: true,
             shortcuts: crate::domain::shortcuts::default_bindings(),
             overlay_position: None,
             ask_position: None,
@@ -2216,6 +2231,45 @@ mod tests {
         };
         assert!(invalid.validate().is_err());
         assert_eq!(invalid.sanitized().acceleration, "auto");
+    }
+
+    #[test]
+    fn screen_context_is_disabled_by_default_and_in_old_settings() {
+        // BR-105: opt-in estrito — default desligado.
+        assert!(!Settings::default().screen_context_enabled);
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json.replace("\"screen_context_enabled\":false,", "");
+        assert!(!legacy.contains("screen_context_enabled"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert!(!parsed.screen_context_enabled);
+        assert!(parsed.validate().is_ok());
+    }
+
+    #[test]
+    fn screen_context_include_defaults_to_checked() {
+        // BR-106 (checkbox): padrão marcado; settings antigos carregam
+        // marcados (não pode silenciosamente parar de enviar o contexto).
+        assert!(Settings::default().screen_context_include);
+        let json = serde_json::to_string(&Settings::default()).expect("json");
+        let legacy = json.replace("\"screen_context_include\":true,", "");
+        assert!(!legacy.contains("screen_context_include"));
+        let parsed: Settings = serde_json::from_str(&legacy).expect("desserializa antigo");
+        assert!(parsed.screen_context_include);
+    }
+
+    #[test]
+    fn screen_context_include_survives_roundtrip_when_unchecked() {
+        // Preferência do usuário persiste: desmarcado → JSON → load →
+        // continua desmarcado (o default true só vale para JSON sem o campo).
+        let settings = Settings {
+            screen_context_include: false,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("json");
+        assert!(json.contains("\"screen_context_include\":false"));
+        let parsed: Settings = serde_json::from_str(&json).expect("parse");
+        assert!(!parsed.screen_context_include, "desmarcado deve persistir");
+        assert!(parsed.validate().is_ok());
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub mod panel_commands;
 pub mod ping;
 pub mod recording_commands;
 pub mod screen_commands;
+pub mod screen_context_commands;
 pub mod session_commands;
 pub mod session_end_commands;
 pub mod settings_commands;

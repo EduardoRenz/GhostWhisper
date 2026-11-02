@@ -10,6 +10,7 @@ import {
 } from "../../adapters/ipc/screen";
 import { isTauriRuntime } from "../../adapters/ipc/client";
 import { subscribe } from "../../adapters/ipc/events";
+import { useScreenContext } from "../../core/application/useScreenContext";
 import { useSettings } from "../../core/application/useSettings";
 import { useTranslation } from "../../core/l10n";
 import { defaultBindings } from "../../core/domain/shortcuts";
@@ -33,6 +34,8 @@ export function AskWindow() {
   const { settings } = useSettings();
   /** Há um print anexado (pendente de envio). */
   const [attached, setAttached] = useState(false);
+  /** Contexto de tela: estado, evento e checkbox (BR-106). */
+  const context = useScreenContext(settings);
 
   /** Fecha a barra e abre a sessão (o diário). */
   const finish = useCallback(() => {
@@ -123,6 +126,9 @@ export function AskWindow() {
     };
   }, []);
 
+  // Contexto de tela (BR-106): o hook consulta ao abrir, assina o evento e
+  // expõe o checkbox — ver `useScreenContext`.
+
   // O foco do campo também acompanha o **foco da janela**: no atalho, a barra
   // aparece antes de o WM entregar o foco — sem isto o cursor podia ficar fora
   // do input (o evento `ask_focus` chega cedo demais).
@@ -153,6 +159,16 @@ export function AskWindow() {
       stop?.();
     };
   }, []);
+
+  // Ao abrir/focar a barra, o contexto é **reconsultado** — a leitura do
+  // mount pode ter sido antiga (ex.: abriu o app antes de focar o Chrome);
+  // aqui ela fica fresca na hora exata em que a barra fica visível.
+  const refreshContext = context.refresh;
+  useEffect(() => {
+    if (focusSignal > 0) {
+      refreshContext();
+    }
+  }, [focusSignal, refreshContext]);
 
   // Atalho global de captura e pedido de foco, vindos do core.
   useEffect(() => {
@@ -218,6 +234,10 @@ export function AskWindow() {
         onPreset={(text) => void ask(text)}
         askAccelerator={accelerator("focus_ask")}
         captureAccelerator={accelerator("capture_screen")}
+        contextState={context.state}
+        contextEvent={context.event}
+        contextChecked={context.checked}
+        onToggleContext={context.toggle}
       />
       {error && <p className="ask-window__error">{error}</p>}
     </div>

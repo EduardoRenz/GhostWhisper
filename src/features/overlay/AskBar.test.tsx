@@ -94,4 +94,54 @@ describe("AskBar (barra Perguntar)", () => {
       screen.getByLabelText("Capturar Tela").hasAttribute("disabled"),
     ).toBe(true);
   });
+
+  // --- Pill de contexto como checkbox (BR-106) ---
+
+  it("sem contexto configurado não mostra a pill", () => {
+    render(<AskBar {...base} contextState="hidden" />);
+    expect(screen.queryByTestId("context-pill")).toBeNull();
+  });
+
+  it("passa o checkbox do contexto: a pill inteira vira checkbox", () => {
+    const onToggleContext = vi.fn();
+    render(
+      <AskBar
+        {...base}
+        contextState="active"
+        contextEvent={{
+          available: true,
+          app: "google-chrome",
+          window_title: "Doc",
+          preview: "texto",
+          captured_at_ms: 1,
+        }}
+        contextChecked
+        onToggleContext={onToggleContext}
+      />,
+    );
+    const pill = screen.getByTestId("context-pill");
+    expect(pill.getAttribute("role")).toBe("checkbox");
+    expect(pill.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(pill);
+    expect(onToggleContext).toHaveBeenCalledTimes(1);
+  });
+
+  it("a opção de contexto fica visível mesmo sem contexto agora", () => {
+    // Pedido do usuário: a barra nunca pode esconder a opção de incluir/
+    // excluir — estado "sem contexto" também mostra o checkbox.
+    render(
+      <AskBar
+        {...base}
+        contextState="empty"
+        contextEvent={null}
+        contextChecked={false}
+        onToggleContext={vi.fn()}
+      />,
+    );
+    const pill = screen.getByTestId("context-pill");
+    expect(pill.getAttribute("role")).toBe("checkbox");
+    expect(pill.getAttribute("aria-checked")).toBe("false");
+    expect(pill.textContent).toContain("Sem contexto de tela");
+  });
 });

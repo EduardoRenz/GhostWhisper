@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   DWELL_STEP_MS,
   HUD_DENSITIES,
@@ -21,6 +22,8 @@ import {
   notchAnchorKey,
   opacityLegendKey,
 } from "../../core/l10n/labels";
+import { screenContextStatus } from "../../adapters/ipc/screenContext";
+import type { ScreenContextStatus } from "../../core/domain/screenContext";
 
 interface HudSettingsProps {
   settings: Settings;
@@ -52,6 +55,34 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
   const fontPercent = toPercent(settings.font_scale);
   const aiPercent = toPercent(settings.ai_font_scale);
   const anchored = t(notchAnchorKey(settings.notch_anchor));
+
+  // Status do AT-SPI (linha do card "Contexto de tela", BR-105): só consulta
+  // quando a flag está ligada — desligada, o próprio core devolve "disabled"
+  // sem tocar no adaptador.
+  const [contextStatus, setContextStatus] =
+    useState<ScreenContextStatus>("disabled");
+  useEffect(() => {
+    let cancelled = false;
+    void screenContextStatus()
+      .then((status) => {
+        if (!cancelled && status) {
+          setContextStatus(status);
+        }
+      })
+      .catch(() => {
+        // Sem runtime Tauri (testes): mantém "disabled".
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.screen_context_enabled]);
+
+  const contextStatusKey =
+    contextStatus === "available"
+      ? "hud_screen_context_status_available"
+      : contextStatus === "unavailable"
+        ? "hud_screen_context_status_unavailable"
+        : "hud_screen_context_status_disabled";
 
   return (
     <>
@@ -291,6 +322,35 @@ export function HudSettings({ settings, update }: HudSettingsProps) {
             {t("hud_not_hide_screen_sharing_linux_no",
             )}
           </p>
+        </article>
+
+        {/* Contexto de tela pela acessibilidade (BR-105): opt-in com aviso
+            de privacidade e linha de status. */}
+        <article className="settings__card settings__card--hud">
+          <header className="settings__card-header">
+            <h3 className="settings__card-title">{t("hud_screen_context")}</h3>
+            <label className="settings__toggle">
+              <input
+                type="checkbox"
+                aria-label={t("hud_screen_context")}
+                checked={settings.screen_context_enabled}
+                onChange={(event) =>
+                  update("screen_context_enabled", event.target.checked)
+                }
+              />
+              <span className="settings__toggle-track" aria-hidden="true" />
+            </label>
+          </header>
+          <p className="settings__card-description">
+            {t("hud_screen_context_description")}
+          </p>
+          <p className="settings__hint">
+            {t("hud_screen_context_privacy_warning")}
+          </p>
+          <p className="settings__hint" data-testid="screen-context-status">
+            {t(contextStatusKey)}
+          </p>
+          <p className="settings__hint">{t("hud_screen_context_compatibility")}</p>
         </article>
       </section>
     </>
