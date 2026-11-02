@@ -33,6 +33,17 @@ desvio.
   10. Alternância repetida (ISS-098) → ligar/desligar o contexto 5+ vezes e
       religar: o contexto volta em todas; sem acúmulo de threads/leituras
       (log do adaptador sem timeouts repetidos).
+  11. Clique nas janelas do GhostWhisper (ISS-099) → com Chrome focado, clicar
+      10× na AskBar/Sessão/Configurações: a pill mantém `🌐 chrome · ...`;
+      repetir com terminal (mantém o terminal) e com a área de trabalho.
+  12. Troca de programa/aba (ISS-100) → Chrome aba A → aba B / outro app:
+      o contexto **muda** (nunca fica no anterior); trocar para um app sem
+      árvore → `Sem contexto` (não o app antigo); perguntar imediatamente
+      após a troca não envia o texto da janela anterior.
+  13. App sem a11y (ISS-101) → terminal → Chrome **sem**
+      `--force-renderer-accessibility`: após ~300 ms o terminal sai do
+      contexto (pill "Sem contexto"/Chrome sem árvore); clicar direto na
+      AskBar vindo do terminal **preserva** o contexto.
 - Revisão de logs do adaptador (grep de conteúdo) e do ask.
 - `cargo test`, `cargo clippy -D warnings`, `pnpm test`, `tsc --noEmit`
   verdes.
@@ -42,7 +53,7 @@ desvio.
 
 ## Critérios de aceite
 
-- [ ] Os 10 cenários manuais passam e estão registrados.
+- [ ] Os 13 cenários manuais passam e estão registrados.
 - [ ] Nenhum texto de contexto em log após a bateria.
 - [ ] Pipeline completo verde.
 - [ ] `memory.md` e `issues.md` atualizados (desvios → ISS novo).

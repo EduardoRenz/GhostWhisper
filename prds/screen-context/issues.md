@@ -3,7 +3,7 @@
 Registry de bugs e limitações deste PRD. Convenções em
 [`../../.agents/rules.md`](../../.agents/rules.md) (`ISS-NNN` é canônico por
 arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
-único no repositório). Próximo ID livre: **ISS-099**.
+único no repositório). Próximo ID livre: **ISS-102**.
 
 | ID | Resumo | Severidade | Status |
 |---|---|---|---|
@@ -16,6 +16,9 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
 | ISS-096 | Clique na pill desligava o contexto sem querer; desmarcado continuava lendo | Média | FIXED (v4: pill inteira é o checkbox, 1 clique = 1 alternância) |
 | ISS-097 | UI congela ao abrir a barra: snapshot do AT-SPI síncrono na main thread | Alta | FIXED |
 | ISS-098 | Contexto para de aparecer após alguns toggles: `AccessibilityConnection::new()` enumera todos os apps (p2p) e trava; threads presas se acumulam | Alta | FIXED |
+| ISS-099 | Contexto some ao clicar nas janelas do GhostWhisper (filtro de foco transitório + sem fallback) | Média | FIXED |
+| ISS-100 | Contexto antigo persiste ao trocar de programa/aba (cache de 5 s + debounce + `last_good` entre programas) | Alta | FIXED |
+| ISS-101 | Terminal permanece no contexto ao ir para o Chrome sem a11y: o novo app não emite evento de foco | Alta | FIXED |
 
 ---
 
@@ -263,3 +266,80 @@ arquivo de PRD; a numeração **continua** a dos PRDs anteriores para o ID ser
   bateria completa verde. A regressão estrutural é a ausência de
   `atspi-connection`/`p2p` no grafo (`cargo tree -i atspi-connection` não
   resolve).
+
+## ISS-099 — Contexto some ao clicar nas janelas do GhostWhisper
+
+- **Severidade:** Média · **Status:** FIXED (2026-11-02)
+- **Sintoma (relato do usuário):** "às vezes o contexto é perdido quando
+  clico nas janelas do GhostWhisper" (AskBar/Sessão/Configurações).
+- **Causa:** o filtro do listener resolvia o pid do app focado e, se a
+  resolução **falhasse** (D-Bus transitório, nome sem dono, proxy
+  indisponível), caía no `false` e **sobrescrevia** o foco guardado com a
+  nossa própria janela. No snapshot, o candidato próprio era descartado
+  (`is_own`) e o código retornava `None` sem tentar a janela anterior — a
+  pill perdia o contexto até o próximo foco externo. Não havia fallback.
+- **Correções:**
+  1. **Filtro conservador:** `FocusOrigin::{Own, External, Unknown}`; só
+     substitui o foco quando o app é confirmadamente externo. `Unknown`
+     valida pelo nome do app e, se não der, **mantém** o foco anterior.
+  2. **Identidade do app:** `is_own_app` (`ghostwhisper`/`GhostWhisper`,
+     normalizado) cobre o caso de o webview aparecer com pid diferente.
+  3. **Fallback `last_good`:** o adaptador guarda a última janela **externa
+     validada**; o snapshot tenta `foco observado → last_good → seed`. Um
+     candidato próprio/shell/expirado não zera mais o contexto; um externo
+     válido (mesmo terminal, sem texto) para a busca — não ressuscita
+     contexto antigo.
+  4. **Logs de decisão:** `origem`, `source=observed|last_good|seed`, `app`
+     (sem conteúdo).
+- **Testes:** unitários `focus_origin_separates_own_external_unknown` e
+  `own_app_name_is_never_context`; cenário manual novo na task 07 (clicar
+  10× nas janelas do GW com Chrome/terminal focados).
+
+## ISS-100 — Contexto antigo persiste ao trocar de programa/aba
+
+- **Severidade:** Alta · **Status:** FIXED (2026-11-02)
+- **Sintoma (relato do usuário):** depois do ISS-099, o oposto: "ele só
+  mantém o contexto antigo; se eu foco em outra aba, isso pode acabar
+  mandando contexto errado". Regra pedida: **trocar de programa descarta o
+  contexto**, exceto seleção nas janelas do GhostWhisper.
+- **Causas:**
+  1. `current()` reutilizava o cache por **5 s** sem saber que o foco mudou;
+     a AskBar/prompt podiam ler a janela anterior.
+  2. `on_focus_changed` tinha **debounce de 500 ms que descartava** a
+     atualização (não era trailing): eventos próximos deixavam a pill no
+     snapshot antigo.
+  3. O fallback `last_good` sobrevivia à troca de programa: se o foco novo
+     não resolvesse, o snapshot servia a janela anterior.
+- **Correções:**
+  - `on_focus_changed` **invalida o cache antes de qualquer coisa** e relê
+    (debounce removido; só foco externo confirmado chega aqui).
+  - O listener **limpa `last_good`** ao aceitar foco externo; foco não
+    confirmado (`FocusAction::ClearAndNotify`) **limpa** `focused` e
+    `last_good` — nunca serve a janela antiga.
+  - `focus_action` puro: nosso app/shell → mantém; externo confirmado →
+    troca; não confirmado → limpa.
+- **Testes:** `focus_change_always_refreshes_the_pill`,
+  `focus_change_invalidates_cached_snapshot`, `focus_action_keeps_own_and_
+  clears_unconfirmed`; cenário 12 da task 07.
+
+## ISS-101 — Programa sem a11y não emite foco; contexto anterior permanece
+
+- **Severidade:** Alta · **Status:** FIXED (2026-11-02)
+- **Sintoma (relato do usuário):** sair do terminal para o Chrome **sem
+  ativar a árvore de acessibilidade** (`--force-renderer-accessibility`) e o
+  terminal permanecer no contexto.
+- **Causa:** o listener só atualizava em `object:state-changed:focused`
+  (`enabled=true`). Um app sem a11y **não emite** esse evento, então o foco
+  guardado continuava sendo o terminal; o serviço relia o terminal (ou o
+  cache). A perda de foco do app anterior (`enabled=false`) era descartada.
+- **Correção:** tratar `Focused=false` como sinal de **possível troca de
+  programa**:
+  - agenda uma checagem com **janela de graça de 300 ms**;
+  - se nenhum foco novo (externo **ou** nosso) chegar até lá, limpa
+    `focused` + `last_good` e notifica o serviço (cache invalidado, pill
+    "Sem contexto") — nunca serve o programa anterior;
+  - qualquer evento de foco (`Focused=true`) incrementa a geração e cancela a
+    checagem; cliques diretos nas janelas do GhostWhisper chegam em poucos ms,
+    então a exceção é preservada.
+- **Testes:** `program_switch_check_clears_after_grace_without_new_focus`,
+  `program_switch_check_is_cancelled_by_newer_focus`; cenário 13 da task 07.

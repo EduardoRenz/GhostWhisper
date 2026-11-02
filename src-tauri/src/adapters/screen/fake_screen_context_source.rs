@@ -40,6 +40,13 @@ impl FakeScreenContextSource {
         self
     }
 
+    /// Troca o snapshot das próximas chamadas (simula troca de janela).
+    pub fn set_snapshot(&self, snapshot: Option<ScreenContextSnapshot>) {
+        if let Ok(mut slot) = self.snapshot.lock() {
+            *slot = snapshot;
+        }
+    }
+
     /// Quantas vezes `snapshot()` foi chamado.
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)

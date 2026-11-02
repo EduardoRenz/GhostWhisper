@@ -341,3 +341,88 @@ acumulavam threads/conexões até o registry degradar e nada mais ser lido.
 `cargo test --lib` 953 ✅ · clippy `-D warnings` ✅ · fmt ✅ · live test do
 adaptador ~5–75 ms (antes >120 s) · `atspi_tree_probe` lê Chrome/VS Code ✅ ·
 `pnpm test` 571 ✅ · tsc ✅.
+
+---
+
+## 2026-11-02 — ISS-099: foco nas janelas do GW não pode zerar o contexto
+
+- **IDs:** ISS-099 · **Refs:** [`issues.md`](issues.md) ISS-099 ·
+  architecture §3
+
+### Relato
+"Às vezes o contexto é perdido quando clico nas janelas do GhostWhisper."
+
+### Causa
+O filtro do listener caía no `false` quando a resolução de pid falhava
+(D-Bus transitório / nome sem dono / proxy indisponível) e **sobrescrevia** o
+foco guardado com a nossa janela. No snapshot, o próprio era descartado e o
+código retornava `None` sem tentar a janela anterior (sem fallback).
+
+### Decisões
+- `FocusOrigin::{Own, External, Unknown}`; só substitui com app externo
+  confirmado; `Unknown` valida pelo nome do app e, se não der, mantém o
+  anterior.
+- `is_own_app` (`ghostwhisper`/`GhostWhisper`) cobre webview com pid distinto.
+- `last_good` (última janela externa validada) na ordem de candidatos
+  `observed → last_good → seed`; candidato inválido não zera o contexto.
+- Logs de decisão/candidato sem conteúdo.
+
+### Bateria
+`cargo check --lib --tests` ✅ · `cargo test --lib` 954 ✅ · testes do
+adaptador 7 ✅ (2 ignorados) · fmt ✅. Build de release **não** gerado nesta
+rodada (pedido do usuário).
+
+---
+
+## 2026-11-02 — ISS-100: troca de programa/aba invalida o contexto
+
+- **IDs:** ISS-100 · **Refs:** [`issues.md`](issues.md) ISS-100 ·
+  architecture §2.3/§3 · BR-106 v5
+
+### Relato
+Depois do ISS-099, o contexto **antigo** permanecia ao focar outra aba/app —
+risco de enviar o texto errado. Regra: trocar de programa descarta o
+contexto; só seleção nas janelas do GhostWhisper preserva.
+
+### Causas
+1. Cache de 5 s em `current()` sem saber da troca de foco.
+2. Debounce de 500 ms em `on_focus_changed` **descartava** a última troca.
+3. `last_good` sobrevivia à troca de programa.
+
+### Decisões
+- `on_focus_changed` invalida o cache **antes** e relê; debounce removido
+  (só foco externo confirmado chega; evolução = trailing debounce).
+- Listener limpa `last_good` ao aceitar foco externo; não confirmado
+  (`ClearAndNotify`) limpa `focused` + `last_good` e notifica — nunca serve a
+  janela antiga.
+- `focus_action` puro (Keep/Accept/ClearAndNotify) testável.
+
+### Bateria
+`cargo test --lib` 956 ✅ · fmt ✅ · clippy ✅ (antes do último doc).
+Build de release será gerado em seguida (pedido do usuário).
+
+---
+
+## 2026-11-02 — ISS-101: app sem a11y não emite foco; limpar pela perda
+
+- **IDs:** ISS-101 · **Refs:** [`issues.md`](issues.md) ISS-101 ·
+  architecture §3 · BR-106 v6
+
+### Relato
+Terminal → Chrome **sem** a árvore de acessibilidade: o terminal permanecia
+no contexto.
+
+### Causa
+O listener só reagia a `Focused=true`. Chrome sem a11y não emite evento; o
+foco guardado ficava no terminal e o serviço relia o terminal.
+
+### Decisão
+- Tratar `Focused=false` (perda de foco) do app anterior: agendar checagem
+  de **300 ms** com geração de foco; se nenhum foco novo chegar, limpar
+  `focused`/`last_good` e notificar (cache invalidado, pill sem contexto).
+- Qualquer `Focused=true` incrementa a geração e cancela; clique direto nas
+  janelas do GW fica dentro da graça (poucos ms).
+- Testes com runtime tokio: limpa após a graça; cancela com foco novo.
+
+### Bateria
+`cargo test --lib` 958 ✅ · clippy `-D warnings` ✅ · fmt ✅. Build em seguida.

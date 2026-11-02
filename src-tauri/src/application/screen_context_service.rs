@@ -27,10 +27,6 @@ use crate::ports::settings_store::SettingsStore;
 /// normal fica muito abaixo disso (ISS-092).
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Debounce da republicação quando o foco muda (mesma ordem do follow de
-/// janela da gravação).
-pub const FOCUS_DEBOUNCE_MS: i64 = 500;
-
 /// Reuso do cache quando a AskBar reabre rápido (mesma janela, sem re Ler).
 const CACHE_MAX_AGE_MS: i64 = 5_000;
 
@@ -43,8 +39,6 @@ pub struct ScreenContextService {
     publisher: Arc<dyn EventPublisher>,
     /// Último snapshot válido (com o instante em que foi obtido).
     cache: Mutex<Option<CachedSnapshot>>,
-    /// Última publicação (debounce do foco).
-    last_publish_ms: Mutex<i64>,
     /// A última leitura da porta falhou (D-Bus inacessível) — status
     /// `Unavailable` na UI de Configurações.
     last_fetch_failed: Mutex<bool>,
@@ -71,7 +65,6 @@ impl ScreenContextService {
             clock,
             publisher,
             cache: Mutex::new(None),
-            last_publish_ms: Mutex::new(0),
             last_fetch_failed: Mutex::new(false),
         }
     }
@@ -80,6 +73,16 @@ impl ScreenContextService {
     fn note_fetch(&self, failed: bool) {
         if let Ok(mut slot) = self.last_fetch_failed.lock() {
             *slot = failed;
+        }
+    }
+
+    /// Descarta o cache curto (mudança de janela/programa — ISS-100).
+    ///
+    /// Chamado **antes** de qualquer fetch no foco: a próxima consulta da
+    /// pill/ask não pode reutilizar o snapshot da janela anterior.
+    fn invalidate_cache(&self) {
+        if let Ok(mut cache) = self.cache.lock() {
+            *cache = None;
         }
     }
 
@@ -181,9 +184,6 @@ impl ScreenContextService {
     /// (D-Bus/AT-SPI inacessível) na pill (BR-106).
     fn publish(&self, snapshot: Option<&ScreenContextSnapshot>) {
         let now_ms = self.clock.now_ms();
-        if let Ok(mut last) = self.last_publish_ms.lock() {
-            *last = now_ms;
-        }
         let failed = self
             .last_fetch_failed
             .lock()
@@ -265,24 +265,20 @@ impl ScreenContextService {
         (age <= CONTEXT_FRESH_MS).then_some(snapshot)
     }
 
-    /// Atualização por mudança de foco (chamada pelo agendador/observer):
-    /// republica o snapshot atual com debounce.
+    /// Atualização por mudança de foco (chamada pelo observer AT-SPI).
     ///
-    /// O foco é observado pelo adaptador AT-SPI; este método só evita
-    /// martelar a UI quando várias janelas trocam rápido.
+    /// **Sempre invalida o cache** e relê: trocar de programa/aba não pode
+    /// servir o snapshot anterior (ISS-100). A leitura é barata (conexão sem
+    /// p2p, orçamento de 1,8 s) e o adapter só chama para foco externo
+    /// confirmado (ou para limpar quando não dá para confirmar).
     pub fn on_focus_changed(&self) {
+        self.invalidate_cache();
         let Some(source) = self.source.as_ref() else {
             return;
         };
         // Checkbox desmarcado: o foco não dispara leitura (BR-106).
         if !self.enabled() || !self.include_enabled() {
             return;
-        }
-        let now_ms = self.clock.now_ms();
-        if let Ok(last) = self.last_publish_ms.lock() {
-            if now_ms - *last < FOCUS_DEBOUNCE_MS {
-                return;
-            }
         }
         match self.fetch_arc(source) {
             Ok(snapshot) => {
@@ -638,16 +634,33 @@ mod tests {
     }
 
     #[test]
-    fn focus_change_respects_debounce() {
+    fn focus_change_always_refreshes_the_pill() {
+        // ISS-100: sem debounce, cada foco relê — trocar de aba/programa não
+        // pode ficar no snapshot anterior.
         let fake = Arc::new(FakeScreenContextSource::new().with_snapshot(snapshot("foco")));
-        let (service, _, clock) = service(Some(fake.clone()), true);
+        let (service, _, _) = service(Some(fake.clone()), true);
 
         service.on_focus_changed();
         assert_eq!(fake.calls(), 1);
-        service.on_focus_changed(); // dentro do debounce: ignorado
-        assert_eq!(fake.calls(), 1);
-        clock.advance(FOCUS_DEBOUNCE_MS);
         service.on_focus_changed();
         assert_eq!(fake.calls(), 2);
+        service.on_focus_changed();
+        assert_eq!(fake.calls(), 3);
+    }
+
+    #[test]
+    fn focus_change_invalidates_cached_snapshot() {
+        // A pill/ask não podem reutilizar o snapshot da janela anterior.
+        let fake = Arc::new(FakeScreenContextSource::new().with_snapshot(snapshot("janela A")));
+        let (service, _, _) = service(Some(fake.clone()), true);
+
+        assert!(service.snapshot_for_display().is_some());
+        assert_eq!(fake.calls(), 1);
+
+        fake.set_snapshot(Some(snapshot("janela B")));
+        service.invalidate_cache();
+        let got = service.snapshot_for_display().expect("janela B");
+        assert_eq!(got.text, "janela B");
+        assert_eq!(fake.calls(), 2, "cache descartado no foco");
     }
 }

@@ -91,6 +91,20 @@ opt-in e visível (§3.2, §3.3).
 
 ### 3.3 Pill de contexto na AskBar (BR-106)
 
+> **Revisão 2026-11-02 (v6):** app sem a11y (Chrome sem
+> `--force-renderer-accessibility`) **não emite** evento de foco. A perda de
+> foco do app anterior agenda uma checagem de 300 ms; sem foco novo, o
+> contexto anterior é **limpo**. Cliques diretos nas janelas do GW chegam em
+> poucos ms e cancelam a checagem (ISS-101).
+>
+> **Revisão 2026-11-02 (v5):** trocar de **programa/aba** descarta o
+> contexto anterior — qualquer foco externo confirmado invalida o cache do
+> serviço e o fallback `last_good`, e a próxima leitura é do foco novo. Só o
+> foco nas **janelas do GhostWhisper** (clique na AskBar/Sessão/pill)
+> preserva o contexto. Foco que não dá para confirmar **limpa** (nunca serve
+> a janela antiga) — ISS-100. O debounce do foco foi removido para não
+> descartar a última troca.
+>
 > **Revisão 2026-11-02 (v4):** a **pill inteira** é o checkbox — um clique
 > alterna ligar/desligar, sempre (a caixa, o ícone e o texto são o mesmo
 > alvo). O hook serializa as gravações (cliques rápidos não invertem o
@@ -149,7 +163,8 @@ Estados da pill (todos localizados, R18–R22):
   (foco; nunca com estado velho do mount); não há polling contínuo enquanto a
   barra está parada aberta (custo + priv). Atualização por evento
   `screen_context` quando o snapshot muda (eventos ignorados enquanto
-  desmarcado). Os comandos IPC do contexto são `#[tauri::command(async)]`
+  desmarcado). **Troca de programa/aba invalida o snapshot** e relê; só foco
+  nas janelas do GW preserva (ISS-100). Os comandos IPC do contexto são `#[tauri::command(async)]`
   (thread pool) — a leitura do AT-SPI **nunca** segura a main thread
   (ISS-097).
 
@@ -183,6 +198,9 @@ Estados da pill (todos localizados, R18–R22):
   próxima leitura não perder a janela quando a barra rouba o foco. Sem seed
   utilizável → snapshot `None` (pill "Sem contexto"). Evolução registrada:
   fallback X11 com `_NET_ACTIVE_WINDOW` + WM_CLASS.
+- Clicar nas janelas do **próprio GhostWhisper** (AskBar, Sessão,
+  Configurações) **não** zera o contexto: o filtro de foco é conservador e o
+  snapshot cai para a última janela externa validada (`last_good`) — ISS-099.
 - A conexão é **sem `p2p`** e com orçamento interno de 1,8 s (ISS-098/097):
   o `AccessibilityConnection` do crate enumerava todos os apps do registry a
   cada conexão e travava; o adapter usa uma camada própria (`A11yBus`).
@@ -254,8 +272,9 @@ Enter na AskBar
   adaptador (teste de composição: sem `Atspi*` no `AppState` com flag
   desligada).
 - **RF-06** Evento IPC `screen_context` `{ available, app, window_title,
-  preview, captured_at_ms }` publicado quando a AskBar abre e quando o foco
-  muda (com debounce); nunca publica `text` completo para o front — o preview é
+  preview, captured_at_ms }` publicado quando a AskBar abre e a cada mudança
+  de foco **externa confirmada**; trocar de programa/aba invalida o snapshot
+  anterior (ISS-100); nunca publica `text` completo para o front — o preview é
   cortado no core.
 - **RF-07** Pill na AskBar com os 5 estados da §3.3, `aria-label` e `title`
   localizados; tooltip com prévia ≤ 300 chars no estado Ativa.
@@ -274,8 +293,9 @@ Enter na AskBar
 - **RNF-01 — Testabilidade (BR-013):** poda/montagem são funções puras no
   domain; porta com dobra; serviço sem I/O; adaptador AT-SPI coberto por teste
   de integração marcado `#[ignore]` (requer sessão D-Bus real).
-- **RNF-02 — Desempenho:** snapshot ≤ 200 ms em árvore grande (poda incremental
-  + cache por janela); a AskBar **não bloqueia** no snapshot (estado "Lendo").
+- **RNF-02 — Desempenho:** snapshot ≤ 200 ms em árvore grande (poda
+  incremental); o cache curto é **invalidado na troca de foco**; a AskBar
+  **não bloqueia** no snapshot (estado "Lendo").
 - **RNF-03 — Privacidade:** ver §3.2; conteúdo nunca em log; flag desligada =
   zero conexão.
 - **RNF-04 — l10n:** toda copy nova em pt/en, chaves `snake_case` (BR-086).
@@ -373,7 +393,7 @@ src/features/settings/HudSettings.tsx            # card "Contexto de tela"
   para imagem/canvas).
 - Capturar imagens, screenshots ou "visão" via acessibilidade.
 - Sentar no modo contínuo (polling/escuta permanente) enquanto o app roda — a
-  leitura é sob demanda (AskBar abre) + foco (com debounce).
+  leitura é sob demanda (AskBar abre) + foco externo confirmado.
 - Extrair dados de apps específicos por integração dedicada (Chrome via
   DevTools/CDP, VS Code via extensão) — AT-SPI é o caminho único deste PRD.
 - UI de "painel de contexto" clicável / histórico do que foi lido.

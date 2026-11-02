@@ -10,6 +10,7 @@
 //! domain (`extract_text`). Logs nunca contêm conteúdo — só app, nós, chars e
 //! latência (RNF-03).
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -33,6 +34,41 @@ const MAX_DEPTH: usize = 64;
 /// Orçamento interno do adaptador (o serviço espera 2 s; termina antes para
 /// não deixar thread presa em D-Bus — ISS-098).
 const ADAPTER_BUDGET: Duration = Duration::from_millis(1_800);
+/// Janela para decidir "o programa mudou" sem evento de foco do novo app.
+///
+/// Quando o app anterior perde o foco e o novo **não expõe a11y** (Chrome sem
+/// `--force-renderer-accessibility`), não há `Focused=true` para atualizar o
+/// contexto. A perda de foco agenda esta checagem: se nenhum foco novo
+/// (externo **ou** nosso) chegar nesse intervalo, o contexto anterior é
+/// limpo (ISS-101). Cliques diretos nas janelas do GW chegam em poucos ms e
+/// cancelam a checagem — a exceção preservada.
+const PROGRAM_SWITCH_GRACE_MS: u64 = 300;
+
+/// De onde veio o candidato a janela ativa (só para log/decidir promoção).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusSource {
+    /// Último foco observado pelo listener.
+    Observed,
+    /// Última janela externa validada (`last_good`).
+    LastGood,
+    /// Janela `State::Active` encontrada no registry (fallback).
+    Seed,
+}
+
+impl FocusSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            FocusSource::Observed => "observed",
+            FocusSource::LastGood => "last_good",
+            FocusSource::Seed => "seed",
+        }
+    }
+}
+
+/// Dois `ObjectRefOwned` apontam para o mesmo nó?
+fn same_object_ref(a: &atspi::ObjectRefOwned, b: &atspi::ObjectRefOwned) -> bool {
+    a.name() == b.name() && a.path() == b.path()
+}
 
 /// Callback chamado quando o foco muda (o serviço republica a pill).
 pub type FocusCallback = Arc<dyn Fn() + Send + Sync>;
@@ -164,6 +200,10 @@ impl A11yBus {
 pub struct AtspiScreenContextSource {
     /// Último nó focado observado (atualizado pela thread de eventos).
     focused: Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
+    /// Última janela **externa validada** (ISS-099): sobrevive ao foco que as
+    /// nossas janelas roubam e serve de fallback quando o foco observado é
+    /// inválido/próprio.
+    last_good: Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
     /// Callback de mudança de foco (pill acompanha sem reabrir a barra).
     /// Compartilhado com a thread de eventos (BR-106).
     on_focus: Arc<Mutex<Option<FocusCallback>>>,
@@ -177,9 +217,18 @@ impl AtspiScreenContextSource {
     /// observado (`snapshot()` devolve `None` → pill "Sem contexto").
     pub fn new() -> Self {
         let focused = Arc::new(Mutex::new(None));
+        let last_good = Arc::new(Mutex::new(None));
         let on_focus: Arc<Mutex<Option<FocusCallback>>> = Arc::new(Mutex::new(None));
-        spawn_focus_listener(Arc::clone(&focused), Arc::clone(&on_focus));
-        Self { focused, on_focus }
+        spawn_focus_listener(
+            Arc::clone(&focused),
+            Arc::clone(&last_good),
+            Arc::clone(&on_focus),
+        );
+        Self {
+            focused,
+            last_good,
+            on_focus,
+        }
     }
 
     /// Registra o callback de mudança de foco (chamado no boot pelo
@@ -416,14 +465,16 @@ impl AtspiScreenContextSource {
             .map_err(|error| GhostWhisperError::Other(format!("runtime atspi: {error}")))?;
 
         let focused = self.focused.lock().expect("lock").clone();
-        // Slot compartilhado: o resultado do seed vira foco observado (ISS-098).
+        let last_good = self.last_good.lock().ok().and_then(|slot| slot.clone());
+        // Slots compartilhados: um candidato válido vira foco observado
+        // (ISS-098) e última janela externa (ISS-099).
         let focused_slot = Arc::clone(&self.focused);
-        let from_seed = focused.is_none();
+        let last_good_slot = Arc::clone(&self.last_good);
 
         match runtime.block_on(async move {
             tokio::time::timeout(
                 ADAPTER_BUDGET,
-                Self::snapshot_connected(focused, focused_slot, from_seed, started),
+                Self::snapshot_connected(focused, last_good, focused_slot, last_good_slot, started),
             )
             .await
         }) {
@@ -441,10 +492,16 @@ impl AtspiScreenContextSource {
     }
 
     /// Corpo do snapshot (conexão aberta + orçamento aplicado por quem chama).
+    ///
+    /// **Ordem dos candidatos (ISS-099):** foco observado → última janela
+    /// externa validada (`last_good`) → seed do registry. Clicar numa janela
+    /// do GhostWhisper não pode zerar o contexto: o candidato inválido
+    /// (próprio/shell/expirado) é descartado e o próximo é tentado.
     async fn snapshot_connected(
         focused: Option<atspi::ObjectRefOwned>,
+        last_good: Option<atspi::ObjectRefOwned>,
         focused_slot: Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
-        from_seed: bool,
+        last_good_slot: Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
         started: Instant,
     ) -> Result<Option<ScreenContextSnapshot>> {
         let connection = A11yBus::connect().await.map_err(|error| {
@@ -456,11 +513,32 @@ impl AtspiScreenContextSource {
             "atspi: conectado ao bus"
         );
 
-        // Sem evento de foco observado (Chrome já focado **antes** do
-        // boot não gera evento): resolve a janela ativa agora — ISS-093.
-        let focused_ref = match focused {
-            Some(focused_ref) => Some(focused_ref),
-            None => {
+        let mut candidates: Vec<(FocusSource, atspi::ObjectRefOwned)> = Vec::with_capacity(3);
+        if let Some(candidate) = focused {
+            candidates.push((FocusSource::Observed, candidate));
+        }
+        if let Some(candidate) = last_good {
+            if !candidates
+                .iter()
+                .any(|(_, known)| same_object_ref(known, &candidate))
+            {
+                candidates.push((FocusSource::LastGood, candidate));
+            }
+        }
+
+        let dbus = zbus::fdo::DBusProxy::new(connection.connection())
+            .await
+            .ok();
+        let own_pid = std::process::id();
+        let mut seeded = false;
+
+        loop {
+            let next = if !candidates.is_empty() {
+                Some(candidates.remove(0))
+            } else if !seeded {
+                // Sem foco externo utilizável: resolve a janela ativa agora.
+                // O app pode ter sido focado antes do boot (sem evento).
+                seeded = true;
                 let seed_started = Instant::now();
                 let found = Self::find_active_window(&connection).await;
                 tracing::debug!(
@@ -468,95 +546,119 @@ impl AtspiScreenContextSource {
                     elapsed_ms = seed_started.elapsed().as_millis() as u64,
                     "atspi: busca da janela ativa (seed)"
                 );
-                found
-            }
-        };
-        let Some(focused_ref) = focused_ref else {
-            return Ok(None);
-        };
-        let Ok(focused_proxy) = connection.object_as_accessible(&focused_ref).await else {
-            // O nó focado expirou (app fechou) — sem contexto.
-            return Ok(None);
-        };
+                found.map(|candidate| (FocusSource::Seed, candidate))
+            } else {
+                None
+            };
+            let Some((source, candidate)) = next else {
+                break;
+            };
 
-        let (window_title, app_proxy) = Self::ancestors(&connection, &focused_proxy).await;
-        tracing::debug!(
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "atspi: ancestrais resolvidos"
-        );
+            let Some((window_title, app, app_proxy)) =
+                Self::resolve_candidate(&connection, dbus.as_ref(), &candidate, own_pid).await
+            else {
+                continue;
+            };
+
+            // Janela externa validada: guarda como âncora das próximas
+            // leituras (mesmo que ainda não tenha texto, como um terminal).
+            if let Ok(mut slot) = last_good_slot.lock() {
+                *slot = Some(candidate.clone());
+            }
+            if source != FocusSource::Observed {
+                if let Ok(mut slot) = focused_slot.lock() {
+                    *slot = Some(candidate.clone());
+                }
+            }
+            tracing::debug!(
+                app = %app,
+                source = source.as_str(),
+                "atspi: janela ativa resolvida"
+            );
+
+            let mut visited = 0usize;
+            let mut text_chars = 0usize;
+            let root = Self::walk(&connection, &app_proxy, &mut visited, &mut text_chars, 0).await;
+            let text = extract_text(&root, CONTEXT_MAX_CHARS);
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+
+            // Log só com métricas — nunca app/título/conteúdo (RNF-03).
+            tracing::debug!(
+                nodes = visited,
+                chars = text.chars().count(),
+                elapsed_ms,
+                "contexto de tela lido"
+            );
+
+            if text.trim().is_empty() && window_title.trim().is_empty() {
+                tracing::debug!(app = %app, "atspi: sem texto e sem título → None");
+                return Ok(None);
+            }
+
+            return Ok(Some(ScreenContextSnapshot {
+                app,
+                window_title,
+                text,
+                captured_at_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or_default(),
+            }));
+        }
+
+        tracing::debug!("atspi: nenhum candidato externo válido → None");
+        Ok(None)
+    }
+
+    /// Valida um candidato a janela ativa.
+    ///
+    /// `None` = nosso processo/shell/sem app/nó expirado — o chamador tenta o
+    /// próximo candidato. `Some` = app externo (mesmo que ainda sem texto).
+    async fn resolve_candidate<'a>(
+        connection: &'a A11yBus,
+        dbus: Option<&zbus::fdo::DBusProxy<'_>>,
+        candidate: &atspi::ObjectRefOwned,
+        own_pid: u32,
+    ) -> Option<(String, String, AccessibleProxy<'a>)> {
+        let Ok(focused_proxy) = connection.object_as_accessible(candidate).await else {
+            tracing::debug!("atspi: candidato expirou (proxy) — próximo");
+            return None;
+        };
+        let (window_title, app_proxy) = Self::ancestors(connection, &focused_proxy).await;
         let Some(app_proxy) = app_proxy else {
-            tracing::debug!("atspi: ancestors sem nó de aplicação → None");
-            return Ok(None);
+            tracing::debug!("atspi: candidato sem nó de aplicação — próximo");
+            return None;
         };
         let app = app_proxy.name().await.unwrap_or_default();
         if app.trim().is_empty() {
-            tracing::debug!("atspi: app sem nome → None");
-            return Ok(None);
+            tracing::debug!("atspi: app sem nome — próximo");
+            return None;
         }
-        // Defesa em profundidade (ISS-093): nunca servir a própria janela
-        // nem uma shell de desktop, mesmo que o foco tenha passado sem o
-        // filtro do listener (ex.: daemon D-Bus indisponível lá).
+        // Defesa em profundidade (ISS-093/ISS-099): nunca servir a própria
+        // janela nem uma shell de desktop, mesmo que o foco tenha passado sem
+        // o filtro do listener.
         if is_desktop_shell(&app) {
-            tracing::debug!(app = %app, "atspi: shell de desktop → None");
-            return Ok(None);
+            tracing::debug!(app = %app, "atspi: shell de desktop — próximo");
+            return None;
         }
-        let own_bus = app_proxy.inner().destination().clone().into_owned();
-        let is_own = {
-            let dbus = zbus::fdo::DBusProxy::new(connection.connection())
+        if is_own_app(&app) {
+            tracing::debug!(app = %app, "atspi: app do próprio GhostWhisper — próximo");
+            return None;
+        }
+        let app_bus = app_proxy.inner().destination().clone().into_owned();
+        let is_own = match dbus {
+            Some(dbus) => dbus
+                .get_connection_unix_process_id(app_bus)
                 .await
-                .ok();
-            match dbus {
-                Some(dbus) => dbus
-                    .get_connection_unix_process_id(own_bus)
-                    .await
-                    .map(|pid| pid == std::process::id())
-                    .unwrap_or(false),
-                None => false,
-            }
+                .map(|pid| pid == own_pid)
+                .unwrap_or(false),
+            None => false,
         };
         if is_own {
-            tracing::debug!(app = %app, "atspi: é o próprio processo → None");
-            return Ok(None);
+            tracing::debug!(app = %app, "atspi: próprio processo — próximo");
+            return None;
         }
-        // Sem evento de foco (app focado antes do boot), o seed achou a
-        // janela real: guarda como foco para as próximas leituras — a
-        // barra rouba o foco e o seed passaria a encontrar a si mesma.
-        if from_seed {
-            if let Ok(mut slot) = focused_slot.lock() {
-                *slot = Some(focused_ref.clone());
-            }
-            tracing::debug!(app = %app, "atspi: seed promovido a foco observado");
-        }
-        tracing::debug!(app = %app, "atspi: app resolvido, caminhando");
-
-        let mut visited = 0usize;
-        let mut text_chars = 0usize;
-        let root = Self::walk(&connection, &app_proxy, &mut visited, &mut text_chars, 0).await;
-        let text = extract_text(&root, CONTEXT_MAX_CHARS);
-        let elapsed_ms = started.elapsed().as_millis() as u64;
-
-        // Log só com métricas — nunca app/título/conteúdo (RNF-03).
-        tracing::debug!(
-            nodes = visited,
-            chars = text.chars().count(),
-            elapsed_ms,
-            "contexto de tela lido"
-        );
-
-        if text.trim().is_empty() && window_title.trim().is_empty() {
-            tracing::debug!(app = %app, "atspi: sem texto e sem título → None");
-            return Ok(None);
-        }
-
-        Ok(Some(ScreenContextSnapshot {
-            app,
-            window_title,
-            text,
-            captured_at_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or_default(),
-        }))
+        Some((window_title, app, app_proxy))
     }
 }
 
@@ -585,6 +687,7 @@ impl ScreenContextSource for AtspiScreenContextSource {
 /// a pill continua mostrando a última janela real que o usuário estava vendo.
 fn spawn_focus_listener(
     focused: Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
+    last_good: Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
     on_focus: Arc<Mutex<Option<FocusCallback>>>,
 ) {
     std::thread::Builder::new()
@@ -621,25 +724,85 @@ fn spawn_focus_listener(
                 let dbus = zbus::fdo::DBusProxy::new(connection.connection())
                     .await
                     .ok();
+                // Geração dos eventos de foco: cancela checagens de troca de
+                // programa pendentes (ISS-101).
+                let generation = Arc::new(AtomicU64::new(0));
                 let mut stream = std::pin::pin!(connection.event_stream());
                 while let Some(event) = stream.next().await {
                     let Ok(event) = event else { continue };
                     let Ok(state_changed) = StateChangedEvent::try_from(event) else {
                         continue;
                     };
-                    if state_changed.state != State::Focused || !state_changed.enabled {
+                    if state_changed.state != State::Focused {
                         continue;
                     }
-                    // Filtro ISS-093: nosso processo / shells de desktop não
-                    // sobrescrevem o foco real (a AskBar rouba o foco ao abrir).
-                    if should_ignore_focus(&connection, dbus.as_ref(), &state_changed.item, own_pid)
-                        .await
-                    {
-                        tracing::debug!("foco interno ignorado (ISS-093)");
+                    if !state_changed.enabled {
+                        // Perda de foco: se o novo programa não expõe a11y,
+                        // nenhum evento de foco vem — agenda a limpeza.
+                        schedule_program_switch_check(
+                            &generation,
+                            &focused,
+                            &last_good,
+                            &on_focus,
+                            Duration::from_millis(PROGRAM_SWITCH_GRACE_MS),
+                        );
                         continue;
                     }
-                    if let Ok(mut slot) = focused.lock() {
-                        *slot = Some(state_changed.item);
+                    // Qualquer foco novo cancela a checagem pendente.
+                    generation.fetch_add(1, Ordering::SeqCst);
+                    // Filtro (ISS-093/ISS-099/ISS-100): foco nosso/shell é
+                    // ignorado (mantém o contexto); foco externo troca de
+                    // programa e invalida o anterior; foco não confirmado
+                    // **limpa** (nunca serve a janela antiga).
+                    let pid = match (dbus.as_ref(), state_changed.item.name()) {
+                        (Some(dbus), Some(unique)) => dbus
+                            .get_connection_unix_process_id(zbus::names::BusName::from(
+                                unique.clone(),
+                            ))
+                            .await
+                            .ok(),
+                        _ => None,
+                    };
+                    let origin = focus_origin(pid, own_pid);
+                    if origin == FocusOrigin::Own {
+                        tracing::debug!("atspi-focus: foco do próprio processo ignorado");
+                        continue;
+                    }
+                    let app = resolve_focus_app_name(&connection, &state_changed.item).await;
+                    let action = focus_action(origin, app.as_deref());
+                    match action {
+                        FocusAction::Keep => {
+                            tracing::debug!(
+                                app = app.as_deref().unwrap_or(""),
+                                "atspi-focus: foco interno/shell ignorado"
+                            );
+                            continue;
+                        }
+                        FocusAction::Accept => {
+                            tracing::debug!(
+                                app = app.as_deref().unwrap_or(""),
+                                "atspi-focus: foco externo aceito"
+                            );
+                            if let Ok(mut slot) = focused.lock() {
+                                *slot = Some(state_changed.item);
+                            }
+                            // Outro programa/aba: o fallback anterior não
+                            // vale mais (ISS-100).
+                            if let Ok(mut slot) = last_good.lock() {
+                                *slot = None;
+                            }
+                        }
+                        FocusAction::ClearAndNotify => {
+                            tracing::debug!(
+                                "atspi-focus: foco não confirmado — limpando o contexto"
+                            );
+                            if let Ok(mut slot) = focused.lock() {
+                                *slot = None;
+                            }
+                            if let Ok(mut slot) = last_good.lock() {
+                                *slot = None;
+                            }
+                        }
                     }
                     // Notificação fora do lock (o callback pode ler o estado).
                     let callback = on_focus.lock().ok().and_then(|slot| slot.clone());
@@ -650,6 +813,42 @@ fn spawn_focus_listener(
             });
         })
         .expect("spawn atspi-focus");
+}
+
+/// Agenda a checagem de troca de programa **sem evento de foco** (ISS-101).
+///
+/// Roda depois de `PROGRAM_SWITCH_GRACE_MS`; se nenhum foco novo chegou
+/// (a geração mudou), o app anterior perdeu o foco para um programa que não
+/// expõe a11y — limpa o contexto e avisa o serviço.
+fn schedule_program_switch_check(
+    generation: &Arc<AtomicU64>,
+    focused: &Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
+    last_good: &Arc<Mutex<Option<atspi::ObjectRefOwned>>>,
+    on_focus: &Arc<Mutex<Option<FocusCallback>>>,
+    grace: Duration,
+) {
+    let seq = generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let generation = Arc::clone(generation);
+    let focused = Arc::clone(focused);
+    let last_good = Arc::clone(last_good);
+    let on_focus = Arc::clone(on_focus);
+    tokio::spawn(async move {
+        tokio::time::sleep(grace).await;
+        if generation.load(Ordering::SeqCst) != seq {
+            return;
+        }
+        if let Ok(mut slot) = focused.lock() {
+            *slot = None;
+        }
+        if let Ok(mut slot) = last_good.lock() {
+            *slot = None;
+        }
+        let callback = on_focus.lock().ok().and_then(|slot| slot.clone());
+        if let Some(callback) = callback {
+            callback();
+        }
+        tracing::debug!("atspi-focus: troca sem foco observável — contexto limpo (ISS-101)");
+    });
 }
 
 /// Shells de desktop: nunca são "contexto de tela" útil (ISS-093).
@@ -669,47 +868,79 @@ fn is_desktop_shell(app_name: &str) -> bool {
         .any(|shell| name == shell.replace(' ', ""))
 }
 
-/// `true` quando o pid resolve ao **nosso processo** (a AskBar rouba o foco
-/// ao abrir — sem o filtro o snapshot viraria o próprio GhostWhisper).
-fn is_own_process(pid: Option<u32>, own_pid: u32) -> bool {
-    pid.is_some_and(|pid| pid == own_pid)
+/// Origem de um evento de foco, pela resolução de pid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusOrigin {
+    /// Objeto do nosso processo (GhostWhisper).
+    Own,
+    /// Objeto de outro processo (app externo).
+    External,
+    /// Pid não resolvido (D-Bus transitório / nome ainda sem dono).
+    Unknown,
 }
 
-/// `true` quando o foco deve ser **descartado** — não sobrescreve o foco
-/// guardado, então a pill mantém a última janela real do usuário:
-///
-/// 1. node pertence ao **nosso processo** (pid igual);
-/// 2. node vem de uma **shell de desktop** (gnome-shell etc.).
-async fn should_ignore_focus(
-    connection: &A11yBus,
-    dbus: Option<&zbus::fdo::DBusProxy<'_>>,
-    item: &atspi::ObjectRefOwned,
-    own_pid: u32,
-) -> bool {
-    // 1) Nosso processo: o bus name do node resolve no pid pelo daemon.
-    if let (Some(dbus), Some(unique)) = (dbus, item.name()) {
-        let bus_name = zbus::names::BusName::from(unique.clone());
-        if let Ok(pid) = dbus.get_connection_unix_process_id(bus_name).await {
-            if is_own_process(Some(pid), own_pid) {
-                return true;
-            }
-        }
+/// Classifica a origem do foco. `Unknown` **não** substitui o foco guardado.
+fn focus_origin(pid: Option<u32>, own_pid: u32) -> FocusOrigin {
+    match pid {
+        Some(pid) if pid == own_pid => FocusOrigin::Own,
+        Some(_) => FocusOrigin::External,
+        None => FocusOrigin::Unknown,
     }
+}
 
-    // 2) Shell de desktop: nome do nó de aplicação dono do node.
+/// `true` quando o nome do app é o **nosso** (binário/produto).
+///
+/// Defesa extra quando o pid não resolve (webview em outro processo) — um
+/// app chamado "ghostwhisper" nunca é contexto de tela.
+fn is_own_app(app_name: &str) -> bool {
+    const OWN_APP_NAMES: &[&str] = &[env!("CARGO_PKG_NAME"), "GhostWhisper"];
+    let name = app_name.trim().to_ascii_lowercase().replace(' ', "");
+    OWN_APP_NAMES
+        .iter()
+        .any(|own| name == own.trim().to_ascii_lowercase().replace(' ', ""))
+}
+
+/// O que fazer com um evento de foco.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusAction {
+    /// Nosso app/shell: mantém o contexto atual.
+    Keep,
+    /// App externo confirmado: troca o foco e invalida o fallback anterior.
+    Accept,
+    /// Não deu para confirmar: **limpa** o contexto (nunca serve o antigo).
+    ClearAndNotify,
+}
+
+/// Decide a ação a partir da origem e do nome do app (puro/testável).
+fn focus_action(origin: FocusOrigin, app: Option<&str>) -> FocusAction {
+    if origin == FocusOrigin::Own {
+        return FocusAction::Keep;
+    }
+    match app {
+        Some(name) if is_desktop_shell(name) || is_own_app(name) => FocusAction::Keep,
+        Some(_) => FocusAction::Accept,
+        None => FocusAction::ClearAndNotify,
+    }
+}
+
+/// Resolve o nome do app dono do nó focado (para o filtro de identidade).
+async fn resolve_focus_app_name(
+    connection: &A11yBus,
+    item: &atspi::ObjectRefOwned,
+) -> Option<String> {
     let Ok(proxy) = connection.object_as_accessible(item).await else {
-        return false;
+        tracing::debug!("atspi-focus: foco não resolvido");
+        return None;
     };
     let Ok(app_ref) = proxy.get_application().await else {
-        return false;
+        tracing::debug!("atspi-focus: foco sem app");
+        return None;
     };
     let Ok(app) = connection.object_as_accessible(&app_ref).await else {
-        return false;
+        tracing::debug!("atspi-focus: app não resolvido");
+        return None;
     };
-    app.name()
-        .await
-        .map(|name| is_desktop_shell(&name))
-        .unwrap_or(false)
+    app.name().await.ok().filter(|name| !name.trim().is_empty())
 }
 
 /// Converte um `Event` bruto no evento de estado (helper p/ testes).
@@ -793,15 +1024,141 @@ mod tests {
     }
 
     #[test]
-    fn own_process_focus_is_ignored() {
-        // ISS-093: a AskBar rouba o foco ao abrir — o snapshot do próprio
-        // GhostWhisper é descartado.
-        assert!(is_own_process(Some(4242), 4242));
-        assert!(!is_own_process(Some(1), 4242));
-        assert!(
-            !is_own_process(None, 4242),
-            "pid indeterminado não descarta"
+    fn focus_origin_separates_own_external_unknown() {
+        // ISS-099: pid do nosso processo → ignora; outro → externo;
+        // indeterminado → valida pelo nome do app (não sobrescreve às cegas).
+        assert_eq!(focus_origin(Some(4242), 4242), FocusOrigin::Own);
+        assert_eq!(focus_origin(Some(1), 4242), FocusOrigin::External);
+        assert_eq!(focus_origin(None, 4242), FocusOrigin::Unknown);
+    }
+
+    #[test]
+    fn focus_action_keeps_own_and_clears_unconfirmed() {
+        // ISS-100: externo confirmado troca; nosso/shell mantém; não
+        // confirmado limpa (nunca serve a janela antiga).
+        assert_eq!(
+            focus_action(FocusOrigin::Own, Some("google-chrome")),
+            FocusAction::Keep
         );
+        assert_eq!(
+            focus_action(FocusOrigin::External, Some("google-chrome")),
+            FocusAction::Accept
+        );
+        assert_eq!(
+            focus_action(FocusOrigin::Unknown, Some("google-chrome")),
+            FocusAction::Accept
+        );
+        assert_eq!(
+            focus_action(FocusOrigin::External, Some("ghostwhisper")),
+            FocusAction::Keep
+        );
+        assert_eq!(
+            focus_action(FocusOrigin::External, Some("gnome-shell")),
+            FocusAction::Keep
+        );
+        assert_eq!(
+            focus_action(FocusOrigin::External, None),
+            FocusAction::ClearAndNotify
+        );
+        assert_eq!(
+            focus_action(FocusOrigin::Unknown, None),
+            FocusAction::ClearAndNotify
+        );
+    }
+
+    #[test]
+    fn program_switch_check_clears_after_grace_without_new_focus() {
+        // ISS-101: app anterior perde o foco e o novo não expõe a11y (Chrome
+        // sem a flag) — sem evento de foco, o contexto anterior é limpo.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            use std::sync::atomic::AtomicBool;
+
+            let object = || {
+                atspi::ObjectRefOwned::from_static_str_unchecked(
+                    ":1.1",
+                    "/org/a11y/atspi/accessible/1",
+                )
+            };
+            let generation = Arc::new(AtomicU64::new(0));
+            let focused = Arc::new(Mutex::new(Some(object())));
+            let last_good = Arc::new(Mutex::new(Some(object())));
+            let called = Arc::new(AtomicBool::new(false));
+            let flag = Arc::clone(&called);
+            let on_focus: Arc<Mutex<Option<FocusCallback>>> =
+                Arc::new(Mutex::new(Some(Arc::new(move || {
+                    flag.store(true, Ordering::SeqCst);
+                }))));
+
+            schedule_program_switch_check(
+                &generation,
+                &focused,
+                &last_good,
+                &on_focus,
+                Duration::from_millis(10),
+            );
+            tokio::time::sleep(Duration::from_millis(40)).await;
+
+            assert!(focused.lock().expect("lock").is_none());
+            assert!(last_good.lock().expect("lock").is_none());
+            assert!(called.load(Ordering::SeqCst));
+        });
+    }
+
+    #[test]
+    fn program_switch_check_is_cancelled_by_newer_focus() {
+        // Foco novo (externo ou nosso) dentro da janela de graça: preserva.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            use std::sync::atomic::AtomicBool;
+
+            let object = || {
+                atspi::ObjectRefOwned::from_static_str_unchecked(
+                    ":1.1",
+                    "/org/a11y/atspi/accessible/1",
+                )
+            };
+            let generation = Arc::new(AtomicU64::new(0));
+            let focused = Arc::new(Mutex::new(Some(object())));
+            let last_good = Arc::new(Mutex::new(Some(object())));
+            let called = Arc::new(AtomicBool::new(false));
+            let flag = Arc::clone(&called);
+            let on_focus: Arc<Mutex<Option<FocusCallback>>> =
+                Arc::new(Mutex::new(Some(Arc::new(move || {
+                    flag.store(true, Ordering::SeqCst);
+                }))));
+
+            schedule_program_switch_check(
+                &generation,
+                &focused,
+                &last_good,
+                &on_focus,
+                Duration::from_millis(10),
+            );
+            generation.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(40)).await;
+
+            assert!(focused.lock().expect("lock").is_some());
+            assert!(last_good.lock().expect("lock").is_some());
+            assert!(!called.load(Ordering::SeqCst));
+        });
+    }
+
+    #[test]
+    fn own_app_name_is_never_context() {
+        // Defesa quando o pid não resolve (webview em outro processo).
+        assert!(is_own_app("ghostwhisper"));
+        assert!(is_own_app("GhostWhisper"));
+        assert!(is_own_app("  Ghost Whisper  "));
+        assert!(!is_own_app("google-chrome"));
+        assert!(!is_own_app("Code"));
+        assert!(!is_own_app(""));
     }
 
     #[test]

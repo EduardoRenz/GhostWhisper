@@ -91,17 +91,22 @@ registra chamadas) e `FailingScreenContextSource` (para o estado
 - `snapshot_for_ask()` — usado pelo command IPC:
   1. lê `Settings.screen_context_enabled`; desligada → `None` **sem tocar na
      porta**;
-  2. consulta a porta com **timeout de 500 ms** (thread dedicada, como o
-     classificador);
-  3. cacheia por `captured_at_ms`; reutiliza cache com idade ≤ 5 s (AskBar
-     reabre rápido);
+  2. consulta a porta com **timeout de 2 s** (thread dedicada) e o adaptador
+     aplica 1,8 s internamente;
+  3. cacheia por `captured_at_ms`; reutiliza cache com idade ≤ 5 s **apenas
+     enquanto o foco não mudou** — qualquer foco novo invalida o cache
+     (ISS-100);
   4. publica evento `screen_context` com preview.
 - **Idade máxima do snapshot usado no prompt: 30 s** (`CONTEXT_FRESH_MS`);
   mais velho que isso, a pergunta vai sem o bloco (silenciosamente — a pill
   continua mostrando o último estado com o selo de idade? **Não**: pill mostra
   o snapshot atual da porta, que sempre relê; a idade só gateia o prompt).
-- `on_focus_changed()` — chamado pelo adaptador (observer) quando o foco muda;
-  debounce 500 ms; republica o evento (é o CA-02.5).
+- `on_focus_changed()` — chamado pelo adaptador (observer) quando o foco
+  externo muda; **invalida o cache e relê** (sem debounce): uma troca de
+  programa/aba não pode servir o snapshot anterior (ISS-100). O debounce foi
+  removido porque os eventos são só de foco confirmado (não é polling) e a
+  leitura tem orçamento; se o custo incomodar, a evolução é um debounce
+  *trailing* (nunca descartar a última troca).
 
 ### 2.4 IPC
 
@@ -149,6 +154,22 @@ discussed."
   (app focado antes do boot) → **seed** pelo registry (`State::Active`) e o
   resultado é **promovido a foco observado** (ISS-098), sobrevivendo ao foco
   que a barra rouba. Evolução: fallback X11 via `_NET_ACTIVE_WINDOW` + WM_CLASS.
+- **Filtro de foco conservador (ISS-099):** o listener só substitui o foco
+  quando o app é confirmadamente externo (`FocusOrigin::External` e nome
+  diferente do nosso). Pid não resolvido (`Unknown`) valida pelo nome; se
+  ainda assim não confirmar, **mantém** o foco anterior. `is_own_app` cobre o
+  webview com pid diferente. Nunca sobrescrever com a nossa janela é mais
+  importante que atualizar rápido.
+- **Troca de programa sem evento de foco (ISS-101):** um app sem a11y não
+  emite `Focused=true`. O listener trata `Focused=false` do app anterior:
+  agenda uma checagem de **300 ms** (geração de foco cancela); sem foco novo
+  (externo/nosso), limpa `focused`/`last_good` e notifica. Cliques diretos nas
+  janelas do GW chegam em poucos ms e cancelam — exceção preservada.
+- **Fallback de candidatos (ISS-099):** `snapshot_connected` tenta, nesta
+  ordem, **foco observado → `last_good` → seed**. `last_good` é a última
+  janela **externa validada** (atualizada antes de caminhar, então vale também
+  para terminal sem texto). Candidato próprio/shell/expirado → próximo; app
+  externo válido → lê e para (um terminal não ressuscita o Chrome anterior).
 - **Árvore:** a partir do app do elemento focado (`get_application`), caminhada
   DFS com teto de **5 000 nós** e **64 níveis**; campos (`Entry`/`Text`)
   leem a interface `Text` (`get_text(0, -1)`); `PasswordText` é tratado como
