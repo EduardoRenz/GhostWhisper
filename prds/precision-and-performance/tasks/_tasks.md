@@ -10,11 +10,15 @@ depois da anterior aprovada no teste manual do usuário (PRD §11).
 | 01 | Precisão do ASR: prompt de decodificação, idioma, resampler anti-alias, catálogo de modelos, detecção de GPU | E1 | CONCLUDED |
 | 02 | Bolha compacta e sugestão fast-first: streaming, prévias no contexto, insights automáticos, UI colapsável | E2 | CONCLUDED |
 | 03 | Áudio limpo e engine rápida: GPU + flash attention, modelo por hardware, AEC, reuso do final, commits | E3 | CONCLUDED |
-| 04 | Commit de fala mais rápido (etapa 1): fila com prioridade, prévias na pausa, fechamento por frase, métrica | L1 | IN PROGRESS |
-| 05 | Prompt como contexto: default vazio, migração e aviso na UI | L2 | IN PROGRESS |
+| 04 | Commit de fala mais rápido (etapa 1): fila com prioridade, prévias na pausa, fechamento por frase, métrica | L1 | CONCLUDED |
+| 05 | Prompt como contexto: default vazio, migração e aviso na UI | L2 | CONCLUDED |
 | 06 | Commit por frase (etapa 3): avaliada e rejeitada — código removido | L3 | CANCELED |
-| 07 | Ordem entre canais (relógio + prévia no lugar) e GPU sem falso positivo | L4 | IN PROGRESS |
+| 07 | Ordem entre canais (relógio + prévia no lugar) e GPU sem falso positivo | L4 | CONCLUDED |
 | 08 | Commit em blocos por prefixo autoritativo (experimento opt-in, A/B) | E4 | PENDING |
+
+> Em 2026-11-05 o usuário validou no app as tasks **04**, **05** e **07**
+> (teste manual aprovado). A **08** permanece `PENDING` por decisão explícita:
+> é um experimento opt-in que só entra com A/B aprovado.
 
 ## Dependências
 

@@ -1,6 +1,7 @@
 # 07 — Ordem entre canais e GPU sem falso negativo
 
-- **Status:** IN PROGRESS (código e testes prontos; falta o teste manual no app)
+- **Status:** CONCLUDED (código e testes prontos; teste manual no app aprovado
+  pelo usuário em 2026-11-05)
 - **Depende de:** 03 (engine/GPU) e 04 (métrica de commit)
 - **Issues:** ISS-060, ISS-061 · **BR:** BR-029, BR-040
 - **Refs:** BR-015, BR-019, R16, R17,
@@ -63,7 +64,9 @@ fechar o app algumas vezes bastava para o próximo boot desligar a GPU.
   - `a fala em andamento fica no lugar do tempo, não no fim da lista`;
   - `ao finalizar, a fala não muda de posição (mesmo start_ms)`.
 
-## Teste manual (pendente)
+## Teste manual (aprovado em 2026-11-05)
+
+O usuário executou o roteiro abaixo no app e aprovou a task.
 
 1. Abrir o app **sem** sessão e fechar; abrir de novo e iniciar uma sessão.
 2. Conferir no log (`Configurações → Geral & HUD → Logs`) a linha

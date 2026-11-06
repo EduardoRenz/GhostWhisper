@@ -426,3 +426,19 @@ foco guardado ficava no terminal e o serviço relia o terminal.
 
 ### Bateria
 `cargo test --lib` 958 ✅ · clippy `-D warnings` ✅ · fmt ✅. Build em seguida.
+
+## 2026-11-05 — Task 07 concluída: hardening e teste manual aprovados
+
+- **IDs:** T07, BR-105, BR-106, ISS-090…ISS-101
+- **Refs:** [`tasks/07-task.md`](tasks/07-task.md),
+  [`tasks/_tasks.md`](tasks/_tasks.md), [`prd.md`](prd.md),
+  [`../../README.md`](../../README.md)
+
+### Resultado
+- O usuário executou a bateria de 13 cenários no app e aprovou o PRD; os
+  critérios da task 07 foram marcados e o status virou `CONCLUDED` (índice e
+  cabeçalho do PRD alinhados).
+- README ganhou a feature "Screen context (optional)" na lista de recursos.
+- Seguem como evolução/limite externo, sem bloquear o fechamento: **ISS-091**
+  (contexto não persistido no diário) e **ISS-094** (Chrome/VS Code sem
+  acessibilidade forçada).

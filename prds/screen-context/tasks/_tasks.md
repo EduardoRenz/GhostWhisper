@@ -14,7 +14,7 @@ usuário (PRD §13).
 | 04 | Adaptador AT-SPI (foco universal, cache, limites) | Adaptador | CONCLUDED |
 | 05 | Pill na AskBar (estados, tooltip, a11y) | UI | CONCLUDED |
 | 06 | Injeção no prompt + integração do serviço | Integração | CONCLUDED |
-| 07 | Hardening, teste manual e docs | Fechamento | IN PROGRESS |
+| 07 | Hardening, teste manual e docs | Fechamento | CONCLUDED |
 
 ## Fases
 

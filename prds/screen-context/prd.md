@@ -2,7 +2,8 @@
 
 - **Versão:** 0.1 (especificado)
 - **Data:** 2026-11-01
-- **Status:** Especificado — tasks `PENDING`
+- **Status:** Implementado — tasks 01–07 `CONCLUDED` (validação manual em
+  2026-11-05)
 - **Relacionados:** [`../business-rules.md`](../business-rules.md) (BR-105,
   BR-106), [`memory.md`](memory.md), [`issues.md`](issues.md),
   [`architecture/screen-context.md`](architecture/screen-context.md),
@@ -429,12 +430,12 @@ R14):
 | E6 | Injeção no prompt (`<screen_context>`) + integração | [`06`](tasks/06-task.md) |
 | E7 | Hardening, teste manual (Chrome/VS Code/terminal), docs | [`07`](tasks/07-task.md) |
 
-## 14. Decisões pendentes
+## 14. Decisões resolvidas na implementação
 
-1. **Orçamento de chars:** 2 000 (recomendado) ou por-app configurável?
-2. **Debounce do foco:** 500 ms (recomendado, espelha o follow de janela da
-   gravação) ou imediato?
-3. **Clique na pill:** no MVP só tooltip (recomendado) ou já abrir prévia em
-   popover?
-4. **Persistência:** sem diário por enquanto (recomendado) ou gravar
-   `context_attached` já na task 06?
+1. **Orçamento de chars:** 2 000, fixo no domínio (poda por orçamento).
+2. **Foco:** evento de foco do AT-SPI, sem debounce; cache invalidado antes da
+   releitura e perda de foco tratada com graça de 300 ms (ISS-100/ISS-101).
+3. **Clique na pill:** virou **checkbox** de incluir/excluir o contexto
+   (BR-106 v2/v4); popover de prévia segue como evolução (ISS-090).
+4. **Persistência:** prompt-only por enquanto; gravar `context_attached` no
+   diário ficou como evolução (ISS-091).

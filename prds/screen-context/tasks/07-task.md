@@ -1,6 +1,6 @@
 # 07 — Hardening, teste manual e docs
 
-- **Status:** PENDING
+- **Status:** CONCLUDED (validado manualmente pelo usuário em 2026-11-05)
 - **Depende de:** 06
 - **Habilita:** —
 - **Issues:** — · **BR:** BR-105, BR-106
@@ -53,7 +53,8 @@ desvio.
 
 ## Critérios de aceite
 
-- [ ] Os 13 cenários manuais passam e estão registrados.
-- [ ] Nenhum texto de contexto em log após a bateria.
-- [ ] Pipeline completo verde.
-- [ ] `memory.md` e `issues.md` atualizados (desvios → ISS novo).
+- [x] Os 13 cenários manuais passam e estão registrados (aprovado pelo usuário
+      em 2026-11-05).
+- [x] Nenhum texto de contexto em log após a bateria.
+- [x] Pipeline completo verde.
+- [x] `memory.md` e `issues.md` atualizados (desvios → ISS novo).

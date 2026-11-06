@@ -673,3 +673,19 @@ O usuário definiu que **todo build de release** deve ser o **bundle completo**
   O build embute o runtime atual do AppImage; o arquivo montou/iniciou no Ubuntu
   26.04 (o runtime antigo falhava no FUSE).
 - `bash -n` nos scripts e `package.json` válido.
+
+## 2026-11-05 — Tasks 04, 05 e 07 concluídas (validação manual no app)
+
+- **IDs:** T04, T05, T07, ISS-058, ISS-059, ISS-060, ISS-061
+- **Refs:** BR-027, BR-029, BR-034, BR-040,
+  [`tasks/04-task.md`](tasks/04-task.md), [`tasks/05-task.md`](tasks/05-task.md),
+  [`tasks/07-task.md`](tasks/07-task.md), [`tasks/_tasks.md`](tasks/_tasks.md)
+
+### Resultado
+- O usuário executou no app os roteiros de "Como testar" das três tasks e
+  aprovou: fechamento de turno/fila do ASR (04), campo de contexto vazio com
+  aviso na UI (05) e ordem ME/THEY + GPU real sem falso negativo (07).
+- `Status` dos três arquivos e da tabela `_tasks.md` → `CONCLUDED`; o cabeçalho
+  do PRD passou a refletir 01–07 concluídas.
+- **Task 08 não foi fechada por decisão do usuário:** continua `PENDING` como
+  experimento opt-in (A/B), com a ISS-074 `OPEN`.

@@ -2,7 +2,8 @@
 
 - **Versão:** 0.1
 - **Data:** 2026-10-18
-- **Status:** Implementado (tasks 01–03 `CONCLUDED` — E1, E2 e E3 entregues)
+- **Status:** Implementado (tasks 01–07 `CONCLUDED` — E1–E3 e as etapas
+  L1/L2/L4; task 06 `CANCELED`; task 08 `PENDING` como experimento opt-in)
 - **Autor:** Equipe GhostWhisper
 - **Relacionados:** [`../business-rules.md`](../business-rules.md),
   [`memory.md`](memory.md), [`issues.md`](issues.md),

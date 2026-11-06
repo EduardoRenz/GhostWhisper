@@ -49,6 +49,10 @@ Linux and staying fully open.
   to the session and can be paused, resumed and discarded. On Wayland you pick a
   window or monitor in the GNOME portal dialog; the source stays fixed for that
   recording.
+- **Screen context (optional)** — reads the focused window through AT-SPI
+  accessibility (app, title, URL and visible text) and attaches it to your
+  questions; a pill on the AskBar shows what is being read. Opt-in and fully
+  local.
 - **Discreet overlay** — transparent HUD, tray icon, configurable global
   shortcuts and a stealth mode that hides the window from the taskbar.
 - **Local-only** — audio, transcripts and settings never leave your machine;

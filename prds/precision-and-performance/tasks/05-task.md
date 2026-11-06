@@ -1,6 +1,7 @@
 # 05 — Prompt como contexto: default vazio e aviso nas configurações
 
-- **Status:** IN PROGRESS (código e testes prontos; falta validar a UI no app)
+- **Status:** CONCLUDED (código e testes prontos; UI validada no app pelo
+  usuário em 2026-11-05)
 - **Depende de:** 01 (prompt/idioma) e 03 (engine)
 - **Issues:** ISS-059 · **BR alterada:** BR-027 (BR-034 ajustada)
 - **Refs:** BR-015, BR-027, BR-034, R16, R17,
@@ -41,8 +42,8 @@ sem sentido” no microfone.
       **Teste:** `update_language_switches_the_cached_engine_without_reloading`.
 - [x] UI com aviso explícito de cautela (texto revisado em
       `SettingsPage.tsx`).
-- [ ] Teste manual: abrir Configurações e conferir rótulo/aviso; sessão curta
-      com o campo vazio.
+- [x] Teste manual: abrir Configurações e conferir rótulo/aviso; sessão curta
+      com o campo vazio — **aprovado pelo usuário em 2026-11-05**.
 
 ## Como testar
 

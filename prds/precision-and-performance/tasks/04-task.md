@@ -1,7 +1,7 @@
 # 04 — Commit de fala mais rápido · Etapa 1 (fila + endpointing)
 
-- **Status:** IN PROGRESS (código e testes automatizados prontos; falta o teste
-  manual no app)
+- **Status:** CONCLUDED (código e testes automatizados prontos; teste manual no
+  app aprovado pelo usuário em 2026-11-05)
 - **Depende de:** 03 (reuso do passe final, VAD nativo) e da fila global do ASR
 - **Issues:** ISS-058 · **Desvio de paridade:** BR-029 (Perssua fecha em 1 s)
 - **Refs:** BR-015, BR-029, R16, R17,
@@ -77,7 +77,8 @@ sem mudar a unidade de commit (o turno), que fica para a etapa 3.
   alvo `whisper_rs::whisper_logging_hook`; com o filtro padrão, zero linhas.
 - [x] Teste pesado com modelo real (JFK, streaming) continua passando:
       `end_to_end_streams_preview_before_final`.
-- [ ] Teste manual no app (ver "Como testar").
+- [x] Teste manual no app (ver "Como testar") — **aprovado pelo usuário em
+      2026-11-05**.
 
 ## Desvio consciente vs. Perssua (BR-015/R12)
 
